@@ -64,9 +64,10 @@ func main() {
 		gameOver("Wasm module could not be compiled")
 	}
 
-	var outputPtr, outputCap uint32
 	inputPtr := mod.ExportedGlobal("input_ptr").Get()
 	inputCap := mod.ExportedGlobal("input_cap").Get()
+	
+	var outputPtr, outputCap uint32
 	if mod.ExportedGlobal("output_ptr") != nil && mod.ExportedGlobal("output_cap") != nil {
 		outputPtr = uint32(mod.ExportedGlobal("output_ptr").Get())
 		outputCap = uint32(mod.ExportedGlobal("output_cap").Get())
