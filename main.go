@@ -43,7 +43,7 @@ func main() {
 	}
 
 	digest := sha256.Sum256(body)
-	fmt.Printf("SHA256: %x\n", digest)
+	fmt.Fprintf(os.Stderr, "SHA256: %x\n", digest)
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
