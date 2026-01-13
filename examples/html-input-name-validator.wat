@@ -2,6 +2,8 @@
   (memory (export "memory") 3)
   (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
   (global $input_cap (export "input_cap") i32 (i32.const 0x10000))
+  (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
+  (global $output_cap (export "output_cap") i32 (i32.const 0x10000))
 
   ;; Check if character is ASCII whitespace
   (func $is_whitespace (param $c i32) (result i32)
@@ -67,13 +69,15 @@
     )
   )
 
-  ;; Returns: 1 if valid practical input name, 0 if invalid
+  ;; Returns: length of valid trimmed input name, or 0 if invalid
+  ;; Outputs the trimmed input name to output buffer
   ;; Checks for characters that are safe for form submission
   ;; Avoids: whitespace, =, &, ?, #, /, and other URL-special characters
   ;; Leading and trailing whitespace is trimmed
   (func $run (export "run") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
+    (local $len i32)
     (local $i i32)
     (local $current_char i32)
 
@@ -129,7 +133,19 @@
       )
     )
 
-    ;; All checks passed - valid input name
-    (i32.const 1)
+    ;; All checks passed - copy trimmed content to output
+    (local.set $len (i32.sub (local.get $end) (local.get $start)))
+    (local.set $i (i32.const 0))
+    (block $break_copy
+      (loop $copy
+        (br_if $break_copy (i32.ge_u (local.get $i) (local.get $len)))
+        (i32.store8
+          (i32.add (global.get $output_ptr) (local.get $i))
+          (i32.load8_u (i32.add (global.get $input_ptr) (i32.add (local.get $start) (local.get $i)))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $copy)
+      )
+    )
+    (local.get $len)
   )
 )
