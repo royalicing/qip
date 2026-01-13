@@ -59,8 +59,7 @@ func main() {
 	// 	// Do nothing
 	// }
 
-	mod, err := r.InstantiateWithConfig(ctx, body,
-		wazero.NewModuleConfig().WithStdout(os.Stdout).WithStderr(os.Stderr))
+	mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
 	if err != nil {
 		gameOver("Wasm module could not be compiled")
 	}
