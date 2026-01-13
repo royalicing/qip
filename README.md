@@ -22,4 +22,14 @@ piq get qip.dev@<hash> > crc32.wasm
 cat README.md | piq run ./crc32.wasm
 ```
 
+## WebAssembly module exports
+
+### `output_cap`
+
+If omitted, then the return value of `run` is used as the result.
+
+If exported, then the return value of `run` is used as the size of the output.
+
+---
+
 Pockets of determinism in a probabilistic, generative world.

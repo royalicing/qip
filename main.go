@@ -48,7 +48,7 @@ func main() {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
-	
+
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
 
@@ -65,10 +65,14 @@ func main() {
 		gameOver("Wasm module could not be compiled")
 	}
 
+	var outputPtr, outputCap uint32
 	inputPtr := mod.ExportedGlobal("input_ptr").Get()
 	inputCap := mod.ExportedGlobal("input_cap").Get()
-	outputPtr := mod.ExportedGlobal("output_ptr").Get()
-	outputCap := mod.ExportedGlobal("output_cap").Get()
+	if mod.ExportedGlobal("output_ptr") != nil && mod.ExportedGlobal("output_cap") != nil {
+		outputPtr = uint32(mod.ExportedGlobal("output_ptr").Get())
+		outputCap = uint32(mod.ExportedGlobal("output_cap").Get())
+	}
+
 	runFunc := mod.ExportedFunction("run")
 
 	// inputPtrResult, err := mod.ExportedFunction("input_ptr").Call(ctx)
@@ -91,21 +95,25 @@ func main() {
 	}
 
 	var inputSize = uint64(len(input))
-	fmt.Printf("It worked! (%d %d)\n", inputPtr, inputCap)
-	fmt.Printf("Input (%d %d max %d)\n", inputPtr, inputSize, inputCap)
-	fmt.Printf("Output (%d %d)\n", outputPtr, outputCap)
+	if inputSize > inputCap {
+		gameOver("Input is too large")
+	}
 
 	if !mod.Memory().Write(uint32(inputPtr), input) {
 		gameOver("Could not write input")
 	}
 
-	fmt.Printf("About to run\n")
 	runResult, err := runFunc.Call(ctx, inputSize)
 	if err != nil {
 		gameOver("Failed to run: %s", err)
 	}
 
-	fmt.Printf("Ran: %d\n", runResult[0])
+	if outputCap > 0 {
+		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(runResult[0]))
+		fmt.Printf("%s\n", outputBytes)
+	} else {
+		fmt.Printf("Ran: %d\n", runResult[0])
+	}
 
 	if status != "" {
 		fmt.Printf("Status: %s\n", status)
