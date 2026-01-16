@@ -66,7 +66,7 @@ func main() {
 
 	inputPtr := mod.ExportedGlobal("input_ptr").Get()
 	inputCap := mod.ExportedGlobal("input_cap").Get()
-	
+
 	var outputPtr, outputCap uint32
 	if mod.ExportedGlobal("output_ptr") != nil && mod.ExportedGlobal("output_cap") != nil {
 		outputPtr = uint32(mod.ExportedGlobal("output_ptr").Get())
@@ -119,6 +119,55 @@ func main() {
 		fmt.Printf("Status: %s\n", status)
 	}
 	// fmt.Printf("\nBody:\n%s\n", body)
+}
+
+func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []byte {
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+
+	mod, err := r.InstantiateWithConfig(ctx, modBytes, wazero.NewModuleConfig())
+	if err != nil {
+		gameOver("Wasm module could not be compiled")
+	}
+
+	inputPtr := mod.ExportedGlobal("input_ptr").Get()
+	inputCap := mod.ExportedGlobal("input_cap").Get()
+
+	var outputPtr, outputCap uint32
+	if mod.ExportedGlobal("output_ptr") != nil && mod.ExportedGlobal("output_cap") != nil {
+		outputPtr = uint32(mod.ExportedGlobal("output_ptr").Get())
+		outputCap = uint32(mod.ExportedGlobal("output_cap").Get())
+	}
+
+	runFunc := mod.ExportedFunction("run")
+
+	// inputPtrResult, err := mod.ExportedFunction("input_ptr").Call(ctx)
+	// if err != nil {
+	// 	gameOver("Wasm module must export an input_ptr() function")
+	// }
+
+	var inputSize = uint64(len(input))
+	if inputSize > inputCap {
+		gameOver("Input is too large")
+	}
+
+	if !mod.Memory().Write(uint32(inputPtr), input) {
+		gameOver("Could not write input")
+	}
+
+	runResult, err := runFunc.Call(ctx, inputSize)
+	if err != nil {
+		gameOver("Failed to run: %s", err)
+	}
+
+	var outputBytes []byte
+	if outputCap > 0 {
+		outputBytes, _ = mod.Memory().Read(outputPtr, uint32(runResult[0]))
+	} else {
+		fmt.Printf("Ran: %d\n", runResult[0])
+	}
+
+	return outputBytes
 }
 
 func gameOver(format string, args ...any) {
