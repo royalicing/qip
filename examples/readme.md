@@ -10,6 +10,7 @@ Validation & Checking:
 - Credit card number validator - Luhn algorithm check
 - IBAN validator - international bank account numbers
 - Phone number formatter - normalize to E.164 or local format
+- ISBN validator - ISBN-10 and ISBN-13 checks
 
 Quick Formatting:
 
