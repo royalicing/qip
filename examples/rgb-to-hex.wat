@@ -1,5 +1,5 @@
 (module $RGBToHex
-  (memory (export "memory") 3)
+  (memory (export "memory") 4)
   (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
   (global $input_cap (export "input_cap") i32 (i32.const 0x10000))
   (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
@@ -163,8 +163,8 @@
     (local $b i32)
     (local $current_char i32)
 
-    ;; Allocate space for position pointer (use low memory area)
-    (local.set $pos_ptr (i32.const 0x00000))
+    ;; Allocate space for position pointer (after output buffer)
+    (local.set $pos_ptr (i32.const 0x30000))
 
     ;; Empty input is invalid
     (if (i32.eq (local.get $input_size) (i32.const 0))
