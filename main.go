@@ -49,37 +49,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	r := wazero.NewRuntime(ctx)
-	defer r.Close(ctx)
-
-	// _, err := r.NewHostModuleBuilder("env").
-	// 	NewFunctionBuilder().WithFunc(logString).Export("log").
-	// 	Instantiate(ctx)
-	// if err != nil {
-	// 	// Do nothing
-	// }
-
-	mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
-	if err != nil {
-		gameOver("Wasm module could not be compiled")
-	}
-
-	inputPtr := mod.ExportedGlobal("input_ptr").Get()
-	inputCap := mod.ExportedGlobal("input_cap").Get()
-
-	var outputPtr, outputCap uint32
-	if mod.ExportedGlobal("output_ptr") != nil && mod.ExportedGlobal("output_cap") != nil {
-		outputPtr = uint32(mod.ExportedGlobal("output_ptr").Get())
-		outputCap = uint32(mod.ExportedGlobal("output_cap").Get())
-	}
-
-	runFunc := mod.ExportedFunction("run")
-
-	// inputPtrResult, err := mod.ExportedFunction("input_ptr").Call(ctx)
-	// if err != nil {
-	// 	gameOver("Wasm module must export an input_ptr() function")
-	// }
-
 	var input []byte
 	stat, err := os.Stdin.Stat()
 	if err != nil {
@@ -94,25 +63,9 @@ func main() {
 		}
 	}
 
-	var inputSize = uint64(len(input))
-	if inputSize > inputCap {
-		gameOver("Input is too large")
-	}
-
-	if !mod.Memory().Write(uint32(inputPtr), input) {
-		gameOver("Could not write input")
-	}
-
-	runResult, err := runFunc.Call(ctx, inputSize)
-	if err != nil {
-		gameOver("Failed to run: %s", err)
-	}
-
-	if outputCap > 0 {
-		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(runResult[0]))
+	outputBytes := runModuleWithInput(ctx, body, input)
+	if outputBytes != nil {
 		fmt.Printf("%s\n", outputBytes)
-	} else {
-		fmt.Printf("Ran: %d\n", runResult[0])
 	}
 
 	if status != "" {
@@ -166,6 +119,10 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []by
 	} else {
 		fmt.Printf("Ran: %d\n", runResult[0])
 	}
+
+	// Detect if outputBytes are wasm module by checking for magic number
+	// if len(outputBytes) >= 4 && outputBytes[0] == 0x00 && outputBytes[1] == 0x61 && outputBytes[2] == 0x73 && outputBytes[3] == 0x6D {
+	// }
 
 	return outputBytes
 }
