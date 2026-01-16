@@ -66,7 +66,7 @@ The contract looks like:
 Your C file must return functions that return the buffers pointers and capacity.
 
 ```c
-// hello.c
+// hello-c.c
 #include <stdint.h>
 
 // Static memory buffers for input and output
@@ -121,8 +121,6 @@ Compile with a WebAssembly-enabled clang:
 
 ```bash
 zig cc hello-c.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_cap -Wl,--export=output_ptr -Wl,--export=output_cap -O3 -o hello-c.wasm
-
-/opt/homebrew/opt/llvm/bin/clang --target=wasm32 -nostdlib -Wl,--no-entry -Wl,--export=run, -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_cap -Wl,--export=output_ptr -Wl,--export=output_cap -O3 -o hello-c.wasm hello-c.c
 ```
 
 ### Zig
@@ -130,30 +128,39 @@ zig cc hello-c.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--expo
 Write your module in Zig targeting `wasm32-freestanding`:
 
 ```zig
-// hello.zig
+// hello-zig.zig
 const std = @import("std");
 
 // Memory layout
-const INPUT_PTR: u32 = 0x10000;
 const INPUT_CAP: u32 = 0x10000;
-const OUTPUT_PTR: u32 = 0x20000;
 const OUTPUT_CAP: u32 = 0x10000;
 
-// Export globals
-export var input_ptr: u32 = INPUT_PTR;
-export var input_cap: u32 = INPUT_CAP;
-export var output_ptr: u32 = OUTPUT_PTR;
-export var output_cap: u32 = OUTPUT_CAP;
+var input_buf: [INPUT_CAP]u8 = undefined;
+var output_buf: [OUTPUT_CAP]u8 = undefined;
+
+export fn input_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&input_buf)));
+}
+
+export fn input_cap() u32 {
+    return INPUT_CAP;
+}
+
+export fn output_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&output_buf)));
+}
+
+export fn output_cap() u32 {
+    return OUTPUT_CAP;
+}
 
 // Get input/output slices
 fn getInput(size: u32) []u8 {
-    const ptr: [*]u8 = @ptrFromInt(INPUT_PTR);
-    return ptr[0..size];
+    return input_buf[0..@as(usize, @intCast(size))];
 }
 
 fn getOutput() []u8 {
-    const ptr: [*]u8 = @ptrFromInt(OUTPUT_PTR);
-    return ptr[0..OUTPUT_CAP];
+    return output_buf[0..];
 }
 
 // Main entry point
@@ -181,8 +188,7 @@ export fn run(input_size: u32) u32 {
 Compile with:
 
 ```bash
-zig build-exe hello.zig -target wasm32-freestanding \
-    -O ReleaseSmall
+zig build-exe hello-zig.zig -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_cap --export=output_ptr --export=output_cap
 ```
 
 ## WebAssembly module exports
