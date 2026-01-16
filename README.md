@@ -30,7 +30,7 @@ There are a few recommended way to write a module to work with qip: raw WebAssem
 
 ### LLM generated WebAssembly
 
-You can write WebAssembly by hand, but with coding tools becoming more capable.
+You can write WebAssembly by hand, or AI coding tools work great too.
 
 The contract looks like:
 
@@ -63,16 +63,126 @@ The contract looks like:
 
 ### C
 
+Your C file must return functions that return the buffers pointers and capacity.
+
 ```c
-uint32_t run(uint32_t input_size) {
-    // Your program
+// hello.c
+#include <stdint.h>
+
+// Static memory buffers for input and output
+static char input_buffer[65536];   // 64KB
+static char output_buffer[65536];  // 64KB
+
+// Export memory pointer functions (qip will call these)
+__attribute__((export_name("input_ptr")))
+uint32_t input_ptr(void) {
+    return (uint32_t)(uintptr_t)input_buffer;
 }
+
+__attribute__((export_name("input_cap")))
+uint32_t input_cap(void) {
+    return sizeof(input_buffer);
+}
+
+__attribute__((export_name("output_ptr")))
+uint32_t output_ptr(void) {
+    return (uint32_t)(uintptr_t)output_buffer;
+}
+
+__attribute__((export_name("output_cap")))
+uint32_t output_cap(void) {
+    return sizeof(output_buffer);
+}
+
+// Simple memcpy
+static void copy_bytes(char* dest, const char* src, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) {
+        dest[i] = src[i];
+    }
+}
+
+// Main entry point
+__attribute__((export_name("run")))
+uint32_t run(uint32_t input_size) {
+    const char* prefix = "Hello, ";
+    copy_bytes(output_buffer, prefix, 7);
+
+    if (input_size > 0) {
+        copy_bytes(output_buffer + 7, input_buffer, input_size);
+        return 7 + input_size;
+    }
+
+    copy_bytes(output_buffer + 7, "World", 5);
+    return 12;
+}
+```
+
+Compile with a WebAssembly-enabled clang:
+
+```bash
+zig cc hello-c.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_cap -Wl,--export=output_ptr -Wl,--export=output_cap -O3 -o hello-c.wasm
+
+/opt/homebrew/opt/llvm/bin/clang --target=wasm32 -nostdlib -Wl,--no-entry -Wl,--export=run, -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_cap -Wl,--export=output_ptr -Wl,--export=output_cap -O3 -o hello-c.wasm hello-c.c
 ```
 
 ### Zig
 
+Write your module in Zig targeting `wasm32-freestanding`:
+
 ```zig
-// TODO
+// hello.zig
+const std = @import("std");
+
+// Memory layout
+const INPUT_PTR: u32 = 0x10000;
+const INPUT_CAP: u32 = 0x10000;
+const OUTPUT_PTR: u32 = 0x20000;
+const OUTPUT_CAP: u32 = 0x10000;
+
+// Export globals
+export var input_ptr: u32 = INPUT_PTR;
+export var input_cap: u32 = INPUT_CAP;
+export var output_ptr: u32 = OUTPUT_PTR;
+export var output_cap: u32 = OUTPUT_CAP;
+
+// Get input/output slices
+fn getInput(size: u32) []u8 {
+    const ptr: [*]u8 = @ptrFromInt(INPUT_PTR);
+    return ptr[0..size];
+}
+
+fn getOutput() []u8 {
+    const ptr: [*]u8 = @ptrFromInt(OUTPUT_PTR);
+    return ptr[0..OUTPUT_CAP];
+}
+
+// Main entry point
+export fn run(input_size: u32) u32 {
+    const input = getInput(input_size);
+    const output = getOutput();
+
+    // Example: prepend "Hello, " to input
+    const prefix = "Hello, ";
+    @memcpy(output[0..prefix.len], prefix);
+
+    if (input_size > 0) {
+        // Copy input after prefix
+        @memcpy(output[prefix.len..][0..input_size], input);
+        return prefix.len + input_size;
+    } else {
+        // Default to "World" if no input
+        const default_name = "World";
+        @memcpy(output[prefix.len..][0..default_name.len], default_name);
+        return prefix.len + default_name.len;
+    }
+}
+```
+
+Compile with:
+
+```bash
+zig build-exe hello.zig -target wasm32-freestanding \
+    -O ReleaseSmall
 ```
 
 ## WebAssembly module exports

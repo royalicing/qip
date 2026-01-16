@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
 )
 
 func main() {
@@ -74,6 +75,24 @@ func main() {
 	// fmt.Printf("\nBody:\n%s\n", body)
 }
 
+// getExportedValue tries to get a value from either a global or a function
+func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64, bool) {
+	// Try global first
+	if global := mod.ExportedGlobal(name); global != nil {
+		return global.Get(), true
+	}
+
+	// Try function if global doesn't exist
+	if fn := mod.ExportedFunction(name); fn != nil {
+		result, err := fn.Call(ctx)
+		if err == nil && len(result) > 0 {
+			return result[0], true
+		}
+	}
+
+	return 0, false
+}
+
 func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []byte {
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
@@ -83,13 +102,24 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []by
 		gameOver("Wasm module could not be compiled")
 	}
 
-	inputPtr := mod.ExportedGlobal("input_ptr").Get()
-	inputCap := mod.ExportedGlobal("input_cap").Get()
+	// Get input_ptr and input_cap (required)
+	inputPtr, ok := getExportedValue(ctx, mod, "input_ptr")
+	if !ok {
+		gameOver("Wasm module must export input_ptr as global or function")
+	}
 
+	inputCap, ok := getExportedValue(ctx, mod, "input_cap")
+	if !ok {
+		gameOver("Wasm module must export input_cap as global or function")
+	}
+
+	// Get output_ptr and output_cap (optional)
 	var outputPtr, outputCap uint32
-	if mod.ExportedGlobal("output_ptr") != nil && mod.ExportedGlobal("output_cap") != nil {
-		outputPtr = uint32(mod.ExportedGlobal("output_ptr").Get())
-		outputCap = uint32(mod.ExportedGlobal("output_cap").Get())
+	if ptr, ok := getExportedValue(ctx, mod, "output_ptr"); ok {
+		outputPtr = uint32(ptr)
+		if cap, ok := getExportedValue(ctx, mod, "output_cap"); ok {
+			outputCap = uint32(cap)
+		}
 	}
 
 	runFunc := mod.ExportedFunction("run")
