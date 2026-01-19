@@ -139,7 +139,7 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 		inputCap = cap
 		input.encoding = dataEncodingRaw
 	} else {
-		returnErr = errors.New("Wasm module must export input_utf8_cap, input_bytes_cap, or input_cap as global or function")
+		returnErr = errors.New("Wasm module must export input_utf8_cap or input_bytes_cap as global or function")
 		return
 	}
 
