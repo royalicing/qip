@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,10 @@ const (
 	dataEncodingUTF8
 )
 
+type contentData struct {
+	bytes    []byte
+	encoding dataEncoding
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -75,15 +80,20 @@ func main() {
 	inputDigest := sha256.Sum256(input)
 	fmt.Fprintf(os.Stderr, "input sha256: %x\n", inputDigest)
 
-	outputBytes := runModuleWithInput(ctx, body, input)
-	if outputBytes != nil {
-		fmt.Printf("%s\n", outputBytes)
+	output, err := runModuleWithInput(ctx, body, input)
+	if err != nil {
+		gameOver("%v", err)
+	} else if output.encoding == dataEncodingRaw {
+		if _, err := os.Stdout.Write(output.bytes); err != nil {
+			gameOver("Error writing raw output: %v", err)
+		}
+	} else if output.encoding == dataEncodingUTF8 {
+		fmt.Printf("%s\n", output.bytes)
 	}
 
 	if status != "" {
 		fmt.Printf("Status: %s\n", status)
 	}
-	// fmt.Printf("\nBody:\n%s\n", body)
 }
 
 // getExportedValue tries to get a value from either a global or a function
@@ -104,37 +114,43 @@ func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64,
 	return 0, false
 }
 
-func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []byte {
+func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) (output contentData, returnErr error) {
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
 
 	mod, err := r.InstantiateWithConfig(ctx, modBytes, wazero.NewModuleConfig())
 	if err != nil {
-		gameOver("Wasm module could not be compiled")
+		returnErr = errors.New("Wasm module could not be compiled")
+		return
 	}
 
 	// Get input_ptr and input_cap (required)
 	inputPtr, ok := getExportedValue(ctx, mod, "input_ptr")
 	if !ok {
-		gameOver("Wasm module must export input_ptr as global or function")
+		returnErr = errors.New("Wasm module must export input_ptr as global or function")
+		return
 	}
 
 	inputCap, ok := getExportedValue(ctx, mod, "input_cap")
 	if !ok {
-		gameOver("Wasm module must export input_cap as global or function")
+		returnErr = errors.New("Wasm module must export input_cap as global or function")
+		return
 	}
 
-	// Get output_ptr and output_cap (optional)
 	var outputPtr, outputCap uint32
 	if ptr, ok := getExportedValue(ctx, mod, "output_ptr"); ok {
 		outputPtr = uint32(ptr)
-		if cap, ok := getExportedValue(ctx, mod, "output_cap"); ok {
-			outputCap = uint32(cap)
-		}
 
-		// if cap, ok := getExportedValue(ctx, mod, "out_utf8_cap"); ok {
-		// 	outputCap = uint32(cap)
-		// }
+		if cap, ok := getExportedValue(ctx, mod, "output_utf8_cap"); ok {
+			outputCap = uint32(cap)
+			output.encoding = dataEncodingUTF8
+		} else if cap, ok := getExportedValue(ctx, mod, "output_cap"); ok {
+			outputCap = uint32(cap)
+			output.encoding = dataEncodingRaw
+		} else {
+			returnErr = errors.New("Wasm module must export output_utf8_cap or output_cap function")
+			return
+		}
 	}
 
 	runFunc := mod.ExportedFunction("run")
@@ -146,21 +162,23 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []by
 
 	var inputSize = uint64(len(input))
 	if inputSize > inputCap {
-		gameOver("Input is too large")
+		returnErr = errors.New("Input is too large")
+		return
 	}
 
 	if !mod.Memory().Write(uint32(inputPtr), input) {
-		gameOver("Could not write input")
+		returnErr = errors.New("Could not write input")
+		return
 	}
 
-	runResult, err := runFunc.Call(ctx, inputSize)
-	if err != nil {
-		gameOver("Failed to run: %s", err)
+	runResult, returnErr := runFunc.Call(ctx, inputSize)
+	if returnErr != nil {
+		return
 	}
 
-	var outputBytes []byte
 	if outputCap > 0 {
-		outputBytes, _ = mod.Memory().Read(outputPtr, uint32(runResult[0]))
+		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(runResult[0]))
+		output.bytes = outputBytes
 	} else {
 		fmt.Printf("Ran: %d\n", runResult[0])
 	}
@@ -169,7 +187,7 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []by
 	// if len(outputBytes) >= 4 && outputBytes[0] == 0x00 && outputBytes[1] == 0x61 && outputBytes[2] == 0x73 && outputBytes[3] == 0x6D {
 	// }
 
-	return outputBytes
+	return output, nil
 }
 
 func gameOver(format string, args ...any) {

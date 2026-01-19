@@ -75,22 +75,22 @@ static char output_buffer[65536];  // 64KB
 
 // Export memory pointer functions (qip will call these)
 __attribute__((export_name("input_ptr")))
-uint32_t input_ptr(void) {
+uint32_t input_ptr() {
     return (uint32_t)(uintptr_t)input_buffer;
 }
 
 __attribute__((export_name("input_cap")))
-uint32_t input_cap(void) {
+uint32_t input_cap() {
     return sizeof(input_buffer);
 }
 
 __attribute__((export_name("output_ptr")))
-uint32_t output_ptr(void) {
+uint32_t output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
 __attribute__((export_name("output_cap")))
-uint32_t output_cap(void) {
+uint32_t output_cap() {
     return sizeof(output_buffer);
 }
 

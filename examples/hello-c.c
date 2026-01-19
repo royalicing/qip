@@ -8,28 +8,28 @@ static char output_buffer[65536]; // 64KB
 // Export memory pointer functions (qip will call these to get addresses)
 __attribute__((export_name("input_ptr")))
 uint32_t
-input_ptr(void)
+input_ptr()
 {
     return (uint32_t)(uintptr_t)input_buffer;
 }
 
 __attribute__((export_name("input_cap")))
 uint32_t
-input_cap(void)
+input_cap()
 {
     return sizeof(input_buffer);
 }
 
 __attribute__((export_name("output_ptr")))
 uint32_t
-output_ptr(void)
+output_ptr()
 {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
 __attribute__((export_name("output_cap")))
 uint32_t
-output_cap(void)
+output_cap()
 {
     return sizeof(output_buffer);
 }
