@@ -12,7 +12,7 @@ export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
 
-export fn input_cap() u32 {
+export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 

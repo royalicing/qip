@@ -13,9 +13,9 @@ input_ptr()
     return (uint32_t)(uintptr_t)input_buffer;
 }
 
-__attribute__((export_name("input_cap")))
+__attribute__((export_name("input_utf8_cap")))
 uint32_t
-input_cap()
+input_utf8_cap()
 {
     return sizeof(input_buffer);
 }

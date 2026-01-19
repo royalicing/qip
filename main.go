@@ -114,7 +114,7 @@ func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64,
 	return 0, false
 }
 
-func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) (output contentData, returnErr error) {
+func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte) (output contentData, returnErr error) {
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
 
@@ -124,6 +124,7 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) (out
 		return
 	}
 
+	var input contentData
 	// Get input_ptr and input_cap (required)
 	inputPtr, ok := getExportedValue(ctx, mod, "input_ptr")
 	if !ok {
@@ -131,9 +132,14 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) (out
 		return
 	}
 
-	inputCap, ok := getExportedValue(ctx, mod, "input_cap")
-	if !ok {
-		returnErr = errors.New("Wasm module must export input_cap as global or function")
+	inputCap, ok := getExportedValue(ctx, mod, "input_utf8_cap")
+	if ok {
+		input.encoding = dataEncodingUTF8
+	} else if cap, ok := getExportedValue(ctx, mod, "input_bytes_cap"); ok {
+		inputCap = cap
+		input.encoding = dataEncodingRaw
+	} else {
+		returnErr = errors.New("Wasm module must export input_utf8_cap, input_bytes_cap, or input_cap as global or function")
 		return
 	}
 
@@ -160,13 +166,13 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) (out
 	// 	gameOver("Wasm module must export an input_ptr() function")
 	// }
 
-	var inputSize = uint64(len(input))
+	var inputSize = uint64(len(inputBytes))
 	if inputSize > inputCap {
 		returnErr = errors.New("Input is too large")
 		return
 	}
 
-	if !mod.Memory().Write(uint32(inputPtr), input) {
+	if !mod.Memory().Write(uint32(inputPtr), inputBytes) {
 		returnErr = errors.New("Could not write input")
 		return
 	}

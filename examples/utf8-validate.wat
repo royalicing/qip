@@ -1,7 +1,7 @@
 (module $UTF8Validate
   (memory (export "memory") 3)
   (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
-  (global $input_cap (export "input_cap") i32 (i32.const 0x10000))
+  (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   ;; Check if byte is a valid continuation byte (10xxxxxx)
   (func $is_continuation (param $byte i32) (result i32)
