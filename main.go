@@ -14,6 +14,14 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
+type dataEncoding uint8
+
+const (
+	dataEncodingRaw dataEncoding = iota
+	dataEncodingUTF8
+)
+
+
 func main() {
 	if len(os.Args) < 2 {
 		gameOver("Usage: %s <URL or file>", os.Args[0])
@@ -43,8 +51,8 @@ func main() {
 		}
 	}
 
-	digest := sha256.Sum256(body)
-	fmt.Fprintf(os.Stderr, "SHA256: %x\n", digest)
+	moduleDigest := sha256.Sum256(body)
+	fmt.Fprintf(os.Stderr, "module sha256: %x\n", moduleDigest)
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
@@ -63,6 +71,9 @@ func main() {
 			gameOver("Error reading stdin: %v", err)
 		}
 	}
+
+	inputDigest := sha256.Sum256(input)
+	fmt.Fprintf(os.Stderr, "input sha256: %x\n", inputDigest)
 
 	outputBytes := runModuleWithInput(ctx, body, input)
 	if outputBytes != nil {
@@ -120,6 +131,10 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) []by
 		if cap, ok := getExportedValue(ctx, mod, "output_cap"); ok {
 			outputCap = uint32(cap)
 		}
+
+		// if cap, ok := getExportedValue(ctx, mod, "out_utf8_cap"); ok {
+		// 	outputCap = uint32(cap)
+		// }
 	}
 
 	runFunc := mod.ExportedFunction("run")
