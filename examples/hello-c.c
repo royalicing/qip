@@ -27,9 +27,9 @@ output_ptr()
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
-__attribute__((export_name("output_cap")))
+__attribute__((export_name("output_utf8_cap")))
 uint32_t
-output_cap()
+output_utf8_cap()
 {
     return sizeof(output_buffer);
 }

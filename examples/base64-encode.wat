@@ -3,7 +3,7 @@
   (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
   (global $input_cap (export "input_cap") i32 (i32.const 0x10000))
   (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
-  (global $output_cap (export "output_cap") i32 (i32.const 0x10000))
+  (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
 
   ;; Base64 alphabet: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
   (func $get_base64_char (param $index i32) (result i32)

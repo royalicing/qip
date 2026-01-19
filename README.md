@@ -89,8 +89,8 @@ uint32_t output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
-__attribute__((export_name("output_cap")))
-uint32_t output_cap() {
+__attribute__((export_name("output_utf8_cap")))
+uint32_t output_utf8_cap() {
     return sizeof(output_buffer);
 }
 
@@ -120,7 +120,7 @@ uint32_t run(uint32_t input_size) {
 Compile with a WebAssembly-enabled clang:
 
 ```bash
-zig cc hello-c.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_cap -Wl,--export=output_ptr -Wl,--export=output_cap -O3 -o hello-c.wasm
+zig cc hello-c.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -O3 -o hello-c.wasm
 ```
 
 ### Zig
@@ -150,7 +150,7 @@ export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf)));
 }
 
-export fn output_cap() u32 {
+export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
 
@@ -188,12 +188,14 @@ export fn run(input_size: u32) u32 {
 Compile with:
 
 ```bash
-zig build-exe hello-zig.zig -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_cap --export=output_ptr --export=output_cap
+zig build-exe hello-zig.zig -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_cap --export=output_ptr --export=output_utf8_cap
 ```
 
 ## WebAssembly module exports
 
-### `output_cap`
+### `output_utf8_cap` / `output_bytes_cap`
+
+Use `output_utf8_cap` for UTF-8 text output and `output_bytes_cap` for binary output.
 
 If omitted, then the return value of `run` is used as the result.
 

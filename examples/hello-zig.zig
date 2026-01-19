@@ -20,7 +20,7 @@ export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf)));
 }
 
-export fn output_cap() u32 {
+export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
 

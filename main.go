@@ -144,11 +144,11 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, input []byte) (out
 		if cap, ok := getExportedValue(ctx, mod, "output_utf8_cap"); ok {
 			outputCap = uint32(cap)
 			output.encoding = dataEncodingUTF8
-		} else if cap, ok := getExportedValue(ctx, mod, "output_cap"); ok {
+		} else if cap, ok := getExportedValue(ctx, mod, "output_bytes_cap"); ok {
 			outputCap = uint32(cap)
 			output.encoding = dataEncodingRaw
 		} else {
-			returnErr = errors.New("Wasm module must export output_utf8_cap or output_cap function")
+			returnErr = errors.New("Wasm module must export output_utf8_cap or output_bytes_cap function")
 			return
 		}
 	}
