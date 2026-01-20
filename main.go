@@ -44,7 +44,10 @@ func main() {
 		gameOver("Usage: <wasm module URL or file>")
 	}
 
-	// TODO: log to stderr how long the command took to run in milliseconds
+	start := time.Now()
+	defer func() {
+		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+	}()
 
 	if args[0] == "run" {
 		run(args[1:])
