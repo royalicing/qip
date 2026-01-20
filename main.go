@@ -44,6 +44,8 @@ func main() {
 		gameOver("Usage: <wasm module URL or file>")
 	}
 
+	// TODO: log to stderr how long the command took to run in milliseconds
+
 	if args[0] == "run" {
 		run(args[1:])
 	} else if args[0] == "image" {
@@ -145,14 +147,17 @@ func imageCmd(args []string) {
 	fs.StringVar(&inputImagePath, "i", "", "input image path")
 	fs.StringVar(&outputImagePath, "o", "", "output image path")
 	if err := fs.Parse(args); err != nil {
-		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file>")
+		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file> %v", err)
 	}
 	modules := fs.Args()
-	if len(modules) != 1 || inputImagePath == "" || outputImagePath == "" {
+	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
 		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file>")
 	}
 
-	body := readModulePath(modules[0])
+	moduleBodies := make([][]byte, len(modules))
+	for i, modulePath := range modules {
+		moduleBodies[i] = readModulePath(modulePath)
+	}
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
@@ -186,34 +191,48 @@ func imageCmd(args []string) {
 	outputStride := outputRGBA.Stride
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
-	mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
-	if err != nil {
-		gameOver("Wasm module could not be compiled")
-	}
-	tileFunc := mod.ExportedFunction("tile_rgba_f32_64x64")
-	if tileFunc == nil {
-		gameOver("Wasm module must export tile_rgba_f32_64x64")
-	}
-	mem := mod.Memory()
-	inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
-	if !ok {
-		gameOver("Wasm module must export input_ptr as global or function")
-	}
-	inputPtr := uint32(inputPtrValue)
-	inputCap, ok := getExportedValue(ctx, mod, "input_bytes_cap")
-	if !ok {
-		gameOver("Wasm module must export input_bytes_cap as global or function")
-	}
 	const tileSize = 64
+	type tileStage struct {
+		mem      api.Memory
+		tileFunc api.Function
+		inputPtr uint32
+	}
+	stages := make([]tileStage, len(moduleBodies))
+	for i, body := range moduleBodies {
+		mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
+		if err != nil {
+			gameOver("Wasm module could not be compiled")
+		}
+		tileFunc := mod.ExportedFunction("tile_rgba_f32_64x64")
+		if tileFunc == nil {
+			gameOver("Wasm module must export tile_rgba_f32_64x64")
+		}
+		mem := mod.Memory()
+		inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
+		if !ok {
+			gameOver("Wasm module must export input_ptr as global or function")
+		}
+		inputPtr := uint32(inputPtrValue)
+		inputCap, ok := getExportedValue(ctx, mod, "input_bytes_cap")
+		if !ok {
+			gameOver("Wasm module must export input_bytes_cap as global or function")
+		}
+		tileF32Size := uint64(tileSize * tileSize * 4 * 4)
+		if tileF32Size > inputCap {
+			gameOver("Tile buffer exceeds module input_bytes_cap")
+		}
+		stages[i] = tileStage{
+			mem:      mem,
+			tileFunc: tileFunc,
+			inputPtr: inputPtr,
+		}
+	}
 	pix := inputRGBA.Pix
 	stride := inputRGBA.Stride
 	width := bounds.Dx()
 	height := bounds.Dy()
 	tileF32 := make([]float32, tileSize*tileSize*4)
 	tileBytes := unsafe.Slice((*byte)(unsafe.Pointer(&tileF32[0])), len(tileF32)*4)
-	if uint64(len(tileBytes)) > inputCap {
-		gameOver("Tile buffer exceeds module input_bytes_cap")
-	}
 	const inv255 = 1.0 / 255.0
 	for y := 0; y < height; y += tileSize {
 		tileH := tileSize
@@ -242,17 +261,20 @@ func imageCmd(args []string) {
 					tileF32[d+3] = float32(pix[s+3]) * inv255
 				}
 			}
-			if !mem.Write(inputPtr, tileBytes) {
-				gameOver("Could not write tile to wasm memory")
+			for _, stage := range stages {
+				if !stage.mem.Write(stage.inputPtr, tileBytes) {
+					gameOver("Could not write tile to wasm memory")
+				}
+				if _, err := stage.tileFunc.Call(ctx, uint64(stage.inputPtr)); err != nil {
+					gameOver("Error running tile_rgba_f32_64x64: %v", err)
+				}
+				tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
+				if !ok {
+					gameOver("Could not read tile from wasm memory")
+				}
+				copy(tileBytes, tileOutBytes)
 			}
-			if _, err := tileFunc.Call(ctx, uint64(inputPtr)); err != nil {
-				gameOver("Error running tile_rgba_f32_64x64: %v", err)
-			}
-			tileOutBytes, ok := mem.Read(inputPtr, uint32(len(tileBytes)))
-			if !ok {
-				gameOver("Could not read tile from wasm memory")
-			}
-			tileOutF32 := unsafe.Slice((*float32)(unsafe.Pointer(&tileOutBytes[0])), len(tileF32))
+			tileOutF32 := tileF32
 			for row := 0; row < tileH; row++ {
 				src := row * tileSize * 4
 				dst := (y+row)*outputStride + x*4
