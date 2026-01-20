@@ -2,16 +2,22 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	_ "image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -38,20 +44,16 @@ func main() {
 	}
 
 	if args[0] == "run" {
-		args = args[1:]
+		run(args[1:])
+	} else if args[0] == "image" {
+		processImage(args[1:])
+	} else {
+		run(args)
 	}
-
-	run(args)
 }
 
-func run(args []string) {
-	if len(args) < 1 {
-		gameOver("Usage: <wasm module URL or file>")
-	}
-
-	path := args[0]
+func readModulePath(path string) []byte {
 	var body []byte
-	var status string
 
 	if strings.HasPrefix(path, "https://") {
 		resp, err := http.Get(path)
@@ -64,7 +66,6 @@ func run(args []string) {
 		if err != nil {
 			gameOver("Error reading response: %v", err)
 		}
-		status = resp.Status
 	} else {
 		var err error
 		body, err = os.ReadFile(path)
@@ -75,6 +76,16 @@ func run(args []string) {
 
 	moduleDigest := sha256.Sum256(body)
 	fmt.Fprintf(os.Stderr, "module %s sha256: %x\n", path, moduleDigest)
+
+	return body
+}
+
+func run(args []string) {
+	if len(args) < 1 {
+		gameOver("Usage: <wasm module URL or file>")
+	}
+
+	body := readModulePath(args[0])
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
@@ -123,9 +134,166 @@ func run(args []string) {
 			}
 		}
 	}
+}
 
-	if status != "" {
-		fmt.Printf("Status: %s\n", status)
+func processImage(args []string) {
+	if len(args) < 3 {
+		gameOver("Usage: <wasm module URL or file> <input image path> <output image path>")
+	}
+
+	body := readModulePath(args[0])
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	inputImagePath := args[1]
+	outputImagePath := args[2]
+	inputImageBytes, err := os.ReadFile(inputImagePath)
+	if err != nil {
+		gameOver("Error reading image file: %v", err)
+	}
+	decodeImage := func(r io.Reader) (image.Image, error) {
+		img, _, err := image.Decode(r)
+		return img, err
+	}
+	if len(inputImageBytes) >= 8 && bytes.Equal(inputImageBytes[:8], []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}) {
+		decodeImage = png.Decode
+	}
+	inputImage, err := decodeImage(bytes.NewReader(inputImageBytes))
+	if err != nil {
+		gameOver("Error decoding image file: %v", err)
+	}
+	inputRGBA, ok := inputImage.(*image.RGBA)
+	if !ok {
+		bounds := inputImage.Bounds()
+		inputRGBA = image.NewRGBA(bounds)
+		draw.Draw(inputRGBA, bounds, inputImage, bounds.Min, draw.Src)
+	}
+	_ = inputRGBA
+	bounds := inputRGBA.Bounds()
+	outputRGBA := image.NewRGBA(bounds)
+	outputPix := outputRGBA.Pix
+	outputStride := outputRGBA.Stride
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+	mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
+	if err != nil {
+		gameOver("Wasm module could not be compiled")
+	}
+	tileFunc := mod.ExportedFunction("tile_rgba_f32_64x64")
+	if tileFunc == nil {
+		gameOver("Wasm module must export tile_rgba_f32_64x64")
+	}
+	mem := mod.Memory()
+	inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
+	if !ok {
+		gameOver("Wasm module must export input_ptr as global or function")
+	}
+	inputPtr := uint32(inputPtrValue)
+	inputCap, ok := getExportedValue(ctx, mod, "input_bytes_cap")
+	if !ok {
+		gameOver("Wasm module must export input_bytes_cap as global or function")
+	}
+	const tileSize = 64
+	pix := inputRGBA.Pix
+	stride := inputRGBA.Stride
+	width := bounds.Dx()
+	height := bounds.Dy()
+	tileF32 := make([]float32, tileSize*tileSize*4)
+	tileBytes := unsafe.Slice((*byte)(unsafe.Pointer(&tileF32[0])), len(tileF32)*4)
+	if uint64(len(tileBytes)) > inputCap {
+		gameOver("Tile buffer exceeds module input_bytes_cap")
+	}
+	const inv255 = 1.0 / 255.0
+	for y := 0; y < height; y += tileSize {
+		tileH := tileSize
+		if y+tileH > height {
+			tileH = height - y
+		}
+		rowBase := y * stride
+		for x := 0; x < width; x += tileSize {
+			tileW := tileSize
+			if x+tileW > width {
+				tileW = width - x
+			}
+			srcRow := rowBase + x*4
+			if tileW != tileSize || tileH != tileSize {
+				clear(tileF32)
+			}
+			for row := 0; row < tileH; row++ {
+				src := srcRow + row*stride
+				dst := row * tileSize * 4
+				for col := 0; col < tileW; col++ {
+					s := src + col*4
+					d := dst + col*4
+					tileF32[d] = float32(pix[s]) * inv255
+					tileF32[d+1] = float32(pix[s+1]) * inv255
+					tileF32[d+2] = float32(pix[s+2]) * inv255
+					tileF32[d+3] = float32(pix[s+3]) * inv255
+				}
+			}
+			if !mem.Write(inputPtr, tileBytes) {
+				gameOver("Could not write tile to wasm memory")
+			}
+			if _, err := tileFunc.Call(ctx, uint64(inputPtr)); err != nil {
+				gameOver("Error running tile_rgba_f32_64x64: %v", err)
+			}
+			tileOutBytes, ok := mem.Read(inputPtr, uint32(len(tileBytes)))
+			if !ok {
+				gameOver("Could not read tile from wasm memory")
+			}
+			tileOutF32 := unsafe.Slice((*float32)(unsafe.Pointer(&tileOutBytes[0])), len(tileF32))
+			for row := 0; row < tileH; row++ {
+				src := row * tileSize * 4
+				dst := (y+row)*outputStride + x*4
+				for col := 0; col < tileW; col++ {
+					s := src + col*4
+					d := dst + col*4
+					v := tileOutF32[s]
+					if v <= 0 {
+						outputPix[d] = 0
+					} else if v >= 1 {
+						outputPix[d] = 255
+					} else {
+						outputPix[d] = uint8(v*255 + 0.5)
+					}
+					v = tileOutF32[s+1]
+					if v <= 0 {
+						outputPix[d+1] = 0
+					} else if v >= 1 {
+						outputPix[d+1] = 255
+					} else {
+						outputPix[d+1] = uint8(v*255 + 0.5)
+					}
+					v = tileOutF32[s+2]
+					if v <= 0 {
+						outputPix[d+2] = 0
+					} else if v >= 1 {
+						outputPix[d+2] = 255
+					} else {
+						outputPix[d+2] = uint8(v*255 + 0.5)
+					}
+					v = tileOutF32[s+3]
+					if v <= 0 {
+						outputPix[d+3] = 0
+					} else if v >= 1 {
+						outputPix[d+3] = 255
+					} else {
+						outputPix[d+3] = uint8(v*255 + 0.5)
+					}
+				}
+			}
+		}
+	}
+	outFile, err := os.Create(outputImagePath)
+	if err != nil {
+		gameOver("Error creating output image file: %v", err)
+	}
+	defer outFile.Close()
+	encoder := png.Encoder{CompressionLevel: png.NoCompression}
+	if err := encoder.Encode(outFile, outputRGBA); err != nil {
+		gameOver("Error writing output image: %v", err)
 	}
 }
 
