@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +22,7 @@ type dataEncoding uint8
 const (
 	dataEncodingRaw dataEncoding = iota
 	dataEncodingUTF8
+	dataEncodingArrayI32
 )
 
 type contentData struct {
@@ -103,6 +106,22 @@ func run(args []string) {
 		}
 	} else if output.encoding == dataEncodingUTF8 {
 		fmt.Printf("%s\n", output.bytes)
+	} else if output.encoding == dataEncodingArrayI32 {
+		fmt.Fprintln(os.Stderr, output.bytes)
+
+		count := len(output.bytes) / 4
+		if count >= 1 {
+			bufSize := count * 9
+			writer := bufio.NewWriterSize(os.Stdout, bufSize)
+			defer writer.Flush()
+			for i := 0; i < count; i++ {
+				v := binary.LittleEndian.Uint32(output.bytes[i*4:])
+				fmt.Fprintf(os.Stderr, "u32: %d\n", v)
+				if _, err := fmt.Fprintf(writer, "%08x\n", v); err != nil {
+					gameOver("Error writing i32 output: %v", err)
+				}
+			}
+		}
 	}
 
 	if status != "" {
@@ -164,11 +183,14 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 		if cap, ok := getExportedValue(ctx, mod, "output_utf8_cap"); ok {
 			outputCap = uint32(cap)
 			output.encoding = dataEncodingUTF8
+		} else if cap, ok := getExportedValue(ctx, mod, "output_i32_cap"); ok {
+			outputCap = uint32(cap)
+			output.encoding = dataEncodingArrayI32
 		} else if cap, ok := getExportedValue(ctx, mod, "output_bytes_cap"); ok {
 			outputCap = uint32(cap)
 			output.encoding = dataEncodingRaw
 		} else {
-			returnErr = errors.New("Wasm module must export output_utf8_cap or output_bytes_cap function")
+			returnErr = errors.New("Wasm module must export output_utf8_cap or output_i32_cap or output_bytes_cap function")
 			return
 		}
 	}
@@ -196,8 +218,23 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 		return
 	}
 
+	outputCount := uint32(runResult[0])
+
+	var outputItemFactor uint32
+	if output.encoding == dataEncodingArrayI32 {
+		outputItemFactor = 4
+	} else {
+		outputItemFactor = 1
+	}
+
+	outputCountBytes := outputItemFactor * outputCount
+	fmt.Fprintf(os.Stderr, "outputCountBytes: %d\n", outputCountBytes)
+
 	if outputCap > 0 {
-		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(runResult[0]))
+		if outputCount > outputCap {
+			gameOver("Module returned more bytes than its stated capacity")
+		}
+		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
 		output.bytes = outputBytes
 	} else {
 		fmt.Printf("Ran: %d\n", runResult[0])
