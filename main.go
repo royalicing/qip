@@ -28,11 +28,25 @@ type contentData struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		gameOver("Usage: %s <URL or file>", os.Args[0])
+	args := os.Args[1:]
+
+	if len(args) == 0 {
+		gameOver("Usage: <wasm module URL or file>")
 	}
 
-	path := os.Args[1]
+	if args[0] == "run" {
+		args = args[1:]
+	}
+
+	run(args)
+}
+
+func run(args []string) {
+	if len(args) < 1 {
+		gameOver("Usage: <wasm module URL or file>")
+	}
+
+	path := args[0]
 	var body []byte
 	var status string
 
@@ -57,7 +71,7 @@ func main() {
 	}
 
 	moduleDigest := sha256.Sum256(body)
-	fmt.Fprintf(os.Stderr, "module sha256: %x\n", moduleDigest)
+	fmt.Fprintf(os.Stderr, "module %s sha256: %x\n", path, moduleDigest)
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
