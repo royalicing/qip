@@ -32,5 +32,6 @@ go.work.sum
 # .vscode/
 
 .DS_Store
+tmp/
 
 qip
