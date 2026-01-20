@@ -1,1 +1,33 @@
 aGVsbG8=
+352441c2
+btn-primary
++14155552671
+Hello, World
+Hello, World
+Hello, World
+255,136,0
+main-content
+email
+builtin
+49927398716
+#ff00aa
+
+hi
+Ran: 1
+export async function run(input) {
+  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMDAgAABQMBAAMGHQR/AEGAgAQLfwBBgIAEC38AQYCACAt/AEGAgAQLB0wGBm1lbW9yeQIACWlucHV0X3B0cgMADmlucHV0X3V0ZjhfY2FwAwEKb3V0cHV0X3B0cgMCD291dHB1dF91dGY4X2NhcAMDA3J1bgABCroBAhkAIABBIEYgAEEJRiAAQQpGIABBDUZycnILnQEBBH9BASEDIABBAEsEQAJAA0AgASAATw0BIwAgAWotAAAhBCAEEABFBEBBACEDDAILIAFBAWohAQwACwsLIwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiADRQRAQQAhAUEHIQICQANAIAEgAE8NASMCIAJqIwAgAWotAAA6AAAgAUEBaiEBIAJBAWohAgwACwsLIAIL'), c => c.charCodeAt(0));
+  const module = await WebAssembly.compile(wasmBytes);
+  const instance = await WebAssembly.instantiate(module);
+  const exports = instance.exports;
+  const memory = exports.memory;
+  const inputPtr = exports.input_ptr.value;
+  const outputPtr = exports.output_ptr.value;
+  const encoder = new TextEncoder();
+  const inputBytes = encoder.encode(input);
+  new Uint8Array(memory.buffer, inputPtr, inputBytes.length).set(inputBytes);
+  const outputLen = exports.run(inputBytes.length);
+  if (outputLen === 0) return '';
+  const decoder = new TextDecoder();
+  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
+}
+
