@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"flag"
 	"fmt"
 	"image"
 	"image/draw"
@@ -46,7 +47,7 @@ func main() {
 	if args[0] == "run" {
 		run(args[1:])
 	} else if args[0] == "image" {
-		processImage(args[1:])
+		imageCmd(args[1:])
 	} else {
 		run(args)
 	}
@@ -136,19 +137,27 @@ func run(args []string) {
 	}
 }
 
-func processImage(args []string) {
-	if len(args) < 3 {
-		gameOver("Usage: <wasm module URL or file> <input image path> <output image path>")
+func imageCmd(args []string) {
+	var inputImagePath string
+	var outputImagePath string
+	fs := flag.NewFlagSet("image", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&inputImagePath, "i", "", "input image path")
+	fs.StringVar(&outputImagePath, "o", "", "output image path")
+	if err := fs.Parse(args); err != nil {
+		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file>")
+	}
+	modules := fs.Args()
+	if len(modules) != 1 || inputImagePath == "" || outputImagePath == "" {
+		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file>")
 	}
 
-	body := readModulePath(args[0])
+	body := readModulePath(modules[0])
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	inputImagePath := args[1]
-	outputImagePath := args[2]
 	inputImageBytes, err := os.ReadFile(inputImagePath)
 	if err != nil {
 		gameOver("Error reading image file: %v", err)
