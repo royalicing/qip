@@ -228,7 +228,6 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 	}
 
 	outputCountBytes := outputItemFactor * outputCount
-	fmt.Fprintf(os.Stderr, "outputCountBytes: %d\n", outputCountBytes)
 
 	if outputCap > 0 {
 		if outputCount > outputCap {
