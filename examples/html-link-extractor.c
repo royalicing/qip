@@ -92,6 +92,22 @@ static int is_digit(unsigned char c) {
     return c >= 48 && c <= 57;
 }
 
+static int is_hex_digit(unsigned char c) {
+    return (c >= 48 && c <= 57) ||
+        (c >= 65 && c <= 70) ||
+        (c >= 97 && c <= 102);
+}
+
+static uint32_t hex_value(unsigned char c) {
+    if (c >= 48 && c <= 57) {
+        return (uint32_t)(c - 48);
+    }
+    if (c >= 65 && c <= 70) {
+        return (uint32_t)(c - 65 + 10);
+    }
+    return (uint32_t)(c - 97 + 10);
+}
+
 static unsigned char to_lower(unsigned char c) {
     if (c >= 65 && c <= 90) {
         return (unsigned char)(c + 32);
@@ -139,6 +155,82 @@ static int match_exact(uint32_t a_start, uint32_t a_len, uint32_t b_start, uint3
             return 0;
         }
     }
+    return 1;
+}
+
+static int decode_entity(uint32_t pos, uint32_t end, uint32_t *consumed, uint32_t *codepoint) {
+    if (pos + 2 >= end || input_buffer[pos] != '&') {
+        return 0;
+    }
+    uint32_t i = pos + 1;
+    if (input_buffer[i] == '#') {
+        i++;
+        int hex = 0;
+        if (i < end && (input_buffer[i] == 'x' || input_buffer[i] == 'X')) {
+            hex = 1;
+            i++;
+        }
+        uint32_t base = hex ? 16u : 10u;
+        uint32_t value = 0;
+        uint32_t digits = 0;
+        for (; i < end; i++) {
+            unsigned char c = input_buffer[i];
+            if (c == ';') {
+                break;
+            }
+            uint32_t digit = 0;
+            if (hex) {
+                if (!is_hex_digit(c)) {
+                    return 0;
+                }
+                digit = hex_value(c);
+            } else {
+                if (!is_digit(c)) {
+                    return 0;
+                }
+                digit = (uint32_t)(c - 48);
+            }
+            if (value > (0x10FFFFu - digit) / base) {
+                return 0;
+            }
+            value = value * base + digit;
+            digits++;
+        }
+        if (digits == 0 || i >= end || input_buffer[i] != ';') {
+            return 0;
+        }
+        if ((value >= 0xD800 && value <= 0xDFFF) || value == 0) {
+            return 0;
+        }
+        *consumed = (i - pos) + 1;
+        *codepoint = value;
+        return 1;
+    }
+
+    uint32_t name_start = i;
+    while (i < end && is_alpha(input_buffer[i])) {
+        i++;
+    }
+    if (i >= end || input_buffer[i] != ';') {
+        return 0;
+    }
+    uint32_t name_len = i - name_start;
+    if (name_len == 3 && match_ci(name_start, name_len, "amp", 3)) {
+        *codepoint = '&';
+    } else if (name_len == 2 && match_ci(name_start, name_len, "lt", 2)) {
+        *codepoint = '<';
+    } else if (name_len == 2 && match_ci(name_start, name_len, "gt", 2)) {
+        *codepoint = '>';
+    } else if (name_len == 4 && match_ci(name_start, name_len, "quot", 4)) {
+        *codepoint = '"';
+    } else if (name_len == 4 && match_ci(name_start, name_len, "apos", 4)) {
+        *codepoint = '\'';
+    } else if (name_len == 4 && match_ci(name_start, name_len, "nbsp", 4)) {
+        *codepoint = 0xA0;
+    } else {
+        return 0;
+    }
+    *consumed = (i - pos) + 1;
     return 1;
 }
 
@@ -210,19 +302,88 @@ static void append_byte(TextState *st, unsigned char b) {
     }
 }
 
-static void append_raw(TextState *st, uint32_t start, uint32_t len) {
-    uint32_t i = 0;
-    for (; i < len; i++) {
-        append_byte(st, input_buffer[start + i]);
+static void append_codepoint(TextState *st, uint32_t codepoint) {
+    if (codepoint <= 0x7F) {
+        append_byte(st, (unsigned char)codepoint);
+        return;
+    }
+    if (codepoint <= 0x7FF) {
+        if (st->out + 2 > OUTPUT_CAP) {
+            return;
+        }
+        output_buffer[st->out++] = (unsigned char)(0xC0 | (codepoint >> 6));
+        output_buffer[st->out++] = (unsigned char)(0x80 | (codepoint & 0x3F));
+        return;
+    }
+    if (codepoint <= 0xFFFF) {
+        if (st->out + 3 > OUTPUT_CAP) {
+            return;
+        }
+        output_buffer[st->out++] = (unsigned char)(0xE0 | (codepoint >> 12));
+        output_buffer[st->out++] = (unsigned char)(0x80 | ((codepoint >> 6) & 0x3F));
+        output_buffer[st->out++] = (unsigned char)(0x80 | (codepoint & 0x3F));
+        return;
+    }
+    if (codepoint <= 0x10FFFF) {
+        if (st->out + 4 > OUTPUT_CAP) {
+            return;
+        }
+        output_buffer[st->out++] = (unsigned char)(0xF0 | (codepoint >> 18));
+        output_buffer[st->out++] = (unsigned char)(0x80 | ((codepoint >> 12) & 0x3F));
+        output_buffer[st->out++] = (unsigned char)(0x80 | ((codepoint >> 6) & 0x3F));
+        output_buffer[st->out++] = (unsigned char)(0x80 | (codepoint & 0x3F));
+    }
+}
+
+static void append_decoded_range(TextState *st, uint32_t start, uint32_t len) {
+    uint32_t pos = start;
+    uint32_t end = start + len;
+    while (pos < end) {
+        if (input_buffer[pos] == '&') {
+            uint32_t consumed = 0;
+            uint32_t codepoint = 0;
+            if (decode_entity(pos, end, &consumed, &codepoint)) {
+                append_codepoint(st, codepoint);
+                pos += consumed;
+                continue;
+            }
+        }
+        append_byte(st, input_buffer[pos]);
+        pos++;
     }
 }
 
 static void append_normalized_range(TextState *st, uint32_t start, uint32_t len) {
-    uint32_t i = 0;
-    for (; i < len; i++) {
-        unsigned char c = input_buffer[start + i];
+    uint32_t pos = start;
+    uint32_t end = start + len;
+    while (pos < end) {
+        if (input_buffer[pos] == '&') {
+            uint32_t consumed = 0;
+            uint32_t codepoint = 0;
+            if (decode_entity(pos, end, &consumed, &codepoint)) {
+                if ((codepoint <= 0x7F && is_whitespace((unsigned char)codepoint)) ||
+                    codepoint == 0xA0) {
+                    st->prev_space = 1;
+                } else {
+                    if (st->need_sep) {
+                        append_byte(st, ' ');
+                        st->need_sep = 0;
+                    }
+                    if (st->text_started && st->prev_space) {
+                        append_byte(st, ' ');
+                    }
+                    append_codepoint(st, codepoint);
+                    st->text_started = 1;
+                    st->prev_space = 0;
+                }
+                pos += consumed;
+                continue;
+            }
+        }
+        unsigned char c = input_buffer[pos];
         if (is_whitespace(c)) {
             st->prev_space = 1;
+            pos++;
             continue;
         }
         if (st->need_sep) {
@@ -235,6 +396,7 @@ static void append_normalized_range(TextState *st, uint32_t start, uint32_t len)
         append_byte(st, c);
         st->text_started = 1;
         st->prev_space = 0;
+        pos++;
     }
 }
 
@@ -616,7 +778,7 @@ uint32_t run(uint32_t input_size) {
                 label_len = attrs.aria_label_len;
             }
             if (emit) {
-                append_raw(&state, attrs.href_start, attrs.href_len);
+                append_decoded_range(&state, attrs.href_start, attrs.href_len);
                 state.text_started = 0;
                 state.prev_space = 0;
                 state.need_sep = attrs.href_len > 0 ? 1 : 0;
