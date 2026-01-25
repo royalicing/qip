@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image (WASM)</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 1lh;
+        background: #111;
+        color: white;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 12px;
+      }
+      fieldset {
+        border: none;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .filters {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        padding: 4px 0;
+      }
+      .drag-handle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        background: hsla(0, 0%, 100%, 0.1);
+        color: white;
+        font-size: 12px;
+        cursor: grab;
+        user-select: none;
+      }
+      .filter-row.dragging {
+        opacity: 0.6;
+      }
+      .divider {
+        color: #888;
+      }
+      .canvases {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        border: 1px solid hsla(0, 0%, 50%, 1);
+        background: hsla(0, 0%, 50%, 1);
+      }
+      .label {
+        font-size: 12px;
+        color: #555;
+        margin: 6px 0 4px;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #555;
+      }
+      @media (max-width: 800px) {
+        .canvases {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Image (WASM)</h1>
+    <div class="controls">
+      <input id="file" type="file" accept="image/*" />
+    </div>
+
+    <fieldset class="controls filters" id="filters">
+      <label class="filter-row" data-filter-id="brightness">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-brightness" type="checkbox" checked />
+        <legend>Brightness</legend>
+        <input
+          id="brightness"
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <span id="brightness-value">0.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="contrast">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-contrast" type="checkbox" checked />
+        <span>Contrast</span>
+        <input
+          id="contrast"
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <span id="contrast-value">0.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="saturation">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-saturation" type="checkbox" checked />
+        <span>Saturation</span>
+        <input
+          id="saturation"
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <span id="saturation-value">0.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="hue-rotate">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-hue-rotate" type="checkbox" checked />
+        <span>Hue</span>
+        <input
+          id="hue-rotate"
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="0"
+        />
+        <span id="hue-rotate-value">0</span>
+      </label>
+      <label class="filter-row" data-filter-id="temperature">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-temperature" type="checkbox" checked />
+        <span>Temperature</span>
+        <input
+          id="temperature"
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <span id="temperature-value">0.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="tint">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-tint" type="checkbox" checked />
+        <span>Tint</span>
+        <input
+          id="tint"
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <span id="tint-value">0.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="posterize">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-posterize" type="checkbox" checked />
+        <span>Posterize</span>
+        <input id="levels" type="range" min="2" max="32" value="8" />
+        <span id="levels-value">8</span>
+      </label>
+      <label class="filter-row" data-filter-id="black-and-white">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-bw" type="checkbox" />
+        <span>Black and white</span>
+      </label>
+      <label class="filter-row" data-filter-id="invert">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-invert" type="checkbox" />
+        <span>Invert</span>
+      </label>
+    </fieldset>
+
+    <div class="canvases">
+      <div>
+        <div class="label">Original</div>
+        <canvas id="source"></canvas>
+      </div>
+      <div>
+        <div class="label">Result</div>
+        <canvas id="output"></canvas>
+      </div>
+    </div>
+
+    <div id="status">Loading WASM...</div>
+
+    <script>
+      const TILE = 64;
+      const TILE_FLOATS = TILE * TILE * 4;
+      const fileInput = document.getElementById("file");
+      const levelsInput = document.getElementById("levels");
+      const levelsValue = document.getElementById("levels-value");
+      const posterizeToggle = document.getElementById("filter-posterize");
+      const bwToggle = document.getElementById("filter-bw");
+      const invertToggle = document.getElementById("filter-invert");
+      const brightnessToggle = document.getElementById("filter-brightness");
+      const contrastToggle = document.getElementById("filter-contrast");
+      const brightnessInput = document.getElementById("brightness");
+      const brightnessValue = document.getElementById("brightness-value");
+      const contrastInput = document.getElementById("contrast");
+      const contrastValue = document.getElementById("contrast-value");
+      const saturationToggle = document.getElementById("filter-saturation");
+      const hueRotateToggle = document.getElementById("filter-hue-rotate");
+      const temperatureToggle = document.getElementById("filter-temperature");
+      const tintToggle = document.getElementById("filter-tint");
+      const saturationInput = document.getElementById("saturation");
+      const saturationValue = document.getElementById("saturation-value");
+      const hueRotateInput = document.getElementById("hue-rotate");
+      const hueRotateValue = document.getElementById("hue-rotate-value");
+      const temperatureInput = document.getElementById("temperature");
+      const temperatureValue = document.getElementById("temperature-value");
+      const tintInput = document.getElementById("tint");
+      const tintValue = document.getElementById("tint-value");
+      const filtersContainer = document.getElementById("filters");
+      const statusEl = document.getElementById("status");
+      const sourceCanvas = document.getElementById("source");
+      const outputCanvas = document.getElementById("output");
+      const sourceCtx = sourceCanvas.getContext("2d");
+      const outputCtx = outputCanvas.getContext("2d");
+
+      const filters = {
+        posterize: {
+          id: "posterize",
+          path: "examples/rgba/posterize.wasm",
+          toggle: posterizeToggle,
+          param: {
+            input: levelsInput,
+            valueEl: levelsValue,
+            name: "param_set_levels_count",
+            parse: (value) => Number(value),
+            format: (value) => String(value),
+          },
+        },
+        saturation: {
+          id: "saturation",
+          path: "examples/rgba/saturation.wasm",
+          toggle: saturationToggle,
+          param: {
+            input: saturationInput,
+            valueEl: saturationValue,
+            name: "param_set_saturation",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        "hue-rotate": {
+          id: "hue-rotate",
+          path: "examples/rgba/hue-rotate.wasm",
+          toggle: hueRotateToggle,
+          param: {
+            input: hueRotateInput,
+            valueEl: hueRotateValue,
+            name: "param_set_hue_degrees",
+            parse: (value) => parseFloat(value),
+            format: (value) => String(Math.round(Number(value))),
+          },
+        },
+        temperature: {
+          id: "temperature",
+          path: "examples/rgba/temperature.wasm",
+          toggle: temperatureToggle,
+          param: {
+            input: temperatureInput,
+            valueEl: temperatureValue,
+            name: "param_set_temperature",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        tint: {
+          id: "tint",
+          path: "examples/rgba/tint.wasm",
+          toggle: tintToggle,
+          param: {
+            input: tintInput,
+            valueEl: tintValue,
+            name: "param_set_tint",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        "black-and-white": {
+          id: "black-and-white",
+          path: "examples/rgba/black-and-white.wasm",
+          toggle: bwToggle,
+        },
+        invert: {
+          id: "invert",
+          path: "examples/rgba/invert.wasm",
+          toggle: invertToggle,
+        },
+        brightness: {
+          id: "brightness",
+          path: "examples/rgba/brightness.wasm",
+          toggle: brightnessToggle,
+          param: {
+            input: brightnessInput,
+            valueEl: brightnessValue,
+            name: "param_set_brightness",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        contrast: {
+          id: "contrast",
+          path: "examples/rgba/contrast.wasm",
+          toggle: contrastToggle,
+          param: {
+            input: contrastInput,
+            valueEl: contrastValue,
+            name: "param_set_contrast",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+      };
+
+      function exportedValue(exp) {
+        if (typeof exp === "function") {
+          return exp();
+        }
+        if (exp instanceof WebAssembly.Global) {
+          return exp.value;
+        }
+        return exp;
+      }
+
+      function clampByte(value) {
+        if (value < 0) return 0;
+        if (value > 255) return 255;
+        return value;
+      }
+
+      async function loadWasm() {
+        await Promise.all(Object.values(filters).map(loadFilter));
+      }
+
+      async function loadFilter(filter) {
+        const response = await fetch(filter.path);
+        if (!response.ok) {
+          throw new Error("Failed to load " + filter.path);
+        }
+        const bytes = await response.arrayBuffer();
+        const { instance } = await WebAssembly.instantiate(bytes, {});
+        const exports = instance.exports;
+        filter.exports = exports;
+        filter.memory = exports.memory;
+        filter.inputPtr = exportedValue(exports.input_ptr);
+        filter.tileFn = exports.tile_rgba_f32_64x64;
+        if (filter.param && filter.param.name) {
+          filter.paramSetter = exports[filter.param.name] || null;
+        }
+        filter.getTileView = () =>
+          new Float32Array(filter.memory.buffer, filter.inputPtr, TILE_FLOATS);
+      }
+
+      function applyParam(filter) {
+        if (!filter.param) {
+          return;
+        }
+        const value = filter.param.parse(filter.param.input.value);
+        filter.param.valueEl.textContent = filter.param.format(value);
+        if (filter.paramSetter) {
+          filter.paramSetter(value);
+        }
+      }
+
+      function processImageData(imageData) {
+        const { data, width, height } = imageData;
+        const out = new Uint8ClampedArray(data.length);
+        const tileBuffer = new Float32Array(TILE_FLOATS);
+
+        for (let y = 0; y < height; y += TILE) {
+          for (let x = 0; x < width; x += TILE) {
+            tileBuffer.fill(0);
+            const tileW = Math.min(TILE, width - x);
+            const tileH = Math.min(TILE, height - y);
+
+            for (let ty = 0; ty < tileH; ty++) {
+              for (let tx = 0; tx < tileW; tx++) {
+                const srcIndex = ((y + ty) * width + (x + tx)) * 4;
+                const tileIndex = (ty * TILE + tx) * 4;
+                tileBuffer[tileIndex] = data[srcIndex] / 255;
+                tileBuffer[tileIndex + 1] = data[srcIndex + 1] / 255;
+                tileBuffer[tileIndex + 2] = data[srcIndex + 2] / 255;
+                tileBuffer[tileIndex + 3] = data[srcIndex + 3] / 255;
+              }
+            }
+
+            runPipeline(tileBuffer);
+
+            for (let ty = 0; ty < tileH; ty++) {
+              for (let tx = 0; tx < tileW; tx++) {
+                const dstIndex = ((y + ty) * width + (x + tx)) * 4;
+                const tileIndex = (ty * TILE + tx) * 4;
+                out[dstIndex] = clampByte(
+                  Math.round(tileBuffer[tileIndex] * 255),
+                );
+                out[dstIndex + 1] = clampByte(
+                  Math.round(tileBuffer[tileIndex + 1] * 255),
+                );
+                out[dstIndex + 2] = clampByte(
+                  Math.round(tileBuffer[tileIndex + 2] * 255),
+                );
+                out[dstIndex + 3] = clampByte(
+                  Math.round(tileBuffer[tileIndex + 3] * 255),
+                );
+              }
+            }
+          }
+        }
+
+        return new ImageData(out, width, height);
+      }
+
+      let cachedImageData = null;
+
+      async function handleFile(file) {
+        statusEl.textContent = "Decoding image...";
+        const bitmap = await createImageBitmap(file);
+        sourceCanvas.width = bitmap.width;
+        sourceCanvas.height = bitmap.height;
+        outputCanvas.width = bitmap.width;
+        outputCanvas.height = bitmap.height;
+        sourceCtx.drawImage(bitmap, 0, 0);
+
+        cachedImageData = sourceCtx.getImageData(
+          0,
+          0,
+          bitmap.width,
+          bitmap.height,
+        );
+        renderPosterized();
+      }
+
+      function renderPosterized() {
+        if (!cachedImageData) {
+          return;
+        }
+        statusEl.textContent = "Processing...";
+        const outputData = processImageData(cachedImageData);
+        outputCtx.putImageData(outputData, 0, 0);
+        statusEl.textContent = "Done.";
+      }
+
+      function runPipeline(tileBuffer) {
+        for (const filter of getOrderedFilters()) {
+          if (!filter.toggle.checked) {
+            continue;
+          }
+          if (!filter.tileFn) {
+            continue;
+          }
+          const view = filter.getTileView();
+          view.set(tileBuffer);
+          filter.tileFn(filter.inputPtr);
+          tileBuffer.set(view);
+        }
+      }
+
+      function getOrderedFilters() {
+        return Array.from(filtersContainer.children)
+          .map((row) => filters[row.dataset.filterId])
+          .filter(Boolean);
+      }
+
+      levelsInput.addEventListener("input", () => {
+        applyParam(filters.posterize);
+        renderPosterized();
+      });
+
+      posterizeToggle.addEventListener("change", renderPosterized);
+      bwToggle.addEventListener("change", renderPosterized);
+      invertToggle.addEventListener("change", renderPosterized);
+      brightnessToggle.addEventListener("change", renderPosterized);
+      contrastToggle.addEventListener("change", renderPosterized);
+      saturationToggle.addEventListener("change", renderPosterized);
+      hueRotateToggle.addEventListener("change", renderPosterized);
+      temperatureToggle.addEventListener("change", renderPosterized);
+      tintToggle.addEventListener("change", renderPosterized);
+      brightnessInput.addEventListener("input", () => {
+        applyParam(filters.brightness);
+        renderPosterized();
+      });
+      contrastInput.addEventListener("input", () => {
+        applyParam(filters.contrast);
+        renderPosterized();
+      });
+      saturationInput.addEventListener("input", () => {
+        applyParam(filters.saturation);
+        renderPosterized();
+      });
+      hueRotateInput.addEventListener("input", () => {
+        applyParam(filters["hue-rotate"]);
+        renderPosterized();
+      });
+      temperatureInput.addEventListener("input", () => {
+        applyParam(filters.temperature);
+        renderPosterized();
+      });
+      tintInput.addEventListener("input", () => {
+        applyParam(filters.tint);
+        renderPosterized();
+      });
+
+      filtersContainer.addEventListener("dragstart", (event) => {
+        const handle = event.target.closest(".drag-handle");
+        if (!handle) {
+          event.preventDefault();
+          return;
+        }
+        const row = handle.closest(".filter-row");
+        if (!row) {
+          return;
+        }
+        row.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", row.dataset.filterId);
+      });
+
+      filtersContainer.addEventListener("dragend", (event) => {
+        const row = event.target.closest(".filter-row");
+        if (row) {
+          row.classList.remove("dragging");
+        }
+      });
+
+      filtersContainer.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        const overRow = event.target.closest(".filter-row");
+        const dragging = filtersContainer.querySelector(".dragging");
+        if (!overRow || !dragging || overRow === dragging) {
+          return;
+        }
+        const rect = overRow.getBoundingClientRect();
+        const before = event.clientY < rect.top + rect.height / 2;
+        if (before) {
+          filtersContainer.insertBefore(dragging, overRow);
+        } else {
+          filtersContainer.insertBefore(dragging, overRow.nextSibling);
+        }
+      });
+
+      filtersContainer.addEventListener("drop", (event) => {
+        event.preventDefault();
+        renderPosterized();
+      });
+
+      fileInput.addEventListener("change", async (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+          return;
+        }
+        try {
+          await handleFile(file);
+        } catch (err) {
+          statusEl.textContent = "Error: " + err.message;
+        }
+      });
+
+      (async () => {
+        try {
+          await loadWasm();
+          applyParam(filters.posterize);
+          applyParam(filters.brightness);
+          applyParam(filters.contrast);
+          applyParam(filters.saturation);
+          applyParam(filters["hue-rotate"]);
+          applyParam(filters.temperature);
+          applyParam(filters.tint);
+          statusEl.textContent = "Ready. Choose an image.";
+        } catch (err) {
+          statusEl.textContent = "Error: " + err.message;
+        }
+      })();
+    </script>
+  </body>
+</html>
