@@ -187,13 +187,14 @@ func imageCmd(args []string) {
 		inputRGBA = image.NewRGBA(bounds)
 		draw.Draw(inputRGBA, bounds, inputImage, bounds.Min, draw.Src)
 	}
-	_ = inputRGBA
 	bounds := inputRGBA.Bounds()
 	outputRGBA := image.NewRGBA(bounds)
 	outputPix := outputRGBA.Pix
 	outputStride := outputRGBA.Stride
+
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
+
 	const tileSize = 64
 	type tileStage struct {
 		mem      api.Memory
