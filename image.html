@@ -64,10 +64,11 @@
         gap: 16px;
       }
       canvas {
+        --color: oklab(50% 0 0);
         width: 100%;
         height: auto;
-        border: 1px solid hsla(0, 0%, 50%, 1);
-        background: hsla(0, 0%, 50%, 1);
+        border: 1px solid var(--color);
+        background: var(--color);
       }
       .label {
         font-size: 12px;
