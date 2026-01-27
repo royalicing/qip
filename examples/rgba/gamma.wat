@@ -15,40 +15,11 @@
     (local.get $clamped)
   )
 
-  (func $pow (param $base f32) (param $exp f32) (result f32)
-    ;; Simplified power function for positive base and reasonable exponents
-    ;; Using logarithmic identity: x^y = e^(y*ln(x))
-    ;; For gamma correction, we need accurate powers
-    
-    ;; Special cases
-    (if (result f32) (f32.le (local.get $base) (f32.const 0.0))
-      (then (f32.const 0.0))
-      (else
-        (if (result f32) (f32.eq (local.get $exp) (f32.const 1.0))
-          (then (local.get $base))
-          (else
-            (if (result f32) (f32.eq (local.get $exp) (f32.const 2.0))
-              (then (f32.mul (local.get $base) (local.get $base)))
-              (else
-                ;; Approximate using Taylor series for ln and exp
-                ;; For simplicity with gamma in [0.5, 2.5], use lookup-table approach
-                ;; or polynomial approximation
-                
-                ;; For gamma = 2.0: x^2
-                ;; For gamma = 0.5: sqrt(x)
-                ;; For other values, use approximation
-                
-                (if (result f32) (f32.lt (local.get $exp) (f32.const 1.0))
-                  (then
-                    ;; gamma < 1: makes brighter
-                    ;; Approximate as weighted average between x and sqrt(x)
-                    (local.get $base))
-                  (else
-                    ;; gamma > 1: makes darker
-                    ;; Approximate as weighted average between x and x^2
-                    (f32.mul (local.get $base) (local.get $base))))))))))
-  )
-
+  ;; Apply gamma correction using piecewise linear interpolation
+  ;; Note: WASM doesn't have native pow function, so we use approximation:
+  ;; For gamma in [0.5, 1.0]: interpolate between sqrt(v) and v
+  ;; For gamma in [1.0, 2.5]: interpolate between v and v^2
+  ;; This provides reasonable gamma correction for the typical range
   (func $apply_gamma (param $v f32) (result f32)
     (local $g f32)
     (local $result f32)
