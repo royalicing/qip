@@ -171,6 +171,41 @@
         <input id="tint" type="range" min="-1" max="1" step="0.01" value="0" />
         <span id="tint-value">0.00</span>
       </label>
+      <label class="filter-row" data-filter-id="sepia">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-sepia" type="checkbox" />
+        <span>Sepia</span>
+        <input id="sepia" type="range" min="0" max="1" step="0.01" value="1" />
+        <span id="sepia-value">1.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="vibrance">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-vibrance" type="checkbox" />
+        <span>Vibrance</span>
+        <input id="vibrance" type="range" min="-1" max="1" step="0.01" value="0" />
+        <span id="vibrance-value">0.00</span>
+      </label>
+      <label class="filter-row" data-filter-id="exposure">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-exposure" type="checkbox" />
+        <span>Exposure</span>
+        <input id="exposure" type="range" min="-2" max="2" step="0.1" value="0" />
+        <span id="exposure-value">0.0</span>
+      </label>
+      <label class="filter-row" data-filter-id="gamma">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-gamma" type="checkbox" />
+        <span>Gamma</span>
+        <input id="gamma" type="range" min="0.5" max="2.5" step="0.1" value="1.0" />
+        <span id="gamma-value">1.0</span>
+      </label>
+      <label class="filter-row" data-filter-id="vignette">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-vignette" type="checkbox" />
+        <span>Vignette</span>
+        <input id="vignette" type="range" min="0" max="1" step="0.01" value="0.5" />
+        <span id="vignette-value">0.50</span>
+      </label>
       <label class="filter-row" data-filter-id="posterize">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
         <input id="filter-posterize" type="checkbox" />
@@ -230,6 +265,21 @@
       const temperatureValue = document.getElementById("temperature-value");
       const tintInput = document.getElementById("tint");
       const tintValue = document.getElementById("tint-value");
+      const sepiaToggle = document.getElementById("filter-sepia");
+      const sepiaInput = document.getElementById("sepia");
+      const sepiaValue = document.getElementById("sepia-value");
+      const vibranceToggle = document.getElementById("filter-vibrance");
+      const vibranceInput = document.getElementById("vibrance");
+      const vibranceValue = document.getElementById("vibrance-value");
+      const exposureToggle = document.getElementById("filter-exposure");
+      const exposureInput = document.getElementById("exposure");
+      const exposureValue = document.getElementById("exposure-value");
+      const gammaToggle = document.getElementById("filter-gamma");
+      const gammaInput = document.getElementById("gamma");
+      const gammaValue = document.getElementById("gamma-value");
+      const vignetteToggle = document.getElementById("filter-vignette");
+      const vignetteInput = document.getElementById("vignette");
+      const vignetteValue = document.getElementById("vignette-value");
       const filtersContainer = document.getElementById("filters");
       const statusEl = document.getElementById("status");
       const sourceCanvas = document.getElementById("source");
@@ -294,6 +344,66 @@
             input: tintInput,
             valueEl: tintValue,
             name: "param_set_tint",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        sepia: {
+          id: "sepia",
+          path: "examples/rgba/sepia.wasm",
+          toggle: sepiaToggle,
+          param: {
+            input: sepiaInput,
+            valueEl: sepiaValue,
+            name: "param_set_sepia",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        vibrance: {
+          id: "vibrance",
+          path: "examples/rgba/vibrance.wasm",
+          toggle: vibranceToggle,
+          param: {
+            input: vibranceInput,
+            valueEl: vibranceValue,
+            name: "param_set_vibrance",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        exposure: {
+          id: "exposure",
+          path: "examples/rgba/exposure.wasm",
+          toggle: exposureToggle,
+          param: {
+            input: exposureInput,
+            valueEl: exposureValue,
+            name: "param_set_exposure",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(1),
+          },
+        },
+        gamma: {
+          id: "gamma",
+          path: "examples/rgba/gamma.wasm",
+          toggle: gammaToggle,
+          param: {
+            input: gammaInput,
+            valueEl: gammaValue,
+            name: "param_set_gamma",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(1),
+          },
+        },
+        vignette: {
+          id: "vignette",
+          path: "examples/rgba/vignette.wasm",
+          toggle: vignetteToggle,
+          param: {
+            input: vignetteInput,
+            valueEl: vignetteValue,
+            name: "param_set_vignette",
             parse: (value) => parseFloat(value),
             format: (value) => Number(value).toFixed(2),
           },
