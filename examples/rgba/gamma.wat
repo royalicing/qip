@@ -22,40 +22,38 @@
   ;; This provides reasonable gamma correction for the typical range
   (func $apply_gamma (param $v f32) (result f32)
     (local $g f32)
-    (local $result f32)
+    (local $t f32)
+    (local $v_sqrt f32)
+    (local $v_sq f32)
     
     (local.set $g (global.get $param_gamma))
     
-    ;; For gamma correction, handle special cases
+    ;; Handle special cases
     (if (result f32) (f32.le (local.get $v) (f32.const 0.0))
       (then (f32.const 0.0))
       (else
         (if (result f32) (f32.eq (local.get $g) (f32.const 1.0))
           (then (local.get $v))
           (else
-            ;; Approximate v^gamma
-            ;; For gamma=2.2 (common): v^2.2
-            ;; For gamma=0.5: sqrt(v)
-            (if (result f32) (f32.eq (local.get $g) (f32.const 2.0))
-              (then (f32.mul (local.get $v) (local.get $v)))
+            (if (result f32) (f32.lt (local.get $g) (f32.const 1.0))
+              (then
+                ;; For gamma in [0.5, 1.0]: interpolate sqrt(v) and v
+                ;; t = (gamma - 0.5) / 0.5 maps [0.5, 1.0] to [0, 1]
+                (local.set $t (f32.mul (f32.sub (local.get $g) (f32.const 0.5)) (f32.const 2.0)))
+                (local.set $v_sqrt (f32.sqrt (local.get $v)))
+                ;; result = (1-t)*sqrt(v) + t*v
+                (f32.add
+                  (f32.mul (f32.sub (f32.const 1.0) (local.get $t)) (local.get $v_sqrt))
+                  (f32.mul (local.get $t) (local.get $v))))
               (else
-                ;; Linear interpolation approximation
-                ;; Map gamma [0.5, 2.5] to power curve
-                (if (result f32) (f32.lt (local.get $g) (f32.const 1.0))
-                  (then
-                    ;; Lighter: interpolate between v^0.5 and v^1
-                    (local.set $result (f32.sqrt (local.get $v)))
-                    (f32.add
-                      (f32.mul (local.get $result) (f32.mul (f32.sub (f32.const 1.0) (local.get $g)) (f32.const 2.0)))
-                      (f32.mul (local.get $v) (f32.sub (f32.const 1.0) (f32.mul (f32.sub (f32.const 1.0) (local.get $g)) (f32.const 2.0))))))
-                  (else
-                    ;; Darker: interpolate between v^1 and v^2
-                    (local.set $result (f32.mul (local.get $v) (local.get $v)))
-                    (f32.add
-                      (f32.mul (local.get $v) (f32.sub (f32.const 2.0) (local.get $g)))
-                      (f32.mul (local.get $result) (f32.sub (local.get $g) (f32.const 1.0))))))))))
-      )
-    )
+                ;; For gamma in [1.0, 2.5]: interpolate v and v^2
+                ;; t = (gamma - 1.0) / 1.5 maps [1.0, 2.5] to [0, 1]
+                (local.set $t (f32.div (f32.sub (local.get $g) (f32.const 1.0)) (f32.const 1.5)))
+                (local.set $v_sq (f32.mul (local.get $v) (local.get $v)))
+                ;; result = (1-t)*v + t*v^2
+                (f32.add
+                  (f32.mul (f32.sub (f32.const 1.0) (local.get $t)) (local.get $v))
+                  (f32.mul (local.get $t) (local.get $v_sq)))))))))
   )
 
   (func (export "tile_rgba_f32_64x64") (param $ptr i32)

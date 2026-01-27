@@ -23,28 +23,28 @@
     (f32.min (f32.min (local.get $a) (local.get $b)) (local.get $c))
   )
 
-  (func $apply_vibrance (param $v f32) (param $luma f32) (param $max_rgb f32) (param $avg f32) (result f32)
+  (func $apply_vibrance (param $v f32) (param $luma f32) (param $max_rgb f32) (param $min_rgb f32) (result f32)
     (local $vib f32)
     (local $sat f32)
     (local $amt f32)
 
     (local.set $vib (global.get $param_vibrance))
     
-    ;; Calculate current saturation (how different from gray)
+    ;; Calculate current saturation as (max - min) / max, handling division by zero
     (local.set $sat 
-      (f32.sub (local.get $max_rgb) 
-        (f32.div
-          (f32.add
-            (f32.add (local.get $v) (local.get $luma))
-            (local.get $avg))
-          (f32.const 3.0))))
+      (if (result f32) (f32.gt (local.get $max_rgb) (f32.const 0.0001))
+        (then
+          (f32.div
+            (f32.sub (local.get $max_rgb) (local.get $min_rgb))
+            (local.get $max_rgb)))
+        (else (f32.const 0.0))))
     
     ;; Vibrance affects less saturated colors more
-    ;; Use inverse of saturation as a weight
+    ;; Use (1 - saturation) as weight so muted colors get more adjustment
     (local.set $amt
       (f32.mul
         (local.get $vib)
-        (f32.sub (f32.const 1.0) (f32.min (f32.const 1.0) (local.get $sat)))))
+        (f32.sub (f32.const 1.0) (local.get $sat))))
     
     (local.set $amt (f32.add (f32.const 1.0) (local.get $amt)))
 
@@ -65,7 +65,7 @@
     (local $b f32)
     (local $luma f32)
     (local $max_rgb f32)
-    (local $avg f32)
+    (local $min_rgb f32)
 
     (local.set $p (local.get $ptr))
     (local.set $end (i32.add (local.get $ptr) (i32.const 0x10000)))
@@ -82,15 +82,13 @@
             (f32.mul (local.get $g) (f32.const 0.7152)))
           (f32.mul (local.get $b) (f32.const 0.0722))))
 
-      ;; Calculate max RGB value for saturation detection
+      ;; Calculate max and min RGB values for saturation
       (local.set $max_rgb (call $max3 (local.get $r) (local.get $g) (local.get $b)))
-      
-      ;; Calculate average
-      (local.set $avg (f32.div (f32.add (f32.add (local.get $r) (local.get $g)) (local.get $b)) (f32.const 3.0)))
+      (local.set $min_rgb (call $min3 (local.get $r) (local.get $g) (local.get $b)))
 
-      (f32.store (local.get $p) (call $apply_vibrance (local.get $r) (local.get $luma) (local.get $max_rgb) (local.get $avg)))
-      (f32.store (i32.add (local.get $p) (i32.const 4)) (call $apply_vibrance (local.get $g) (local.get $luma) (local.get $max_rgb) (local.get $avg)))
-      (f32.store (i32.add (local.get $p) (i32.const 8)) (call $apply_vibrance (local.get $b) (local.get $luma) (local.get $max_rgb) (local.get $avg)))
+      (f32.store (local.get $p) (call $apply_vibrance (local.get $r) (local.get $luma) (local.get $max_rgb) (local.get $min_rgb)))
+      (f32.store (i32.add (local.get $p) (i32.const 4)) (call $apply_vibrance (local.get $g) (local.get $luma) (local.get $max_rgb) (local.get $min_rgb)))
+      (f32.store (i32.add (local.get $p) (i32.const 8)) (call $apply_vibrance (local.get $b) (local.get $luma) (local.get $max_rgb) (local.get $min_rgb)))
 
       (local.set $p (i32.add (local.get $p) (i32.const 16)))
       (br_if $vibrance (i32.lt_u (local.get $p) (local.get $end)))
