@@ -1,4 +1,4 @@
-# qip
+# `qip`
 
 Pockets of safe determinism in a probabilistic, generative world.
 
