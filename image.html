@@ -237,17 +237,74 @@
       const sourceCtx = sourceCanvas.getContext("2d");
       const outputCtx = outputCanvas.getContext("2d");
 
+      function filtersToURLSearchParams() {
+        const q = new URLSearchParams();
+        for (const key in filters) {
+          const filter = filters[key];
+          if (filter.toggle && !filter.toggle.checked) {
+            continue;
+          }
+          if (filter.param && filter.param.input) {
+            const value = filter.param.input.value;
+            if (value != "0") {
+              q.set(filter.id, value);
+            }
+          } else {
+            q.set(filter.id, "");
+          }
+        }
+        return q;
+      }
+
+      function updateFiltersFromLocationHash() {
+        const params = new URLSearchParams(location.hash.slice(1));
+        for (const key in filters) {
+          const filter = filters[key];
+          const enabled = params.has(filter.id);
+          if (filter.toggle) {
+            filter.toggle.checked = enabled;
+          }
+          if (filter.param && filter.param.input && enabled) {
+            const value = params.get(filter.id);
+            if (value !== null) {
+              filter.param.input.value = value;
+              applyParam(filter);
+            }
+          }
+        }
+      }
+
+      function updateLocationHash() {
+        const next = filtersToURLSearchParams().toString();
+        const nextHash = next ? "#" + next : "";
+        if (location.hash !== nextHash) {
+          location.hash = nextHash;
+        }
+      }
+
       const filters = {
-        posterize: {
-          id: "posterize",
-          path: "examples/rgba/posterize.wasm",
-          toggle: posterizeToggle,
+        brightness: {
+          id: "brightness",
+          path: "examples/rgba/brightness.wasm",
+          toggle: brightnessToggle,
           param: {
-            input: levelsInput,
-            valueEl: levelsValue,
-            name: "param_set_levels_count",
-            parse: (value) => Number(value),
-            format: (value) => String(value),
+            input: brightnessInput,
+            valueEl: brightnessValue,
+            name: "param_set_brightness",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
+          },
+        },
+        contrast: {
+          id: "contrast",
+          path: "examples/rgba/contrast.wasm",
+          toggle: contrastToggle,
+          param: {
+            input: contrastInput,
+            valueEl: contrastValue,
+            name: "param_set_contrast",
+            parse: (value) => parseFloat(value),
+            format: (value) => Number(value).toFixed(2),
           },
         },
         saturation: {
@@ -308,31 +365,21 @@
           path: "examples/rgba/invert.wasm",
           toggle: invertToggle,
         },
-        brightness: {
-          id: "brightness",
-          path: "examples/rgba/brightness.wasm",
-          toggle: brightnessToggle,
+        posterize: {
+          id: "posterize",
+          path: "examples/rgba/posterize.wasm",
+          toggle: posterizeToggle,
           param: {
-            input: brightnessInput,
-            valueEl: brightnessValue,
-            name: "param_set_brightness",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        contrast: {
-          id: "contrast",
-          path: "examples/rgba/contrast.wasm",
-          toggle: contrastToggle,
-          param: {
-            input: contrastInput,
-            valueEl: contrastValue,
-            name: "param_set_contrast",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
+            input: levelsInput,
+            valueEl: levelsValue,
+            name: "param_set_levels_count",
+            parse: (value) => Number(value),
+            format: (value) => String(value),
           },
         },
       };
+
+      updateFiltersFromLocationHash();
 
       function exportedValue(exp) {
         if (typeof exp === "function") {
@@ -486,39 +533,78 @@
       levelsInput.addEventListener("input", () => {
         applyParam(filters.posterize);
         renderPosterized();
+        updateLocationHash();
       });
 
-      posterizeToggle.addEventListener("change", renderPosterized);
-      bwToggle.addEventListener("change", renderPosterized);
-      invertToggle.addEventListener("change", renderPosterized);
-      brightnessToggle.addEventListener("change", renderPosterized);
-      contrastToggle.addEventListener("change", renderPosterized);
-      saturationToggle.addEventListener("change", renderPosterized);
-      hueRotateToggle.addEventListener("change", renderPosterized);
-      temperatureToggle.addEventListener("change", renderPosterized);
-      tintToggle.addEventListener("change", renderPosterized);
+      posterizeToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      bwToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      invertToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      brightnessToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      contrastToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      saturationToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      hueRotateToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      temperatureToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      tintToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
       brightnessInput.addEventListener("input", () => {
         applyParam(filters.brightness);
         renderPosterized();
+        updateLocationHash();
       });
       contrastInput.addEventListener("input", () => {
         applyParam(filters.contrast);
         renderPosterized();
+        updateLocationHash();
       });
       saturationInput.addEventListener("input", () => {
         applyParam(filters.saturation);
         renderPosterized();
+        updateLocationHash();
       });
       hueRotateInput.addEventListener("input", () => {
         applyParam(filters["hue-rotate"]);
         renderPosterized();
+        updateLocationHash();
       });
       temperatureInput.addEventListener("input", () => {
         applyParam(filters.temperature);
         renderPosterized();
+        updateLocationHash();
       });
       tintInput.addEventListener("input", () => {
         applyParam(filters.tint);
+        renderPosterized();
+        updateLocationHash();
+      });
+
+      window.addEventListener("hashchange", () => {
+        updateFiltersFromLocationHash();
         renderPosterized();
       });
 
@@ -563,6 +649,7 @@
       filtersContainer.addEventListener("drop", (event) => {
         event.preventDefault();
         renderPosterized();
+        updateLocationHash();
       });
 
       fileInput.addEventListener("change", async (event) => {
