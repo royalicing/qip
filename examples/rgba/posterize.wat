@@ -11,14 +11,14 @@
     (local.get $v)
   )
 
-  (func (export "tile_rgba_f32_64x64") (param $ptr i32)
+  (func (export "tile_rgba_f32_64x64") (param $x f32) (param $y f32)
     (local $p i32)
     (local $end i32)
     (local $v f32)
     (local $denom f32)
 
-    (local.set $p (local.get $ptr))
-    (local.set $end (i32.add (local.get $ptr) (i32.const 0x10000)))
+    (local.set $p (global.get $input_ptr))
+    (local.set $end (i32.add (global.get $input_ptr) (i32.const 0x10000)))
     (local.set $denom
       (f32.max
         (f32.const 1.0)

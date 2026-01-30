@@ -178,6 +178,23 @@
         <input id="levels" type="range" min="2" max="32" value="8" />
         <span id="levels-value">8</span>
       </label>
+      <label class="filter-row" data-filter-id="vignette">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <input id="filter-vignette" type="checkbox" />
+        <span>Vignette</span>
+        <span class="divider">|</span>
+        <span>Amount:</span>
+        <input id="vignette-amount" type="range" min="0" max="1" step="0.01" value="0.35" />
+        <span id="vignette-amount-value">0.35</span>
+        <span class="divider">|</span>
+        <span>Midpoint:</span>
+        <input id="vignette-midpoint" type="range" min="0" max="1" step="0.01" value="0.65" />
+        <span id="vignette-midpoint-value">0.65</span>
+        <span class="divider">|</span>
+        <span>Feather:</span>
+        <input id="vignette-feather" type="range" min="0" max="1" step="0.01" value="0.85" />
+        <span id="vignette-feather-value">0.85</span>
+      </label>
       <label class="filter-row" data-filter-id="black-and-white">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
         <input id="filter-bw" type="checkbox" />
@@ -210,6 +227,7 @@
       const levelsInput = document.getElementById("levels");
       const levelsValue = document.getElementById("levels-value");
       const posterizeToggle = document.getElementById("filter-posterize");
+      const vignetteToggle = document.getElementById("filter-vignette");
       const bwToggle = document.getElementById("filter-bw");
       const invertToggle = document.getElementById("filter-invert");
       const brightnessToggle = document.getElementById("filter-brightness");
@@ -226,6 +244,12 @@
       const saturationValue = document.getElementById("saturation-value");
       const hueRotateInput = document.getElementById("hue-rotate");
       const hueRotateValue = document.getElementById("hue-rotate-value");
+      const vignetteAmountInput = document.getElementById("vignette-amount");
+      const vignetteAmountValue = document.getElementById("vignette-amount-value");
+      const vignetteMidpointInput = document.getElementById("vignette-midpoint");
+      const vignetteMidpointValue = document.getElementById("vignette-midpoint-value");
+      const vignetteFeatherInput = document.getElementById("vignette-feather");
+      const vignetteFeatherValue = document.getElementById("vignette-feather-value");
       const temperatureInput = document.getElementById("temperature");
       const temperatureValue = document.getElementById("temperature-value");
       const tintInput = document.getElementById("tint");
@@ -244,7 +268,10 @@
           if (filter.toggle && !filter.toggle.checked) {
             continue;
           }
-          if (filter.param && filter.param.input) {
+          if (filter.params && filter.params.length > 0) {
+            const values = filter.params.map((param) => param.input.value);
+            q.set(filter.id, values.join(","));
+          } else if (filter.param && filter.param.input) {
             const value = filter.param.input.value;
             if (value != "0") {
               q.set(filter.id, value);
@@ -264,7 +291,18 @@
           if (filter.toggle) {
             filter.toggle.checked = enabled;
           }
-          if (filter.param && filter.param.input && enabled) {
+          if (filter.params && filter.params.length > 0 && enabled) {
+            const raw = params.get(filter.id);
+            if (raw !== null) {
+              const values = raw.split(",");
+              for (let i = 0; i < filter.params.length; i++) {
+                if (values[i] !== undefined) {
+                  filter.params[i].input.value = values[i];
+                }
+              }
+              applyParam(filter);
+            }
+          } else if (filter.param && filter.param.input && enabled) {
             const value = params.get(filter.id);
             if (value !== null) {
               filter.param.input.value = value;
@@ -377,6 +415,34 @@
             format: (value) => String(value),
           },
         },
+        vignette: {
+          id: "vignette",
+          path: "examples/rgba/vignette.wasm",
+          toggle: vignetteToggle,
+          params: [
+            {
+              input: vignetteAmountInput,
+              valueEl: vignetteAmountValue,
+              name: "param_set_amount",
+              parse: (value) => parseFloat(value),
+              format: (value) => Number(value).toFixed(2),
+            },
+            {
+              input: vignetteMidpointInput,
+              valueEl: vignetteMidpointValue,
+              name: "param_set_midpoint",
+              parse: (value) => parseFloat(value),
+              format: (value) => Number(value).toFixed(2),
+            },
+            {
+              input: vignetteFeatherInput,
+              valueEl: vignetteFeatherValue,
+              name: "param_set_feather",
+              parse: (value) => parseFloat(value),
+              format: (value) => Number(value).toFixed(2),
+            },
+          ],
+        },
       };
 
       updateFiltersFromLocationHash();
@@ -413,14 +479,33 @@
         filter.memory = exports.memory;
         filter.inputPtr = exportedValue(exports.input_ptr);
         filter.tileFn = exports.tile_rgba_f32_64x64;
-        if (filter.param && filter.param.name) {
+        filter.uniformSetSize = exports.uniform_set_width_and_height || null;
+        if (filter.params && filter.params.length > 0) {
+          for (const param of filter.params) {
+            param.setter = exports[param.name] || null;
+          }
+        } else if (filter.param && filter.param.name) {
           filter.paramSetter = exports[filter.param.name] || null;
         }
         filter.getTileView = () =>
           new Float32Array(filter.memory.buffer, filter.inputPtr, TILE_FLOATS);
       }
 
+      function applyParamEntry(param) {
+        const value = param.parse(param.input.value);
+        param.valueEl.textContent = param.format(value);
+        if (param.setter) {
+          param.setter(value);
+        }
+      }
+
       function applyParam(filter) {
+        if (filter.params && filter.params.length > 0) {
+          for (const param of filter.params) {
+            applyParamEntry(param);
+          }
+          return;
+        }
         if (!filter.param) {
           return;
         }
@@ -453,7 +538,7 @@
               }
             }
 
-            runPipeline(tileBuffer);
+            runPipeline(tileBuffer, x, y);
 
             for (let ty = 0; ty < tileH; ty++) {
               for (let tx = 0; tx < tileW; tx++) {
@@ -496,6 +581,7 @@
           bitmap.width,
           bitmap.height,
         );
+        setImageSize(bitmap.width, bitmap.height);
         renderPosterized();
       }
 
@@ -509,7 +595,16 @@
         statusEl.textContent = "Done.";
       }
 
-      function runPipeline(tileBuffer) {
+      function setImageSize(width, height) {
+        for (const filter of Object.values(filters)) {
+          if (!filter.uniformSetSize) {
+            continue;
+          }
+          filter.uniformSetSize(width, height);
+        }
+      }
+
+      function runPipeline(tileBuffer, tileX, tileY) {
         for (const filter of getOrderedFilters()) {
           if (!filter.toggle.checked) {
             continue;
@@ -519,7 +614,7 @@
           }
           const view = filter.getTileView();
           view.set(tileBuffer);
-          filter.tileFn(filter.inputPtr);
+          filter.tileFn(tileX, tileY);
           tileBuffer.set(view);
         }
       }
@@ -535,8 +630,27 @@
         renderPosterized();
         updateLocationHash();
       });
+      vignetteAmountInput.addEventListener("input", () => {
+        applyParamEntry(filters.vignette.params[0]);
+        renderPosterized();
+        updateLocationHash();
+      });
+      vignetteMidpointInput.addEventListener("input", () => {
+        applyParamEntry(filters.vignette.params[1]);
+        renderPosterized();
+        updateLocationHash();
+      });
+      vignetteFeatherInput.addEventListener("input", () => {
+        applyParamEntry(filters.vignette.params[2]);
+        renderPosterized();
+        updateLocationHash();
+      });
 
       posterizeToggle.addEventListener("change", () => {
+        renderPosterized();
+        updateLocationHash();
+      });
+      vignetteToggle.addEventListener("change", () => {
         renderPosterized();
         updateLocationHash();
       });
@@ -668,6 +782,7 @@
         try {
           await loadWasm();
           applyParam(filters.posterize);
+          applyParam(filters.vignette);
           applyParam(filters.brightness);
           applyParam(filters.contrast);
           applyParam(filters.saturation);

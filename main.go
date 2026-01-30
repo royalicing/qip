@@ -197,9 +197,10 @@ func imageCmd(args []string) {
 
 	const tileSize = 64
 	type tileStage struct {
-		mem      api.Memory
-		tileFunc api.Function
-		inputPtr uint32
+		mem         api.Memory
+		tileFunc    api.Function
+		inputPtr    uint32
+		uniformFunc api.Function
 	}
 	stages := make([]tileStage, len(moduleBodies))
 	for i, body := range moduleBodies {
@@ -211,6 +212,7 @@ func imageCmd(args []string) {
 		if tileFunc == nil {
 			gameOver("Wasm module must export tile_rgba_f32_64x64")
 		}
+		uniformFunc := mod.ExportedFunction("uniform_set_width_and_height")
 		mem := mod.Memory()
 		inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
 		if !ok {
@@ -226,15 +228,27 @@ func imageCmd(args []string) {
 			gameOver("Tile buffer exceeds module input_bytes_cap")
 		}
 		stages[i] = tileStage{
-			mem:      mem,
-			tileFunc: tileFunc,
-			inputPtr: inputPtr,
+			mem:         mem,
+			tileFunc:    tileFunc,
+			inputPtr:    inputPtr,
+			uniformFunc: uniformFunc,
 		}
 	}
 	pix := inputRGBA.Pix
 	stride := inputRGBA.Stride
 	width := bounds.Dx()
 	height := bounds.Dy()
+	for _, stage := range stages {
+		if stage.uniformFunc != nil {
+			if _, err := stage.uniformFunc.Call(
+				ctx,
+				api.EncodeF32(float32(width)),
+				api.EncodeF32(float32(height)),
+			); err != nil {
+				gameOver("Error running uniform_set_width_and_height: %v", err)
+			}
+		}
+	}
 	tileF32 := make([]float32, tileSize*tileSize*4)
 	tileBytes := unsafe.Slice((*byte)(unsafe.Pointer(&tileF32[0])), len(tileF32)*4)
 	const inv255 = 1.0 / 255.0
@@ -269,7 +283,11 @@ func imageCmd(args []string) {
 				if !stage.mem.Write(stage.inputPtr, tileBytes) {
 					gameOver("Could not write tile to wasm memory")
 				}
-				if _, err := stage.tileFunc.Call(ctx, uint64(stage.inputPtr)); err != nil {
+				if _, err := stage.tileFunc.Call(
+					ctx,
+					api.EncodeF32(float32(x)),
+					api.EncodeF32(float32(y)),
+				); err != nil {
 					gameOver("Error running tile_rgba_f32_64x64: %v", err)
 				}
 				tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))

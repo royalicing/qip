@@ -7,7 +7,10 @@ qip: main.go go.mod go.sum
 examples/%.wasm: examples/%.wat
 	wat2wasm $< -o $@
 
-examples-wat-wasm: $(patsubst examples/%.wat,examples/%.wasm,$(wildcard examples/*.wat))
+examples/rgba/%.wasm: examples/rgba/%.wat
+	wat2wasm $< -o $@
+
+examples-wat-wasm: $(patsubst examples/%.wat,examples/%.wasm,$(wildcard examples/*.wat)) $(patsubst examples/rgba/%.wat,examples/rgba/%.wasm,$(wildcard examples/rgba/*.wat))
 
 examples/%.wasm: examples/%.c
 	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -O3 -o $@
