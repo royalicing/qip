@@ -105,6 +105,9 @@
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_brightness"
+          data-format="fixed2"
+          data-value-id="brightness-value"
         />
         <span id="brightness-value">0.00</span>
       </label>
@@ -119,6 +122,9 @@
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_contrast"
+          data-format="fixed2"
+          data-value-id="contrast-value"
         />
         <span id="contrast-value">0.00</span>
       </label>
@@ -133,6 +139,9 @@
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_saturation"
+          data-format="fixed2"
+          data-value-id="saturation-value"
         />
         <span id="saturation-value">0.00</span>
       </label>
@@ -147,6 +156,9 @@
           max="180"
           step="1"
           value="0"
+          data-uniform="uniform_set_hue_degrees"
+          data-format="int"
+          data-value-id="hue-rotate-value"
         />
         <span id="hue-rotate-value">0</span>
       </label>
@@ -161,6 +173,9 @@
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_temperature"
+          data-format="fixed2"
+          data-value-id="temperature-value"
         />
         <span id="temperature-value">0.00</span>
       </label>
@@ -168,14 +183,33 @@
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
         <input id="filter-tint" type="checkbox" checked />
         <span>Tint</span>
-        <input id="tint" type="range" min="-1" max="1" step="0.01" value="0" />
+        <input
+          id="tint"
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_tint"
+          data-format="fixed2"
+          data-value-id="tint-value"
+        />
         <span id="tint-value">0.00</span>
       </label>
       <label class="filter-row" data-filter-id="posterize">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
         <input id="filter-posterize" type="checkbox" />
         <span>Posterize</span>
-        <input id="levels" type="range" min="2" max="32" value="8" />
+        <input
+          id="levels"
+          type="range"
+          min="2"
+          max="32"
+          value="8"
+          data-uniform="uniform_set_levels_count"
+          data-format="int"
+          data-value-id="levels-value"
+        />
         <span id="levels-value">8</span>
       </label>
       <label class="filter-row" data-filter-id="vignette">
@@ -184,15 +218,45 @@
         <span>Vignette</span>
         <span class="divider">|</span>
         <span>Amount:</span>
-        <input id="vignette-amount" type="range" min="0" max="1" step="0.01" value="0.35" />
+        <input
+          id="vignette-amount"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.35"
+          data-uniform="uniform_set_amount"
+          data-format="fixed2"
+          data-value-id="vignette-amount-value"
+        />
         <span id="vignette-amount-value">0.35</span>
         <span class="divider">|</span>
         <span>Midpoint:</span>
-        <input id="vignette-midpoint" type="range" min="0" max="1" step="0.01" value="0.65" />
+        <input
+          id="vignette-midpoint"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.65"
+          data-uniform="uniform_set_midpoint"
+          data-format="fixed2"
+          data-value-id="vignette-midpoint-value"
+        />
         <span id="vignette-midpoint-value">0.65</span>
         <span class="divider">|</span>
         <span>Feather:</span>
-        <input id="vignette-feather" type="range" min="0" max="1" step="0.01" value="0.85" />
+        <input
+          id="vignette-feather"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.85"
+          data-uniform="uniform_set_feather"
+          data-format="fixed2"
+          data-value-id="vignette-feather-value"
+        />
         <span id="vignette-feather-value">0.85</span>
       </label>
       <label class="filter-row" data-filter-id="black-and-white">
@@ -224,36 +288,6 @@
       const TILE = 64;
       const TILE_FLOATS = TILE * TILE * 4;
       const fileInput = document.getElementById("file");
-      const levelsInput = document.getElementById("levels");
-      const levelsValue = document.getElementById("levels-value");
-      const posterizeToggle = document.getElementById("filter-posterize");
-      const vignetteToggle = document.getElementById("filter-vignette");
-      const bwToggle = document.getElementById("filter-bw");
-      const invertToggle = document.getElementById("filter-invert");
-      const brightnessToggle = document.getElementById("filter-brightness");
-      const contrastToggle = document.getElementById("filter-contrast");
-      const brightnessInput = document.getElementById("brightness");
-      const brightnessValue = document.getElementById("brightness-value");
-      const contrastInput = document.getElementById("contrast");
-      const contrastValue = document.getElementById("contrast-value");
-      const saturationToggle = document.getElementById("filter-saturation");
-      const hueRotateToggle = document.getElementById("filter-hue-rotate");
-      const temperatureToggle = document.getElementById("filter-temperature");
-      const tintToggle = document.getElementById("filter-tint");
-      const saturationInput = document.getElementById("saturation");
-      const saturationValue = document.getElementById("saturation-value");
-      const hueRotateInput = document.getElementById("hue-rotate");
-      const hueRotateValue = document.getElementById("hue-rotate-value");
-      const vignetteAmountInput = document.getElementById("vignette-amount");
-      const vignetteAmountValue = document.getElementById("vignette-amount-value");
-      const vignetteMidpointInput = document.getElementById("vignette-midpoint");
-      const vignetteMidpointValue = document.getElementById("vignette-midpoint-value");
-      const vignetteFeatherInput = document.getElementById("vignette-feather");
-      const vignetteFeatherValue = document.getElementById("vignette-feather-value");
-      const temperatureInput = document.getElementById("temperature");
-      const temperatureValue = document.getElementById("temperature-value");
-      const tintInput = document.getElementById("tint");
-      const tintValue = document.getElementById("tint-value");
       const filtersContainer = document.getElementById("filters");
       const statusEl = document.getElementById("status");
       const sourceCanvas = document.getElementById("source");
@@ -268,17 +302,12 @@
           if (filter.toggle && !filter.toggle.checked) {
             continue;
           }
-          if (filter.params && filter.params.length > 0) {
-            const values = filter.params.map((param) => param.input.value);
+          if (filter.uniformInputs && filter.uniformInputs.length > 0) {
+            const values = filter.uniformInputs.map((input) => input.value);
             q.set(filter.id, values.join(","));
-          } else if (filter.param && filter.param.input) {
-            const value = filter.param.input.value;
-            if (value != "0") {
-              q.set(filter.id, value);
-            }
-          } else {
-            q.set(filter.id, "");
+            continue;
           }
+          q.set(filter.id, "");
         }
         return q;
       }
@@ -291,22 +320,16 @@
           if (filter.toggle) {
             filter.toggle.checked = enabled;
           }
-          if (filter.params && filter.params.length > 0 && enabled) {
+          if (enabled && filter.uniformInputs && filter.uniformInputs.length > 0) {
             const raw = params.get(filter.id);
             if (raw !== null) {
               const values = raw.split(",");
-              for (let i = 0; i < filter.params.length; i++) {
+              for (let i = 0; i < filter.uniformInputs.length; i++) {
                 if (values[i] !== undefined) {
-                  filter.params[i].input.value = values[i];
+                  filter.uniformInputs[i].value = values[i];
                 }
               }
-              applyParam(filter);
-            }
-          } else if (filter.param && filter.param.input && enabled) {
-            const value = params.get(filter.id);
-            if (value !== null) {
-              filter.param.input.value = value;
-              applyParam(filter);
+              applyUniformInputs(filter);
             }
           }
         }
@@ -321,130 +344,39 @@
       }
 
       const filters = {
-        brightness: {
-          id: "brightness",
-          path: "examples/rgba/brightness.wasm",
-          toggle: brightnessToggle,
-          param: {
-            input: brightnessInput,
-            valueEl: brightnessValue,
-            name: "uniform_set_brightness",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        contrast: {
-          id: "contrast",
-          path: "examples/rgba/contrast.wasm",
-          toggle: contrastToggle,
-          param: {
-            input: contrastInput,
-            valueEl: contrastValue,
-            name: "uniform_set_contrast",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        saturation: {
-          id: "saturation",
-          path: "examples/rgba/saturation.wasm",
-          toggle: saturationToggle,
-          param: {
-            input: saturationInput,
-            valueEl: saturationValue,
-            name: "uniform_set_saturation",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        "hue-rotate": {
-          id: "hue-rotate",
-          path: "examples/rgba/hue-rotate.wasm",
-          toggle: hueRotateToggle,
-          param: {
-            input: hueRotateInput,
-            valueEl: hueRotateValue,
-            name: "uniform_set_hue_degrees",
-            parse: (value) => parseFloat(value),
-            format: (value) => String(Math.round(Number(value))),
-          },
-        },
-        temperature: {
-          id: "temperature",
-          path: "examples/rgba/temperature.wasm",
-          toggle: temperatureToggle,
-          param: {
-            input: temperatureInput,
-            valueEl: temperatureValue,
-            name: "uniform_set_temperature",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        tint: {
-          id: "tint",
-          path: "examples/rgba/tint.wasm",
-          toggle: tintToggle,
-          param: {
-            input: tintInput,
-            valueEl: tintValue,
-            name: "uniform_set_tint",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
+        brightness: { id: "brightness", path: "examples/rgba/brightness.wasm" },
+        contrast: { id: "contrast", path: "examples/rgba/contrast.wasm" },
+        saturation: { id: "saturation", path: "examples/rgba/saturation.wasm" },
+        "hue-rotate": { id: "hue-rotate", path: "examples/rgba/hue-rotate.wasm" },
+        temperature: { id: "temperature", path: "examples/rgba/temperature.wasm" },
+        tint: { id: "tint", path: "examples/rgba/tint.wasm" },
         "black-and-white": {
           id: "black-and-white",
           path: "examples/rgba/black-and-white.wasm",
-          toggle: bwToggle,
         },
-        invert: {
-          id: "invert",
-          path: "examples/rgba/invert.wasm",
-          toggle: invertToggle,
-        },
-        posterize: {
-          id: "posterize",
-          path: "examples/rgba/posterize.wasm",
-          toggle: posterizeToggle,
-          param: {
-            input: levelsInput,
-            valueEl: levelsValue,
-            name: "uniform_set_levels_count",
-            parse: (value) => Number(value),
-            format: (value) => String(value),
-          },
-        },
-        vignette: {
-          id: "vignette",
-          path: "examples/rgba/vignette.wasm",
-          toggle: vignetteToggle,
-          params: [
-            {
-              input: vignetteAmountInput,
-              valueEl: vignetteAmountValue,
-              name: "uniform_set_amount",
-              parse: (value) => parseFloat(value),
-              format: (value) => Number(value).toFixed(2),
-            },
-            {
-              input: vignetteMidpointInput,
-              valueEl: vignetteMidpointValue,
-              name: "uniform_set_midpoint",
-              parse: (value) => parseFloat(value),
-              format: (value) => Number(value).toFixed(2),
-            },
-            {
-              input: vignetteFeatherInput,
-              valueEl: vignetteFeatherValue,
-              name: "uniform_set_feather",
-              parse: (value) => parseFloat(value),
-              format: (value) => Number(value).toFixed(2),
-            },
-          ],
-        },
+        invert: { id: "invert", path: "examples/rgba/invert.wasm" },
+        posterize: { id: "posterize", path: "examples/rgba/posterize.wasm" },
+        vignette: { id: "vignette", path: "examples/rgba/vignette.wasm" },
       };
 
+      function initFilterBindings() {
+        for (const key in filters) {
+          const filter = filters[key];
+          filter.row = filtersContainer.querySelector(
+            `[data-filter-id="${filter.id}"]`,
+          );
+          if (!filter.row) {
+            continue;
+          }
+          filter.toggle = filter.row.querySelector('input[type="checkbox"]');
+          filter.uniformInputs = Array.from(
+            filter.row.querySelectorAll("input[data-uniform]"),
+          );
+          filter.uniforms = {};
+        }
+      }
+
+      initFilterBindings();
       updateFiltersFromLocationHash();
 
       function exportedValue(exp) {
@@ -480,39 +412,64 @@
         filter.inputPtr = exportedValue(exports.input_ptr);
         filter.tileFn = exports.tile_rgba_f32_64x64;
         filter.uniformSetSize = exports.uniform_set_width_and_height || null;
-        if (filter.params && filter.params.length > 0) {
-          for (const param of filter.params) {
-            param.setter = exports[param.name] || null;
+        if (filter.uniformInputs) {
+          for (const input of filter.uniformInputs) {
+            const name = input.dataset.uniform;
+            if (name) {
+              filter.uniforms[name] = exports[name] || null;
+            }
           }
-        } else if (filter.param && filter.param.name) {
-          filter.paramSetter = exports[filter.param.name] || null;
         }
         filter.getTileView = () =>
           new Float32Array(filter.memory.buffer, filter.inputPtr, TILE_FLOATS);
       }
 
-      function applyParamEntry(param) {
-        const value = param.parse(param.input.value);
-        param.valueEl.textContent = param.format(value);
-        if (param.setter) {
-          param.setter(value);
+      function formatValue(input, value) {
+        const format = input.dataset.format;
+        if (format === "int") {
+          return String(Math.round(value));
+        }
+        if (format === "fixed2") {
+          return Number(value).toFixed(2);
+        }
+        const step = input.step || "";
+        const decimals = step.includes(".") ? step.split(".")[1].length : 0;
+        return decimals > 0 ? Number(value).toFixed(decimals) : String(value);
+      }
+
+      function applyUniformInput(input) {
+        const row = input.closest(".filter-row");
+        if (!row) {
+          return;
+        }
+        const filter = filters[row.dataset.filterId];
+        if (!filter) {
+          return;
+        }
+        const uniformName = input.dataset.uniform;
+        if (!uniformName) {
+          return;
+        }
+        const value = Number(input.value);
+        const valueId = input.dataset.valueId;
+        if (valueId) {
+          const valueEl = document.getElementById(valueId);
+          if (valueEl) {
+            valueEl.textContent = formatValue(input, value);
+          }
+        }
+        const setter = filter.uniforms ? filter.uniforms[uniformName] : null;
+        if (setter) {
+          setter(value);
         }
       }
 
-      function applyParam(filter) {
-        if (filter.params && filter.params.length > 0) {
-          for (const param of filter.params) {
-            applyParamEntry(param);
-          }
+      function applyUniformInputs(filter) {
+        if (!filter.uniformInputs) {
           return;
         }
-        if (!filter.param) {
-          return;
-        }
-        const value = filter.param.parse(filter.param.input.value);
-        filter.param.valueEl.textContent = filter.param.format(value);
-        if (filter.paramSetter) {
-          filter.paramSetter(value);
+        for (const input of filter.uniformInputs) {
+          applyUniformInput(input);
         }
       }
 
@@ -625,94 +582,27 @@
           .filter(Boolean);
       }
 
-      levelsInput.addEventListener("input", () => {
-        applyParam(filters.posterize);
-        renderPosterized();
-        updateLocationHash();
-      });
-      vignetteAmountInput.addEventListener("input", () => {
-        applyParamEntry(filters.vignette.params[0]);
-        renderPosterized();
-        updateLocationHash();
-      });
-      vignetteMidpointInput.addEventListener("input", () => {
-        applyParamEntry(filters.vignette.params[1]);
-        renderPosterized();
-        updateLocationHash();
-      });
-      vignetteFeatherInput.addEventListener("input", () => {
-        applyParamEntry(filters.vignette.params[2]);
+      filtersContainer.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+        if (target.type !== "range") {
+          return;
+        }
+        applyUniformInput(target);
         renderPosterized();
         updateLocationHash();
       });
 
-      posterizeToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      vignetteToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      bwToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      invertToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      brightnessToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      contrastToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      saturationToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      hueRotateToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      temperatureToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      tintToggle.addEventListener("change", () => {
-        renderPosterized();
-        updateLocationHash();
-      });
-      brightnessInput.addEventListener("input", () => {
-        applyParam(filters.brightness);
-        renderPosterized();
-        updateLocationHash();
-      });
-      contrastInput.addEventListener("input", () => {
-        applyParam(filters.contrast);
-        renderPosterized();
-        updateLocationHash();
-      });
-      saturationInput.addEventListener("input", () => {
-        applyParam(filters.saturation);
-        renderPosterized();
-        updateLocationHash();
-      });
-      hueRotateInput.addEventListener("input", () => {
-        applyParam(filters["hue-rotate"]);
-        renderPosterized();
-        updateLocationHash();
-      });
-      temperatureInput.addEventListener("input", () => {
-        applyParam(filters.temperature);
-        renderPosterized();
-        updateLocationHash();
-      });
-      tintInput.addEventListener("input", () => {
-        applyParam(filters.tint);
+      filtersContainer.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+        if (target.type !== "checkbox") {
+          return;
+        }
         renderPosterized();
         updateLocationHash();
       });
@@ -781,14 +671,9 @@
       (async () => {
         try {
           await loadWasm();
-          applyParam(filters.posterize);
-          applyParam(filters.vignette);
-          applyParam(filters.brightness);
-          applyParam(filters.contrast);
-          applyParam(filters.saturation);
-          applyParam(filters["hue-rotate"]);
-          applyParam(filters.temperature);
-          applyParam(filters.tint);
+          for (const key in filters) {
+            applyUniformInputs(filters[key]);
+          }
           statusEl.textContent = "Ready. Choose an image.";
         } catch (err) {
           statusEl.textContent = "Error: " + err.message;
