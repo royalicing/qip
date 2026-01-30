@@ -5,7 +5,7 @@
 
   ;; Temperature in [-1, 1]. -1 cools, +1 warms.
   (global $param_temperature (mut f32) (f32.const 0.0))
-  (func (export "param_set_temperature") (param $v f32) (result f32)
+  (func (export "uniform_set_temperature") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min

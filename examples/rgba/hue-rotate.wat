@@ -5,7 +5,7 @@
 
   ;; Hue rotation in degrees. Any value is accepted; it's wrapped to [-180, 180].
   (global $param_hue_degrees (mut f32) (f32.const 0.0))
-  (func (export "param_set_hue_degrees") (param $v f32) (result f32)
+  (func (export "uniform_set_hue_degrees") (param $v f32) (result f32)
     (global.set $param_hue_degrees (local.get $v))
     (local.get $v)
   )

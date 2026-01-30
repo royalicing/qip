@@ -4,7 +4,7 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   (global $param_levels_count (mut i32) (i32.const 8))
-  (func (export "param_set_levels_count") (param $v i32) (result i32)
+  (func (export "uniform_set_levels_count") (param $v i32) (result i32)
     (if (i32.gt_u (local.get $v) (i32.const 255))
       (then (local.set $v (i32.const 255))))
     (global.set $param_levels_count (local.get $v))

@@ -5,7 +5,7 @@
 
   ;; Tint in [-1, 1]. -1 adds magenta, +1 adds green.
   (global $param_tint (mut f32) (f32.const 0.0))
-  (func (export "param_set_tint") (param $v f32) (result f32)
+  (func (export "uniform_set_tint") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min

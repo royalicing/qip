@@ -5,7 +5,7 @@
 
   ;; Saturation in [-1, 1]. -1 = grayscale, 0 = unchanged, +1 = 2x saturation.
   (global $param_saturation (mut f32) (f32.const 0.0))
-  (func (export "param_set_saturation") (param $v f32) (result f32)
+  (func (export "uniform_set_saturation") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min

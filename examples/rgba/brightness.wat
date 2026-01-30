@@ -5,7 +5,7 @@
 
   ;; Brightness in [-1, 1]. Positive pushes toward white, negative toward black.
   (global $param_brightness (mut f32) (f32.const 0.0))
-  (func (export "param_set_brightness") (param $v f32) (result f32)
+  (func (export "uniform_set_brightness") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min

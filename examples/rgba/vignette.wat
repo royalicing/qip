@@ -13,7 +13,7 @@
 
   ;; Amount in [0, 1]. 0 = none, 1 = full strength.
   (global $param_amount (mut f32) (f32.const 0.5))
-  (func (export "param_set_amount") (param $v f32) (result f32)
+  (func (export "uniform_set_amount") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
@@ -25,7 +25,7 @@
 
   ;; Midpoint in [0, 1]. 1.0 means no vignette.
   (global $param_midpoint (mut f32) (f32.const 0.75))
-  (func (export "param_set_midpoint") (param $v f32) (result f32)
+  (func (export "uniform_set_midpoint") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
@@ -37,7 +37,7 @@
 
   ;; Feather in [0, 1]. 0 = hard edge, 1 = very soft.
   (global $param_feather (mut f32) (f32.const 0.5))
-  (func (export "param_set_feather") (param $v f32) (result f32)
+  (func (export "uniform_set_feather") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min

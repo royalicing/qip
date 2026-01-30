@@ -328,7 +328,7 @@
           param: {
             input: brightnessInput,
             valueEl: brightnessValue,
-            name: "param_set_brightness",
+            name: "uniform_set_brightness",
             parse: (value) => parseFloat(value),
             format: (value) => Number(value).toFixed(2),
           },
@@ -340,7 +340,7 @@
           param: {
             input: contrastInput,
             valueEl: contrastValue,
-            name: "param_set_contrast",
+            name: "uniform_set_contrast",
             parse: (value) => parseFloat(value),
             format: (value) => Number(value).toFixed(2),
           },
@@ -352,7 +352,7 @@
           param: {
             input: saturationInput,
             valueEl: saturationValue,
-            name: "param_set_saturation",
+            name: "uniform_set_saturation",
             parse: (value) => parseFloat(value),
             format: (value) => Number(value).toFixed(2),
           },
@@ -364,7 +364,7 @@
           param: {
             input: hueRotateInput,
             valueEl: hueRotateValue,
-            name: "param_set_hue_degrees",
+            name: "uniform_set_hue_degrees",
             parse: (value) => parseFloat(value),
             format: (value) => String(Math.round(Number(value))),
           },
@@ -376,7 +376,7 @@
           param: {
             input: temperatureInput,
             valueEl: temperatureValue,
-            name: "param_set_temperature",
+            name: "uniform_set_temperature",
             parse: (value) => parseFloat(value),
             format: (value) => Number(value).toFixed(2),
           },
@@ -388,7 +388,7 @@
           param: {
             input: tintInput,
             valueEl: tintValue,
-            name: "param_set_tint",
+            name: "uniform_set_tint",
             parse: (value) => parseFloat(value),
             format: (value) => Number(value).toFixed(2),
           },
@@ -410,7 +410,7 @@
           param: {
             input: levelsInput,
             valueEl: levelsValue,
-            name: "param_set_levels_count",
+            name: "uniform_set_levels_count",
             parse: (value) => Number(value),
             format: (value) => String(value),
           },
@@ -423,21 +423,21 @@
             {
               input: vignetteAmountInput,
               valueEl: vignetteAmountValue,
-              name: "param_set_amount",
+              name: "uniform_set_amount",
               parse: (value) => parseFloat(value),
               format: (value) => Number(value).toFixed(2),
             },
             {
               input: vignetteMidpointInput,
               valueEl: vignetteMidpointValue,
-              name: "param_set_midpoint",
+              name: "uniform_set_midpoint",
               parse: (value) => parseFloat(value),
               format: (value) => Number(value).toFixed(2),
             },
             {
               input: vignetteFeatherInput,
               valueEl: vignetteFeatherValue,
-              name: "param_set_feather",
+              name: "uniform_set_feather",
               parse: (value) => parseFloat(value),
               format: (value) => Number(value).toFixed(2),
             },
