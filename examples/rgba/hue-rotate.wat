@@ -4,9 +4,9 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   ;; Hue rotation in degrees. Any value is accepted; it's wrapped to [-180, 180].
-  (global $param_hue_degrees (mut f32) (f32.const 0.0))
+  (global $uniform_hue_degrees (mut f32) (f32.const 0.0))
   (func (export "uniform_set_hue_degrees") (param $v f32) (result f32)
-    (global.set $param_hue_degrees (local.get $v))
+    (global.set $uniform_hue_degrees (local.get $v))
     (local.get $v)
   )
 
@@ -61,7 +61,7 @@
     (local.set $end (i32.add (global.get $input_ptr) (i32.const 0x10000)))
     (local.set $angle
       (call $wrap_radians
-        (f32.mul (global.get $param_hue_degrees) (f32.const 0.017453292))))
+        (f32.mul (global.get $uniform_hue_degrees) (f32.const 0.017453292))))
 
     (local.set $x1 (local.get $angle))
     (local.set $cos_sign (f32.const 1.0))

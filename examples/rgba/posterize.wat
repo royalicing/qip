@@ -3,11 +3,11 @@
   (global $input_ptr (export "input_ptr") i32 (i32.const 0))
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
-  (global $param_levels_count (mut i32) (i32.const 8))
+  (global $uniform_levels_count (mut i32) (i32.const 8))
   (func (export "uniform_set_levels_count") (param $v i32) (result i32)
     (if (i32.gt_u (local.get $v) (i32.const 255))
       (then (local.set $v (i32.const 255))))
-    (global.set $param_levels_count (local.get $v))
+    (global.set $uniform_levels_count (local.get $v))
     (local.get $v)
   )
 
@@ -22,7 +22,7 @@
     (local.set $denom
       (f32.max
         (f32.const 1.0)
-        (f32.sub (f32.convert_i32_u (global.get $param_levels_count)) (f32.const 1.0))))
+        (f32.sub (f32.convert_i32_u (global.get $uniform_levels_count)) (f32.const 1.0))))
     (loop $posterize
       (local.set $v
         (f32.div

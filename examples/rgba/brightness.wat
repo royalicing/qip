@@ -4,20 +4,20 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   ;; Brightness in [-1, 1]. Positive pushes toward white, negative toward black.
-  (global $param_brightness (mut f32) (f32.const 0.0))
+  (global $uniform_brightness (mut f32) (f32.const 0.0))
   (func (export "uniform_set_brightness") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 1.0)
         (f32.max (f32.const -1.0) (local.get $v))))
-    (global.set $param_brightness (local.get $clamped))
+    (global.set $uniform_brightness (local.get $clamped))
     (local.get $clamped)
   )
 
   (func $apply_brightness (param $v f32) (result f32)
     (local $b f32)
-    (local.set $b (global.get $param_brightness))
+    (local.set $b (global.get $uniform_brightness))
     (f32.min
       (f32.const 1.0)
       (f32.max

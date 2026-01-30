@@ -4,21 +4,21 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   ;; Contrast in [-1, 1]. Positive increases contrast, negative reduces it.
-  (global $param_contrast (mut f32) (f32.const 0.0))
+  (global $uniform_contrast (mut f32) (f32.const 0.0))
   (func (export "uniform_set_contrast") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 0.999)
         (f32.max (f32.const -0.999) (local.get $v))))
-    (global.set $param_contrast (local.get $clamped))
+    (global.set $uniform_contrast (local.get $clamped))
     (local.get $clamped)
   )
 
   (func $apply_contrast (param $v f32) (result f32)
     (local $c f32)
     (local $factor f32)
-    (local.set $c (global.get $param_contrast))
+    (local.set $c (global.get $uniform_contrast))
     (local.set $factor
       (if (result f32) (f32.ge (local.get $c) (f32.const 0.0))
         (then

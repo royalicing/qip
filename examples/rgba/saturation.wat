@@ -4,20 +4,20 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   ;; Saturation in [-1, 1]. -1 = grayscale, 0 = unchanged, +1 = 2x saturation.
-  (global $param_saturation (mut f32) (f32.const 0.0))
+  (global $uniform_saturation (mut f32) (f32.const 0.0))
   (func (export "uniform_set_saturation") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 1.0)
         (f32.max (f32.const -1.0) (local.get $v))))
-    (global.set $param_saturation (local.get $clamped))
+    (global.set $uniform_saturation (local.get $clamped))
     (local.get $clamped)
   )
 
   (func $apply_saturation (param $v f32) (param $luma f32) (result f32)
     (local $f f32)
-    (local.set $f (f32.add (f32.const 1.0) (global.get $param_saturation)))
+    (local.set $f (f32.add (f32.const 1.0) (global.get $uniform_saturation)))
     (f32.min
       (f32.const 1.0)
       (f32.max

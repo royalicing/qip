@@ -4,14 +4,14 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
 
   ;; Temperature in [-1, 1]. -1 cools, +1 warms.
-  (global $param_temperature (mut f32) (f32.const 0.0))
+  (global $uniform_temperature (mut f32) (f32.const 0.0))
   (func (export "uniform_set_temperature") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 1.0)
         (f32.max (f32.const -1.0) (local.get $v))))
-    (global.set $param_temperature (local.get $clamped))
+    (global.set $uniform_temperature (local.get $clamped))
     (local.get $clamped)
   )
 
@@ -32,7 +32,7 @@
 
     (local.set $p (global.get $input_ptr))
     (local.set $end (i32.add (global.get $input_ptr) (i32.const 0x10000)))
-    (local.set $t (global.get $param_temperature))
+    (local.set $t (global.get $uniform_temperature))
     (local.set $r_scale (f32.add (f32.const 1.0) (f32.mul (local.get $t) (f32.const 0.10))))
     (local.set $g_scale (f32.add (f32.const 1.0) (f32.mul (local.get $t) (f32.const 0.05))))
     (local.set $b_scale (f32.sub (f32.const 1.0) (f32.mul (local.get $t) (f32.const 0.10))))

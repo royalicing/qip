@@ -12,38 +12,38 @@
   )
 
   ;; Amount in [0, 1]. 0 = none, 1 = full strength.
-  (global $param_amount (mut f32) (f32.const 0.5))
+  (global $uniform_amount (mut f32) (f32.const 0.5))
   (func (export "uniform_set_amount") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 1.0)
         (f32.max (f32.const 0.0) (local.get $v))))
-    (global.set $param_amount (local.get $clamped))
+    (global.set $uniform_amount (local.get $clamped))
     (local.get $clamped)
   )
 
   ;; Midpoint in [0, 1]. 1.0 means no vignette.
-  (global $param_midpoint (mut f32) (f32.const 0.75))
+  (global $uniform_midpoint (mut f32) (f32.const 0.75))
   (func (export "uniform_set_midpoint") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 0.999)
         (f32.max (f32.const 0.0) (local.get $v))))
-    (global.set $param_midpoint (local.get $clamped))
+    (global.set $uniform_midpoint (local.get $clamped))
     (local.get $clamped)
   )
 
   ;; Feather in [0, 1]. 0 = hard edge, 1 = very soft.
-  (global $param_feather (mut f32) (f32.const 0.5))
+  (global $uniform_feather (mut f32) (f32.const 0.5))
   (func (export "uniform_set_feather") (param $v f32) (result f32)
     (local $clamped f32)
     (local.set $clamped
       (f32.min
         (f32.const 1.0)
         (f32.max (f32.const 0.0) (local.get $v))))
-    (global.set $param_feather (local.get $clamped))
+    (global.set $uniform_feather (local.get $clamped))
     (local.get $clamped)
   )
 
@@ -89,9 +89,9 @@
           (f32.mul (local.get $aspect) (local.get $aspect))
           (f32.const 1.0))))
     (local.set $inv_max_dist (f32.div (f32.const 1.0) (local.get $max_dist)))
-    (local.set $amount (global.get $param_amount))
-    (local.set $midpoint (global.get $param_midpoint))
-    (local.set $feather (global.get $param_feather))
+    (local.set $amount (global.get $uniform_amount))
+    (local.set $midpoint (global.get $uniform_midpoint))
+    (local.set $feather (global.get $uniform_feather))
     (local.set $edge
       (f32.add
         (local.get $midpoint)
