@@ -314,6 +314,13 @@
 
       function updateFiltersFromLocationHash() {
         const params = new URLSearchParams(location.hash.slice(1));
+        if ([...params.keys()].length === 0) {
+          for (const key in filters) {
+            applyUniformInputs(filters[key]);
+          }
+          updateLocationHash();
+          return;
+        }
         for (const key in filters) {
           const filter = filters[key];
           const enabled = params.has(filter.id);
@@ -590,8 +597,6 @@
         if (target.type !== "range") {
           return;
         }
-        applyUniformInput(target);
-        renderPosterized();
         updateLocationHash();
       });
 
@@ -603,7 +608,6 @@
         if (target.type !== "checkbox") {
           return;
         }
-        renderPosterized();
         updateLocationHash();
       });
 
@@ -671,9 +675,7 @@
       (async () => {
         try {
           await loadWasm();
-          for (const key in filters) {
-            applyUniformInputs(filters[key]);
-          }
+          updateFiltersFromLocationHash();
           statusEl.textContent = "Ready. Choose an image.";
         } catch (err) {
           statusEl.textContent = "Error: " + err.message;
