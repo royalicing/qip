@@ -17,8 +17,8 @@ brew install qip
 ## Usage
 
 ```bash
-python3 -m http.server
-open http://localhost:8080/image.html
+npx http-server . -o image.html -p 9999
+http://localhost:9999/image.html
 ```
 
 ```bash
