@@ -131,6 +131,7 @@
       <button type="button" data-add-filter="posterize">Posterize</button>
       <button type="button" data-add-filter="color-halftone">Color halftone</button>
       <button type="button" data-add-filter="gaussian-blur">Gaussian blur</button>
+      <button type="button" data-add-filter="unsharp-mask">Unsharp mask</button>
       <button type="button" data-add-filter="cutout">Cutout</button>
       <button type="button" data-add-filter="vignette">Vignette</button>
       <button type="button" data-add-filter="black-and-white">Black and white</button>
@@ -382,6 +383,52 @@
       </div>
     </template>
 
+    <template id="filter-template-unsharp-mask">
+      <div class="filter-row" data-filter-id="unsharp-mask">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Unsharp mask</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Radius:</span>
+        <input
+          type="range"
+          min="0"
+          max="10"
+          step="1"
+          value="2"
+          data-uniform="uniform_set_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_radius">2</span>
+        <span class="divider">|</span>
+        <span>Amount:</span>
+        <input
+          type="range"
+          min="0"
+          max="2"
+          step="0.05"
+          value="0.6"
+          data-uniform="uniform_set_amount"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_amount">0.60</span>
+        <span class="divider">|</span>
+        <span>Threshold:</span>
+        <input
+          type="range"
+          min="0"
+          max="0.5"
+          step="0.01"
+          value="0.02"
+          data-uniform="uniform_set_threshold"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_threshold">0.02</span>
+      </div>
+    </template>
+
     <template id="filter-template-cutout">
       <div class="filter-row" data-filter-id="cutout">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
@@ -526,6 +573,7 @@
         { id: "posterize", path: "examples/rgba/posterize.wasm" },
         { id: "color-halftone", path: "examples/rgba/color-halftone.wasm" },
         { id: "gaussian-blur", path: "examples/rgba/gaussian-blur.wasm" },
+        { id: "unsharp-mask", path: "examples/rgba/unsharp-mask.wasm" },
         { id: "cutout", path: "examples/rgba/cutout.wasm" },
         { id: "vignette", path: "examples/rgba/vignette.wasm" },
         { id: "black-and-white", path: "examples/rgba/black-and-white.wasm" },
@@ -542,43 +590,80 @@
         "tint",
       ];
 
-      function filtersToURLSearchParams() {
+      let workingState = [];
+
+      function serializeState(state) {
         const q = new URLSearchParams();
+        for (const item of state) {
+          if (!item || !item.id) {
+            continue;
+          }
+          const values = Array.isArray(item.values) ? item.values : [];
+          const enabled = item.enabled ? "1" : "0";
+          q.append(item.id, [enabled, ...values].join(","));
+        }
+        return q;
+      }
+
+      function buildStateFromDOM() {
         const rows = filtersContainer.querySelectorAll(".filter-row");
+        const state = [];
         for (const row of rows) {
           const id = row.dataset.filterId;
           if (!id) {
             continue;
           }
           const toggle = row.querySelector(".filter-toggle");
-          if (toggle && !toggle.checked) {
-            continue;
-          }
+          const enabled = !toggle || toggle.checked;
           const inputs = row.querySelectorAll("input[data-uniform]");
           const values = Array.from(inputs).map((input) => input.value);
-          q.append(id, values.join(","));
+          state.push({ id, enabled, values });
         }
-        return q;
+        return state;
       }
 
-      function updateFiltersFromLocationHash() {
+      function parseStateFromHash() {
         const params = new URLSearchParams(location.hash.slice(1));
-        if ([...params.keys()].length === 0) {
-          if (!hasBootstrappedDefaults) {
-            hasBootstrappedDefaults = true;
-            filtersContainer.replaceChildren(
-              ...DEFAULT_PIPELINE.map((id) => createFilterRow(id, null, true)),
-            );
-            updateLocationHash();
-          } else {
-            filtersContainer.replaceChildren();
-          }
-          return;
-        }
-        const rows = [];
+        const state = [];
         for (const [id, raw] of params) {
-          const values = raw ? raw.split(",") : [];
-          const row = createFilterRow(id, values, true);
+          const tpl = document.getElementById(`filter-template-${id}`);
+          if (!tpl) {
+            continue;
+          }
+          const defaults = getTemplateDefaultValues(id);
+          let values = raw ? raw.split(",") : [];
+          let enabled = true;
+          if (
+            values.length === defaults.length + 1 &&
+            (values[0] === "0" || values[0] === "1")
+          ) {
+            enabled = values[0] === "1";
+            values = values.slice(1);
+          }
+          if (values.length === 0) {
+            values = defaults.slice();
+          } else {
+            values = defaults.map((def, i) =>
+              values[i] === undefined ? def : values[i],
+            );
+          }
+          state.push({ id, enabled, values });
+        }
+        return state;
+      }
+
+      function commitStateToHash() {
+        const next = serializeState(workingState).toString();
+        const nextHash = next ? `#${next}` : "";
+        if (location.hash !== nextHash) {
+          history.replaceState(null, "", nextHash);
+        }
+      }
+
+      function applyStateToDOM(state) {
+        const rows = [];
+        for (const item of state) {
+          const row = createFilterRow(item.id, item.values, item.enabled);
           if (row) {
             rows.push(row);
           }
@@ -586,12 +671,27 @@
         filtersContainer.replaceChildren(...rows);
       }
 
-      function updateLocationHash() {
-        const next = filtersToURLSearchParams().toString();
-        const nextHash = next ? "#" + next : "";
-        if (location.hash !== nextHash) {
-          location.hash = nextHash;
+      function updateFiltersFromLocationHash() {
+        const parsed = parseStateFromHash();
+        if (parsed.length === 0) {
+          if (!hasBootstrappedDefaults) {
+            hasBootstrappedDefaults = true;
+            workingState = DEFAULT_PIPELINE.map((id) => ({
+              id,
+              enabled: true,
+              values: getTemplateDefaultValues(id),
+            }));
+            applyStateToDOM(workingState);
+            commitStateToHash();
+          } else {
+            workingState = [];
+            filtersContainer.replaceChildren();
+          }
+          return;
         }
+        workingState = parsed;
+        applyStateToDOM(workingState);
+        commitStateToHash();
       }
 
       const filters = {};
@@ -614,14 +714,17 @@
         }
         row.dataset.filterId = id;
         const toggle = row.querySelector(".filter-toggle");
-        if (toggle && forceEnabled) {
+        if (toggle && typeof forceEnabled === "boolean") {
+          toggle.checked = forceEnabled;
+        } else if (toggle) {
           toggle.checked = true;
         }
         const inputs = row.querySelectorAll("input[data-uniform]");
-        if (values && values.length > 0) {
+        const inputValues = values || [];
+        if (inputValues.length > 0) {
           for (let i = 0; i < inputs.length; i++) {
-            if (values[i] !== undefined) {
-              inputs[i].value = values[i];
+            if (inputValues[i] !== undefined) {
+              inputs[i].value = inputValues[i];
             }
           }
         }
@@ -991,7 +1094,9 @@
           return;
         }
         updateValueDisplay(target);
-        updateLocationHash();
+        workingState = buildStateFromDOM();
+        commitStateToHash();
+        renderPosterized();
       });
 
       filtersContainer.addEventListener("change", (event) => {
@@ -1002,7 +1107,9 @@
         if (target.type !== "checkbox") {
           return;
         }
-        updateLocationHash();
+        workingState = buildStateFromDOM();
+        commitStateToHash();
+        renderPosterized();
       });
 
       filterMenu.addEventListener("click", (event) => {
@@ -1011,11 +1118,14 @@
           return;
         }
         const id = button.dataset.addFilter;
-        const params = new URLSearchParams(location.hash.slice(1));
         const values = getTemplateDefaultValues(id);
-        params.append(id, values.join(","));
-        const next = params.toString();
-        location.hash = next ? "#" + next : "";
+        const row = createFilterRow(id, values, true);
+        if (row) {
+          filtersContainer.appendChild(row);
+        }
+        workingState = buildStateFromDOM();
+        commitStateToHash();
+        renderPosterized();
         if (filterMenu.hidePopover) {
           filterMenu.hidePopover();
         }
@@ -1066,8 +1176,9 @@
 
       filtersContainer.addEventListener("drop", (event) => {
         event.preventDefault();
+        workingState = buildStateFromDOM();
+        commitStateToHash();
         renderPosterized();
-        updateLocationHash();
       });
 
       fileInput.addEventListener("change", async (event) => {
