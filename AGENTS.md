@@ -2,11 +2,23 @@
 
 ## Project Context
 
-- This repo contains `qip`, a CLI that runs WASM modules for text and image processing.
+- `qip` has two distinct execution paths:
+  - **Text/Binary**: runs WASM modules via `run` for text or raw byte processing.
+  - **Image**: runs RGBA tiling filters via `qip image` and `image.html`.
+- Notes below cover **Text/Binary** briefly, then **Image** in more detail.
+
+## Text/Binary
+
+- Entry point: modules export `run(input_len)` and read input from `input_ptr`.
+- Capacity comes from `input_utf8_cap` or `input_bytes_cap` (global or function).
+- Outputs are read from `output_ptr` with one of `output_utf8_cap`, `output_bytes_cap`, or `output_i32_cap`.
+
+## Image
+
 - `image.html` is a browser demo for RGBA filters.
 - RGBA filters live in `examples/rgba/*.wat` with compiled `*.wasm`.
 
-## Tiling + Halo
+### Tiling + Halo
 
 - Tile size is **64x64**.
 - Filters may export `calculate_halo_px()` for halo padding.
@@ -15,19 +27,19 @@
   - Halo tiles use edge clamping and pass `x - halo`, `y - halo` to the module.
 - See `IMAGE.md` for the full protocol.
 
-## image.html State Management
+### image.html State Management
 
 - There is a **working state** (`workingState`) kept in memory.
 - UI changes update `workingState` and **commit** to the URL hash (history replace).
 - Hash parsing only happens on `hashchange` (back/forward/manual edits).
 - Filters are not removed when unchecked; enabled flag is stored in the hash.
 
-## Recent Filters Added
+### Recent Filters Added
 
 - `find-edges`, `cutout`, `color-halftone`, `gaussian-blur`, `unsharp-mask`
 - `gaussian-blur` and `unsharp-mask` are halo-aware and use dynamic tile spans.
 
-## Gotchas
+### Gotchas
 
 - If a filter exports `calculate_halo_px`, its WAT must handle tile spans > 64 (row stride changes).
 - `input_bytes_cap` must cover expanded tiles and scratch buffers.
@@ -35,4 +47,3 @@
   - menu button
   - template
   - `FILTER_DEFS`
-
