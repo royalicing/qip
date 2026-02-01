@@ -131,7 +131,9 @@
       <button type="button" data-add-filter="posterize">Posterize</button>
       <button type="button" data-add-filter="color-halftone">Color halftone</button>
       <button type="button" data-add-filter="gaussian-blur">Gaussian blur</button>
+      <button type="button" data-add-filter="motion-blur">Motion blur</button>
       <button type="button" data-add-filter="unsharp-mask">Unsharp mask</button>
+      <button type="button" data-add-filter="render-clouds">Render clouds</button>
       <button type="button" data-add-filter="cutout">Cutout</button>
       <button type="button" data-add-filter="vignette">Vignette</button>
       <button type="button" data-add-filter="black-and-white">Black and white</button>
@@ -383,6 +385,40 @@
       </div>
     </template>
 
+    <template id="filter-template-motion-blur">
+      <div class="filter-row" data-filter-id="motion-blur">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Motion blur</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Radius:</span>
+        <input
+          type="range"
+          min="0"
+          max="32"
+          step="1"
+          value="8"
+          data-uniform="uniform_set_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_radius">8</span>
+        <span class="divider">|</span>
+        <span>Angle:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_angle"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle">0</span>
+      </div>
+    </template>
+
     <template id="filter-template-unsharp-mask">
       <div class="filter-row" data-filter-id="unsharp-mask">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
@@ -426,6 +462,76 @@
           data-format="fixed2"
         />
         <span data-value-for="uniform_set_threshold">0.02</span>
+      </div>
+    </template>
+
+    <template id="filter-template-render-clouds">
+      <div class="filter-row" data-filter-id="render-clouds">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Render clouds</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Scale:</span>
+        <input
+          type="range"
+          min="8"
+          max="256"
+          step="1"
+          value="96"
+          data-uniform="uniform_set_scale"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_scale">96</span>
+        <span class="divider">|</span>
+        <span>Octaves:</span>
+        <input
+          type="range"
+          min="1"
+          max="8"
+          step="1"
+          value="4"
+          data-uniform="uniform_set_octaves"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_octaves">4</span>
+        <span class="divider">|</span>
+        <span>Persistence:</span>
+        <input
+          type="range"
+          min="0"
+          max="0.95"
+          step="0.01"
+          value="0.5"
+          data-uniform="uniform_set_persistence"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_persistence">0.50</span>
+        <span class="divider">|</span>
+        <span>Contrast:</span>
+        <input
+          type="range"
+          min="0.1"
+          max="2.5"
+          step="0.05"
+          value="1.2"
+          data-uniform="uniform_set_contrast"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_contrast">1.20</span>
+        <span class="divider">|</span>
+        <span>Seed:</span>
+        <input
+          type="range"
+          min="-1000"
+          max="1000"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_seed"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_seed">0</span>
       </div>
     </template>
 
@@ -573,7 +679,9 @@
         { id: "posterize", path: "examples/rgba/posterize.wasm" },
         { id: "color-halftone", path: "examples/rgba/color-halftone.wasm" },
         { id: "gaussian-blur", path: "examples/rgba/gaussian-blur.wasm" },
+        { id: "motion-blur", path: "examples/rgba/motion-blur.wasm" },
         { id: "unsharp-mask", path: "examples/rgba/unsharp-mask.wasm" },
+        { id: "render-clouds", path: "examples/rgba/render-clouds.wasm" },
         { id: "cutout", path: "examples/rgba/cutout.wasm" },
         { id: "vignette", path: "examples/rgba/vignette.wasm" },
         { id: "black-and-white", path: "examples/rgba/black-and-white.wasm" },
