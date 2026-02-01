@@ -189,8 +189,6 @@ func imageCmd(args []string) {
 	}
 	bounds := inputRGBA.Bounds()
 	outputRGBA := image.NewRGBA(bounds)
-	outputPix := outputRGBA.Pix
-	outputStride := outputRGBA.Stride
 
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
@@ -201,6 +199,10 @@ func imageCmd(args []string) {
 		tileFunc    api.Function
 		inputPtr    uint32
 		uniformFunc api.Function
+		haloFunc    api.Function
+		inputCap    uint64
+		haloPx      int
+		tileSpan    int
 	}
 	stages := make([]tileStage, len(moduleBodies))
 	for i, body := range moduleBodies {
@@ -213,6 +215,7 @@ func imageCmd(args []string) {
 			gameOver("Wasm module must export tile_rgba_f32_64x64")
 		}
 		uniformFunc := mod.ExportedFunction("uniform_set_width_and_height")
+		haloFunc := mod.ExportedFunction("calculate_halo_px")
 		mem := mod.Memory()
 		inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
 		if !ok {
@@ -223,22 +226,19 @@ func imageCmd(args []string) {
 		if !ok {
 			gameOver("Wasm module must export input_bytes_cap as global or function")
 		}
-		tileF32Size := uint64(tileSize * tileSize * 4 * 4)
-		if tileF32Size > inputCap {
-			gameOver("Tile buffer exceeds module input_bytes_cap")
-		}
 		stages[i] = tileStage{
 			mem:         mem,
 			tileFunc:    tileFunc,
 			inputPtr:    inputPtr,
 			uniformFunc: uniformFunc,
+			haloFunc:    haloFunc,
+			inputCap:    inputCap,
 		}
 	}
-	pix := inputRGBA.Pix
-	stride := inputRGBA.Stride
 	width := bounds.Dx()
 	height := bounds.Dy()
-	for _, stage := range stages {
+	for i := range stages {
+		stage := &stages[i]
 		if stage.uniformFunc != nil {
 			if _, err := stage.uniformFunc.Call(
 				ctx,
@@ -248,92 +248,264 @@ func imageCmd(args []string) {
 				gameOver("Error running uniform_set_width_and_height: %v", err)
 			}
 		}
-	}
-	tileF32 := make([]float32, tileSize*tileSize*4)
-	tileBytes := unsafe.Slice((*byte)(unsafe.Pointer(&tileF32[0])), len(tileF32)*4)
-	const inv255 = 1.0 / 255.0
-	for y := 0; y < height; y += tileSize {
-		tileH := tileSize
-		if y+tileH > height {
-			tileH = height - y
+		if stage.haloFunc != nil {
+			values, err := stage.haloFunc.Call(ctx)
+			if err != nil {
+				gameOver("Error running calculate_halo_px: %v", err)
+			}
+			if len(values) > 0 {
+				stage.haloPx = int(int32(values[0]))
+			}
 		}
-		rowBase := y * stride
-		for x := 0; x < width; x += tileSize {
-			tileW := tileSize
-			if x+tileW > width {
-				tileW = width - x
+		if stage.haloPx < 0 {
+			stage.haloPx = 0
+		}
+		stage.tileSpan = tileSize + stage.haloPx*2
+		tileF32Size := uint64(stage.tileSpan) * uint64(stage.tileSpan) * 4 * 4
+		if tileF32Size > stage.inputCap {
+			gameOver("Tile buffer exceeds module input_bytes_cap")
+		}
+	}
+
+	const inv255 = 1.0 / 255.0
+	useHalo := false
+	for _, stage := range stages {
+		if stage.haloPx > 0 {
+			useHalo = true
+			break
+		}
+	}
+
+	if useHalo {
+		floatSrc := make([]float32, width*height*4)
+		floatDst := make([]float32, len(floatSrc))
+		pix := inputRGBA.Pix
+		stride := inputRGBA.Stride
+		for y := 0; y < height; y++ {
+			srcRow := y * stride
+			dstRow := y * width * 4
+			for x := 0; x < width; x++ {
+				s := srcRow + x*4
+				d := dstRow + x*4
+				floatSrc[d] = float32(pix[s]) * inv255
+				floatSrc[d+1] = float32(pix[s+1]) * inv255
+				floatSrc[d+2] = float32(pix[s+2]) * inv255
+				floatSrc[d+3] = float32(pix[s+3]) * inv255
 			}
-			srcRow := rowBase + x*4
-			if tileW != tileSize || tileH != tileSize {
-				clear(tileF32)
-			}
-			for row := 0; row < tileH; row++ {
-				src := srcRow + row*stride
-				dst := row * tileSize * 4
-				for col := 0; col < tileW; col++ {
-					s := src + col*4
-					d := dst + col*4
-					tileF32[d] = float32(pix[s]) * inv255
-					tileF32[d+1] = float32(pix[s+1]) * inv255
-					tileF32[d+2] = float32(pix[s+2]) * inv255
-					tileF32[d+3] = float32(pix[s+3]) * inv255
+		}
+
+		for stageIndex := range stages {
+			stage := &stages[stageIndex]
+			halo := stage.haloPx
+			tileSpan := stage.tileSpan
+			tileFloats := tileSpan * tileSpan * 4
+			tileF32 := make([]float32, tileFloats)
+			tileBytes := unsafe.Slice((*byte)(unsafe.Pointer(&tileF32[0])), len(tileF32)*4)
+
+			for y := 0; y < height; y += tileSize {
+				tileH := tileSize
+				if y+tileH > height {
+					tileH = height - y
 				}
-			}
-			for _, stage := range stages {
-				if !stage.mem.Write(stage.inputPtr, tileBytes) {
-					gameOver("Could not write tile to wasm memory")
-				}
-				if _, err := stage.tileFunc.Call(
-					ctx,
-					api.EncodeF32(float32(x)),
-					api.EncodeF32(float32(y)),
-				); err != nil {
-					gameOver("Error running tile_rgba_f32_64x64: %v", err)
-				}
-				tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
-				if !ok {
-					gameOver("Could not read tile from wasm memory")
-				}
-				copy(tileBytes, tileOutBytes)
-			}
-			tileOutF32 := tileF32
-			for row := 0; row < tileH; row++ {
-				src := row * tileSize * 4
-				dst := (y+row)*outputStride + x*4
-				for col := 0; col < tileW; col++ {
-					s := src + col*4
-					d := dst + col*4
-					v := tileOutF32[s]
-					if v <= 0 {
-						outputPix[d] = 0
-					} else if v >= 1 {
-						outputPix[d] = 255
-					} else {
-						outputPix[d] = uint8(v*255 + 0.5)
+				for x := 0; x < width; x += tileSize {
+					tileW := tileSize
+					if x+tileW > width {
+						tileW = width - x
 					}
-					v = tileOutF32[s+1]
-					if v <= 0 {
-						outputPix[d+1] = 0
-					} else if v >= 1 {
-						outputPix[d+1] = 255
-					} else {
-						outputPix[d+1] = uint8(v*255 + 0.5)
+					for row := 0; row < tileSpan; row++ {
+						srcY := y + row - halo
+						if srcY < 0 {
+							srcY = 0
+						} else if srcY >= height {
+							srcY = height - 1
+						}
+						srcRow := srcY * width * 4
+						dstRow := row * tileSpan * 4
+						for col := 0; col < tileSpan; col++ {
+							srcX := x + col - halo
+							if srcX < 0 {
+								srcX = 0
+							} else if srcX >= width {
+								srcX = width - 1
+							}
+							s := srcRow + srcX*4
+							d := dstRow + col*4
+							tileF32[d] = floatSrc[s]
+							tileF32[d+1] = floatSrc[s+1]
+							tileF32[d+2] = floatSrc[s+2]
+							tileF32[d+3] = floatSrc[s+3]
+						}
 					}
-					v = tileOutF32[s+2]
-					if v <= 0 {
-						outputPix[d+2] = 0
-					} else if v >= 1 {
-						outputPix[d+2] = 255
-					} else {
-						outputPix[d+2] = uint8(v*255 + 0.5)
+
+					if !stage.mem.Write(stage.inputPtr, tileBytes) {
+						gameOver("Could not write tile to wasm memory")
 					}
-					v = tileOutF32[s+3]
-					if v <= 0 {
-						outputPix[d+3] = 0
-					} else if v >= 1 {
-						outputPix[d+3] = 255
-					} else {
-						outputPix[d+3] = uint8(v*255 + 0.5)
+					tileX := x - halo
+					tileY := y - halo
+					if _, err := stage.tileFunc.Call(
+						ctx,
+						api.EncodeF32(float32(tileX)),
+						api.EncodeF32(float32(tileY)),
+					); err != nil {
+						gameOver("Error running tile_rgba_f32_64x64: %v", err)
+					}
+					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
+					if !ok {
+						gameOver("Could not read tile from wasm memory")
+					}
+					copy(tileBytes, tileOutBytes)
+
+					srcBase := (halo*tileSpan + halo) * 4
+					for row := 0; row < tileH; row++ {
+						src := srcBase + row*tileSpan*4
+						dst := ((y + row) * width) * 4
+						for col := 0; col < tileW; col++ {
+							s := src + col*4
+							d := dst + (x+col)*4
+							floatDst[d] = tileF32[s]
+							floatDst[d+1] = tileF32[s+1]
+							floatDst[d+2] = tileF32[s+2]
+							floatDst[d+3] = tileF32[s+3]
+						}
+					}
+				}
+			}
+
+			floatSrc, floatDst = floatDst, floatSrc
+		}
+
+		outPix := outputRGBA.Pix
+		outStride := outputRGBA.Stride
+		for y := 0; y < height; y++ {
+			srcRow := y * width * 4
+			dstRow := y * outStride
+			for x := 0; x < width; x++ {
+				s := srcRow + x*4
+				d := dstRow + x*4
+				v := floatSrc[s]
+				if v <= 0 {
+					outPix[d] = 0
+				} else if v >= 1 {
+					outPix[d] = 255
+				} else {
+					outPix[d] = uint8(v*255 + 0.5)
+				}
+				v = floatSrc[s+1]
+				if v <= 0 {
+					outPix[d+1] = 0
+				} else if v >= 1 {
+					outPix[d+1] = 255
+				} else {
+					outPix[d+1] = uint8(v*255 + 0.5)
+				}
+				v = floatSrc[s+2]
+				if v <= 0 {
+					outPix[d+2] = 0
+				} else if v >= 1 {
+					outPix[d+2] = 255
+				} else {
+					outPix[d+2] = uint8(v*255 + 0.5)
+				}
+				v = floatSrc[s+3]
+				if v <= 0 {
+					outPix[d+3] = 0
+				} else if v >= 1 {
+					outPix[d+3] = 255
+				} else {
+					outPix[d+3] = uint8(v*255 + 0.5)
+				}
+			}
+		}
+	} else {
+		pix := inputRGBA.Pix
+		stride := inputRGBA.Stride
+		outputPix := outputRGBA.Pix
+		outputStride := outputRGBA.Stride
+		tileF32 := make([]float32, tileSize*tileSize*4)
+		tileBytes := unsafe.Slice((*byte)(unsafe.Pointer(&tileF32[0])), len(tileF32)*4)
+		for y := 0; y < height; y += tileSize {
+			tileH := tileSize
+			if y+tileH > height {
+				tileH = height - y
+			}
+			rowBase := y * stride
+			for x := 0; x < width; x += tileSize {
+				tileW := tileSize
+				if x+tileW > width {
+					tileW = width - x
+				}
+				srcRow := rowBase + x*4
+				if tileW != tileSize || tileH != tileSize {
+					clear(tileF32)
+				}
+				for row := 0; row < tileH; row++ {
+					src := srcRow + row*stride
+					dst := row * tileSize * 4
+					for col := 0; col < tileW; col++ {
+						s := src + col*4
+						d := dst + col*4
+						tileF32[d] = float32(pix[s]) * inv255
+						tileF32[d+1] = float32(pix[s+1]) * inv255
+						tileF32[d+2] = float32(pix[s+2]) * inv255
+						tileF32[d+3] = float32(pix[s+3]) * inv255
+					}
+				}
+				for _, stage := range stages {
+					if !stage.mem.Write(stage.inputPtr, tileBytes) {
+						gameOver("Could not write tile to wasm memory")
+					}
+					if _, err := stage.tileFunc.Call(
+						ctx,
+						api.EncodeF32(float32(x)),
+						api.EncodeF32(float32(y)),
+					); err != nil {
+						gameOver("Error running tile_rgba_f32_64x64: %v", err)
+					}
+					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
+					if !ok {
+						gameOver("Could not read tile from wasm memory")
+					}
+					copy(tileBytes, tileOutBytes)
+				}
+				tileOutF32 := tileF32
+				for row := 0; row < tileH; row++ {
+					src := row * tileSize * 4
+					dst := (y+row)*outputStride + x*4
+					for col := 0; col < tileW; col++ {
+						s := src + col*4
+						d := dst + col*4
+						v := tileOutF32[s]
+						if v <= 0 {
+							outputPix[d] = 0
+						} else if v >= 1 {
+							outputPix[d] = 255
+						} else {
+							outputPix[d] = uint8(v*255 + 0.5)
+						}
+						v = tileOutF32[s+1]
+						if v <= 0 {
+							outputPix[d+1] = 0
+						} else if v >= 1 {
+							outputPix[d+1] = 255
+						} else {
+							outputPix[d+1] = uint8(v*255 + 0.5)
+						}
+						v = tileOutF32[s+2]
+						if v <= 0 {
+							outputPix[d+2] = 0
+						} else if v >= 1 {
+							outputPix[d+2] = 255
+						} else {
+							outputPix[d+2] = uint8(v*255 + 0.5)
+						}
+						v = tileOutF32[s+3]
+						if v <= 0 {
+							outputPix[d+3] = 0
+						} else if v >= 1 {
+							outputPix[d+3] = 255
+						} else {
+							outputPix[d+3] = uint8(v*255 + 0.5)
+						}
 					}
 				}
 			}

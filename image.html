@@ -675,6 +675,10 @@
         filter.memory = exports.memory;
         filter.inputPtr = exportedValue(exports.input_ptr);
         filter.tileFn = exports.tile_rgba_f32_64x64;
+        filter.haloFn = exports.calculate_halo_px || null;
+        filter.inputBytesCap = exports.input_bytes_cap
+          ? Number(exportedValue(exports.input_bytes_cap))
+          : 0;
         filter.uniformSetSize = exports.uniform_set_width_and_height || null;
         const possible = new Set();
         const tpl = document.getElementById(`filter-template-${filter.id}`);
@@ -689,8 +693,8 @@
         for (const name of possible) {
           filter.uniforms[name] = exports[name] || null;
         }
-        filter.getTileView = () =>
-          new Float32Array(filter.memory.buffer, filter.inputPtr, TILE_FLOATS);
+        filter.getTileView = (tileFloats) =>
+          new Float32Array(filter.memory.buffer, filter.inputPtr, tileFloats);
       }
 
       function formatValue(input, value) {
@@ -724,9 +728,90 @@
         }
       }
 
-      function processImageData(imageData, stages) {
+      function processImageData(imageData, stages, useHalo) {
         const { data, width, height } = imageData;
         const out = new Uint8ClampedArray(data.length);
+
+        if (useHalo) {
+          let floatSrc = new Float32Array(data.length);
+          let floatDst = new Float32Array(data.length);
+          for (let i = 0; i < data.length; i++) {
+            floatSrc[i] = data[i] / 255;
+          }
+
+          for (const stage of stages) {
+            const filter = stage.filter;
+            if (!filter.tileFn) {
+              continue;
+            }
+            for (const uniform of stage.uniforms) {
+              uniform.setter(uniform.value);
+            }
+            const halo = stage.haloPx || 0;
+            const tileSpan = stage.tileSpan;
+            const tileFloats = stage.tileFloats;
+            const tileBuffer = new Float32Array(tileFloats);
+            const view = stage.tileView;
+
+            for (let y = 0; y < height; y += TILE) {
+              const tileH = Math.min(TILE, height - y);
+              for (let x = 0; x < width; x += TILE) {
+                const tileW = Math.min(TILE, width - x);
+                for (let row = 0; row < tileSpan; row++) {
+                  let srcY = y + row - halo;
+                  if (srcY < 0) {
+                    srcY = 0;
+                  } else if (srcY >= height) {
+                    srcY = height - 1;
+                  }
+                  const srcRow = srcY * width * 4;
+                  const dstRow = row * tileSpan * 4;
+                  for (let col = 0; col < tileSpan; col++) {
+                    let srcX = x + col - halo;
+                    if (srcX < 0) {
+                      srcX = 0;
+                    } else if (srcX >= width) {
+                      srcX = width - 1;
+                    }
+                    const s = srcRow + srcX * 4;
+                    const d = dstRow + col * 4;
+                    tileBuffer[d] = floatSrc[s];
+                    tileBuffer[d + 1] = floatSrc[s + 1];
+                    tileBuffer[d + 2] = floatSrc[s + 2];
+                    tileBuffer[d + 3] = floatSrc[s + 3];
+                  }
+                }
+
+                view.set(tileBuffer);
+                filter.tileFn(x - halo, y - halo);
+
+                const srcBase = (halo * tileSpan + halo) * 4;
+                for (let row = 0; row < tileH; row++) {
+                  const src = srcBase + row * tileSpan * 4;
+                  const dst = ((y + row) * width + x) * 4;
+                  for (let col = 0; col < tileW; col++) {
+                    const s = src + col * 4;
+                    const d = dst + col * 4;
+                    floatDst[d] = view[s];
+                    floatDst[d + 1] = view[s + 1];
+                    floatDst[d + 2] = view[s + 2];
+                    floatDst[d + 3] = view[s + 3];
+                  }
+                }
+              }
+            }
+
+            const swap = floatSrc;
+            floatSrc = floatDst;
+            floatDst = swap;
+          }
+
+          for (let i = 0; i < out.length; i++) {
+            out[i] = clampByte(Math.round(floatSrc[i] * 255));
+          }
+          return new ImageData(out, width, height);
+        }
+
         const tileBuffer = new Float32Array(TILE_FLOATS);
 
         for (let y = 0; y < height; y += TILE) {
@@ -799,7 +884,8 @@
         }
         statusEl.textContent = "Processing...";
         const stages = buildStagesFromDOM();
-        const outputData = processImageData(cachedImageData, stages);
+        const useHalo = prepareStages(stages);
+        const outputData = processImageData(cachedImageData, stages, useHalo);
         outputCtx.putImageData(outputData, 0, 0);
         statusEl.textContent = "Done.";
       }
@@ -841,6 +927,44 @@
         return stages;
       }
 
+      function prepareStages(stages) {
+        let useHalo = false;
+        for (const stage of stages) {
+          const filter = stage.filter;
+          for (const uniform of stage.uniforms) {
+            uniform.setter(uniform.value);
+          }
+          let haloPx = 0;
+          if (filter.haloFn) {
+            haloPx = Math.trunc(filter.haloFn());
+            if (!Number.isFinite(haloPx)) {
+              haloPx = 0;
+            }
+          }
+          if (haloPx < 0) {
+            haloPx = 0;
+          }
+          stage.haloPx = haloPx;
+          stage.tileSpan = TILE + haloPx * 2;
+          stage.tileFloats = stage.tileSpan * stage.tileSpan * 4;
+          if (
+            filter.inputBytesCap &&
+            stage.tileFloats * 4 > filter.inputBytesCap
+          ) {
+            throw new Error(
+              `Tile buffer exceeds input_bytes_cap for ${filter.id}`,
+            );
+          }
+          stage.tileView = filter.tileFn
+            ? filter.getTileView(stage.tileFloats)
+            : null;
+          if (haloPx > 0) {
+            useHalo = true;
+          }
+        }
+        return useHalo;
+      }
+
       function runPipeline(tileBuffer, tileX, tileY, stages) {
         for (const stage of stages) {
           const filter = stage.filter;
@@ -850,7 +974,8 @@
           if (!filter.tileFn) {
             continue;
           }
-          const view = filter.getTileView();
+          const view =
+            stage.tileView || filter.getTileView(tileBuffer.length);
           view.set(tileBuffer);
           filter.tileFn(tileX, tileY);
           tileBuffer.set(view);
