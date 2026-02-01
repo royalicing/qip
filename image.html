@@ -40,6 +40,11 @@
         font-size: 14px;
         padding: 4px 0;
       }
+      .filter-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
       .drag-handle {
         display: inline-flex;
         align-items: center;
@@ -54,6 +59,26 @@
       }
       .filter-row.dragging {
         opacity: 0.6;
+      }
+      .filter-menu {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .filter-menu:popover-open {
+        display: flex;
+      }
+      .filter-menu button {
+        text-align: left;
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #f7f7f7;
+        cursor: pointer;
       }
       .divider {
         color: #888;
@@ -91,185 +116,26 @@
     <h1>Image (WASM)</h1>
     <div class="controls">
       <input id="file" type="file" accept="image/*" />
+      <button type="button" popovertarget="filter-menu">Add filter</button>
     </div>
 
-    <fieldset class="controls filters" id="filters">
-      <label class="filter-row" data-filter-id="brightness">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-brightness" type="checkbox" checked />
-        <legend>Brightness</legend>
-        <input
-          id="brightness"
-          type="range"
-          min="-1"
-          max="1"
-          step="0.01"
-          value="0"
-          data-uniform="uniform_set_brightness"
-          data-format="fixed2"
-          data-value-id="brightness-value"
-        />
-        <span id="brightness-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="contrast">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-contrast" type="checkbox" checked />
-        <span>Contrast</span>
-        <input
-          id="contrast"
-          type="range"
-          min="-1"
-          max="1"
-          step="0.01"
-          value="0"
-          data-uniform="uniform_set_contrast"
-          data-format="fixed2"
-          data-value-id="contrast-value"
-        />
-        <span id="contrast-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="saturation">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-saturation" type="checkbox" checked />
-        <span>Saturation</span>
-        <input
-          id="saturation"
-          type="range"
-          min="-1"
-          max="1"
-          step="0.01"
-          value="0"
-          data-uniform="uniform_set_saturation"
-          data-format="fixed2"
-          data-value-id="saturation-value"
-        />
-        <span id="saturation-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="hue-rotate">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-hue-rotate" type="checkbox" checked />
-        <span>Hue</span>
-        <input
-          id="hue-rotate"
-          type="range"
-          min="-180"
-          max="180"
-          step="1"
-          value="0"
-          data-uniform="uniform_set_hue_degrees"
-          data-format="int"
-          data-value-id="hue-rotate-value"
-        />
-        <span id="hue-rotate-value">0</span>
-      </label>
-      <label class="filter-row" data-filter-id="temperature">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-temperature" type="checkbox" checked />
-        <span>Temperature</span>
-        <input
-          id="temperature"
-          type="range"
-          min="-1"
-          max="1"
-          step="0.01"
-          value="0"
-          data-uniform="uniform_set_temperature"
-          data-format="fixed2"
-          data-value-id="temperature-value"
-        />
-        <span id="temperature-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="tint">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-tint" type="checkbox" checked />
-        <span>Tint</span>
-        <input
-          id="tint"
-          type="range"
-          min="-1"
-          max="1"
-          step="0.01"
-          value="0"
-          data-uniform="uniform_set_tint"
-          data-format="fixed2"
-          data-value-id="tint-value"
-        />
-        <span id="tint-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="posterize">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-posterize" type="checkbox" />
-        <span>Posterize</span>
-        <input
-          id="levels"
-          type="range"
-          min="2"
-          max="32"
-          value="8"
-          data-uniform="uniform_set_levels_count"
-          data-format="int"
-          data-value-id="levels-value"
-        />
-        <span id="levels-value">8</span>
-      </label>
-      <label class="filter-row" data-filter-id="vignette">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-vignette" type="checkbox" />
-        <span>Vignette</span>
-        <span class="divider">|</span>
-        <span>Amount:</span>
-        <input
-          id="vignette-amount"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value="0.35"
-          data-uniform="uniform_set_amount"
-          data-format="fixed2"
-          data-value-id="vignette-amount-value"
-        />
-        <span id="vignette-amount-value">0.35</span>
-        <span class="divider">|</span>
-        <span>Midpoint:</span>
-        <input
-          id="vignette-midpoint"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value="0.65"
-          data-uniform="uniform_set_midpoint"
-          data-format="fixed2"
-          data-value-id="vignette-midpoint-value"
-        />
-        <span id="vignette-midpoint-value">0.65</span>
-        <span class="divider">|</span>
-        <span>Feather:</span>
-        <input
-          id="vignette-feather"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value="0.85"
-          data-uniform="uniform_set_feather"
-          data-format="fixed2"
-          data-value-id="vignette-feather-value"
-        />
-        <span id="vignette-feather-value">0.85</span>
-      </label>
-      <label class="filter-row" data-filter-id="black-and-white">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-bw" type="checkbox" />
-        <span>Black and white</span>
-      </label>
-      <label class="filter-row" data-filter-id="invert">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-invert" type="checkbox" />
-        <span>Invert</span>
-      </label>
-    </fieldset>
+    <fieldset class="controls filters" id="filters"></fieldset>
+
+    <div id="filter-menu" popover class="filter-menu">
+      <button type="button" data-add-filter="brightness">Brightness</button>
+      <button type="button" data-add-filter="contrast">Contrast</button>
+      <button type="button" data-add-filter="saturation">Saturation</button>
+      <button type="button" data-add-filter="hue-rotate">Hue rotate</button>
+      <button type="button" data-add-filter="temperature">Temperature</button>
+      <button type="button" data-add-filter="tint">Tint</button>
+      <button type="button" data-add-filter="posterize">Posterize</button>
+      <button type="button" data-add-filter="color-halftone">Color halftone</button>
+      <button type="button" data-add-filter="cutout">Cutout</button>
+      <button type="button" data-add-filter="vignette">Vignette</button>
+      <button type="button" data-add-filter="black-and-white">Black and white</button>
+      <button type="button" data-add-filter="find-edges">Find edges</button>
+      <button type="button" data-add-filter="invert">Invert</button>
+    </div>
 
     <div class="canvases">
       <div>
@@ -284,30 +150,389 @@
 
     <div id="status">Loading WASM...</div>
 
+    <template id="filter-template-brightness">
+      <div class="filter-row" data-filter-id="brightness">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Brightness</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_brightness"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_brightness">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-contrast">
+      <div class="filter-row" data-filter-id="contrast">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Contrast</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_contrast"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_contrast">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-saturation">
+      <div class="filter-row" data-filter-id="saturation">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Saturation</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_saturation"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_saturation">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-hue-rotate">
+      <div class="filter-row" data-filter-id="hue-rotate">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Hue</span>
+        </label>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_hue_degrees"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_hue_degrees">0</span>
+      </div>
+    </template>
+
+    <template id="filter-template-temperature">
+      <div class="filter-row" data-filter-id="temperature">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Temperature</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_temperature"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_temperature">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-tint">
+      <div class="filter-row" data-filter-id="tint">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Tint</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_tint"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_tint">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-posterize">
+      <div class="filter-row" data-filter-id="posterize">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Posterize</span>
+        </label>
+        <input
+          type="range"
+          min="2"
+          max="32"
+          value="8"
+          data-uniform="uniform_set_levels_count"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_levels_count">8</span>
+      </div>
+    </template>
+
+    <template id="filter-template-color-halftone">
+      <div class="filter-row" data-filter-id="color-halftone">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Color halftone</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Max radius:</span>
+        <input
+          type="range"
+          min="1"
+          max="24"
+          step="1"
+          value="6"
+          data-uniform="uniform_set_max_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_max_radius">6</span>
+        <span class="divider">|</span>
+        <span>Angle C:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="15"
+          data-uniform="uniform_set_angle_c"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_c">15</span>
+        <span class="divider">|</span>
+        <span>Angle M:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="75"
+          data-uniform="uniform_set_angle_m"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_m">75</span>
+        <span class="divider">|</span>
+        <span>Angle Y:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_angle_y"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_y">0</span>
+        <span class="divider">|</span>
+        <span>Angle K:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="45"
+          data-uniform="uniform_set_angle_k"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_k">45</span>
+      </div>
+    </template>
+
+    <template id="filter-template-cutout">
+      <div class="filter-row" data-filter-id="cutout">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Cutout</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Levels:</span>
+        <input
+          type="range"
+          min="2"
+          max="12"
+          step="1"
+          value="4"
+          data-uniform="uniform_set_levels"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_levels">4</span>
+        <span class="divider">|</span>
+        <span>Edge threshold:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.25"
+          data-uniform="uniform_set_edge_threshold"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_edge_threshold">0.25</span>
+        <span class="divider">|</span>
+        <span>Edge strength:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.7"
+          data-uniform="uniform_set_edge_strength"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_edge_strength">0.70</span>
+      </div>
+    </template>
+
+    <template id="filter-template-vignette">
+      <div class="filter-row" data-filter-id="vignette">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Vignette</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Amount:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.35"
+          data-uniform="uniform_set_amount"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_amount">0.35</span>
+        <span class="divider">|</span>
+        <span>Midpoint:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.65"
+          data-uniform="uniform_set_midpoint"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_midpoint">0.65</span>
+        <span class="divider">|</span>
+        <span>Feather:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.85"
+          data-uniform="uniform_set_feather"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_feather">0.85</span>
+      </div>
+    </template>
+
+    <template id="filter-template-black-and-white">
+      <div class="filter-row" data-filter-id="black-and-white">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Black and white</span>
+        </label>
+      </div>
+    </template>
+
+    <template id="filter-template-find-edges">
+      <div class="filter-row" data-filter-id="find-edges">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Find edges</span>
+        </label>
+      </div>
+    </template>
+
+    <template id="filter-template-invert">
+      <div class="filter-row" data-filter-id="invert">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Invert</span>
+        </label>
+      </div>
+    </template>
+
     <script>
       const TILE = 64;
       const TILE_FLOATS = TILE * TILE * 4;
       const fileInput = document.getElementById("file");
       const filtersContainer = document.getElementById("filters");
+      const filterMenu = document.getElementById("filter-menu");
       const statusEl = document.getElementById("status");
       const sourceCanvas = document.getElementById("source");
       const outputCanvas = document.getElementById("output");
       const sourceCtx = sourceCanvas.getContext("2d");
       const outputCtx = outputCanvas.getContext("2d");
 
+      const FILTER_DEFS = [
+        { id: "brightness", path: "examples/rgba/brightness.wasm" },
+        { id: "contrast", path: "examples/rgba/contrast.wasm" },
+        { id: "saturation", path: "examples/rgba/saturation.wasm" },
+        { id: "hue-rotate", path: "examples/rgba/hue-rotate.wasm" },
+        { id: "temperature", path: "examples/rgba/temperature.wasm" },
+        { id: "tint", path: "examples/rgba/tint.wasm" },
+        { id: "posterize", path: "examples/rgba/posterize.wasm" },
+        { id: "color-halftone", path: "examples/rgba/color-halftone.wasm" },
+        { id: "cutout", path: "examples/rgba/cutout.wasm" },
+        { id: "vignette", path: "examples/rgba/vignette.wasm" },
+        { id: "black-and-white", path: "examples/rgba/black-and-white.wasm" },
+        { id: "find-edges", path: "examples/rgba/find-edges.wasm" },
+        { id: "invert", path: "examples/rgba/invert.wasm" },
+      ];
+
+      const DEFAULT_PIPELINE = [
+        "brightness",
+        "contrast",
+        "saturation",
+        "hue-rotate",
+        "temperature",
+        "tint",
+      ];
+
       function filtersToURLSearchParams() {
         const q = new URLSearchParams();
-        for (const key in filters) {
-          const filter = filters[key];
-          if (filter.toggle && !filter.toggle.checked) {
+        const rows = filtersContainer.querySelectorAll(".filter-row");
+        for (const row of rows) {
+          const id = row.dataset.filterId;
+          if (!id) {
             continue;
           }
-          if (filter.uniformInputs && filter.uniformInputs.length > 0) {
-            const values = filter.uniformInputs.map((input) => input.value);
-            q.set(filter.id, values.join(","));
+          const toggle = row.querySelector(".filter-toggle");
+          if (toggle && !toggle.checked) {
             continue;
           }
-          q.set(filter.id, "");
+          const inputs = row.querySelectorAll("input[data-uniform]");
+          const values = Array.from(inputs).map((input) => input.value);
+          q.append(id, values.join(","));
         }
         return q;
       }
@@ -315,31 +540,26 @@
       function updateFiltersFromLocationHash() {
         const params = new URLSearchParams(location.hash.slice(1));
         if ([...params.keys()].length === 0) {
-          for (const key in filters) {
-            applyUniformInputs(filters[key]);
+          if (!hasBootstrappedDefaults) {
+            hasBootstrappedDefaults = true;
+            filtersContainer.replaceChildren(
+              ...DEFAULT_PIPELINE.map((id) => createFilterRow(id, null, true)),
+            );
+            updateLocationHash();
+          } else {
+            filtersContainer.replaceChildren();
           }
-          updateLocationHash();
           return;
         }
-        for (const key in filters) {
-          const filter = filters[key];
-          const enabled = params.has(filter.id);
-          if (filter.toggle) {
-            filter.toggle.checked = enabled;
-          }
-          if (enabled && filter.uniformInputs && filter.uniformInputs.length > 0) {
-            const raw = params.get(filter.id);
-            if (raw !== null) {
-              const values = raw.split(",");
-              for (let i = 0; i < filter.uniformInputs.length; i++) {
-                if (values[i] !== undefined) {
-                  filter.uniformInputs[i].value = values[i];
-                }
-              }
-              applyUniformInputs(filter);
-            }
+        const rows = [];
+        for (const [id, raw] of params) {
+          const values = raw ? raw.split(",") : [];
+          const row = createFilterRow(id, values, true);
+          if (row) {
+            rows.push(row);
           }
         }
+        filtersContainer.replaceChildren(...rows);
       }
 
       function updateLocationHash() {
@@ -350,40 +570,53 @@
         }
       }
 
-      const filters = {
-        brightness: { id: "brightness", path: "examples/rgba/brightness.wasm" },
-        contrast: { id: "contrast", path: "examples/rgba/contrast.wasm" },
-        saturation: { id: "saturation", path: "examples/rgba/saturation.wasm" },
-        "hue-rotate": { id: "hue-rotate", path: "examples/rgba/hue-rotate.wasm" },
-        temperature: { id: "temperature", path: "examples/rgba/temperature.wasm" },
-        tint: { id: "tint", path: "examples/rgba/tint.wasm" },
-        "black-and-white": {
-          id: "black-and-white",
-          path: "examples/rgba/black-and-white.wasm",
-        },
-        invert: { id: "invert", path: "examples/rgba/invert.wasm" },
-        posterize: { id: "posterize", path: "examples/rgba/posterize.wasm" },
-        vignette: { id: "vignette", path: "examples/rgba/vignette.wasm" },
-      };
-
-      function initFilterBindings() {
-        for (const key in filters) {
-          const filter = filters[key];
-          filter.row = filtersContainer.querySelector(
-            `[data-filter-id="${filter.id}"]`,
-          );
-          if (!filter.row) {
-            continue;
-          }
-          filter.toggle = filter.row.querySelector('input[type="checkbox"]');
-          filter.uniformInputs = Array.from(
-            filter.row.querySelectorAll("input[data-uniform]"),
-          );
-          filter.uniforms = {};
-        }
+      const filters = {};
+      for (const def of FILTER_DEFS) {
+        filters[def.id] = {
+          id: def.id,
+          path: def.path,
+          uniforms: {},
+        };
       }
 
-      initFilterBindings();
+      function createFilterRow(id, values, forceEnabled) {
+        const tpl = document.getElementById(`filter-template-${id}`);
+        if (!tpl) {
+          return null;
+        }
+        const row = tpl.content.firstElementChild.cloneNode(true);
+        if (!row) {
+          return null;
+        }
+        row.dataset.filterId = id;
+        const toggle = row.querySelector(".filter-toggle");
+        if (toggle && forceEnabled) {
+          toggle.checked = true;
+        }
+        const inputs = row.querySelectorAll("input[data-uniform]");
+        if (values && values.length > 0) {
+          for (let i = 0; i < inputs.length; i++) {
+            if (values[i] !== undefined) {
+              inputs[i].value = values[i];
+            }
+          }
+        }
+        for (const input of inputs) {
+          updateValueDisplay(input);
+        }
+        return row;
+      }
+
+      function getTemplateDefaultValues(id) {
+        const tpl = document.getElementById(`filter-template-${id}`);
+        if (!tpl) {
+          return [];
+        }
+        const inputs = tpl.content.querySelectorAll("input[data-uniform]");
+        return Array.from(inputs).map((input) => input.value);
+      }
+
+      let hasBootstrappedDefaults = false;
       updateFiltersFromLocationHash();
 
       function exportedValue(exp) {
@@ -419,13 +652,18 @@
         filter.inputPtr = exportedValue(exports.input_ptr);
         filter.tileFn = exports.tile_rgba_f32_64x64;
         filter.uniformSetSize = exports.uniform_set_width_and_height || null;
-        if (filter.uniformInputs) {
-          for (const input of filter.uniformInputs) {
-            const name = input.dataset.uniform;
-            if (name) {
-              filter.uniforms[name] = exports[name] || null;
+        const possible = new Set();
+        const tpl = document.getElementById(`filter-template-${filter.id}`);
+        if (tpl) {
+          const inputs = tpl.content.querySelectorAll("input[data-uniform]");
+          for (const input of inputs) {
+            if (input.dataset.uniform) {
+              possible.add(input.dataset.uniform);
             }
           }
+        }
+        for (const name of possible) {
+          filter.uniforms[name] = exports[name] || null;
         }
         filter.getTileView = () =>
           new Float32Array(filter.memory.buffer, filter.inputPtr, TILE_FLOATS);
@@ -444,13 +682,9 @@
         return decimals > 0 ? Number(value).toFixed(decimals) : String(value);
       }
 
-      function applyUniformInput(input) {
+      function updateValueDisplay(input) {
         const row = input.closest(".filter-row");
         if (!row) {
-          return;
-        }
-        const filter = filters[row.dataset.filterId];
-        if (!filter) {
           return;
         }
         const uniformName = input.dataset.uniform;
@@ -458,29 +692,15 @@
           return;
         }
         const value = Number(input.value);
-        const valueId = input.dataset.valueId;
-        if (valueId) {
-          const valueEl = document.getElementById(valueId);
-          if (valueEl) {
-            valueEl.textContent = formatValue(input, value);
-          }
-        }
-        const setter = filter.uniforms ? filter.uniforms[uniformName] : null;
-        if (setter) {
-          setter(value);
+        const valueEl = row.querySelector(
+          `[data-value-for="${uniformName}"]`,
+        );
+        if (valueEl) {
+          valueEl.textContent = formatValue(input, value);
         }
       }
 
-      function applyUniformInputs(filter) {
-        if (!filter.uniformInputs) {
-          return;
-        }
-        for (const input of filter.uniformInputs) {
-          applyUniformInput(input);
-        }
-      }
-
-      function processImageData(imageData) {
+      function processImageData(imageData, stages) {
         const { data, width, height } = imageData;
         const out = new Uint8ClampedArray(data.length);
         const tileBuffer = new Float32Array(TILE_FLOATS);
@@ -502,7 +722,7 @@
               }
             }
 
-            runPipeline(tileBuffer, x, y);
+            runPipeline(tileBuffer, x, y, stages);
 
             for (let ty = 0; ty < tileH; ty++) {
               for (let tx = 0; tx < tileW; tx++) {
@@ -554,7 +774,8 @@
           return;
         }
         statusEl.textContent = "Processing...";
-        const outputData = processImageData(cachedImageData);
+        const stages = buildStagesFromDOM();
+        const outputData = processImageData(cachedImageData, stages);
         outputCtx.putImageData(outputData, 0, 0);
         statusEl.textContent = "Done.";
       }
@@ -568,10 +789,39 @@
         }
       }
 
-      function runPipeline(tileBuffer, tileX, tileY) {
-        for (const filter of getOrderedFilters()) {
-          if (!filter.toggle.checked) {
+      function buildStagesFromDOM() {
+        const rows = filtersContainer.querySelectorAll(".filter-row");
+        const stages = [];
+        for (const row of rows) {
+          const id = row.dataset.filterId;
+          const filter = id ? filters[id] : null;
+          if (!filter) {
             continue;
+          }
+          const toggle = row.querySelector(".filter-toggle");
+          if (toggle && !toggle.checked) {
+            continue;
+          }
+          const inputs = row.querySelectorAll("input[data-uniform]");
+          const uniforms = [];
+          for (const input of inputs) {
+            const name = input.dataset.uniform;
+            const setter = filter.uniforms[name];
+            if (!setter) {
+              continue;
+            }
+            uniforms.push({ setter, value: Number(input.value) });
+          }
+          stages.push({ filter, uniforms });
+        }
+        return stages;
+      }
+
+      function runPipeline(tileBuffer, tileX, tileY, stages) {
+        for (const stage of stages) {
+          const filter = stage.filter;
+          for (const uniform of stage.uniforms) {
+            uniform.setter(uniform.value);
           }
           if (!filter.tileFn) {
             continue;
@@ -583,12 +833,6 @@
         }
       }
 
-      function getOrderedFilters() {
-        return Array.from(filtersContainer.children)
-          .map((row) => filters[row.dataset.filterId])
-          .filter(Boolean);
-      }
-
       filtersContainer.addEventListener("input", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) {
@@ -597,6 +841,7 @@
         if (target.type !== "range") {
           return;
         }
+        updateValueDisplay(target);
         updateLocationHash();
       });
 
@@ -609,6 +854,22 @@
           return;
         }
         updateLocationHash();
+      });
+
+      filterMenu.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-add-filter]");
+        if (!button) {
+          return;
+        }
+        const id = button.dataset.addFilter;
+        const params = new URLSearchParams(location.hash.slice(1));
+        const values = getTemplateDefaultValues(id);
+        params.append(id, values.join(","));
+        const next = params.toString();
+        location.hash = next ? "#" + next : "";
+        if (filterMenu.hidePopover) {
+          filterMenu.hidePopover();
+        }
       });
 
       window.addEventListener("hashchange", () => {
