@@ -17,11 +17,16 @@ brew install qip
 ## Usage
 
 ```bash
-echo "abc" | piq run qip.dev@<hash>
+python3 -m http.server
+open http://localhost:8080/image.html
+```
+
+```bash
+echo "abc" | qip run qip.dev@<hash>
 # Returns CRC of "abc": 1200128334
-cat README.md | piq run qip.dev@<hash>
-piq get qip.dev@<hash> > crc32.wasm
-cat README.md | piq run ./crc32.wasm
+cat README.md | qip run qip.dev@<hash>
+qip get qip.dev@<hash> > crc32.wasm
+cat README.md | qip run ./crc32.wasm
 ```
 
 ## Making modules
