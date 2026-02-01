@@ -130,6 +130,7 @@
       <button type="button" data-add-filter="tint">Tint</button>
       <button type="button" data-add-filter="posterize">Posterize</button>
       <button type="button" data-add-filter="color-halftone">Color halftone</button>
+      <button type="button" data-add-filter="gaussian-blur">Gaussian blur</button>
       <button type="button" data-add-filter="cutout">Cutout</button>
       <button type="button" data-add-filter="vignette">Vignette</button>
       <button type="button" data-add-filter="black-and-white">Black and white</button>
@@ -359,6 +360,28 @@
       </div>
     </template>
 
+    <template id="filter-template-gaussian-blur">
+      <div class="filter-row" data-filter-id="gaussian-blur">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Gaussian blur</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Radius:</span>
+        <input
+          type="range"
+          min="0"
+          max="12"
+          step="1"
+          value="2"
+          data-uniform="uniform_set_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_radius">2</span>
+      </div>
+    </template>
+
     <template id="filter-template-cutout">
       <div class="filter-row" data-filter-id="cutout">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
@@ -502,6 +525,7 @@
         { id: "tint", path: "examples/rgba/tint.wasm" },
         { id: "posterize", path: "examples/rgba/posterize.wasm" },
         { id: "color-halftone", path: "examples/rgba/color-halftone.wasm" },
+        { id: "gaussian-blur", path: "examples/rgba/gaussian-blur.wasm" },
         { id: "cutout", path: "examples/rgba/cutout.wasm" },
         { id: "vignette", path: "examples/rgba/vignette.wasm" },
         { id: "black-and-white", path: "examples/rgba/black-and-white.wasm" },
