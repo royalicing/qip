@@ -40,6 +40,11 @@
         font-size: 14px;
         padding: 4px 0;
       }
+      .filter-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
       .drag-handle {
         display: inline-flex;
         align-items: center;
@@ -55,6 +60,26 @@
       .filter-row.dragging {
         opacity: 0.6;
       }
+      .filter-menu {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .filter-menu:popover-open {
+        display: flex;
+      }
+      .filter-menu button {
+        text-align: left;
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #f7f7f7;
+        cursor: pointer;
+      }
       .divider {
         color: #888;
       }
@@ -62,6 +87,26 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 16px;
+      }
+      .canvas-wrap {
+        position: relative;
+      }
+      .canvas-wrap canvas {
+        display: block;
+      }
+      .canvas-wrap.result::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cpath d='M0 0H64M0 0V64' stroke='rgba(0,128,255,0.6)' stroke-width='1' fill='none'/%3E%3C/svg%3E");
+        background-size: 64px 64px;
+        background-repeat: repeat;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+      }
+      .canvas-wrap.result:hover::after {
+        opacity: 1;
       }
       canvas {
         --color: oklab(50% 0 0);
@@ -75,8 +120,25 @@
         color: #555;
         margin: 6px 0 4px;
       }
+      .hash {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+        color: #777;
+        margin-left: 6px;
+      }
+      .label-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 6px 0 4px;
+      }
+      .label-row .label {
+        margin: 0;
+      }
       #status {
-        margin-top: 12px;
+        margin: 0;
         font-size: 12px;
         color: #555;
       }
@@ -91,336 +153,835 @@
     <h1>Image (WASM)</h1>
     <div class="controls">
       <input id="file" type="file" accept="image/*" />
+      <button type="button" popovertarget="filter-menu">Add filter</button>
     </div>
 
-    <fieldset class="controls filters" id="filters">
-      <label class="filter-row" data-filter-id="brightness">
+    <fieldset class="controls filters" id="filters"></fieldset>
+
+    <div id="filter-menu" popover class="filter-menu">
+      <button type="button" data-add-filter="brightness">Brightness</button>
+      <button type="button" data-add-filter="contrast">Contrast</button>
+      <button type="button" data-add-filter="saturation">Saturation</button>
+      <button type="button" data-add-filter="hue-rotate">Hue rotate</button>
+      <button type="button" data-add-filter="temperature">Temperature</button>
+      <button type="button" data-add-filter="tint">Tint</button>
+      <button type="button" data-add-filter="sepia">Sepia</button>
+      <button type="button" data-add-filter="vibrance">Vibrance</button>
+      <button type="button" data-add-filter="exposure">Exposure</button>
+      <button type="button" data-add-filter="gamma">Gamma</button>
+      <button type="button" data-add-filter="posterize">Posterize</button>
+      <button type="button" data-add-filter="color-halftone">Color halftone</button>
+      <button type="button" data-add-filter="gaussian-blur">Gaussian blur</button>
+      <button type="button" data-add-filter="motion-blur">Motion blur</button>
+      <button type="button" data-add-filter="unsharp-mask">Unsharp mask</button>
+      <button type="button" data-add-filter="render-clouds">Render clouds</button>
+      <button type="button" data-add-filter="cutout">Cutout</button>
+      <button type="button" data-add-filter="vignette">Vignette</button>
+      <button type="button" data-add-filter="black-and-white">Black and white</button>
+      <button type="button" data-add-filter="find-edges">Find edges</button>
+      <button type="button" data-add-filter="invert">Invert</button>
+    </div>
+
+    <div class="canvases">
+      <div>
+        <div class="label">
+          Original <span class="hash" id="original-hash"></span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="source"></canvas>
+        </div>
+      </div>
+      <div>
+        <div class="label-row">
+          <div class="label">
+            Result <span id="result-time"></span>
+            <span class="hash" id="result-hash"></span>
+          </div>
+          <div id="status">Loading WASM...</div>
+        </div>
+        <div class="canvas-wrap result">
+          <canvas id="output"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <template id="filter-template-brightness">
+      <div class="filter-row" data-filter-id="brightness">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-brightness" type="checkbox" checked />
-        <legend>Brightness</legend>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Brightness</span>
+        </label>
         <input
-          id="brightness"
           type="range"
           min="-1"
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_brightness"
+          data-format="fixed2"
         />
-        <span id="brightness-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="contrast">
+        <span data-value-for="uniform_set_brightness">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-contrast">
+      <div class="filter-row" data-filter-id="contrast">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-contrast" type="checkbox" checked />
-        <span>Contrast</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Contrast</span>
+        </label>
         <input
-          id="contrast"
           type="range"
           min="-1"
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_contrast"
+          data-format="fixed2"
         />
-        <span id="contrast-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="saturation">
+        <span data-value-for="uniform_set_contrast">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-saturation">
+      <div class="filter-row" data-filter-id="saturation">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-saturation" type="checkbox" checked />
-        <span>Saturation</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Saturation</span>
+        </label>
         <input
-          id="saturation"
           type="range"
           min="-1"
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_saturation"
+          data-format="fixed2"
         />
-        <span id="saturation-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="hue-rotate">
+        <span data-value-for="uniform_set_saturation">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-hue-rotate">
+      <div class="filter-row" data-filter-id="hue-rotate">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-hue-rotate" type="checkbox" checked />
-        <span>Hue</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Hue</span>
+        </label>
         <input
-          id="hue-rotate"
           type="range"
           min="-180"
           max="180"
           step="1"
           value="0"
+          data-uniform="uniform_set_hue_degrees"
+          data-format="int"
         />
-        <span id="hue-rotate-value">0</span>
-      </label>
-      <label class="filter-row" data-filter-id="temperature">
+        <span data-value-for="uniform_set_hue_degrees">0</span>
+      </div>
+    </template>
+
+    <template id="filter-template-temperature">
+      <div class="filter-row" data-filter-id="temperature">
         <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-temperature" type="checkbox" checked />
-        <span>Temperature</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Temperature</span>
+        </label>
         <input
-          id="temperature"
           type="range"
           min="-1"
           max="1"
           step="0.01"
           value="0"
+          data-uniform="uniform_set_temperature"
+          data-format="fixed2"
         />
-        <span id="temperature-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="tint">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-tint" type="checkbox" checked />
-        <span>Tint</span>
-        <input id="tint" type="range" min="-1" max="1" step="0.01" value="0" />
-        <span id="tint-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="sepia">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-sepia" type="checkbox" />
-        <span>Sepia</span>
-        <input id="sepia" type="range" min="0" max="1" step="0.01" value="1" />
-        <span id="sepia-value">1.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="vibrance">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-vibrance" type="checkbox" />
-        <span>Vibrance</span>
-        <input id="vibrance" type="range" min="-1" max="1" step="0.01" value="0" />
-        <span id="vibrance-value">0.00</span>
-      </label>
-      <label class="filter-row" data-filter-id="exposure">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-exposure" type="checkbox" />
-        <span>Exposure</span>
-        <input id="exposure" type="range" min="-2" max="2" step="0.1" value="0" />
-        <span id="exposure-value">0.0</span>
-      </label>
-      <label class="filter-row" data-filter-id="gamma">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-gamma" type="checkbox" />
-        <span>Gamma</span>
-        <input id="gamma" type="range" min="0.5" max="2.5" step="0.1" value="1.0" />
-        <span id="gamma-value">1.0</span>
-      </label>
-      <label class="filter-row" data-filter-id="posterize">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-posterize" type="checkbox" />
-        <span>Posterize</span>
-        <input id="levels" type="range" min="2" max="32" value="8" />
-        <span id="levels-value">8</span>
-      </label>
-      <label class="filter-row" data-filter-id="black-and-white">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-bw" type="checkbox" />
-        <span>Black and white</span>
-      </label>
-      <label class="filter-row" data-filter-id="invert">
-        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
-        <input id="filter-invert" type="checkbox" />
-        <span>Invert</span>
-      </label>
-    </fieldset>
-
-    <div class="canvases">
-      <div>
-        <div class="label">Original</div>
-        <canvas id="source"></canvas>
+        <span data-value-for="uniform_set_temperature">0.00</span>
       </div>
-      <div>
-        <div class="label">Result</div>
-        <canvas id="output"></canvas>
-      </div>
-    </div>
+    </template>
 
-    <div id="status">Loading WASM...</div>
+    <template id="filter-template-tint">
+      <div class="filter-row" data-filter-id="tint">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" checked />
+          <span>Tint</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="uniform_set_tint"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_tint">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-sepia">
+      <div class="filter-row" data-filter-id="sepia">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Sepia</span>
+        </label>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="1"
+          data-uniform="param_set_sepia"
+          data-format="fixed2"
+        />
+        <span data-value-for="param_set_sepia">1.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-vibrance">
+      <div class="filter-row" data-filter-id="vibrance">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Vibrance</span>
+        </label>
+        <input
+          type="range"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+          data-uniform="param_set_vibrance"
+          data-format="fixed2"
+        />
+        <span data-value-for="param_set_vibrance">0.00</span>
+      </div>
+    </template>
+
+    <template id="filter-template-exposure">
+      <div class="filter-row" data-filter-id="exposure">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Exposure</span>
+        </label>
+        <input
+          type="range"
+          min="-2"
+          max="2"
+          step="0.1"
+          value="0"
+          data-uniform="param_set_exposure"
+          data-format="fixed1"
+        />
+        <span data-value-for="param_set_exposure">0.0</span>
+      </div>
+    </template>
+
+    <template id="filter-template-gamma">
+      <div class="filter-row" data-filter-id="gamma">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Gamma</span>
+        </label>
+        <input
+          type="range"
+          min="0.5"
+          max="2.5"
+          step="0.1"
+          value="1.0"
+          data-uniform="param_set_gamma"
+          data-format="fixed1"
+        />
+        <span data-value-for="param_set_gamma">1.0</span>
+      </div>
+    </template>
+
+    <template id="filter-template-posterize">
+      <div class="filter-row" data-filter-id="posterize">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Posterize</span>
+        </label>
+        <input
+          type="range"
+          min="2"
+          max="32"
+          value="8"
+          data-uniform="uniform_set_levels_count"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_levels_count">8</span>
+      </div>
+    </template>
+
+    <template id="filter-template-color-halftone">
+      <div class="filter-row" data-filter-id="color-halftone">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Color halftone</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Max radius:</span>
+        <input
+          type="range"
+          min="1"
+          max="24"
+          step="1"
+          value="6"
+          data-uniform="uniform_set_max_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_max_radius">6</span>
+        <span class="divider">|</span>
+        <span>Angle C:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="15"
+          data-uniform="uniform_set_angle_c"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_c">15</span>
+        <span class="divider">|</span>
+        <span>Angle M:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="75"
+          data-uniform="uniform_set_angle_m"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_m">75</span>
+        <span class="divider">|</span>
+        <span>Angle Y:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_angle_y"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_y">0</span>
+        <span class="divider">|</span>
+        <span>Angle K:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="45"
+          data-uniform="uniform_set_angle_k"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle_k">45</span>
+      </div>
+    </template>
+
+    <template id="filter-template-gaussian-blur">
+      <div class="filter-row" data-filter-id="gaussian-blur">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Gaussian blur</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Radius:</span>
+        <input
+          type="range"
+          min="0"
+          max="12"
+          step="1"
+          value="2"
+          data-uniform="uniform_set_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_radius">2</span>
+      </div>
+    </template>
+
+    <template id="filter-template-motion-blur">
+      <div class="filter-row" data-filter-id="motion-blur">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Motion blur</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Radius:</span>
+        <input
+          type="range"
+          min="0"
+          max="32"
+          step="1"
+          value="8"
+          data-uniform="uniform_set_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_radius">8</span>
+        <span class="divider">|</span>
+        <span>Angle:</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_angle"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_angle">0</span>
+      </div>
+    </template>
+
+    <template id="filter-template-unsharp-mask">
+      <div class="filter-row" data-filter-id="unsharp-mask">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Unsharp mask</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Radius:</span>
+        <input
+          type="range"
+          min="0"
+          max="10"
+          step="1"
+          value="2"
+          data-uniform="uniform_set_radius"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_radius">2</span>
+        <span class="divider">|</span>
+        <span>Amount:</span>
+        <input
+          type="range"
+          min="0"
+          max="2"
+          step="0.05"
+          value="0.6"
+          data-uniform="uniform_set_amount"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_amount">0.60</span>
+        <span class="divider">|</span>
+        <span>Threshold:</span>
+        <input
+          type="range"
+          min="0"
+          max="0.5"
+          step="0.01"
+          value="0.02"
+          data-uniform="uniform_set_threshold"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_threshold">0.02</span>
+      </div>
+    </template>
+
+    <template id="filter-template-render-clouds">
+      <div class="filter-row" data-filter-id="render-clouds">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Render clouds</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Scale:</span>
+        <input
+          type="range"
+          min="8"
+          max="256"
+          step="1"
+          value="96"
+          data-uniform="uniform_set_scale"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_scale">96</span>
+        <span class="divider">|</span>
+        <span>Octaves:</span>
+        <input
+          type="range"
+          min="1"
+          max="8"
+          step="1"
+          value="4"
+          data-uniform="uniform_set_octaves"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_octaves">4</span>
+        <span class="divider">|</span>
+        <span>Persistence:</span>
+        <input
+          type="range"
+          min="0"
+          max="0.95"
+          step="0.01"
+          value="0.5"
+          data-uniform="uniform_set_persistence"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_persistence">0.50</span>
+        <span class="divider">|</span>
+        <span>Contrast:</span>
+        <input
+          type="range"
+          min="0.1"
+          max="2.5"
+          step="0.05"
+          value="1.2"
+          data-uniform="uniform_set_contrast"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_contrast">1.20</span>
+        <span class="divider">|</span>
+        <span>Seed:</span>
+        <input
+          type="range"
+          min="-1000"
+          max="1000"
+          step="1"
+          value="0"
+          data-uniform="uniform_set_seed"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_seed">0</span>
+      </div>
+    </template>
+
+    <template id="filter-template-cutout">
+      <div class="filter-row" data-filter-id="cutout">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Cutout</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Levels:</span>
+        <input
+          type="range"
+          min="2"
+          max="12"
+          step="1"
+          value="4"
+          data-uniform="uniform_set_levels"
+          data-format="int"
+        />
+        <span data-value-for="uniform_set_levels">4</span>
+        <span class="divider">|</span>
+        <span>Edge threshold:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.25"
+          data-uniform="uniform_set_edge_threshold"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_edge_threshold">0.25</span>
+        <span class="divider">|</span>
+        <span>Edge strength:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.7"
+          data-uniform="uniform_set_edge_strength"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_edge_strength">0.70</span>
+      </div>
+    </template>
+
+    <template id="filter-template-vignette">
+      <div class="filter-row" data-filter-id="vignette">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Vignette</span>
+        </label>
+        <span class="divider">|</span>
+        <span>Amount:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.35"
+          data-uniform="uniform_set_amount"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_amount">0.35</span>
+        <span class="divider">|</span>
+        <span>Midpoint:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.65"
+          data-uniform="uniform_set_midpoint"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_midpoint">0.65</span>
+        <span class="divider">|</span>
+        <span>Feather:</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.85"
+          data-uniform="uniform_set_feather"
+          data-format="fixed2"
+        />
+        <span data-value-for="uniform_set_feather">0.85</span>
+      </div>
+    </template>
+
+    <template id="filter-template-black-and-white">
+      <div class="filter-row" data-filter-id="black-and-white">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Black and white</span>
+        </label>
+      </div>
+    </template>
+
+    <template id="filter-template-find-edges">
+      <div class="filter-row" data-filter-id="find-edges">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Find edges</span>
+        </label>
+      </div>
+    </template>
+
+    <template id="filter-template-invert">
+      <div class="filter-row" data-filter-id="invert">
+        <span class="drag-handle" draggable="true" aria-hidden="true">≡</span>
+        <label class="filter-toggle-label">
+          <input type="checkbox" class="filter-toggle" />
+          <span>Invert</span>
+        </label>
+      </div>
+    </template>
 
     <script>
       const TILE = 64;
       const TILE_FLOATS = TILE * TILE * 4;
       const fileInput = document.getElementById("file");
-      const levelsInput = document.getElementById("levels");
-      const levelsValue = document.getElementById("levels-value");
-      const posterizeToggle = document.getElementById("filter-posterize");
-      const bwToggle = document.getElementById("filter-bw");
-      const invertToggle = document.getElementById("filter-invert");
-      const brightnessToggle = document.getElementById("filter-brightness");
-      const contrastToggle = document.getElementById("filter-contrast");
-      const brightnessInput = document.getElementById("brightness");
-      const brightnessValue = document.getElementById("brightness-value");
-      const contrastInput = document.getElementById("contrast");
-      const contrastValue = document.getElementById("contrast-value");
-      const saturationToggle = document.getElementById("filter-saturation");
-      const hueRotateToggle = document.getElementById("filter-hue-rotate");
-      const temperatureToggle = document.getElementById("filter-temperature");
-      const tintToggle = document.getElementById("filter-tint");
-      const saturationInput = document.getElementById("saturation");
-      const saturationValue = document.getElementById("saturation-value");
-      const hueRotateInput = document.getElementById("hue-rotate");
-      const hueRotateValue = document.getElementById("hue-rotate-value");
-      const temperatureInput = document.getElementById("temperature");
-      const temperatureValue = document.getElementById("temperature-value");
-      const tintInput = document.getElementById("tint");
-      const tintValue = document.getElementById("tint-value");
-      const sepiaToggle = document.getElementById("filter-sepia");
-      const sepiaInput = document.getElementById("sepia");
-      const sepiaValue = document.getElementById("sepia-value");
-      const vibranceToggle = document.getElementById("filter-vibrance");
-      const vibranceInput = document.getElementById("vibrance");
-      const vibranceValue = document.getElementById("vibrance-value");
-      const exposureToggle = document.getElementById("filter-exposure");
-      const exposureInput = document.getElementById("exposure");
-      const exposureValue = document.getElementById("exposure-value");
-      const gammaToggle = document.getElementById("filter-gamma");
-      const gammaInput = document.getElementById("gamma");
-      const gammaValue = document.getElementById("gamma-value");
       const filtersContainer = document.getElementById("filters");
+      const filterMenu = document.getElementById("filter-menu");
       const statusEl = document.getElementById("status");
+      const resultTimeEl = document.getElementById("result-time");
+      const originalHashEl = document.getElementById("original-hash");
+      const resultHashEl = document.getElementById("result-hash");
       const sourceCanvas = document.getElementById("source");
       const outputCanvas = document.getElementById("output");
       const sourceCtx = sourceCanvas.getContext("2d");
       const outputCtx = outputCanvas.getContext("2d");
 
-      const filters = {
-        posterize: {
-          id: "posterize",
-          path: "examples/rgba/posterize.wasm",
-          toggle: posterizeToggle,
-          param: {
-            input: levelsInput,
-            valueEl: levelsValue,
-            name: "param_set_levels_count",
-            parse: (value) => Number(value),
-            format: (value) => String(value),
-          },
-        },
-        saturation: {
-          id: "saturation",
-          path: "examples/rgba/saturation.wasm",
-          toggle: saturationToggle,
-          param: {
-            input: saturationInput,
-            valueEl: saturationValue,
-            name: "param_set_saturation",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        "hue-rotate": {
-          id: "hue-rotate",
-          path: "examples/rgba/hue-rotate.wasm",
-          toggle: hueRotateToggle,
-          param: {
-            input: hueRotateInput,
-            valueEl: hueRotateValue,
-            name: "param_set_hue_degrees",
-            parse: (value) => parseFloat(value),
-            format: (value) => String(Math.round(Number(value))),
-          },
-        },
-        temperature: {
-          id: "temperature",
-          path: "examples/rgba/temperature.wasm",
-          toggle: temperatureToggle,
-          param: {
-            input: temperatureInput,
-            valueEl: temperatureValue,
-            name: "param_set_temperature",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        tint: {
-          id: "tint",
-          path: "examples/rgba/tint.wasm",
-          toggle: tintToggle,
-          param: {
-            input: tintInput,
-            valueEl: tintValue,
-            name: "param_set_tint",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        sepia: {
-          id: "sepia",
-          path: "examples/rgba/sepia.wasm",
-          toggle: sepiaToggle,
-          param: {
-            input: sepiaInput,
-            valueEl: sepiaValue,
-            name: "param_set_sepia",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        vibrance: {
-          id: "vibrance",
-          path: "examples/rgba/vibrance.wasm",
-          toggle: vibranceToggle,
-          param: {
-            input: vibranceInput,
-            valueEl: vibranceValue,
-            name: "param_set_vibrance",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        exposure: {
-          id: "exposure",
-          path: "examples/rgba/exposure.wasm",
-          toggle: exposureToggle,
-          param: {
-            input: exposureInput,
-            valueEl: exposureValue,
-            name: "param_set_exposure",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(1),
-          },
-        },
-        gamma: {
-          id: "gamma",
-          path: "examples/rgba/gamma.wasm",
-          toggle: gammaToggle,
-          param: {
-            input: gammaInput,
-            valueEl: gammaValue,
-            name: "param_set_gamma",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(1),
-          },
-        },
-        "black-and-white": {
-          id: "black-and-white",
-          path: "examples/rgba/black-and-white.wasm",
-          toggle: bwToggle,
-        },
-        invert: {
-          id: "invert",
-          path: "examples/rgba/invert.wasm",
-          toggle: invertToggle,
-        },
-        brightness: {
-          id: "brightness",
-          path: "examples/rgba/brightness.wasm",
-          toggle: brightnessToggle,
-          param: {
-            input: brightnessInput,
-            valueEl: brightnessValue,
-            name: "param_set_brightness",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-        contrast: {
-          id: "contrast",
-          path: "examples/rgba/contrast.wasm",
-          toggle: contrastToggle,
-          param: {
-            input: contrastInput,
-            valueEl: contrastValue,
-            name: "param_set_contrast",
-            parse: (value) => parseFloat(value),
-            format: (value) => Number(value).toFixed(2),
-          },
-        },
-      };
+      const FILTER_DEFS = [
+        { id: "brightness", path: "examples/rgba/brightness.wasm" },
+        { id: "contrast", path: "examples/rgba/contrast.wasm" },
+        { id: "saturation", path: "examples/rgba/saturation.wasm" },
+        { id: "hue-rotate", path: "examples/rgba/hue-rotate.wasm" },
+        { id: "temperature", path: "examples/rgba/temperature.wasm" },
+        { id: "tint", path: "examples/rgba/tint.wasm" },
+        { id: "sepia", path: "examples/rgba/sepia.wasm" },
+        { id: "vibrance", path: "examples/rgba/vibrance.wasm" },
+        { id: "exposure", path: "examples/rgba/exposure.wasm" },
+        { id: "gamma", path: "examples/rgba/gamma.wasm" },
+        { id: "posterize", path: "examples/rgba/posterize.wasm" },
+        { id: "color-halftone", path: "examples/rgba/color-halftone.wasm" },
+        { id: "gaussian-blur", path: "examples/rgba/gaussian-blur.wasm" },
+        { id: "motion-blur", path: "examples/rgba/motion-blur.wasm" },
+        { id: "unsharp-mask", path: "examples/rgba/unsharp-mask.wasm" },
+        { id: "render-clouds", path: "examples/rgba/render-clouds.wasm" },
+        { id: "cutout", path: "examples/rgba/cutout.wasm" },
+        { id: "vignette", path: "examples/rgba/vignette.wasm" },
+        { id: "black-and-white", path: "examples/rgba/black-and-white.wasm" },
+        { id: "find-edges", path: "examples/rgba/find-edges.wasm" },
+        { id: "invert", path: "examples/rgba/invert.wasm" },
+      ];
+
+      const DEFAULT_PIPELINE = [
+        "brightness",
+        "contrast",
+        "saturation",
+        "hue-rotate",
+        "temperature",
+        "tint",
+      ];
+
+      let workingState = [];
+
+      function serializeState(state) {
+        const q = new URLSearchParams();
+        for (const item of state) {
+          if (!item || !item.id) {
+            continue;
+          }
+          const values = Array.isArray(item.values) ? item.values : [];
+          q.append(item.id, values.join(","));
+        }
+        return q;
+      }
+
+      function buildStateFromDOM() {
+        const rows = filtersContainer.querySelectorAll(".filter-row");
+        const state = [];
+        for (const row of rows) {
+          const id = row.dataset.filterId;
+          if (!id) {
+            continue;
+          }
+          const toggle = row.querySelector(".filter-toggle");
+          const enabled = !toggle || toggle.checked;
+          const inputs = row.querySelectorAll("input[data-uniform]");
+          const values = Array.from(inputs).map((input) => input.value);
+          state.push({ id, enabled, values });
+        }
+        return state;
+      }
+
+      function parseStateFromHash() {
+        const params = new URLSearchParams(location.hash.slice(1));
+        const state = [];
+        for (const [id, raw] of params) {
+          const tpl = document.getElementById(`filter-template-${id}`);
+          if (!tpl) {
+            continue;
+          }
+          const defaults = getTemplateDefaultValues(id);
+          let values = raw ? raw.split(",") : [];
+          if (values.length === 0) {
+            values = defaults.slice();
+          } else {
+            values = defaults.map((def, i) =>
+              values[i] === undefined ? def : values[i],
+            );
+          }
+          state.push({ id, enabled: true, values });
+        }
+        return state;
+      }
+
+      function commitStateToHash() {
+        const next = serializeState(workingState).toString();
+        const nextHash = next ? `#${next}` : "";
+        if (location.hash !== nextHash) {
+          history.replaceState(null, "", nextHash);
+        }
+      }
+
+      function applyStateToDOM(state) {
+        const rows = [];
+        for (const item of state) {
+          const row = createFilterRow(item.id, item.values, item.enabled);
+          if (row) {
+            rows.push(row);
+          }
+        }
+        filtersContainer.replaceChildren(...rows);
+      }
+
+      function updateFiltersFromLocationHash() {
+        const parsed = parseStateFromHash();
+        if (parsed.length === 0) {
+          if (!hasBootstrappedDefaults) {
+            hasBootstrappedDefaults = true;
+            workingState = DEFAULT_PIPELINE.map((id) => ({
+              id,
+              enabled: true,
+              values: getTemplateDefaultValues(id),
+            }));
+            applyStateToDOM(workingState);
+            commitStateToHash();
+          } else {
+            workingState = [];
+            filtersContainer.replaceChildren();
+          }
+          return;
+        }
+        workingState = parsed;
+        applyStateToDOM(workingState);
+        commitStateToHash();
+      }
+
+      const filters = {};
+      for (const def of FILTER_DEFS) {
+        filters[def.id] = {
+          id: def.id,
+          path: def.path,
+          uniforms: {},
+        };
+      }
+
+      function createFilterRow(id, values, forceEnabled) {
+        const tpl = document.getElementById(`filter-template-${id}`);
+        if (!tpl) {
+          return null;
+        }
+        const row = tpl.content.firstElementChild.cloneNode(true);
+        if (!row) {
+          return null;
+        }
+        row.dataset.filterId = id;
+        const toggle = row.querySelector(".filter-toggle");
+        if (toggle && typeof forceEnabled === "boolean") {
+          toggle.checked = forceEnabled;
+        } else if (toggle) {
+          toggle.checked = true;
+        }
+        const inputs = row.querySelectorAll("input[data-uniform]");
+        const inputValues = values || [];
+        if (inputValues.length > 0) {
+          for (let i = 0; i < inputs.length; i++) {
+            if (inputValues[i] !== undefined) {
+              inputs[i].value = inputValues[i];
+            }
+          }
+        }
+        for (const input of inputs) {
+          updateValueDisplay(input);
+        }
+        return row;
+      }
+
+      function getTemplateDefaultValues(id) {
+        const tpl = document.getElementById(`filter-template-${id}`);
+        if (!tpl) {
+          return [];
+        }
+        const inputs = tpl.content.querySelectorAll("input[data-uniform]");
+        return Array.from(inputs).map((input) => input.value);
+      }
+
+      let hasBootstrappedDefaults = false;
+      updateFiltersFromLocationHash();
 
       function exportedValue(exp) {
         if (typeof exp === "function") {
@@ -454,27 +1015,143 @@
         filter.memory = exports.memory;
         filter.inputPtr = exportedValue(exports.input_ptr);
         filter.tileFn = exports.tile_rgba_f32_64x64;
-        if (filter.param && filter.param.name) {
-          filter.paramSetter = exports[filter.param.name] || null;
+        filter.haloFn = exports.calculate_halo_px || null;
+        filter.inputBytesCap = exports.input_bytes_cap
+          ? Number(exportedValue(exports.input_bytes_cap))
+          : 0;
+        filter.uniformSetSize = exports.uniform_set_width_and_height || null;
+        const possible = new Set();
+        const tpl = document.getElementById(`filter-template-${filter.id}`);
+        if (tpl) {
+          const inputs = tpl.content.querySelectorAll("input[data-uniform]");
+          for (const input of inputs) {
+            if (input.dataset.uniform) {
+              possible.add(input.dataset.uniform);
+            }
+          }
         }
-        filter.getTileView = () =>
-          new Float32Array(filter.memory.buffer, filter.inputPtr, TILE_FLOATS);
+        for (const name of possible) {
+          filter.uniforms[name] = exports[name] || null;
+        }
+        filter.getTileView = (tileFloats) =>
+          new Float32Array(filter.memory.buffer, filter.inputPtr, tileFloats);
       }
 
-      function applyParam(filter) {
-        if (!filter.param) {
+      function formatValue(input, value) {
+        const format = input.dataset.format;
+        if (format === "int") {
+          return String(Math.round(value));
+        }
+        if (format === "fixed2") {
+          return Number(value).toFixed(2);
+        }
+        const step = input.step || "";
+        const decimals = step.includes(".") ? step.split(".")[1].length : 0;
+        return decimals > 0 ? Number(value).toFixed(decimals) : String(value);
+      }
+
+      function updateValueDisplay(input) {
+        const row = input.closest(".filter-row");
+        if (!row) {
           return;
         }
-        const value = filter.param.parse(filter.param.input.value);
-        filter.param.valueEl.textContent = filter.param.format(value);
-        if (filter.paramSetter) {
-          filter.paramSetter(value);
+        const uniformName = input.dataset.uniform;
+        if (!uniformName) {
+          return;
+        }
+        const value = Number(input.value);
+        const valueEl = row.querySelector(
+          `[data-value-for="${uniformName}"]`,
+        );
+        if (valueEl) {
+          valueEl.textContent = formatValue(input, value);
         }
       }
 
-      function processImageData(imageData) {
+      function processImageData(imageData, stages, useHalo) {
         const { data, width, height } = imageData;
         const out = new Uint8ClampedArray(data.length);
+
+        if (useHalo) {
+          let floatSrc = new Float32Array(data.length);
+          let floatDst = new Float32Array(data.length);
+          for (let i = 0; i < data.length; i++) {
+            floatSrc[i] = data[i] / 255;
+          }
+
+          for (const stage of stages) {
+            const filter = stage.filter;
+            if (!filter.tileFn) {
+              continue;
+            }
+            for (const uniform of stage.uniforms) {
+              uniform.setter(uniform.value);
+            }
+            const halo = stage.haloPx || 0;
+            const tileSpan = stage.tileSpan;
+            const tileFloats = stage.tileFloats;
+            const tileBuffer = new Float32Array(tileFloats);
+            const view = stage.tileView;
+
+            for (let y = 0; y < height; y += TILE) {
+              const tileH = Math.min(TILE, height - y);
+              for (let x = 0; x < width; x += TILE) {
+                const tileW = Math.min(TILE, width - x);
+                for (let row = 0; row < tileSpan; row++) {
+                  let srcY = y + row - halo;
+                  if (srcY < 0) {
+                    srcY = 0;
+                  } else if (srcY >= height) {
+                    srcY = height - 1;
+                  }
+                  const srcRow = srcY * width * 4;
+                  const dstRow = row * tileSpan * 4;
+                  for (let col = 0; col < tileSpan; col++) {
+                    let srcX = x + col - halo;
+                    if (srcX < 0) {
+                      srcX = 0;
+                    } else if (srcX >= width) {
+                      srcX = width - 1;
+                    }
+                    const s = srcRow + srcX * 4;
+                    const d = dstRow + col * 4;
+                    tileBuffer[d] = floatSrc[s];
+                    tileBuffer[d + 1] = floatSrc[s + 1];
+                    tileBuffer[d + 2] = floatSrc[s + 2];
+                    tileBuffer[d + 3] = floatSrc[s + 3];
+                  }
+                }
+
+                view.set(tileBuffer);
+                filter.tileFn(x - halo, y - halo);
+
+                const srcBase = (halo * tileSpan + halo) * 4;
+                for (let row = 0; row < tileH; row++) {
+                  const src = srcBase + row * tileSpan * 4;
+                  const dst = ((y + row) * width + x) * 4;
+                  for (let col = 0; col < tileW; col++) {
+                    const s = src + col * 4;
+                    const d = dst + col * 4;
+                    floatDst[d] = view[s];
+                    floatDst[d + 1] = view[s + 1];
+                    floatDst[d + 2] = view[s + 2];
+                    floatDst[d + 3] = view[s + 3];
+                  }
+                }
+              }
+            }
+
+            const swap = floatSrc;
+            floatSrc = floatDst;
+            floatDst = swap;
+          }
+
+          for (let i = 0; i < out.length; i++) {
+            out[i] = clampByte(Math.round(floatSrc[i] * 255));
+          }
+          return new ImageData(out, width, height);
+        }
+
         const tileBuffer = new Float32Array(TILE_FLOATS);
 
         for (let y = 0; y < height; y += TILE) {
@@ -494,7 +1171,7 @@
               }
             }
 
-            runPipeline(tileBuffer);
+            runPipeline(tileBuffer, x, y, stages);
 
             for (let ty = 0; ty < tileH; ty++) {
               for (let tx = 0; tx < tileW; tx++) {
@@ -522,6 +1199,16 @@
 
       let cachedImageData = null;
 
+      async function sha256Hex(bytes) {
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        const view = new Uint8Array(digest);
+        let out = "";
+        for (const b of view) {
+          out += b.toString(16).padStart(2, "0");
+        }
+        return out;
+      }
+
       async function handleFile(file) {
         statusEl.textContent = "Decoding image...";
         const bitmap = await createImageBitmap(file);
@@ -537,6 +1224,20 @@
           bitmap.width,
           bitmap.height,
         );
+        if (originalHashEl) {
+          originalHashEl.textContent = "(hashing...)";
+        }
+        try {
+          const hash = await sha256Hex(cachedImageData.data);
+          if (originalHashEl) {
+            originalHashEl.textContent = `(${hash})`;
+          }
+        } catch (err) {
+          if (originalHashEl) {
+            originalHashEl.textContent = "(hash error)";
+          }
+        }
+        setImageSize(bitmap.width, bitmap.height);
         renderPosterized();
       }
 
@@ -545,68 +1246,170 @@
           return;
         }
         statusEl.textContent = "Processing...";
-        const outputData = processImageData(cachedImageData);
+        const stages = buildStagesFromDOM();
+        const useHalo = prepareStages(stages);
+        const start = performance.now();
+        const outputData = processImageData(cachedImageData, stages, useHalo);
+        const elapsed = Math.round(performance.now() - start);
         outputCtx.putImageData(outputData, 0, 0);
+        if (resultTimeEl) {
+          resultTimeEl.textContent = `(${elapsed} ms)`;
+        }
+        if (resultHashEl) {
+          resultHashEl.textContent = "(hashing...)";
+        }
+        if (resultHashEl) {
+          sha256Hex(outputData.data)
+            .then((hash) => {
+              resultHashEl.textContent = `(${hash})`;
+            })
+            .catch(() => {
+              resultHashEl.textContent = "(hash error)";
+            });
+        }
         statusEl.textContent = "Done.";
       }
 
-      function runPipeline(tileBuffer) {
-        for (const filter of getOrderedFilters()) {
-          if (!filter.toggle.checked) {
+      function setImageSize(width, height) {
+        for (const filter of Object.values(filters)) {
+          if (!filter.uniformSetSize) {
             continue;
+          }
+          filter.uniformSetSize(width, height);
+        }
+      }
+
+      function buildStagesFromDOM() {
+        const rows = filtersContainer.querySelectorAll(".filter-row");
+        const stages = [];
+        for (const row of rows) {
+          const id = row.dataset.filterId;
+          const filter = id ? filters[id] : null;
+          if (!filter) {
+            continue;
+          }
+          const toggle = row.querySelector(".filter-toggle");
+          if (toggle && !toggle.checked) {
+            continue;
+          }
+          const inputs = row.querySelectorAll("input[data-uniform]");
+          const uniforms = [];
+          for (const input of inputs) {
+            const name = input.dataset.uniform;
+            const setter = filter.uniforms[name];
+            if (!setter) {
+              continue;
+            }
+            uniforms.push({ setter, value: Number(input.value) });
+          }
+          stages.push({ filter, uniforms });
+        }
+        return stages;
+      }
+
+      function prepareStages(stages) {
+        let useHalo = false;
+        for (const stage of stages) {
+          const filter = stage.filter;
+          for (const uniform of stage.uniforms) {
+            uniform.setter(uniform.value);
+          }
+          let haloPx = 0;
+          if (filter.haloFn) {
+            haloPx = Math.trunc(filter.haloFn());
+            if (!Number.isFinite(haloPx)) {
+              haloPx = 0;
+            }
+          }
+          if (haloPx < 0) {
+            haloPx = 0;
+          }
+          stage.haloPx = haloPx;
+          stage.tileSpan = TILE + haloPx * 2;
+          stage.tileFloats = stage.tileSpan * stage.tileSpan * 4;
+          if (
+            filter.inputBytesCap &&
+            stage.tileFloats * 4 > filter.inputBytesCap
+          ) {
+            throw new Error(
+              `Tile buffer exceeds input_bytes_cap for ${filter.id}`,
+            );
+          }
+          stage.tileView = filter.tileFn
+            ? filter.getTileView(stage.tileFloats)
+            : null;
+          if (haloPx > 0) {
+            useHalo = true;
+          }
+        }
+        return useHalo;
+      }
+
+      function runPipeline(tileBuffer, tileX, tileY, stages) {
+        for (const stage of stages) {
+          const filter = stage.filter;
+          for (const uniform of stage.uniforms) {
+            uniform.setter(uniform.value);
           }
           if (!filter.tileFn) {
             continue;
           }
-          const view = filter.getTileView();
+          const view =
+            stage.tileView || filter.getTileView(tileBuffer.length);
           view.set(tileBuffer);
-          filter.tileFn(filter.inputPtr);
+          filter.tileFn(tileX, tileY);
           tileBuffer.set(view);
         }
       }
 
-      function getOrderedFilters() {
-        return Array.from(filtersContainer.children)
-          .map((row) => filters[row.dataset.filterId])
-          .filter(Boolean);
-      }
-
-      levelsInput.addEventListener("input", () => {
-        applyParam(filters.posterize);
+      filtersContainer.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+        if (target.type !== "range") {
+          return;
+        }
+        updateValueDisplay(target);
+        workingState = buildStateFromDOM();
+        commitStateToHash();
         renderPosterized();
       });
 
-      posterizeToggle.addEventListener("change", renderPosterized);
-      bwToggle.addEventListener("change", renderPosterized);
-      invertToggle.addEventListener("change", renderPosterized);
-      brightnessToggle.addEventListener("change", renderPosterized);
-      contrastToggle.addEventListener("change", renderPosterized);
-      saturationToggle.addEventListener("change", renderPosterized);
-      hueRotateToggle.addEventListener("change", renderPosterized);
-      temperatureToggle.addEventListener("change", renderPosterized);
-      tintToggle.addEventListener("change", renderPosterized);
-      brightnessInput.addEventListener("input", () => {
-        applyParam(filters.brightness);
+      filtersContainer.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+          return;
+        }
+        if (target.type !== "checkbox") {
+          return;
+        }
+        workingState = buildStateFromDOM();
+        commitStateToHash();
         renderPosterized();
       });
-      contrastInput.addEventListener("input", () => {
-        applyParam(filters.contrast);
+
+      filterMenu.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-add-filter]");
+        if (!button) {
+          return;
+        }
+        const id = button.dataset.addFilter;
+        const values = getTemplateDefaultValues(id);
+        const row = createFilterRow(id, values, true);
+        if (row) {
+          filtersContainer.appendChild(row);
+        }
+        workingState = buildStateFromDOM();
+        commitStateToHash();
         renderPosterized();
+        if (filterMenu.hidePopover) {
+          filterMenu.hidePopover();
+        }
       });
-      saturationInput.addEventListener("input", () => {
-        applyParam(filters.saturation);
-        renderPosterized();
-      });
-      hueRotateInput.addEventListener("input", () => {
-        applyParam(filters["hue-rotate"]);
-        renderPosterized();
-      });
-      temperatureInput.addEventListener("input", () => {
-        applyParam(filters.temperature);
-        renderPosterized();
-      });
-      tintInput.addEventListener("input", () => {
-        applyParam(filters.tint);
+
+      window.addEventListener("hashchange", () => {
+        updateFiltersFromLocationHash();
         renderPosterized();
       });
 
@@ -650,6 +1453,8 @@
 
       filtersContainer.addEventListener("drop", (event) => {
         event.preventDefault();
+        workingState = buildStateFromDOM();
+        commitStateToHash();
         renderPosterized();
       });
 
@@ -668,13 +1473,7 @@
       (async () => {
         try {
           await loadWasm();
-          applyParam(filters.posterize);
-          applyParam(filters.brightness);
-          applyParam(filters.contrast);
-          applyParam(filters.saturation);
-          applyParam(filters["hue-rotate"]);
-          applyParam(filters.temperature);
-          applyParam(filters.tint);
+          updateFiltersFromLocationHash();
           statusEl.textContent = "Ready. Choose an image.";
         } catch (err) {
           statusEl.textContent = "Error: " + err.message;
