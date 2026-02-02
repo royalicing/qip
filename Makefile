@@ -27,22 +27,39 @@ examples: examples-wat-wasm examples-c-wasm examples-zig-wasm
 test: qip examples
 	@mkdir -p test
 	@rm -f test/latest.txt
+	@printf "%s\n" "module: base64-encode.wasm" >> test/latest.txt
 	@printf %s "hello" | ./qip run examples/base64-encode.wasm >> test/latest.txt
+	@printf "%s\n" "module: crc.wasm" >> test/latest.txt
 	@printf %s "abc" | ./qip run examples/crc.wasm >> test/latest.txt
+	@printf "%s\n" "module: css-class-validator.wasm" >> test/latest.txt
 	@printf %s "btn-primary" | ./qip run examples/css-class-validator.wasm >> test/latest.txt
+	@printf "%s\n" "module: e164.wasm" >> test/latest.txt
 	@printf %s "+14155552671" | ./qip run examples/e164.wasm >> test/latest.txt
+	@printf "%s\n" "module: hello.wasm" >> test/latest.txt
 	@printf %s "World" | ./qip run examples/hello.wasm >> test/latest.txt
+	@printf "%s\n" "module: hello-c.wasm" >> test/latest.txt
 	@printf %s "World" | ./qip run examples/hello-c.wasm >> test/latest.txt
+	@printf "%s\n" "module: hello-zig.wasm" >> test/latest.txt
 	@printf %s "World" | ./qip run examples/hello-zig.wasm >> test/latest.txt
+	@printf "%s\n" "module: hex-to-rgb.wasm" >> test/latest.txt
 	@printf %s "#ff8800" | ./qip run examples/hex-to-rgb.wasm >> test/latest.txt
+	@printf "%s\n" "module: html-id-validator.wasm" >> test/latest.txt
 	@printf %s "main-content" | ./qip run examples/html-id-validator.wasm >> test/latest.txt
+	@printf "%s\n" "module: html-input-name-validator.wasm" >> test/latest.txt
 	@printf %s "email" | ./qip run examples/html-input-name-validator.wasm >> test/latest.txt
+	@printf "%s\n" "module: html-tag-validator.wasm" >> test/latest.txt
 	@printf %s "div" | ./qip run examples/html-tag-validator.wasm >> test/latest.txt
+	@printf "%s\n" "module: luhn.wasm" >> test/latest.txt
 	@printf %s "49927398716" | ./qip run examples/luhn.wasm >> test/latest.txt
+	@printf "%s\n" "module: rgb-to-hex.wasm" >> test/latest.txt
 	@printf %s "255,0,170" | ./qip run examples/rgb-to-hex.wasm >> test/latest.txt
+	@printf "%s\n" "module: tld-validator.wasm" >> test/latest.txt
 	@printf %s "com" | ./qip run examples/tld-validator.wasm >> test/latest.txt
+	@printf "%s\n" "module: trim.wasm" >> test/latest.txt
 	@printf %s "  hi  " | ./qip run examples/trim.wasm >> test/latest.txt
+	@printf "%s\n" "module: utf8-validate.wasm" >> test/latest.txt
 	@printf %s "hello" | ./qip run examples/utf8-validate.wasm >> test/latest.txt
+	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
 	diff test/expected.txt test/latest.txt
 	cp test/latest.txt test/expected.txt

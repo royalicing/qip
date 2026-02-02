@@ -1,19 +1,36 @@
+module: base64-encode.wasm
 aGVsbG8=
+module: crc.wasm
 352441c2
+module: css-class-validator.wasm
 btn-primary
+module: e164.wasm
 +14155552671
+module: hello.wasm
 Hello, World
+module: hello-c.wasm
 Hello, World
+module: hello-zig.wasm
 Hello, World
+module: hex-to-rgb.wasm
 255,136,0
+module: html-id-validator.wasm
 main-content
+module: html-input-name-validator.wasm
 email
+module: html-tag-validator.wasm
 builtin
+module: luhn.wasm
 49927398716
+module: rgb-to-hex.wasm
 #ff00aa
+module: tld-validator.wasm
 
+module: trim.wasm
 hi
+module: utf8-validate.wasm
 Ran: 1
+module: wasm-to-js.wasm
 export async function run(input) {
   const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMDAgAABQMBAAMGHQR/AEGAgAQLfwBBgIAEC38AQYCACAt/AEGAgAQLB0wGBm1lbW9yeQIACWlucHV0X3B0cgMADmlucHV0X3V0ZjhfY2FwAwEKb3V0cHV0X3B0cgMCD291dHB1dF91dGY4X2NhcAMDA3J1bgABCroBAhkAIABBIEYgAEEJRiAAQQpGIABBDUZycnILnQEBBH9BASEDIABBAEsEQAJAA0AgASAATw0BIwAgAWotAAAhBCAEEABFBEBBACEDDAILIAFBAWohAQwACwsLIwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiADRQRAQQAhAUEHIQICQANAIAEgAE8NASMCIAJqIwAgAWotAAA6AAAgAUEBaiEBIAJBAWohAgwACwsLIAIL'), c => c.charCodeAt(0));
   const module = await WebAssembly.compile(wasmBytes);
