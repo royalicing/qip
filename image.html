@@ -88,6 +88,26 @@
         grid-template-columns: 1fr 1fr;
         gap: 16px;
       }
+      .canvas-wrap {
+        position: relative;
+      }
+      .canvas-wrap canvas {
+        display: block;
+      }
+      .canvas-wrap.result::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cpath d='M0 0H64M0 0V64' stroke='rgba(0,128,255,0.6)' stroke-width='1' fill='none'/%3E%3C/svg%3E");
+        background-size: 64px 64px;
+        background-repeat: repeat;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+      }
+      .canvas-wrap.result:hover::after {
+        opacity: 1;
+      }
       canvas {
         --color: oklab(50% 0 0);
         width: 100%;
@@ -100,8 +120,25 @@
         color: #555;
         margin: 6px 0 4px;
       }
+      .hash {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+        color: #777;
+        margin-left: 6px;
+      }
+      .label-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 6px 0 4px;
+      }
+      .label-row .label {
+        margin: 0;
+      }
       #status {
-        margin-top: 12px;
+        margin: 0;
         font-size: 12px;
         color: #555;
       }
@@ -143,16 +180,26 @@
 
     <div class="canvases">
       <div>
-        <div class="label">Original</div>
-        <canvas id="source"></canvas>
+        <div class="label">
+          Original <span class="hash" id="original-hash"></span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="source"></canvas>
+        </div>
       </div>
       <div>
-        <div class="label">Result</div>
-        <canvas id="output"></canvas>
+        <div class="label-row">
+          <div class="label">
+            Result <span id="result-time"></span>
+            <span class="hash" id="result-hash"></span>
+          </div>
+          <div id="status">Loading WASM...</div>
+        </div>
+        <div class="canvas-wrap result">
+          <canvas id="output"></canvas>
+        </div>
       </div>
     </div>
-
-    <div id="status">Loading WASM...</div>
 
     <template id="filter-template-brightness">
       <div class="filter-row" data-filter-id="brightness">
@@ -664,6 +711,9 @@
       const filtersContainer = document.getElementById("filters");
       const filterMenu = document.getElementById("filter-menu");
       const statusEl = document.getElementById("status");
+      const resultTimeEl = document.getElementById("result-time");
+      const originalHashEl = document.getElementById("original-hash");
+      const resultHashEl = document.getElementById("result-hash");
       const sourceCanvas = document.getElementById("source");
       const outputCanvas = document.getElementById("output");
       const sourceCtx = sourceCanvas.getContext("2d");
@@ -707,8 +757,7 @@
             continue;
           }
           const values = Array.isArray(item.values) ? item.values : [];
-          const enabled = item.enabled ? "1" : "0";
-          q.append(item.id, [enabled, ...values].join(","));
+          q.append(item.id, values.join(","));
         }
         return q;
       }
@@ -740,14 +789,6 @@
           }
           const defaults = getTemplateDefaultValues(id);
           let values = raw ? raw.split(",") : [];
-          let enabled = true;
-          if (
-            values.length === defaults.length + 1 &&
-            (values[0] === "0" || values[0] === "1")
-          ) {
-            enabled = values[0] === "1";
-            values = values.slice(1);
-          }
           if (values.length === 0) {
             values = defaults.slice();
           } else {
@@ -755,7 +796,7 @@
               values[i] === undefined ? def : values[i],
             );
           }
-          state.push({ id, enabled, values });
+          state.push({ id, enabled: true, values });
         }
         return state;
       }
@@ -1070,6 +1111,16 @@
 
       let cachedImageData = null;
 
+      async function sha256Hex(bytes) {
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        const view = new Uint8Array(digest);
+        let out = "";
+        for (const b of view) {
+          out += b.toString(16).padStart(2, "0");
+        }
+        return out;
+      }
+
       async function handleFile(file) {
         statusEl.textContent = "Decoding image...";
         const bitmap = await createImageBitmap(file);
@@ -1085,6 +1136,19 @@
           bitmap.width,
           bitmap.height,
         );
+        if (originalHashEl) {
+          originalHashEl.textContent = "(hashing...)";
+        }
+        try {
+          const hash = await sha256Hex(cachedImageData.data);
+          if (originalHashEl) {
+            originalHashEl.textContent = `(${hash})`;
+          }
+        } catch (err) {
+          if (originalHashEl) {
+            originalHashEl.textContent = "(hash error)";
+          }
+        }
         setImageSize(bitmap.width, bitmap.height);
         renderPosterized();
       }
@@ -1096,8 +1160,25 @@
         statusEl.textContent = "Processing...";
         const stages = buildStagesFromDOM();
         const useHalo = prepareStages(stages);
+        const start = performance.now();
         const outputData = processImageData(cachedImageData, stages, useHalo);
+        const elapsed = Math.round(performance.now() - start);
         outputCtx.putImageData(outputData, 0, 0);
+        if (resultTimeEl) {
+          resultTimeEl.textContent = `(${elapsed} ms)`;
+        }
+        if (resultHashEl) {
+          resultHashEl.textContent = "(hashing...)";
+        }
+        if (resultHashEl) {
+          sha256Hex(outputData.data)
+            .then((hash) => {
+              resultHashEl.textContent = `(${hash})`;
+            })
+            .catch(() => {
+              resultHashEl.textContent = "(hash error)";
+            });
+        }
         statusEl.textContent = "Done.";
       }
 
