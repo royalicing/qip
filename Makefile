@@ -28,6 +28,12 @@ examples/text-to-bmp.wasm: examples/text-to-bmp.c
 examples/bmp-double.wasm: examples/bmp-double.c
 	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -O3 -o $@
 
+examples/js-to-bmp.wasm: examples/js-to-bmp.c
+	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -O3 -o $@
+
+examples/c-to-bmp.wasm: examples/c-to-bmp.c
+	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -O3 -o $@
+
 examples/%.wasm: examples/%.c
 	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -O3 -o $@
 
