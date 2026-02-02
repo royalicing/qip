@@ -48,6 +48,8 @@ func main() {
 		run(args[1:])
 	} else if args[0] == "image" {
 		imageCmd(args[1:])
+	} else if args[0] == "get" {
+		getCmd(args[1:])
 	} else {
 		run(args)
 	}
@@ -524,6 +526,144 @@ func imageCmd(args []string) {
 	encoder := png.Encoder{CompressionLevel: png.NoCompression}
 	if err := encoder.Encode(outFile, outputRGBA); err != nil {
 		gameOver("Error writing output image: %v", err)
+	}
+}
+
+func getCmd(args []string) {
+	if len(args) < 2 {
+		gameOver("Usage: qip get <path> <wasm module URL or file>")
+	}
+
+	path := args[0]
+	modulePath := args[1]
+
+	body := readModulePath(modulePath)
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	defer func() {
+		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+	}()
+
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+
+	mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
+	if err != nil {
+		gameOver("Wasm module could not be compiled")
+	}
+
+	// Get input_path_ptr (required)
+	inputPathPtr, ok := getExportedValue(ctx, mod, "input_path_ptr")
+	if !ok {
+		gameOver("Wasm module must export input_path_ptr as global or function")
+	}
+
+	// Get input_path_cap (required)
+	inputPathCap, ok := getExportedValue(ctx, mod, "input_path_cap")
+	if !ok {
+		gameOver("Wasm module must export input_path_cap as global or function")
+	}
+
+	// Get output status, headers, and body pointers
+	outputStatusPtr, ok := getExportedValue(ctx, mod, "output_status_ptr")
+	if !ok {
+		gameOver("Wasm module must export output_status_ptr as global or function")
+	}
+
+	outputHeadersPtr, ok := getExportedValue(ctx, mod, "output_headers_ptr")
+	if !ok {
+		gameOver("Wasm module must export output_headers_ptr as global or function")
+	}
+
+	outputHeadersCap, ok := getExportedValue(ctx, mod, "output_headers_cap")
+	if !ok {
+		gameOver("Wasm module must export output_headers_cap as global or function")
+	}
+
+	outputBodyPtr, ok := getExportedValue(ctx, mod, "output_body_ptr")
+	if !ok {
+		gameOver("Wasm module must export output_body_ptr as global or function")
+	}
+
+	outputBodyCap, ok := getExportedValue(ctx, mod, "output_body_cap")
+	if !ok {
+		gameOver("Wasm module must export output_body_cap as global or function")
+	}
+
+	// Get the handle function
+	handleFunc := mod.ExportedFunction("handle")
+	if handleFunc == nil {
+		gameOver("Wasm module must export handle function")
+	}
+
+	// Write path to module memory
+	pathBytes := []byte(path)
+	if uint64(len(pathBytes)) > inputPathCap {
+		gameOver("Path is too large for module capacity")
+	}
+
+	if !mod.Memory().Write(uint32(inputPathPtr), pathBytes) {
+		gameOver("Could not write path to wasm memory")
+	}
+
+	// Call handle function
+	result, err := handleFunc.Call(ctx, uint64(len(pathBytes)))
+	if err != nil {
+		gameOver("Error calling handle function: %v", err)
+	}
+
+	// Read status code (2 bytes for HTTP status)
+	statusBytes, ok := mod.Memory().Read(uint32(outputStatusPtr), 2)
+	if !ok {
+		gameOver("Could not read status from wasm memory")
+	}
+	status := binary.LittleEndian.Uint16(statusBytes)
+
+	// Read headers count from result
+	headersCount := uint32(result[0])
+	if headersCount > uint32(outputHeadersCap) {
+		gameOver("Module returned more headers than capacity")
+	}
+
+	// Read headers
+	var headers []byte
+	if headersCount > 0 {
+		headers, ok = mod.Memory().Read(uint32(outputHeadersPtr), headersCount)
+		if !ok {
+			gameOver("Could not read headers from wasm memory")
+		}
+	}
+
+	// Read body count from result (if available)
+	var bodyCount uint32
+	if len(result) > 1 {
+		bodyCount = uint32(result[1])
+	}
+
+	if bodyCount > uint32(outputBodyCap) {
+		gameOver("Module returned more body bytes than capacity")
+	}
+
+	// Read body
+	var bodyBytes []byte
+	if bodyCount > 0 {
+		bodyBytes, ok = mod.Memory().Read(uint32(outputBodyPtr), bodyCount)
+		if !ok {
+			gameOver("Could not read body from wasm memory")
+		}
+	}
+
+	// Output results
+	fmt.Fprintf(os.Stderr, "HTTP/2 Status: %d\n", status)
+	if len(headers) > 0 {
+		fmt.Fprintf(os.Stderr, "Headers:\n%s\n", headers)
+	}
+	if len(bodyBytes) > 0 {
+		os.Stdout.Write(bodyBytes)
 	}
 }
 
