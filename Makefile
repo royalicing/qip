@@ -1,4 +1,4 @@
-.PHONY: examples examples-wat-wasm examples-c-wasm examples-zig-wasm test
+.PHONY: examples examples-wat-wasm examples-c-wasm examples-zig-wasm test test-svg
 
 default: qip
 
@@ -57,6 +57,8 @@ test: qip examples
 	@printf %s "main-content" | ./qip run examples/html-id-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-input-name-validator.wasm" >> test/latest.txt
 	@printf %s "email" | ./qip run examples/html-input-name-validator.wasm >> test/latest.txt
+	@printf "%s\n" "module: html-aria-extractor.wasm" >> test/latest.txt
+	@printf %s "<a href=\"/a\">Go</a><button>Push</button><h2>Title</h2><input type=\"radio\" aria-label=\"Yes\"><div role=\"checkbox\" aria-label=\"Ok\"></div>" | ./qip run examples/html-aria-extractor.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-tag-validator.wasm" >> test/latest.txt
 	@printf %s "div" | ./qip run examples/html-tag-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: luhn.wasm" >> test/latest.txt
@@ -73,3 +75,6 @@ test: qip examples
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
 	diff test/expected.txt test/latest.txt
 	cp test/latest.txt test/expected.txt
+
+test-svg: qip examples/svg-rasterize.wasm
+	@./test/svg-rasterize.sh

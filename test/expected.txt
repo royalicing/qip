@@ -18,6 +18,13 @@ module: html-id-validator.wasm
 main-content
 module: html-input-name-validator.wasm
 email
+module: html-aria-extractor.wasm
+link: Go
+button: Push
+heading: Title
+radio: Yes
+checkbox: Ok
+
 module: html-tag-validator.wasm
 builtin
 module: luhn.wasm
