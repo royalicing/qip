@@ -1,5 +1,9 @@
 .PHONY: examples examples-wat-wasm examples-c-wasm examples-zig-wasm test
 
+default: qip
+
+include ./examples/sqlite3/sqlite.mk
+
 qip: main.go go.mod go.sum
 	go fmt main.go
 	go build -ldflags="-s -w" -trimpath
@@ -11,6 +15,9 @@ examples/rgba/%.wasm: examples/rgba/%.wat
 	wat2wasm $< -o $@
 
 examples-wat-wasm: $(patsubst examples/%.wat,examples/%.wasm,$(wildcard examples/*.wat)) $(patsubst examples/rgba/%.wat,examples/rgba/%.wasm,$(wildcard examples/rgba/*.wat))
+
+examples/sqlite-table-names.wasm: examples/sqlite-table-names.c
+	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -O3 -o $@
 
 examples/%.wasm: examples/%.c
 	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -O3 -o $@
