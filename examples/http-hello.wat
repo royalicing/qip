@@ -1,6 +1,10 @@
 (module $HttpHello
-  ;; Memory must be exported with name "memory"
-  ;; At least 5 pages needed: input path, output status, headers, body
+  ;; Memory layout:
+  ;; - Page 1 (0x10000): Input path buffer (up to 4KB)
+  ;; - Page 2 (0x20000): Output status (2 bytes) at 0x20000
+  ;; - Page 2 (0x21000): Output headers buffer (up to 4KB) starting at 0x21000
+  ;; - Page 3 (0x30000): Output body buffer (up to 64KB)
+  ;; Total: 5 pages (320KB)
   (memory (export "memory") 5)
 
   ;; Required globals for HTTP handling

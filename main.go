@@ -658,7 +658,7 @@ func getCmd(args []string) {
 	}
 
 	// Output results
-	fmt.Fprintf(os.Stderr, "HTTP/2 Status: %d\n", status)
+	fmt.Fprintf(os.Stderr, "HTTP Status: %d\n", status)
 	if len(headers) > 0 {
 		fmt.Fprintf(os.Stderr, "Headers:\n%s\n", headers)
 	}
