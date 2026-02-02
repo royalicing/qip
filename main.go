@@ -44,11 +44,6 @@ func main() {
 		gameOver("Usage: <wasm module URL or file>")
 	}
 
-	start := time.Now()
-	defer func() {
-		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
-	}()
-
 	if args[0] == "run" {
 		run(args[1:])
 	} else if args[0] == "image" {
@@ -113,6 +108,11 @@ func run(args []string) {
 
 	inputDigest := sha256.Sum256(input)
 	fmt.Fprintf(os.Stderr, "input sha256: %x\n", inputDigest)
+
+	start := time.Now()
+	defer func() {
+		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+	}()
 
 	output, err := runModuleWithInput(ctx, body, input)
 	if err != nil {
@@ -189,6 +189,11 @@ func imageCmd(args []string) {
 	}
 	bounds := inputRGBA.Bounds()
 	outputRGBA := image.NewRGBA(bounds)
+
+	start := time.Now()
+	defer func() {
+		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+	}()
 
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
