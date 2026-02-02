@@ -64,6 +64,7 @@ const ParserCtx = struct {
     input: []const u8,
     width: u32,
     height: u32,
+    pixel_base: u32,
     out_len: u32,
 };
 
@@ -278,10 +279,11 @@ fn setPixel(ctx: *ParserCtx, x: i32, y: i32, color: Color) void {
     const ux: u32 = @intCast(x);
     const uy: u32 = @intCast(y);
     if (ux >= ctx.width or uy >= ctx.height) return;
-    const idx: u32 = (uy * ctx.width + ux) * 4;
-    output_buf[idx] = color.r;
+    const row = ctx.height - 1 - uy;
+    const idx: u32 = ctx.pixel_base + (row * ctx.width + ux) * 4;
+    output_buf[idx] = color.b;
     output_buf[idx + 1] = color.g;
-    output_buf[idx + 2] = color.b;
+    output_buf[idx + 2] = color.r;
     output_buf[idx + 3] = color.a;
 }
 
@@ -630,6 +632,18 @@ fn findSvgSize(input: []const u8) ?[2]u32 {
     return null;
 }
 
+fn writeU16LE(buf: []u8, off: u32, value: u16) void {
+    buf[off] = @intCast(value & 0xFF);
+    buf[off + 1] = @intCast((value >> 8) & 0xFF);
+}
+
+fn writeU32LE(buf: []u8, off: u32, value: u32) void {
+    buf[off] = @intCast(value & 0xFF);
+    buf[off + 1] = @intCast((value >> 8) & 0xFF);
+    buf[off + 2] = @intCast((value >> 16) & 0xFF);
+    buf[off + 3] = @intCast((value >> 24) & 0xFF);
+}
+
 export fn run(input_size: u32) u32 {
     const size = if (input_size > INPUT_CAP) INPUT_CAP else input_size;
     const input = input_buf[0..size];
@@ -639,7 +653,9 @@ export fn run(input_size: u32) u32 {
     const height = dims[1];
     if (width == 0 or height == 0) return 0;
 
-    const needed: u64 = @as(u64, width) * @as(u64, height) * 4;
+    const pixel_bytes: u64 = @as(u64, width) * @as(u64, height) * 4;
+    const header_size: u32 = 54;
+    const needed: u64 = @as(u64, header_size) + pixel_bytes;
     if (needed > OUTPUT_CAP) return 0;
 
     var i: usize = 0;
@@ -647,7 +663,31 @@ export fn run(input_size: u32) u32 {
         output_buf[i] = 0;
     }
 
-    var ctx = ParserCtx{ .input = input, .width = width, .height = height, .out_len = @intCast(needed) };
+    // BMP header (BITMAPFILEHEADER + BITMAPINFOHEADER).
+    output_buf[0] = 'B';
+    output_buf[1] = 'M';
+    writeU32LE(output_buf[0..], 2, @intCast(needed));
+    writeU32LE(output_buf[0..], 6, 0);
+    writeU32LE(output_buf[0..], 10, header_size);
+    writeU32LE(output_buf[0..], 14, 40);
+    writeU32LE(output_buf[0..], 18, width);
+    writeU32LE(output_buf[0..], 22, height);
+    writeU16LE(output_buf[0..], 26, 1);
+    writeU16LE(output_buf[0..], 28, 32);
+    writeU32LE(output_buf[0..], 30, 0);
+    writeU32LE(output_buf[0..], 34, @intCast(pixel_bytes));
+    writeU32LE(output_buf[0..], 38, 2835);
+    writeU32LE(output_buf[0..], 42, 2835);
+    writeU32LE(output_buf[0..], 46, 0);
+    writeU32LE(output_buf[0..], 50, 0);
+
+    var ctx = ParserCtx{
+        .input = input,
+        .width = width,
+        .height = height,
+        .pixel_base = header_size,
+        .out_len = @intCast(needed),
+    };
     var idx: usize = 0;
     const default_fill = Color{ .r = 0, .g = 0, .b = 0, .a = 255 };
     parseElements(&ctx, &idx, matIdentity(), default_fill, null);
