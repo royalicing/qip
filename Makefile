@@ -88,6 +88,8 @@ test: qip examples
 	@printf %s "hello" | ./qip run examples/utf8-validate.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
+	@printf "%s\n" "module: wat-to-wasm.wasm" >> test/latest.txt
+	@printf %s "(i32.const 5) (i32.const 3) (i32.add)" | ./qip run examples/wat-to-wasm.wasm | hexdump -C | head -1 >> test/latest.txt
 	diff test/expected.txt test/latest.txt
 	cp test/latest.txt test/expected.txt
 
