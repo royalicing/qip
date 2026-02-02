@@ -5,12 +5,11 @@
 #define OUTPUT_CAP (8 * 1024 * 1024)
 #define GLYPH_W 8
 #define GLYPH_H 8
-#define LEADING 4
-#define ROW_H (GLYPH_H + LEADING)
 #define COLS 80
 
 static unsigned char input_buffer[INPUT_CAP];
 static unsigned char output_buffer[OUTPUT_CAP];
+static int32_t leading_px = 4;
 
 __attribute__((export_name("input_ptr")))
 uint32_t input_ptr() {
@@ -30,6 +29,18 @@ uint32_t output_ptr() {
 __attribute__((export_name("output_bytes_cap")))
 uint32_t output_bytes_cap() {
     return OUTPUT_CAP;
+}
+
+__attribute__((export_name("uniform_set_leading")))
+int32_t uniform_set_leading(int32_t value) {
+    if (value < 0) {
+        value = 0;
+    }
+    if (value > 64) {
+        value = 64;
+    }
+    leading_px = value;
+    return leading_px;
 }
 
 static void write_u16_le(uint32_t off, uint16_t value) {
@@ -237,8 +248,9 @@ uint32_t run(uint32_t input_size) {
     }
 
     uint32_t rows = count_rows(input_size);
+    uint32_t row_h = GLYPH_H + (uint32_t)leading_px;
     uint32_t width = COLS * GLYPH_W;
-    uint32_t height = rows * ROW_H;
+    uint32_t height = rows * row_h;
     uint64_t pixel_bytes = (uint64_t)width * (uint64_t)height * 4u;
     uint64_t total = 54u + pixel_bytes;
     if (total > OUTPUT_CAP) {
@@ -308,7 +320,7 @@ uint32_t run(uint32_t input_size) {
         }
 
         uint32_t base_x = col * GLYPH_W;
-        uint32_t base_y = row * ROW_H;
+        uint32_t base_y = row * row_h;
         for (uint32_t gy = 0; gy < GLYPH_H; gy++) {
             unsigned char bits = font8x8_basic[glyph][gy];
             for (uint32_t gx = 0; gx < GLYPH_W; gx++) {
