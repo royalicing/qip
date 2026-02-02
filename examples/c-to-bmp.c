@@ -354,6 +354,8 @@ uint32_t run(uint32_t input_size) {
     const Color kw = { 0xff, 0x7b, 0x72, 0xFF };
     const Color str = { 0xa5, 0xd6, 0xff, 0xFF };
     const Color com = { 0x8b, 0x94, 0x9e, 0xFF };
+    const Color num = { 0x79, 0xc0, 0xff, 0xFF };
+    const Color pp = { 0xd2, 0xa8, 0xff, 0xFF };
 
     uint32_t rows = count_rows(input_size);
     uint32_t width = COLS * GLYPH_W;
@@ -401,6 +403,7 @@ uint32_t run(uint32_t input_size) {
     int in_block_comment = 0;
     unsigned char quote = 0;
     int escape = 0;
+    int line_start = 1;
 
     while (i < input_size && row < rows) {
         unsigned char c = input_buffer[i];
@@ -413,6 +416,23 @@ uint32_t run(uint32_t input_size) {
             col = 0;
             in_string = 0;
             escape = 0;
+            line_start = 1;
+            i++;
+            continue;
+        }
+
+        if (line_start && (c == ' ' || c == '\t')) {
+            if (c == '\t') {
+                uint32_t spaces = 4 - (col % 4);
+                col += spaces;
+                while (col >= COLS) {
+                    row++;
+                    col = 0;
+                    if (row >= rows) break;
+                }
+            } else {
+                draw_char(width, height, &row, &col, rows, c, fg);
+            }
             i++;
             continue;
         }
@@ -428,6 +448,38 @@ uint32_t run(uint32_t input_size) {
             i++;
             continue;
         }
+
+        if (line_start && c == '#') {
+            draw_char(width, height, &row, &col, rows, c, pp);
+            i++;
+            while (i < input_size) {
+                unsigned char ws = input_buffer[i];
+                if (ws == ' ' || ws == '\t') {
+                    draw_char(width, height, &row, &col, rows, ws, fg);
+                    i++;
+                    continue;
+                }
+                break;
+            }
+            if (i < input_size && is_ident_start(input_buffer[i])) {
+                uint32_t start = i;
+                i++;
+                while (i < input_size && is_ident_char(input_buffer[i])) {
+                    i++;
+                }
+                uint32_t len = i - start;
+                for (uint32_t j = 0; j < len; j++) {
+                    draw_char(width, height, &row, &col, rows, input_buffer[start + j], pp);
+                    if (row >= rows) {
+                        break;
+                    }
+                }
+            }
+            line_start = 0;
+            continue;
+        }
+
+        line_start = 0;
 
         if (in_string) {
             draw_char(width, height, &row, &col, rows, c, str);
@@ -485,6 +537,34 @@ uint32_t run(uint32_t input_size) {
             escape = 0;
             draw_char(width, height, &row, &col, rows, c, str);
             i++;
+            continue;
+        }
+
+        if (is_digit(c) || (c == '.' && i + 1 < input_size && is_digit(input_buffer[i + 1]))) {
+            uint32_t start = i;
+            i++;
+            while (i < input_size) {
+                unsigned char nc = input_buffer[i];
+                if (is_digit(nc) || is_alpha(nc) || nc == '.' || nc == '_' || nc == '\'') {
+                    i++;
+                    continue;
+                }
+                if ((nc == '+' || nc == '-') && i > start) {
+                    unsigned char prev = input_buffer[i - 1];
+                    if (prev == 'e' || prev == 'E' || prev == 'p' || prev == 'P') {
+                        i++;
+                        continue;
+                    }
+                }
+                break;
+            }
+            uint32_t len = i - start;
+            for (uint32_t j = 0; j < len; j++) {
+                draw_char(width, height, &row, &col, rows, input_buffer[start + j], num);
+                if (row >= rows) {
+                    break;
+                }
+            }
             continue;
         }
 
