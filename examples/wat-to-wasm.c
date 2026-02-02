@@ -230,6 +230,16 @@ static void write_uleb128(Encoder* e, uint32_t value) {
     }
 }
 
+// Calculate the size in bytes of a ULEB128-encoded value
+static uint32_t uleb128_size(uint32_t value) {
+    uint32_t size = 0;
+    do {
+        value >>= 7;
+        size++;
+    } while (value != 0);
+    return size;
+}
+
 static int parse_instruction(Parser* p, Encoder* e) {
     if (!expect(p, '(')) return 0;
     
@@ -377,13 +387,9 @@ uint32_t run(uint32_t input_size) {
     // func_size = size of locals_count + code_encoder.pos + 1 (end opcode)
     uint32_t func_size = 1 + code_encoder.pos + 1; // 1 byte for locals count (0) + instructions + end
     
-    // Calculate actual LEB128 sizes
-    // We need to encode temporarily to figure out sizes
-    // For small values (< 128), LEB128 is 1 byte
-    // Since we only have 1 function and func_size is typically small, we can use 1 byte for each
-    // But to be safe, let's calculate the size properly
-    uint32_t func_count_size = 1; // func_count=1 always fits in 1 byte
-    uint32_t func_size_bytes = (func_size < 128) ? 1 : ((func_size < 16384) ? 2 : 3);
+    // Calculate actual LEB128 sizes using helper function
+    uint32_t func_count_size = uleb128_size(1); // func_count=1 always fits in 1 byte
+    uint32_t func_size_bytes = uleb128_size(func_size);
     uint32_t section_size = func_count_size + func_size_bytes + func_size;
     write_uleb128(&encoder, section_size);
     

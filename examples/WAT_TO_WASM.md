@@ -64,7 +64,7 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 echo "(i32.const 5) (i32.const 3) (i32.add)" | qip run examples/wat-to-wasm.wasm > result.wasm
 ```
 
-This will generate a WASM module that exports a function called `calc` which returns the result of `5 + 3 = 8`.
+This will generate a **binary WASM module** that exports a function called `calc` which returns the result of `5 + 3 = 8`. The output is binary WebAssembly bytecode, not text.
 
 ### Complex Example
 
