@@ -41,7 +41,7 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) == 0 {
-		gameOver("Usage: <wasm module URL or file>")
+		gameOver("Usage: qip <wasm module URL or file>")
 	}
 
 	if args[0] == "run" {
@@ -83,7 +83,7 @@ func readModulePath(path string) []byte {
 
 func run(args []string) {
 	if len(args) < 1 {
-		gameOver("Usage: <wasm module URL or file>")
+		gameOver("Usage: qip <wasm module URL or file>")
 	}
 
 	body := readModulePath(args[0])
@@ -150,11 +150,11 @@ func imageCmd(args []string) {
 	fs.StringVar(&inputImagePath, "i", "", "input image path")
 	fs.StringVar(&outputImagePath, "o", "", "output image path")
 	if err := fs.Parse(args); err != nil {
-		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file> %v", err)
+		gameOver("Usage: qip image -i <input image path> -o <output image path> <wasm module URL or file> %v", err)
 	}
 	modules := fs.Args()
 	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
-		gameOver("Usage: image -i <input image path> -o <output image path> <wasm module URL or file>")
+		gameOver("Usage: qip image -i <input image path> -o <output image path> <wasm module URL or file>")
 	}
 
 	moduleBodies := make([][]byte, len(modules))
