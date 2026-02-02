@@ -383,12 +383,13 @@ uint32_t run(uint32_t input_size) {
     // Code section (id = 10)
     write_byte(&encoder, 0x0A);
     
-    // Function body = locals_count (LEB128) + code + end_opcode
+    // Function body = locals_count (LEB128 of value 0, always 1 byte) + code + end_opcode
     // func_size = size of locals_count + code_encoder.pos + 1 (end opcode)
-    uint32_t func_size = 1 + code_encoder.pos + 1; // 1 byte for locals count (0) + instructions + end
+    uint32_t func_size = 1 + code_encoder.pos + 1; // 1 byte for locals_count=0 (always 1 byte in LEB128) + instructions + end
     
     // Calculate actual LEB128 sizes using helper function
-    uint32_t func_count_size = uleb128_size(1); // func_count=1 always fits in 1 byte
+    // Section contains: func_count + func_size + func_body
+    uint32_t func_count_size = uleb128_size(1); // func_count=1
     uint32_t func_size_bytes = uleb128_size(func_size);
     uint32_t section_size = func_count_size + func_size_bytes + func_size;
     write_uleb128(&encoder, section_size);
