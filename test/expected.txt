@@ -55,3 +55,5 @@ export async function run(input) {
   return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
 }
 
+module: http-hello.wasm
+Hello from HTTP handler!
