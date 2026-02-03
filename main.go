@@ -568,12 +568,7 @@ func getCmd(args []string) {
 		gameOver("Wasm module must export input_path_cap as global or function")
 	}
 
-	// Get output status, headers, and body pointers
-	outputStatusPtr, ok := getExportedValue(ctx, mod, "output_status_ptr")
-	if !ok {
-		gameOver("Wasm module must export output_status_ptr as global or function")
-	}
-
+	// Get output headers and body pointers
 	outputHeadersPtr, ok := getExportedValue(ctx, mod, "output_headers_ptr")
 	if !ok {
 		gameOver("Wasm module must export output_headers_ptr as global or function")
@@ -616,15 +611,13 @@ func getCmd(args []string) {
 		gameOver("Error calling handle function: %v", err)
 	}
 
-	// Read status code (2 bytes for HTTP status)
-	statusBytes, ok := mod.Memory().Read(uint32(outputStatusPtr), 2)
-	if !ok {
-		gameOver("Could not read status from wasm memory")
-	}
-	status := binary.LittleEndian.Uint16(statusBytes)
+	// Unpack the i64 result: status (16 bits) | headers_size (16 bits) | body_size (32 bits)
+	// Format: bits 0-15: status, bits 16-31: headers_size, bits 32-63: body_size
+	packedResult := result[0]
+	status := uint16(packedResult & 0xFFFF)
+	headersCount := uint32((packedResult >> 16) & 0xFFFF)
+	bodyCount := uint32(packedResult >> 32)
 
-	// Read headers count from result
-	headersCount := uint32(result[0])
 	if headersCount > uint32(outputHeadersCap) {
 		gameOver("Module returned more headers than capacity")
 	}
@@ -636,12 +629,6 @@ func getCmd(args []string) {
 		if !ok {
 			gameOver("Could not read headers from wasm memory")
 		}
-	}
-
-	// Read body count from result (if available)
-	var bodyCount uint32
-	if len(result) > 1 {
-		bodyCount = uint32(result[1])
 	}
 
 	if bodyCount > uint32(outputBodyCap) {

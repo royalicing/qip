@@ -1,34 +1,33 @@
 (module $HttpHello
   ;; Memory layout:
   ;; - Page 1 (0x10000): Input path buffer (up to 4KB)
-  ;; - Page 2 (0x20000): Output status (2 bytes) at 0x20000
-  ;; - Page 2 (0x21000): Output headers buffer (up to 4KB) starting at 0x21000
+  ;; - Page 2 (0x21000): Output headers buffer (up to 4KB)
   ;; - Page 3 (0x30000): Output body buffer (up to 64KB)
-  ;; Total: 5 pages (320KB)
-  (memory (export "memory") 5)
+  ;; Total: 4 pages (256KB)
+  (memory (export "memory") 4)
 
   ;; Required globals for HTTP handling
   (global $input_path_ptr (export "input_path_ptr") i32 (i32.const 0x10000))
   (global $input_path_cap (export "input_path_cap") i32 (i32.const 0x1000))
   
-  (global $output_status_ptr (export "output_status_ptr") i32 (i32.const 0x20000))
   (global $output_headers_ptr (export "output_headers_ptr") i32 (i32.const 0x21000))
   (global $output_headers_cap (export "output_headers_cap") i32 (i32.const 0x1000))
   (global $output_body_ptr (export "output_body_ptr") i32 (i32.const 0x30000))
   (global $output_body_cap (export "output_body_cap") i32 (i32.const 0x10000))
 
-  ;; Required export: handle(path_size) -> (headers_size, body_size)
+  ;; Required export: handle(path_size) -> i64
   ;; Reads path from input_path_ptr
-  ;; Writes status to output_status_ptr (2 bytes, little-endian u16)
   ;; Writes headers to output_headers_ptr (UTF-8 text)
   ;; Writes body to output_body_ptr (UTF-8 text)
-  ;; Returns headers_size and body_size
-  (func $handle (export "handle") (param $path_size i32) (result i32 i32)
+  ;; Returns packed i64: status (16 bits) | headers_size (16 bits) | body_size (32 bits)
+  (func $handle (export "handle") (param $path_size i32) (result i64)
     (local $headers_size i32)
     (local $body_size i32)
+    (local $status i32)
+    (local $result i64)
 
-    ;; Write HTTP status 200 (0x00C8 in little-endian)
-    (i32.store16 (global.get $output_status_ptr) (i32.const 200))
+    ;; Set HTTP status 200
+    (local.set $status (i32.const 200))
 
     ;; Write headers: "content-type: text/plain\r\n"
     ;; We need to write the bytes in correct order
@@ -90,8 +89,15 @@
     
     (local.set $body_size (i32.const 24))
 
-    ;; Return headers_size and body_size
-    (local.get $headers_size)
-    (local.get $body_size)
+    ;; Pack result: status (16 bits) | headers_size (16 bits) | body_size (32 bits)
+    ;; result = status | (headers_size << 16) | (body_size << 32)
+    (local.set $result (i64.extend_i32_u (local.get $status)))
+    (local.set $result (i64.or (local.get $result) 
+                                (i64.shl (i64.extend_i32_u (local.get $headers_size)) (i64.const 16))))
+    (local.set $result (i64.or (local.get $result) 
+                                (i64.shl (i64.extend_i32_u (local.get $body_size)) (i64.const 32))))
+
+    ;; Return packed result
+    (local.get $result)
   )
 )
