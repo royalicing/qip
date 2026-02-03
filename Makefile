@@ -28,6 +28,12 @@ examples/text-to-bmp.wasm: examples/text-to-bmp.c
 examples/bmp-double.wasm: examples/bmp-double.c
 	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
+examples/bmp-double2.wasm: examples/bmp-double2.zig
+	zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+
+examples/bmp-double-simd.wasm: examples/bmp-double-simd.zig
+	zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry -mcpu=generic+simd128 --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+
 examples/js-to-bmp.wasm: examples/js-to-bmp.c
 	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
