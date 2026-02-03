@@ -633,6 +633,10 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 		}
 		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
 		output.bytes = outputBytes
+		if len(output.bytes) > 0 {
+			sum := sha256.Sum256(output.bytes)
+			fmt.Fprintf(os.Stderr, "output sha256: %x\n", sum)
+		}
 	} else {
 		fmt.Printf("Ran: %d\n", runResult[0])
 	}
