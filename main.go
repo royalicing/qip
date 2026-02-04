@@ -37,11 +37,22 @@ type contentData struct {
 	encoding dataEncoding
 }
 
+type options struct {
+	verbose bool
+}
+
+const usageRun = "Usage: qip <wasm module URL or file>\n       qip run [-v] <wasm module URL or file>"
+const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
+
 func main() {
 	args := os.Args[1:]
 
 	if len(args) == 0 {
-		gameOver("Usage: qip <wasm module URL or file>")
+		gameOver(usageRun)
+	}
+
+	if args[0] == "-v" || args[0] == "--verbose" {
+		gameOver(usageRun)
 	}
 
 	if args[0] == "run" {
@@ -53,7 +64,7 @@ func main() {
 	}
 }
 
-func readModulePath(path string) []byte {
+func readModulePath(path string, opts options) []byte {
 	var body []byte
 
 	if strings.HasPrefix(path, "https://") {
@@ -75,18 +86,32 @@ func readModulePath(path string) []byte {
 		}
 	}
 
-	moduleDigest := sha256.Sum256(body)
-	fmt.Fprintf(os.Stderr, "module %s sha256: %x\n", path, moduleDigest)
+	if opts.verbose {
+		moduleDigest := sha256.Sum256(body)
+		vlogf(opts, "module %s sha256: %x", path, moduleDigest)
+	}
 
 	return body
 }
 
 func run(args []string) {
-	if len(args) < 1 {
-		gameOver("Usage: qip <wasm module URL or file>")
+	opts := options{}
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var runVerbose bool
+	fs.BoolVar(&runVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&runVerbose, "verbose", false, "enable verbose logging")
+	if err := fs.Parse(args); err != nil {
+		gameOver("%s %v", usageRun, err)
+	}
+	opts.verbose = opts.verbose || runVerbose
+
+	modules := fs.Args()
+	if len(modules) < 1 {
+		gameOver(usageRun)
 	}
 
-	body := readModulePath(args[0])
+	body := readModulePath(modules[0], opts)
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
@@ -106,15 +131,19 @@ func run(args []string) {
 		}
 	}
 
-	inputDigest := sha256.Sum256(input)
-	fmt.Fprintf(os.Stderr, "input sha256: %x\n", inputDigest)
+	if opts.verbose {
+		inputDigest := sha256.Sum256(input)
+		vlogf(opts, "input sha256: %x", inputDigest)
+	}
 
 	start := time.Now()
 	defer func() {
-		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+		if opts.verbose {
+			vlogf(opts, "command took %dms", time.Since(start).Milliseconds())
+		}
 	}()
 
-	output, err := runModuleWithInput(ctx, body, input)
+	output, err := runModuleWithInput(ctx, body, input, opts)
 	if err != nil {
 		gameOver("%v", err)
 	} else if output.encoding == dataEncodingRaw {
@@ -124,7 +153,9 @@ func run(args []string) {
 	} else if output.encoding == dataEncodingUTF8 {
 		fmt.Printf("%s\n", output.bytes)
 	} else if output.encoding == dataEncodingArrayI32 {
-		fmt.Fprintln(os.Stderr, output.bytes)
+		if opts.verbose {
+			fmt.Fprintln(os.Stderr, output.bytes)
+		}
 
 		count := len(output.bytes) / 4
 		if count >= 1 {
@@ -133,7 +164,9 @@ func run(args []string) {
 			defer writer.Flush()
 			for i := 0; i < count; i++ {
 				v := binary.LittleEndian.Uint32(output.bytes[i*4:])
-				fmt.Fprintf(os.Stderr, "u32: %d\n", v)
+				if opts.verbose {
+					vlogf(opts, "u32: %d", v)
+				}
 				if _, err := fmt.Fprintf(writer, "%08x\n", v); err != nil {
 					gameOver("Error writing i32 output: %v", err)
 				}
@@ -143,23 +176,28 @@ func run(args []string) {
 }
 
 func imageCmd(args []string) {
+	opts := options{}
 	var inputImagePath string
 	var outputImagePath string
 	fs := flag.NewFlagSet("image", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	var imageVerbose bool
+	fs.BoolVar(&imageVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&imageVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&inputImagePath, "i", "", "input image path")
 	fs.StringVar(&outputImagePath, "o", "", "output image path")
 	if err := fs.Parse(args); err != nil {
-		gameOver("Usage: qip image -i <input image path> -o <output image path> <wasm module URL or file> %v", err)
+		gameOver("%s %v", usageImage, err)
 	}
+	opts.verbose = opts.verbose || imageVerbose
 	modules := fs.Args()
 	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
-		gameOver("Usage: qip image -i <input image path> -o <output image path> <wasm module URL or file>")
+		gameOver(usageImage)
 	}
 
 	moduleBodies := make([][]byte, len(modules))
 	for i, modulePath := range modules {
-		moduleBodies[i] = readModulePath(modulePath)
+		moduleBodies[i] = readModulePath(modulePath, opts)
 	}
 
 	ctx := context.Background()
@@ -192,7 +230,9 @@ func imageCmd(args []string) {
 
 	start := time.Now()
 	defer func() {
-		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+		if opts.verbose {
+			vlogf(opts, "command took %dms", time.Since(start).Milliseconds())
+		}
 	}()
 
 	r := wazero.NewRuntime(ctx)
@@ -545,7 +585,7 @@ func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64,
 	return 0, false
 }
 
-func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte) (output contentData, returnErr error) {
+func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte, opts options) (output contentData, returnErr error) {
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
 
@@ -633,9 +673,9 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 		}
 		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
 		output.bytes = outputBytes
-		if len(output.bytes) > 0 {
+		if opts.verbose && len(output.bytes) > 0 {
 			sum := sha256.Sum256(output.bytes)
-			fmt.Fprintf(os.Stderr, "output sha256: %x\n", sum)
+			vlogf(opts, "output sha256: %x", sum)
 		}
 	} else {
 		fmt.Printf("Ran: %d\n", runResult[0])
@@ -651,4 +691,11 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte)
 func gameOver(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+func vlogf(opts options, format string, args ...any) {
+	if !opts.verbose {
+		return
+	}
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
