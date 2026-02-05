@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -50,6 +51,7 @@ type options struct {
 const usageRun = "Usage: qip <wasm module URL or file>...\n       qip run [-v] <wasm module URL or file>..."
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
 const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] [-- <module1> <module2> ...]"
+const usageLink = "Usage: qip link -o <output.wasm> [-v] <module1.wasm> <module2.wasm> ..."
 
 func main() {
 	args := os.Args[1:]
@@ -68,6 +70,8 @@ func main() {
 		imageCmd(args[1:])
 	} else if args[0] == "dev" {
 		devCmd(args[1:])
+	} else if args[0] == "link" {
+		linkCmd(args[1:])
 	} else {
 		run(args)
 	}
@@ -1000,4 +1004,248 @@ func sumDurations(values []time.Duration) int64 {
 		total += v.Milliseconds()
 	}
 	return total
+}
+
+func linkCmd(args []string) {
+	opts := options{}
+	var outputPath string
+	fs := flag.NewFlagSet("link", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var linkVerbose bool
+	fs.BoolVar(&linkVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&linkVerbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&outputPath, "o", "", "output wasm file path")
+	if err := fs.Parse(args); err != nil {
+		gameOver("%s %v", usageLink, err)
+	}
+	opts.verbose = linkVerbose
+	
+	modules := fs.Args()
+	if len(modules) < 2 {
+		gameOver("link requires at least 2 modules\n%s", usageLink)
+	}
+	if outputPath == "" {
+		gameOver("output path required (-o flag)\n%s", usageLink)
+	}
+	
+	vlogf(opts, "linking %d modules into %s", len(modules), outputPath)
+	
+	// Read all module binaries
+	moduleBodies := make([][]byte, len(modules))
+	for i, modulePath := range modules {
+		body, err := readModulePath(modulePath, opts)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		moduleBodies[i] = body
+		vlogf(opts, "read module %d: %s (%d bytes)", i, modulePath, len(body))
+	}
+	
+	// Create a linked WASM module
+	ctx := context.Background()
+	linkedWasm, err := createLinkedWasmModule(ctx, moduleBodies, opts)
+	if err != nil {
+		gameOver("failed to create linked module: %v", err)
+	}
+	
+	// Write output
+	// Determine WAT and WASM paths
+	var watPath, wasmPath string
+	if strings.HasSuffix(outputPath, ".wasm") {
+		// If output ends with .wasm, use it for WASM and create .wat version
+		wasmPath = outputPath
+		watPath = strings.TrimSuffix(outputPath, ".wasm") + ".wat"
+	} else if strings.HasSuffix(outputPath, ".wat") {
+		// If output ends with .wat, use it for WAT and create .wasm version
+		watPath = outputPath
+		wasmPath = strings.TrimSuffix(outputPath, ".wat") + ".wasm"
+	} else {
+		// No extension, add both
+		watPath = outputPath + ".wat"
+		wasmPath = outputPath + ".wasm"
+	}
+	
+	if err := os.WriteFile(watPath, linkedWasm, 0644); err != nil {
+		gameOver("failed to write WAT output: %v", err)
+	}
+	vlogf(opts, "wrote WAT file: %s (%d bytes)", watPath, len(linkedWasm))
+	
+	// Try to compile to WASM using wat2wasm if available
+	// Check if wat2wasm is available
+	if _, err := exec.LookPath("wat2wasm"); err == nil {
+		vlogf(opts, "compiling WAT to WASM using wat2wasm...")
+		cmd := exec.Command("wat2wasm", watPath, "-o", wasmPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: wat2wasm compilation failed: %v\n", err)
+			if len(output) > 0 {
+				fmt.Fprintf(os.Stderr, "wat2wasm output: %s\n", output)
+			}
+			fmt.Printf("\nSuccessfully generated WAT file: %s\n", watPath)
+			fmt.Printf("To compile manually, run: wat2wasm %s -o %s\n", watPath, wasmPath)
+		} else {
+			vlogf(opts, "compiled WASM binary: %s", wasmPath)
+			fmt.Printf("Successfully linked %d modules into %s\n", len(modules), wasmPath)
+			fmt.Printf("WAT source: %s\n", watPath)
+		}
+	} else {
+		vlogf(opts, "wat2wasm not found in PATH, skipping automatic compilation")
+		fmt.Printf("\nSuccessfully generated WAT file: %s\n", watPath)
+		fmt.Printf("To compile to WASM binary, install wabt and run:\n")
+		fmt.Printf("  wat2wasm %s -o %s\n", watPath, wasmPath)
+	}
+	
+	fmt.Printf("\nNOTE: This is a proof-of-concept implementation.\n")
+	fmt.Printf("Full static linking would require:\n")
+	fmt.Printf("  - Deep WASM binary parsing\n")
+	fmt.Printf("  - Function body extraction and relocation\n")
+	fmt.Printf("  - Import/export merging\n")
+	fmt.Printf("  - Memory and table consolidation\n")
+	fmt.Printf("\nThe generated module embeds the input modules as data sections.\n")
+}
+
+func createLinkedWasmModule(ctx context.Context, moduleBodies [][]byte, opts options) ([]byte, error) {
+	// This is a proof-of-concept implementation that demonstrates the idea
+	// of statically linking WASM modules.
+	//
+	// Full implementation would require:
+	// 1. Complete WASM binary parser
+	// 2. Function body extraction and relocation
+	// 3. Import/export merging
+	// 4. Memory and table merging
+	//
+	// For now, we create a WAT file that embeds the modules as data
+	// and documents how full linking would work.
+	
+	var watBuf bytes.Buffer
+	watBuf.WriteString("(module $LinkedModule\n")
+	watBuf.WriteString("  ;; This is a proof-of-concept statically linked WASM module\n")
+	watBuf.WriteString("  ;; Generated by qip link command\n")
+	watBuf.WriteString(fmt.Sprintf("  ;; Linking %d modules\n", len(moduleBodies)))
+	watBuf.WriteString("  ;;\n")
+	watBuf.WriteString("  ;; LIMITATION: Full static linking requires deep WASM binary manipulation\n")
+	watBuf.WriteString("  ;; This prototype embeds modules and provides infrastructure for chaining\n")
+	watBuf.WriteString("\n")
+	
+	watBuf.WriteString("  (memory (export \"memory\") 20)\n")  // 20 pages = ~1.3MB (1,310,720 bytes)
+	watBuf.WriteString("\n")
+	
+	// Define global pointers following qip conventions
+	watBuf.WriteString("  ;; Memory layout:\n")
+	watBuf.WriteString("  ;; 0x00000 - 0x0FFFF: Working buffers\n")
+	watBuf.WriteString("  ;; 0x10000 - 0x1FFFF: Input buffer (64KB)\n")
+	watBuf.WriteString("  ;; 0x20000 - 0x2FFFF: Output buffer (64KB)\n")
+	watBuf.WriteString("  ;; 0x30000 - 0x3FFFF: Intermediate buffer (64KB)\n")
+	watBuf.WriteString("  ;; 0x40000+: Embedded module data\n")
+	watBuf.WriteString("\n")
+	
+	watBuf.WriteString("  (global $input_ptr (export \"input_ptr\") i32 (i32.const 0x10000))\n")
+	watBuf.WriteString("  (global $input_utf8_cap (export \"input_utf8_cap\") i32 (i32.const 0x10000))\n")
+	watBuf.WriteString("  (global $output_ptr (export \"output_ptr\") i32 (i32.const 0x20000))\n")
+	watBuf.WriteString("  (global $output_utf8_cap (export \"output_utf8_cap\") i32 (i32.const 0x10000))\n")
+	watBuf.WriteString("  (global $intermediate_ptr i32 (i32.const 0x30000))\n")
+	watBuf.WriteString("\n")
+	
+	// Embed module data
+	watBuf.WriteString("  ;; Embedded WASM modules as data sections\n")
+	offset := 0x40000
+	moduleOffsets := make([]int, len(moduleBodies))
+	moduleSizes := make([]int, len(moduleBodies))
+	
+	for i, body := range moduleBodies {
+		moduleOffsets[i] = offset
+		moduleSizes[i] = len(body)
+		
+		watBuf.WriteString(fmt.Sprintf("  ;; Module %d: offset=0x%X size=%d bytes\n", i, offset, len(body)))
+		
+		// We'll store metadata as i32 values before the actual module data
+		metadataOffset := offset
+		offset += 16  // Reserve 16 bytes for metadata (offset, size, etc.)
+		
+		watBuf.WriteString(fmt.Sprintf("  ;; Metadata for module %d\n", i))
+		watBuf.WriteString(fmt.Sprintf("  (data (i32.const 0x%X) \"", metadataOffset))
+		// Write module offset (4 bytes)
+		writeI32ToWat(&watBuf, uint32(offset))
+		// Write module size (4 bytes)
+		writeI32ToWat(&watBuf, uint32(len(body)))
+		// Reserved (8 bytes)
+		watBuf.WriteString("\\00\\00\\00\\00\\00\\00\\00\\00")
+		watBuf.WriteString("\")\n")
+		
+		// Write actual module data
+		watBuf.WriteString(fmt.Sprintf("  (data (i32.const 0x%X) \"", offset))
+		for _, b := range body {
+			watBuf.WriteString(fmt.Sprintf("\\%02x", b))
+		}
+		watBuf.WriteString("\")\n\n")
+		
+		offset += len(body)
+		// Align to 16-byte boundary
+		if offset%16 != 0 {
+			offset += 16 - (offset % 16)
+		}
+	}
+	
+	// Write a message indicating this is a linked module - place data section before function
+	msg := fmt.Sprintf("[Linked %d modules - stub impl]", len(moduleBodies))
+	watBuf.WriteString(fmt.Sprintf("  ;; Status message: \"%s\"\n", msg))
+	watBuf.WriteString("  (data (i32.const 0x1000) \"")
+	for _, b := range []byte(msg) {
+		watBuf.WriteString(fmt.Sprintf("\\%02x", b))
+	}
+	watBuf.WriteString("\")\n\n")
+	
+	watBuf.WriteString("  ;; Main run function - chains all embedded modules\n")
+	watBuf.WriteString("  ;; NOTE: This is a stub. Full implementation would require\n")
+	watBuf.WriteString("  ;; a WASM interpreter in WASM or runtime support\n")
+	watBuf.WriteString("  (func (export \"run\") (param $input_size i32) (result i32)\n")
+	watBuf.WriteString("    (local $i i32)\n")
+	watBuf.WriteString("    (local $len i32)\n")
+	watBuf.WriteString("\n")
+	watBuf.WriteString("    ;; For demonstration: copy input to output with a status message\n")
+	watBuf.WriteString("    ;; In a full implementation, this would:\n")
+	watBuf.WriteString("    ;; 1. Instantiate first module\n")
+	watBuf.WriteString("    ;; 2. Pass input to first module's run()\n")
+	watBuf.WriteString("    ;; 3. Take output and pass to second module's run()\n")
+	watBuf.WriteString("    ;; 4. Continue chaining through all modules\n")
+	watBuf.WriteString("    ;; 5. Return final output\n")
+	watBuf.WriteString("\n")
+	
+	// Copy status message
+	watBuf.WriteString("    ;; Copy status message\n")
+	watBuf.WriteString("    (local.set $i (i32.const 0))\n")
+	watBuf.WriteString(fmt.Sprintf("    (local.set $len (i32.const %d))\n", len(msg)))
+	
+	watBuf.WriteString("\n")
+	watBuf.WriteString("    ;; Copy message to output\n")
+	watBuf.WriteString("    (loop $copy\n")
+	watBuf.WriteString("      (if (i32.lt_u (local.get $i) (local.get $len))\n")
+	watBuf.WriteString("        (then\n")
+	watBuf.WriteString("          (i32.store8\n")
+	watBuf.WriteString("            (i32.add (global.get $output_ptr) (local.get $i))\n")
+	watBuf.WriteString("            (i32.load8_u (i32.add (i32.const 0x1000) (local.get $i)))\n")
+	watBuf.WriteString("          )\n")
+	watBuf.WriteString("          (local.set $i (i32.add (local.get $i) (i32.const 1)))\n")
+	watBuf.WriteString("          (br $copy)\n")
+	watBuf.WriteString("        )\n")
+	watBuf.WriteString("      )\n")
+	watBuf.WriteString("    )\n")
+	watBuf.WriteString("\n")
+	watBuf.WriteString("    (local.get $len)\n")
+	watBuf.WriteString("  )\n")
+	watBuf.WriteString(")\n")
+	
+	watString := watBuf.String()
+	if opts.verbose {
+		vlogf(opts, "generated WAT (%d bytes)", len(watString))
+	}
+	
+	return []byte(watString), nil
+}
+
+func writeI32ToWat(buf *bytes.Buffer, value uint32) {
+	// Write as little-endian bytes
+	buf.WriteString(fmt.Sprintf("\\%02x", byte(value)))
+	buf.WriteString(fmt.Sprintf("\\%02x", byte(value>>8)))
+	buf.WriteString(fmt.Sprintf("\\%02x", byte(value>>16)))
+	buf.WriteString(fmt.Sprintf("\\%02x", byte(value>>24)))
 }

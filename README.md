@@ -16,6 +16,8 @@ brew install qip
 
 ## Usage
 
+### Running modules
+
 ```bash
 npx http-server . -o image.html -p 9999
 http://localhost:9999/image.html
@@ -34,6 +36,20 @@ cat README.md | qip run ./crc32.wasm
 qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-page-wrap.wasm
 # http://127.0.0.1:4000
 ```
+
+### Linking modules (experimental)
+
+The `qip link` command is an experimental feature that statically combines multiple WASM modules into a single module:
+
+```bash
+# Link multiple modules into one
+qip link -o linked.wasm module1.wasm module2.wasm module3.wasm
+
+# Run the linked module
+echo "input" | qip run linked.wasm
+```
+
+**Note**: This is a proof-of-concept implementation. The generated module embeds the input modules as data sections and provides a single `run` export. Full static linking would require deep WASM binary manipulation including function body extraction, import/export merging, and memory consolidation.
 
 ## Making modules
 
