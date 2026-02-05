@@ -1049,9 +1049,20 @@ func linkCmd(args []string) {
 	}
 	
 	// Write output
-	watPath := outputPath
-	if !strings.HasSuffix(watPath, ".wat") {
+	// Determine WAT and WASM paths
+	var watPath, wasmPath string
+	if strings.HasSuffix(outputPath, ".wasm") {
+		// If output ends with .wasm, use it for WASM and create .wat version
+		wasmPath = outputPath
+		watPath = strings.TrimSuffix(outputPath, ".wasm") + ".wat"
+	} else if strings.HasSuffix(outputPath, ".wat") {
+		// If output ends with .wat, use it for WAT and create .wasm version
+		watPath = outputPath
+		wasmPath = strings.TrimSuffix(outputPath, ".wat") + ".wasm"
+	} else {
+		// No extension, add both
 		watPath = outputPath + ".wat"
+		wasmPath = outputPath + ".wasm"
 	}
 	
 	if err := os.WriteFile(watPath, linkedWasm, 0644); err != nil {
@@ -1060,11 +1071,6 @@ func linkCmd(args []string) {
 	vlogf(opts, "wrote WAT file: %s (%d bytes)", watPath, len(linkedWasm))
 	
 	// Try to compile to WASM using wat2wasm if available
-	wasmPath := strings.TrimSuffix(watPath, ".wat") + ".wasm"
-	if wasmPath == watPath {
-		wasmPath = outputPath // Use original path if it doesn't end with .wat
-	}
-	
 	// Check if wat2wasm is available
 	if _, err := exec.LookPath("wat2wasm"); err == nil {
 		vlogf(opts, "compiling WAT to WASM using wat2wasm...")
