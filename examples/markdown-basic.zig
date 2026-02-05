@@ -129,11 +129,107 @@ const Writer = struct {
                 }
             }
 
-            self.writeEscaped(s[i .. i + 1]);
+            self.writeByte(s[i]);
             i += 1;
         }
     }
 };
+
+const HtmlBlockType = enum {
+    none,
+    type1,
+    type2,
+    type3,
+    type4,
+    type7,
+};
+
+fn trimIndent(line: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i < line.len and i < 3 and line[i] == ' ') : (i += 1) {}
+    return line[i..];
+}
+
+fn isAsciiLetter(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z');
+}
+
+fn isTagNameChar(ch: u8) bool {
+    return isAsciiLetter(ch) or (ch >= '0' and ch <= '9') or ch == '-' or ch == ':';
+}
+
+fn startsWithIgnoreCase(s: []const u8, prefix: []const u8) bool {
+    if (s.len < prefix.len) return false;
+    var i: usize = 0;
+    while (i < prefix.len) : (i += 1) {
+        if (std.ascii.toLower(s[i]) != std.ascii.toLower(prefix[i])) return false;
+    }
+    return true;
+}
+
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0 or haystack.len < needle.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < needle.len) : (j += 1) {
+            if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(needle[j])) break;
+        }
+        if (j == needle.len) return true;
+    }
+    return false;
+}
+
+fn isSpaceOrTab(ch: u8) bool {
+    return ch == ' ' or ch == '\t';
+}
+
+fn matchesType1Start(s: []const u8) bool {
+    const prefixes = [_][]const u8{ "<pre", "<script", "<style", "<textarea" };
+    for (prefixes) |p| {
+        if (startsWithIgnoreCase(s, p)) {
+            if (s.len == p.len) return true;
+            const next = s[p.len];
+            return next == '>' or isSpaceOrTab(next);
+        }
+    }
+    return false;
+}
+
+fn matchesType7Start(s: []const u8) bool {
+    if (s.len < 3 or s[0] != '<') return false;
+    if (startsWithIgnoreCase(s, "<!") or startsWithIgnoreCase(s, "<?")) return false;
+    var end = s.len;
+    while (end > 0 and isSpaceOrTab(s[end - 1])) : (end -= 1) {}
+    if (end == 0 or s[end - 1] != '>') return false;
+    var idx: usize = 1;
+    if (s[idx] == '/') idx += 1;
+    if (idx >= end or !isAsciiLetter(s[idx])) return false;
+    idx += 1;
+    while (idx < end and isTagNameChar(s[idx])) : (idx += 1) {}
+    return true;
+}
+
+fn detectHtmlBlockStart(line: []const u8, prevBlank: bool) HtmlBlockType {
+    const s = trimIndent(line);
+    if (matchesType1Start(s)) return .type1;
+    if (std.mem.startsWith(u8, s, "<!--")) return .type2;
+    if (std.mem.startsWith(u8, s, "<?")) return .type3;
+    if (std.mem.startsWith(u8, s, "<!") and s.len >= 3 and isAsciiLetter(s[2])) return .type4;
+    if (prevBlank and matchesType7Start(s)) return .type7;
+    return .none;
+}
+
+fn htmlBlockEnded(block: HtmlBlockType, line: []const u8) bool {
+    return switch (block) {
+        .type1 => containsIgnoreCase(line, "</pre>") or containsIgnoreCase(line, "</script>") or containsIgnoreCase(line, "</style>") or containsIgnoreCase(line, "</textarea>"),
+        .type2 => std.mem.indexOf(u8, line, "-->") != null,
+        .type3 => std.mem.indexOf(u8, line, "?>") != null,
+        .type4 => std.mem.indexOfScalar(u8, line, '>') != null,
+        .type7 => isBlank(line),
+        else => false,
+    };
+}
 
 fn findDouble(s: []const u8, start: usize, ch: u8) ?usize {
     var i = start;
@@ -231,9 +327,11 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
 
     const body = stripFrontMatter(input);
     var in_code = false;
+    var in_html: HtmlBlockType = .none;
     var in_ul = false;
     var in_ol = false;
     var in_blockquote = false;
+    var prev_blank = true;
 
     var i: usize = 0;
     while (i <= body.len and !w.overflow) {
@@ -241,6 +339,22 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         while (line_end < body.len and body[line_end] != '\n') : (line_end += 1) {}
         const line = stripCR(body[i..line_end]);
         i = line_end + 1;
+
+        if (in_html != .none) {
+            if (htmlBlockEnded(in_html, line)) {
+                if (!isBlank(line)) {
+                    w.writeSlice(line);
+                    w.writeByte('\n');
+                }
+                in_html = .none;
+                prev_blank = true;
+                continue;
+            }
+            w.writeSlice(line);
+            w.writeByte('\n');
+            prev_blank = false;
+            continue;
+        }
 
         if (in_code) {
             if (fenceLang(line) != null) {
@@ -278,6 +392,35 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             continue;
         }
 
+        const html_block = detectHtmlBlockStart(line, prev_blank);
+        if (html_block != .none) {
+            if (in_ul) {
+                w.writeSlice("</ul>\n");
+                in_ul = false;
+            }
+            if (in_ol) {
+                w.writeSlice("</ol>\n");
+                in_ol = false;
+            }
+            if (in_blockquote) {
+                w.writeSlice("</blockquote>\n");
+                in_blockquote = false;
+            }
+            if (htmlBlockEnded(html_block, line)) {
+                if (!isBlank(line)) {
+                    w.writeSlice(line);
+                    w.writeByte('\n');
+                }
+                prev_blank = true;
+                continue;
+            }
+            w.writeSlice(line);
+            w.writeByte('\n');
+            in_html = html_block;
+            prev_blank = false;
+            continue;
+        }
+
         if (isBlank(line)) {
             if (in_ul) {
                 w.writeSlice("</ul>\n");
@@ -291,6 +434,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
                 w.writeSlice("</blockquote>\n");
                 in_blockquote = false;
             }
+            prev_blank = true;
             continue;
         }
 
@@ -310,6 +454,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             w.writeSlice("<p>");
             w.writeInline(blockquoteContent(line));
             w.writeSlice("</p>\n");
+            prev_blank = false;
             continue;
         } else if (in_blockquote) {
             w.writeSlice("</blockquote>\n");
@@ -332,6 +477,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             w.writeSlice("</h");
             w.writeByte(@as(u8, '0') + h.level);
             w.writeSlice(">\n");
+            prev_blank = false;
             continue;
         }
 
@@ -347,6 +493,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             w.writeSlice("<li>");
             w.writeInline(item);
             w.writeSlice("</li>\n");
+            prev_blank = false;
             continue;
         }
 
@@ -362,6 +509,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             w.writeSlice("<li>");
             w.writeInline(item);
             w.writeSlice("</li>\n");
+            prev_blank = false;
             continue;
         }
 
@@ -377,6 +525,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         w.writeSlice("<p>");
         w.writeInline(line);
         w.writeSlice("</p>\n");
+        prev_blank = false;
     }
 
     if (in_code) {
@@ -442,12 +591,32 @@ test "inline code and link" {
     );
 }
 
-test "escaping" {
+test "html passthrough" {
     var out: [1024]u8 = undefined;
     const input = "<tag> & \"quote\"\n";
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
-        "<p>&lt;tag&gt; &amp; &quot;quote&quot;</p>\n",
+        "<p><tag> & \"quote\"</p>\n",
+        out[0..written],
+    );
+}
+
+test "html block passthrough" {
+    var out: [2048]u8 = undefined;
+    const input = "<div>\n*hi*\n</div>\n\nafter\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<div>\n*hi*\n</div>\n<p>after</p>\n",
+        out[0..written],
+    );
+}
+
+test "code escapes html" {
+    var out: [1024]u8 = undefined;
+    const input = "`<b>`\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<p><code>&lt;b&gt;</code></p>\n",
         out[0..written],
     );
 }

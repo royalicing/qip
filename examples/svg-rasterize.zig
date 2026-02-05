@@ -694,3 +694,71 @@ export fn run(input_size: u32) u32 {
 
     return ctx.out_len;
 }
+
+pub fn renderForTest(input: []const u8) []const u8 {
+    const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
+    @memcpy(input_buf[0..size], input[0..size]);
+    const out_len = run(@as(u32, @intCast(size)));
+    return output_buf[0..@as(usize, @intCast(out_len))];
+}
+
+fn pixelAt(buf: []const u8, width: u32, height: u32, x: u32, y: u32) Color {
+    const row = height - 1 - y;
+    const idx: usize = @intCast(54 + (row * width + x) * 4);
+    return Color{
+        .b = buf[idx],
+        .g = buf[idx + 1],
+        .r = buf[idx + 2],
+        .a = buf[idx + 3],
+    };
+}
+
+test "svg-rasterize pixel pattern" {
+    const input =
+        "<svg width=\"12\" height=\"8\">\n" ++
+        "  <rect x=\"0\" y=\"0\" width=\"4\" height=\"8\" fill=\"#ff0000\"/>\n" ++
+        "  <circle cx=\"9\" cy=\"2\" r=\"2\" fill=\"#00ff00\"/>\n" ++
+        "  <g transform=\"translate(1,0)\" fill=\"#0000ff\">\n" ++
+        "    <polygon points=\"6,5 11,5 11,7\"/>\n" ++
+        "  </g>\n" ++
+        "</svg>";
+
+    const output = renderForTest(input);
+    try std.testing.expect(output.len >= 54 + 12 * 8 * 4);
+
+    try std.testing.expectEqual(@as(u8, 12), output[18]);
+    try std.testing.expectEqual(@as(u8, 0), output[19]);
+    try std.testing.expectEqual(@as(u8, 0), output[20]);
+    try std.testing.expectEqual(@as(u8, 0), output[21]);
+    try std.testing.expectEqual(@as(u8, 8), output[22]);
+    try std.testing.expectEqual(@as(u8, 0), output[23]);
+    try std.testing.expectEqual(@as(u8, 0), output[24]);
+    try std.testing.expectEqual(@as(u8, 0), output[25]);
+
+    const width: u32 = 12;
+    const height: u32 = 8;
+
+    const red = pixelAt(output, width, height, 1, 1);
+    try std.testing.expectEqual(@as(u8, 0x00), red.b);
+    try std.testing.expectEqual(@as(u8, 0x00), red.g);
+    try std.testing.expectEqual(@as(u8, 0xFF), red.r);
+    try std.testing.expectEqual(@as(u8, 0xFF), red.a);
+
+    const green = pixelAt(output, width, height, 9, 2);
+    try std.testing.expectEqual(@as(u8, 0x00), green.b);
+    try std.testing.expectEqual(@as(u8, 0xFF), green.g);
+    try std.testing.expectEqual(@as(u8, 0x00), green.r);
+    try std.testing.expectEqual(@as(u8, 0xFF), green.a);
+
+    const blue = pixelAt(output, width, height, 10, 5);
+    try std.testing.expectEqual(@as(u8, 0xFF), blue.b);
+    try std.testing.expectEqual(@as(u8, 0x00), blue.g);
+    try std.testing.expectEqual(@as(u8, 0x00), blue.r);
+    try std.testing.expectEqual(@as(u8, 0xFF), blue.a);
+
+    const clear = pixelAt(output, width, height, 11, 0);
+    try std.testing.expectEqual(@as(u8, 0x00), clear.b);
+    try std.testing.expectEqual(@as(u8, 0x00), clear.g);
+    try std.testing.expectEqual(@as(u8, 0x00), clear.r);
+    try std.testing.expectEqual(@as(u8, 0x00), clear.a);
+}

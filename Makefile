@@ -1,4 +1,4 @@
-.PHONY: examples examples-wat-wasm examples-c-wasm examples-zig-wasm test test-svg
+.PHONY: examples examples-wat-wasm examples-c-wasm examples-zig-wasm test
 
 default: qip
 
@@ -17,25 +17,25 @@ examples/rgba/%.wasm: examples/rgba/%.wat
 examples-wat-wasm: $(patsubst examples/%.wat,examples/%.wasm,$(wildcard examples/*.wat)) $(patsubst examples/rgba/%.wat,examples/rgba/%.wasm,$(wildcard examples/rgba/*.wat))
 
 examples/sqlite-table-names.wasm: examples/sqlite-table-names.c
-	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 examples/svg-rasterize.wasm: examples/svg-rasterize.zig
-	zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
 examples/text-to-bmp.wasm: examples/text-to-bmp.c
-	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=uniform_set_leading -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=uniform_set_leading -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 examples/bmp-double.wasm: examples/bmp-double.c
-	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 examples/bmp-double2.wasm: examples/bmp-double2.zig
-	zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
 examples/bmp-double-simd.wasm: examples/bmp-double-simd.zig
-	zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry -mcpu=generic+simd128 --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry -mcpu=generic+simd128 --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
 examples/js-to-bmp.wasm: examples/js-to-bmp.c
-	zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
@@ -62,7 +62,7 @@ examples: examples-wat-wasm examples-c-wasm examples-zig-wasm
 test: qip examples test-zig test-snapshot
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
 
-test-snapshot:
+test-snapshot: qip examples
 	@mkdir -p test
 	@rm -f test/latest.txt
 	@printf "%s\n" "module: base64-encode.wasm" >> test/latest.txt
@@ -96,6 +96,8 @@ test-snapshot:
 	@printf %s "49927398716" | ./qip run examples/luhn.wasm >> test/latest.txt
 	@printf "%s\n" "module: markdown-basic.wasm" >> test/latest.txt
 	@printf "%b" "# Title\nHello **World**\n" | ./qip run examples/markdown-basic.wasm >> test/latest.txt
+	@printf "%s\n" "module: markdown-table.wasm | markdown-basic.wasm" >> test/latest.txt
+	@printf "%b" "| A | B |\n| --- | --- |\n| 1 | 2 |\n" | ./qip run examples/markdown-table.wasm examples/markdown-basic.wasm >> test/latest.txt
 	@printf "%s\n" "module: markdown-basic.wasm | html-page-wrap.wasm" >> test/latest.txt
 	@printf "%b" "# Title\nHello **World**\n" | ./qip run examples/markdown-basic.wasm examples/html-page-wrap.wasm >> test/latest.txt
 	@printf "%s\n" "module: rgb-to-hex.wasm" >> test/latest.txt
@@ -116,6 +118,3 @@ test-zig: $(ZIG_TEST_FILES)
 		echo "zig test $$f"; \
 		$(ZIG_ENV) zig test $$f; \
 	done
-
-test-svg: qip examples/svg-rasterize.wasm
-	@./test/svg-rasterize.sh
