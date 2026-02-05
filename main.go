@@ -1082,6 +1082,7 @@ func linkCmd(args []string) {
 			fmt.Printf("WAT source: %s\n", watPath)
 		}
 	} else {
+		vlogf(opts, "wat2wasm not found in PATH, skipping automatic compilation")
 		fmt.Printf("\nSuccessfully generated WAT file: %s\n", watPath)
 		fmt.Printf("To compile to WASM binary, install wabt and run:\n")
 		fmt.Printf("  wat2wasm %s -o %s\n", watPath, wasmPath)
@@ -1119,7 +1120,7 @@ func createLinkedWasmModule(ctx context.Context, moduleBodies [][]byte, opts opt
 	watBuf.WriteString("  ;; This prototype embeds modules and provides infrastructure for chaining\n")
 	watBuf.WriteString("\n")
 	
-	watBuf.WriteString("  (memory (export \"memory\") 20)\n")  // 20 pages = 1.3MB
+	watBuf.WriteString("  (memory (export \"memory\") 20)\n")  // 20 pages = ~1.3MB (1,310,720 bytes)
 	watBuf.WriteString("\n")
 	
 	// Define global pointers following qip conventions
