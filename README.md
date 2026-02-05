@@ -25,13 +25,13 @@ http://localhost:9999/image.html
 echo "abc" | qip run qip.dev@<hash>
 # Returns CRC of "abc": 1200128334
 cat README.md | qip run qip.dev@<hash>
-qip get qip.dev@<hash> > crc32.wasm
+qip down qip.dev@<hash> > crc32.wasm
 cat README.md | qip run ./crc32.wasm
 ```
 
 ```bash
 # Dev server (re-runs modules on every request)
-qip dev -i ./examples/page.html -- ./examples/wasm-to-js.wasm
+qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-page-wrap.wasm
 # http://127.0.0.1:4000
 ```
 

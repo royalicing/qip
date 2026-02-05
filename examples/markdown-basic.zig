@@ -164,6 +164,33 @@ fn stripCR(line: []const u8) []const u8 {
     return line;
 }
 
+fn stripFrontMatter(input: []const u8) []const u8 {
+    var line_end: usize = 0;
+    while (line_end < input.len and input[line_end] != '\n') : (line_end += 1) {}
+    const first = stripCR(input[0..line_end]);
+    const first_trimmed = std.mem.trim(u8, first, " \t\r");
+    if (!std.mem.eql(u8, first_trimmed, "---")) {
+        return input;
+    }
+
+    var i: usize = if (line_end < input.len) line_end + 1 else input.len;
+    while (i <= input.len) {
+        var le = i;
+        while (le < input.len and input[le] != '\n') : (le += 1) {}
+        const line = stripCR(input[i..le]);
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (std.mem.eql(u8, trimmed, "---") or std.mem.eql(u8, trimmed, "...")) {
+            if (le < input.len) {
+                return input[le + 1 ..];
+            }
+            return input[input.len..];
+        }
+        if (le >= input.len) break;
+        i = le + 1;
+    }
+    return input;
+}
+
 fn blockquoteContent(line: []const u8) []const u8 {
     var content = line[1..];
     if (content.len > 0 and content[0] == ' ') {
@@ -202,16 +229,17 @@ fn orderedItem(line: []const u8) ?[]const u8 {
 fn renderMarkdown(input: []const u8, output: []u8) usize {
     var w = Writer.init(output);
 
+    const body = stripFrontMatter(input);
     var in_code = false;
     var in_ul = false;
     var in_ol = false;
     var in_blockquote = false;
 
     var i: usize = 0;
-    while (i <= input.len and !w.overflow) {
+    while (i <= body.len and !w.overflow) {
         var line_end = i;
-        while (line_end < input.len and input[line_end] != '\n') : (line_end += 1) {}
-        const line = stripCR(input[i..line_end]);
+        while (line_end < body.len and body[line_end] != '\n') : (line_end += 1) {}
+        const line = stripCR(body[i..line_end]);
         i = line_end + 1;
 
         if (in_code) {
@@ -420,6 +448,16 @@ test "escaping" {
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
         "<p>&lt;tag&gt; &amp; &quot;quote&quot;</p>\n",
+        out[0..written],
+    );
+}
+
+test "front matter stripped" {
+    var out: [1024]u8 = undefined;
+    const input = "---\ntitle: Test\n---\n# Hi\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<h1>Hi</h1>\n",
         out[0..written],
     );
 }

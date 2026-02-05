@@ -47,3 +47,7 @@
   - menu button
   - template
   - `FILTER_DEFS`
+
+## Tests
+
+We have snapshots in `test/latest.txt` that are matched against `test/expected.txt`. When updating the tests within `Makefile` please run `make test` and verify all the tests pass.

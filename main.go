@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -47,7 +48,7 @@ type options struct {
 
 const usageRun = "Usage: qip <wasm module URL or file>...\n       qip run [-v] <wasm module URL or file>..."
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
-const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] -- <module1> <module2> ..."
+const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] [-- <module1> <module2> ...]"
 
 func main() {
 	args := os.Args[1:]
@@ -153,7 +154,8 @@ func run(args []string) {
 		gameOver("%v", err)
 	}
 
-	output, err := chain(ctx, input)
+	durations := make([]time.Duration, 0)
+	output, err := chain(ctx, input, durations)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -737,20 +739,24 @@ func devCmd(args []string) {
 			break
 		}
 	}
+	var modules []string
 	if separator == -1 {
-		gameOver(usageDev)
-	}
-
-	if err := fs.Parse(args[:separator]); err != nil {
-		gameOver("%s %v", usageDev, err)
-	}
-	if len(fs.Args()) > 0 {
-		gameOver(usageDev)
+		if err := fs.Parse(args); err != nil {
+			gameOver("%s %v", usageDev, err)
+		}
+		modules = fs.Args()
+	} else {
+		if err := fs.Parse(args[:separator]); err != nil {
+			gameOver("%s %v", usageDev, err)
+		}
+		if len(fs.Args()) > 0 {
+			gameOver(usageDev)
+		}
+		modules = args[separator+1:]
 	}
 
 	opts.verbose = devVerbose
-	modules := args[separator+1:]
-	if inputPath == "" || len(modules) == 0 {
+	if inputPath == "" {
 		gameOver(usageDev)
 	}
 	if port <= 0 || port > 65535 {
@@ -768,18 +774,14 @@ func devCmd(args []string) {
 		start := time.Now()
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			if opts.verbose {
-				vlogf(opts, "dev: %s %s method_not_allowed duration=%dms", r.Method, r.URL.Path, time.Since(start).Milliseconds())
-			}
+			log.Printf("dev: %s %s %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), nil))
 			return
 		}
 
 		inputBytes, err := os.ReadFile(inputPath)
 		if err != nil {
 			writeDevError(w, err)
-			if opts.verbose {
-				vlogf(opts, "dev: %s %s error=%v duration=%dms", r.Method, r.URL.Path, err, time.Since(start).Milliseconds())
-			}
+			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), nil))
 			return
 		}
 
@@ -787,32 +789,27 @@ func devCmd(args []string) {
 		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 		defer cancel()
 
-		output, err := chain(ctx, inputBytes)
+		durations := make([]time.Duration, len(modules))
+		output, err := chain(ctx, inputBytes, durations)
 		if err != nil {
 			writeDevError(w, err)
-			if opts.verbose {
-				vlogf(opts, "dev: %s %s error=%v duration=%dms", r.Method, r.URL.Path, err, time.Since(start).Milliseconds())
-			}
+			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), durations))
 			return
 		}
 
 		body, err := formatOutputBytes(output)
 		if err != nil {
 			writeDevError(w, err)
-			if opts.verbose {
-				vlogf(opts, "dev: %s %s error=%v duration=%dms", r.Method, r.URL.Path, err, time.Since(start).Milliseconds())
-			}
+			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), durations))
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(body); err != nil && opts.verbose {
-			vlogf(opts, "dev: %s %s write_error=%v", r.Method, r.URL.Path, err)
+		if _, err := w.Write(body); err != nil {
+			log.Printf("dev: %s %s write_error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), durations))
 		}
-		if opts.verbose {
-			vlogf(opts, "dev: %s %s ok duration=%dms", r.Method, r.URL.Path, time.Since(start).Milliseconds())
-		}
+		log.Printf("dev: %s %s ok %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), durations))
 	})
 
 	server := &http.Server{
@@ -830,18 +827,24 @@ func devCmd(args []string) {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	if opts.verbose {
-		vlogf(opts, "dev: listening on http://%s", addr)
-	}
+	log.Printf("dev: listening on http://%s", addr)
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		gameOver("dev server error: %v", err)
 	}
 }
 
-type moduleChain func(context.Context, []byte) (contentData, error)
+type moduleChain func(context.Context, []byte, []time.Duration) (contentData, error)
 
 func buildModuleChain(modules []string, opts options) (moduleChain, error) {
+	if len(modules) == 0 {
+		return func(ctx context.Context, input []byte, durations []time.Duration) (contentData, error) {
+			_ = ctx
+			_ = durations
+			return contentData{bytes: input, encoding: dataEncodingRaw}, nil
+		}, nil
+	}
+
 	moduleBodies := make([][]byte, len(modules))
 	for i, modulePath := range modules {
 		body, err := readModulePath(modulePath, opts)
@@ -851,11 +854,18 @@ func buildModuleChain(modules []string, opts options) (moduleChain, error) {
 		moduleBodies[i] = body
 	}
 
-	return func(ctx context.Context, input []byte) (contentData, error) {
+	return func(ctx context.Context, input []byte, durations []time.Duration) (contentData, error) {
+		if len(durations) > len(moduleBodies) {
+			durations = durations[:len(moduleBodies)]
+		}
 		var output contentData
 		cur := input
-		for _, body := range moduleBodies {
+		for i, body := range moduleBodies {
+			start := time.Now()
 			nextOutput, err := runModuleWithInput(ctx, body, cur, opts)
+			if i < len(durations) {
+				durations[i] = time.Since(start)
+			}
 			if err != nil {
 				return contentData{}, err
 			}
@@ -889,4 +899,24 @@ func writeDevError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusInternalServerError)
 	fmt.Fprintf(w, "<!doctype html><meta charset=\"utf-8\"><title>qip dev error</title><pre>%s\n%s</pre>", ts, html.EscapeString(err.Error()))
+}
+
+func formatDurationParts(total time.Duration, parts []time.Duration) string {
+	totalMs := total.Milliseconds()
+	if len(parts) == 0 {
+		return fmt.Sprintf("duration_ms=%d", totalMs)
+	}
+	var b strings.Builder
+	b.Grow(40 + len(parts)*6)
+	b.WriteString("duration_ms=")
+	b.WriteString(strconv.FormatInt(totalMs, 10))
+	b.WriteString(" module_durations_ms=[")
+	for i, part := range parts {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatInt(part.Milliseconds(), 10))
+	}
+	b.WriteByte(']')
+	return b.String()
 }
