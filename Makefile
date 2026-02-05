@@ -60,6 +60,9 @@ test: qip examples
 	@rm -f test/latest.txt
 	@printf "%s\n" "module: base64-encode.wasm" >> test/latest.txt
 	@printf %s "hello" | ./qip run examples/base64-encode.wasm >> test/latest.txt
+	@printf "%s\n" "module: base64-encode.wasm | base64-decode.wasm" >> test/latest.txt
+	@printf %s "hello" | ./qip run examples/base64-encode.wasm examples/base64-decode.wasm >> test/latest.txt
+	@printf "\n" >> test/latest.txt
 	@printf "%s\n" "module: crc.wasm" >> test/latest.txt
 	@printf %s "abc" | ./qip run examples/crc.wasm >> test/latest.txt
 	@printf "%s\n" "module: css-class-validator.wasm" >> test/latest.txt

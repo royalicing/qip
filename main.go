@@ -14,6 +14,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -41,7 +42,7 @@ type options struct {
 	verbose bool
 }
 
-const usageRun = "Usage: qip <wasm module URL or file>\n       qip run [-v] <wasm module URL or file>"
+const usageRun = "Usage: qip <wasm module URL or file>...\n       qip run [-v] <wasm module URL or file>..."
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
 
 func main() {
@@ -111,8 +112,6 @@ func run(args []string) {
 		gameOver(usageRun)
 	}
 
-	body := readModulePath(modules[0], opts)
-
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
@@ -143,10 +142,18 @@ func run(args []string) {
 		}
 	}()
 
-	output, err := runModuleWithInput(ctx, body, input, opts)
-	if err != nil {
-		gameOver("%v", err)
-	} else if output.encoding == dataEncodingRaw {
+	var output contentData
+	for _, modulePath := range modules {
+		body := readModulePath(modulePath, opts)
+		nextOutput, err := runModuleWithInput(ctx, body, input, opts)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		output = nextOutput
+		input = output.bytes
+	}
+
+	if output.encoding == dataEncodingRaw {
 		if _, err := os.Stdout.Write(output.bytes); err != nil {
 			gameOver("Error writing raw output: %v", err)
 		}
@@ -689,13 +696,14 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte,
 }
 
 func gameOver(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
-	os.Exit(1)
+	log.SetFlags(0)
+	log.Fatalf(format, args...)
 }
 
 func vlogf(opts options, format string, args ...any) {
 	if !opts.verbose {
 		return
 	}
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	log.SetFlags(0)
+	log.Printf(format, args...)
 }
