@@ -87,6 +87,8 @@ test: qip examples
 	@printf %s "div" | ./qip run examples/html-tag-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: luhn.wasm" >> test/latest.txt
 	@printf %s "49927398716" | ./qip run examples/luhn.wasm >> test/latest.txt
+	@printf "%s\n" "module: markdown-basic.wasm" >> test/latest.txt
+	@printf "%b" "# Title\nHello **World**\n" | ./qip run examples/markdown-basic.wasm >> test/latest.txt
 	@printf "%s\n" "module: rgb-to-hex.wasm" >> test/latest.txt
 	@printf %s "255,0,170" | ./qip run examples/rgb-to-hex.wasm >> test/latest.txt
 	@printf "%s\n" "module: tld-validator.wasm" >> test/latest.txt
