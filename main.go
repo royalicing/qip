@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"image"
 	"image/draw"
 	_ "image/jpeg"
@@ -17,7 +18,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -44,6 +47,7 @@ type options struct {
 
 const usageRun = "Usage: qip <wasm module URL or file>...\n       qip run [-v] <wasm module URL or file>..."
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
+const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] -- <module1> <module2> ..."
 
 func main() {
 	args := os.Args[1:]
@@ -60,30 +64,32 @@ func main() {
 		run(args[1:])
 	} else if args[0] == "image" {
 		imageCmd(args[1:])
+	} else if args[0] == "dev" {
+		devCmd(args[1:])
 	} else {
 		run(args)
 	}
 }
 
-func readModulePath(path string, opts options) []byte {
+func readModulePath(path string, opts options) ([]byte, error) {
 	var body []byte
 
 	if strings.HasPrefix(path, "https://") {
 		resp, err := http.Get(path)
 		if err != nil {
-			gameOver("Error fetching URL: %v", err)
+			return nil, fmt.Errorf("Error fetching URL: %v", err)
 		}
 		defer resp.Body.Close()
 
 		body, err = io.ReadAll(resp.Body)
 		if err != nil {
-			gameOver("Error reading response: %v", err)
+			return nil, fmt.Errorf("Error reading response: %v", err)
 		}
 	} else {
 		var err error
 		body, err = os.ReadFile(path)
 		if err != nil {
-			gameOver("Error reading file: %v", err)
+			return nil, fmt.Errorf("Error reading file: %v", err)
 		}
 	}
 
@@ -92,7 +98,7 @@ func readModulePath(path string, opts options) []byte {
 		vlogf(opts, "module %s sha256: %x", path, moduleDigest)
 	}
 
-	return body
+	return body, nil
 }
 
 func run(args []string) {
@@ -142,15 +148,14 @@ func run(args []string) {
 		}
 	}()
 
-	var output contentData
-	for _, modulePath := range modules {
-		body := readModulePath(modulePath, opts)
-		nextOutput, err := runModuleWithInput(ctx, body, input, opts)
-		if err != nil {
-			gameOver("%v", err)
-		}
-		output = nextOutput
-		input = output.bytes
+	chain, err := buildModuleChain(modules, opts)
+	if err != nil {
+		gameOver("%v", err)
+	}
+
+	output, err := chain(ctx, input)
+	if err != nil {
+		gameOver("%v", err)
 	}
 
 	if output.encoding == dataEncodingRaw {
@@ -204,7 +209,11 @@ func imageCmd(args []string) {
 
 	moduleBodies := make([][]byte, len(modules))
 	for i, modulePath := range modules {
-		moduleBodies[i] = readModulePath(modulePath, opts)
+		body, err := readModulePath(modulePath, opts)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		moduleBodies[i] = body
 	}
 
 	ctx := context.Background()
@@ -676,7 +685,8 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte,
 
 	if outputCap > 0 {
 		if outputCount > outputCap {
-			gameOver("Module returned more bytes than its stated capacity")
+			returnErr = errors.New("Module returned more bytes than its stated capacity")
+			return
 		}
 		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
 		output.bytes = outputBytes
@@ -706,4 +716,177 @@ func vlogf(opts options, format string, args ...any) {
 	}
 	log.SetFlags(0)
 	log.Printf(format, args...)
+}
+
+func devCmd(args []string) {
+	opts := options{}
+	var inputPath string
+	port := 4000
+	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var devVerbose bool
+	fs.BoolVar(&devVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&devVerbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&inputPath, "i", "", "input file path")
+	fs.IntVar(&port, "p", 4000, "port")
+
+	separator := -1
+	for i, arg := range args {
+		if arg == "--" {
+			separator = i
+			break
+		}
+	}
+	if separator == -1 {
+		gameOver(usageDev)
+	}
+
+	if err := fs.Parse(args[:separator]); err != nil {
+		gameOver("%s %v", usageDev, err)
+	}
+	if len(fs.Args()) > 0 {
+		gameOver(usageDev)
+	}
+
+	opts.verbose = devVerbose
+	modules := args[separator+1:]
+	if inputPath == "" || len(modules) == 0 {
+		gameOver(usageDev)
+	}
+	if port <= 0 || port > 65535 {
+		gameOver("Invalid port: %d", port)
+	}
+
+	chain, err := buildModuleChain(modules, opts)
+	if err != nil {
+		gameOver("%v", err)
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			if opts.verbose {
+				vlogf(opts, "dev: %s %s method_not_allowed duration=%dms", r.Method, r.URL.Path, time.Since(start).Milliseconds())
+			}
+			return
+		}
+
+		inputBytes, err := os.ReadFile(inputPath)
+		if err != nil {
+			writeDevError(w, err)
+			if opts.verbose {
+				vlogf(opts, "dev: %s %s error=%v duration=%dms", r.Method, r.URL.Path, err, time.Since(start).Milliseconds())
+			}
+			return
+		}
+
+		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer cancel()
+
+		output, err := chain(ctx, inputBytes)
+		if err != nil {
+			writeDevError(w, err)
+			if opts.verbose {
+				vlogf(opts, "dev: %s %s error=%v duration=%dms", r.Method, r.URL.Path, err, time.Since(start).Milliseconds())
+			}
+			return
+		}
+
+		body, err := formatOutputBytes(output)
+		if err != nil {
+			writeDevError(w, err)
+			if opts.verbose {
+				vlogf(opts, "dev: %s %s error=%v duration=%dms", r.Method, r.URL.Path, err, time.Since(start).Milliseconds())
+			}
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(body); err != nil && opts.verbose {
+			vlogf(opts, "dev: %s %s write_error=%v", r.Method, r.URL.Path, err)
+		}
+		if opts.verbose {
+			vlogf(opts, "dev: %s %s ok duration=%dms", r.Method, r.URL.Path, time.Since(start).Milliseconds())
+		}
+	})
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-signalCtx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	if opts.verbose {
+		vlogf(opts, "dev: listening on http://%s", addr)
+	}
+
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		gameOver("dev server error: %v", err)
+	}
+}
+
+type moduleChain func(context.Context, []byte) (contentData, error)
+
+func buildModuleChain(modules []string, opts options) (moduleChain, error) {
+	moduleBodies := make([][]byte, len(modules))
+	for i, modulePath := range modules {
+		body, err := readModulePath(modulePath, opts)
+		if err != nil {
+			return nil, err
+		}
+		moduleBodies[i] = body
+	}
+
+	return func(ctx context.Context, input []byte) (contentData, error) {
+		var output contentData
+		cur := input
+		for _, body := range moduleBodies {
+			nextOutput, err := runModuleWithInput(ctx, body, cur, opts)
+			if err != nil {
+				return contentData{}, err
+			}
+			output = nextOutput
+			cur = output.bytes
+		}
+		return output, nil
+	}, nil
+}
+
+func formatOutputBytes(output contentData) ([]byte, error) {
+	switch output.encoding {
+	case dataEncodingRaw, dataEncodingUTF8:
+		return output.bytes, nil
+	case dataEncodingArrayI32:
+		count := len(output.bytes) / 4
+		var buf bytes.Buffer
+		buf.Grow(count * 9)
+		for i := 0; i < count; i++ {
+			v := binary.LittleEndian.Uint32(output.bytes[i*4:])
+			fmt.Fprintf(&buf, "%08x\n", v)
+		}
+		return buf.Bytes(), nil
+	default:
+		return nil, errors.New("Unknown output encoding")
+	}
+}
+
+func writeDevError(w http.ResponseWriter, err error) {
+	ts := time.Now().Format(time.RFC3339)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	fmt.Fprintf(w, "<!doctype html><meta charset=\"utf-8\"><title>qip dev error</title><pre>%s\n%s</pre>", ts, html.EscapeString(err.Error()))
 }

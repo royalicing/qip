@@ -29,6 +29,12 @@ qip get qip.dev@<hash> > crc32.wasm
 cat README.md | qip run ./crc32.wasm
 ```
 
+```bash
+# Dev server (re-runs modules on every request)
+qip dev -i ./examples/page.html -- ./examples/wasm-to-js.wasm
+# http://127.0.0.1:4000
+```
+
 ## Making modules
 
 There are a few recommended way to write a module to work with qip: raw WebAssembly, C, or Zig.
