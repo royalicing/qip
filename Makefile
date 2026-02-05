@@ -97,6 +97,8 @@ test: qip examples
 	@printf %s "hello" | ./qip run examples/utf8-validate.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
+	@printf "%s\n" "module: http-hello.wasm" >> test/latest.txt
+	@./qip get /hello examples/http-hello.wasm 2>/dev/null >> test/latest.txt
 	diff test/expected.txt test/latest.txt
 	cp test/latest.txt test/expected.txt
 

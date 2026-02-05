@@ -60,6 +60,8 @@ func main() {
 		run(args[1:])
 	} else if args[0] == "image" {
 		imageCmd(args[1:])
+	} else if args[0] == "get" {
+		getCmd(args[1:])
 	} else {
 		run(args)
 	}
@@ -571,6 +573,131 @@ func imageCmd(args []string) {
 	encoder := png.Encoder{CompressionLevel: png.NoCompression}
 	if err := encoder.Encode(outFile, outputRGBA); err != nil {
 		gameOver("Error writing output image: %v", err)
+	}
+}
+
+func getCmd(args []string) {
+	if len(args) < 2 {
+		gameOver("Usage: qip get <path> <wasm module URL or file>")
+	}
+
+	path := args[0]
+	modulePath := args[1]
+
+	body := readModulePath(modulePath)
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	defer func() {
+		fmt.Fprintf(os.Stderr, "command took %dms\n", time.Since(start).Milliseconds())
+	}()
+
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+
+	mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
+	if err != nil {
+		gameOver("Wasm module could not be compiled")
+	}
+
+	// Get input_path_ptr (required)
+	inputPathPtr, ok := getExportedValue(ctx, mod, "input_path_ptr")
+	if !ok {
+		gameOver("Wasm module must export input_path_ptr as global or function")
+	}
+
+	// Get input_path_cap (required)
+	inputPathCap, ok := getExportedValue(ctx, mod, "input_path_cap")
+	if !ok {
+		gameOver("Wasm module must export input_path_cap as global or function")
+	}
+
+	// Get output headers and body pointers
+	outputHeadersPtr, ok := getExportedValue(ctx, mod, "output_headers_ptr")
+	if !ok {
+		gameOver("Wasm module must export output_headers_ptr as global or function")
+	}
+
+	outputHeadersCap, ok := getExportedValue(ctx, mod, "output_headers_cap")
+	if !ok {
+		gameOver("Wasm module must export output_headers_cap as global or function")
+	}
+
+	outputBodyPtr, ok := getExportedValue(ctx, mod, "output_body_ptr")
+	if !ok {
+		gameOver("Wasm module must export output_body_ptr as global or function")
+	}
+
+	outputBodyCap, ok := getExportedValue(ctx, mod, "output_body_cap")
+	if !ok {
+		gameOver("Wasm module must export output_body_cap as global or function")
+	}
+
+	// Get the handle function
+	handleFunc := mod.ExportedFunction("handle")
+	if handleFunc == nil {
+		gameOver("Wasm module must export handle function")
+	}
+
+	// Write path to module memory
+	pathBytes := []byte(path)
+	if uint64(len(pathBytes)) > inputPathCap {
+		gameOver("Path is too large for module capacity")
+	}
+
+	if !mod.Memory().Write(uint32(inputPathPtr), pathBytes) {
+		gameOver("Could not write path to wasm memory")
+	}
+
+	// Call handle function
+	result, err := handleFunc.Call(ctx, uint64(len(pathBytes)))
+	if err != nil {
+		gameOver("Error calling handle function: %v", err)
+	}
+
+	// Unpack the i64 result: status (16 bits) | headers_size (16 bits) | body_size (32 bits)
+	// Format: bits 0-15: status, bits 16-31: headers_size, bits 32-63: body_size
+	packedResult := result[0]
+	status := uint16(packedResult & 0xFFFF)
+	headersCount := uint32((packedResult >> 16) & 0xFFFF)
+	bodyCount := uint32(packedResult >> 32)
+
+	if headersCount > uint32(outputHeadersCap) {
+		gameOver("Module returned more headers than capacity")
+	}
+
+	// Read headers
+	var headers []byte
+	if headersCount > 0 {
+		headers, ok = mod.Memory().Read(uint32(outputHeadersPtr), headersCount)
+		if !ok {
+			gameOver("Could not read headers from wasm memory")
+		}
+	}
+
+	if bodyCount > uint32(outputBodyCap) {
+		gameOver("Module returned more body bytes than capacity")
+	}
+
+	// Read body
+	var bodyBytes []byte
+	if bodyCount > 0 {
+		bodyBytes, ok = mod.Memory().Read(uint32(outputBodyPtr), bodyCount)
+		if !ok {
+			gameOver("Could not read body from wasm memory")
+		}
+	}
+
+	// Output results
+	fmt.Fprintf(os.Stderr, "HTTP Status: %d\n", status)
+	if len(headers) > 0 {
+		fmt.Fprintf(os.Stderr, "Headers:\n%s\n", headers)
+	}
+	if len(bodyBytes) > 0 {
+		os.Stdout.Write(bodyBytes)
 	}
 }
 
