@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -149,35 +150,35 @@ func run(args []string) {
 		}
 	}()
 
-	chain, err := buildModuleChain(modules, opts)
+	chain, err := buildModuleChain(context.Background(), modules, opts)
+	if err != nil {
+		gameOver("%v", err)
+	}
+	defer chain.Close(context.Background())
+
+	result, err := chain.run(ctx, input, 0)
 	if err != nil {
 		gameOver("%v", err)
 	}
 
-	durations := make([]time.Duration, 0)
-	output, err := chain(ctx, input, durations)
-	if err != nil {
-		gameOver("%v", err)
-	}
-
-	if output.encoding == dataEncodingRaw {
-		if _, err := os.Stdout.Write(output.bytes); err != nil {
+	if result.output.encoding == dataEncodingRaw {
+		if _, err := os.Stdout.Write(result.output.bytes); err != nil {
 			gameOver("Error writing raw output: %v", err)
 		}
-	} else if output.encoding == dataEncodingUTF8 {
-		fmt.Printf("%s\n", output.bytes)
-	} else if output.encoding == dataEncodingArrayI32 {
+	} else if result.output.encoding == dataEncodingUTF8 {
+		fmt.Printf("%s\n", result.output.bytes)
+	} else if result.output.encoding == dataEncodingArrayI32 {
 		if opts.verbose {
-			fmt.Fprintln(os.Stderr, output.bytes)
+			fmt.Fprintln(os.Stderr, result.output.bytes)
 		}
 
-		count := len(output.bytes) / 4
+		count := len(result.output.bytes) / 4
 		if count >= 1 {
 			bufSize := count * 9
 			writer := bufio.NewWriterSize(os.Stdout, bufSize)
 			defer writer.Flush()
 			for i := 0; i < count; i++ {
-				v := binary.LittleEndian.Uint32(output.bytes[i*4:])
+				v := binary.LittleEndian.Uint32(result.output.bytes[i*4:])
 				if opts.verbose {
 					vlogf(opts, "u32: %d", v)
 				}
@@ -603,15 +604,15 @@ func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64,
 	return 0, false
 }
 
-func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte, opts options) (output contentData, returnErr error) {
-	r := wazero.NewRuntime(ctx)
-	defer r.Close(ctx)
-
-	mod, err := r.InstantiateWithConfig(ctx, modBytes, wazero.NewModuleConfig())
+func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wazero.CompiledModule, inputBytes []byte, opts options, moduleName string) (output contentData, instantiation time.Duration, returnErr error) {
+	instStart := time.Now()
+	mod, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName(moduleName))
 	if err != nil {
-		returnErr = errors.New("Wasm module could not be compiled")
+		returnErr = errors.New("Wasm module could not be instantiated")
 		return
 	}
+	defer mod.Close(ctx)
+	instantiation = time.Since(instStart)
 
 	var input contentData
 	// Get input_ptr and input_cap (required)
@@ -704,7 +705,7 @@ func runModuleWithInput(ctx context.Context, modBytes []byte, inputBytes []byte,
 	// if len(outputBytes) >= 4 && outputBytes[0] == 0x00 && outputBytes[1] == 0x61 && outputBytes[2] == 0x73 && outputBytes[3] == 0x6D {
 	// }
 
-	return output, nil
+	return output, instantiation, nil
 }
 
 func gameOver(format string, args ...any) {
@@ -763,25 +764,32 @@ func devCmd(args []string) {
 		gameOver("Invalid port: %d", port)
 	}
 
-	chain, err := buildModuleChain(modules, opts)
+	chain, err := buildModuleChain(context.Background(), modules, opts)
 	if err != nil {
 		gameOver("%v", err)
 	}
+	defer chain.Close(context.Background())
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	mux := http.NewServeMux()
+	var requestID uint64
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		reqID := atomic.AddUint64(&requestID, 1)
 		if r.Method != http.MethodGet {
+			emptyDurations := []time.Duration{}
+			emptyInst := []time.Duration{}
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			log.Printf("dev: %s %s %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), nil))
+			log.Printf("dev: %s %s %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), emptyDurations, emptyInst))
 			return
 		}
 
 		inputBytes, err := os.ReadFile(inputPath)
 		if err != nil {
+			emptyDurations := []time.Duration{}
+			emptyInst := []time.Duration{}
 			writeDevError(w, err)
-			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), nil))
+			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), emptyDurations, emptyInst))
 			return
 		}
 
@@ -789,27 +797,26 @@ func devCmd(args []string) {
 		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 		defer cancel()
 
-		durations := make([]time.Duration, len(modules))
-		output, err := chain(ctx, inputBytes, durations)
+		result, err := chain.run(ctx, inputBytes, reqID)
 		if err != nil {
 			writeDevError(w, err)
-			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), durations))
+			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 			return
 		}
 
-		body, err := formatOutputBytes(output)
+		body, err := formatOutputBytes(result.output)
 		if err != nil {
 			writeDevError(w, err)
-			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), durations))
+			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(body); err != nil {
-			log.Printf("dev: %s %s write_error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), durations))
+			log.Printf("dev: %s %s write_error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 		}
-		log.Printf("dev: %s %s ok %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), durations))
+		log.Printf("dev: %s %s ok %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 	})
 
 	server := &http.Server{
@@ -834,45 +841,109 @@ func devCmd(args []string) {
 	}
 }
 
-type moduleChain func(context.Context, []byte, []time.Duration) (contentData, error)
+type chainMetrics struct {
+	moduleDurations        []time.Duration
+	instantiationDurations []time.Duration
+}
 
-func buildModuleChain(modules []string, opts options) (moduleChain, error) {
+type chainResult struct {
+	output  contentData
+	metrics chainMetrics
+}
+
+type moduleChain struct {
+	runtime          wazero.Runtime
+	compiled         []wazero.CompiledModule
+	opts             options
+	compileDurations []time.Duration
+}
+
+func buildModuleChain(ctx context.Context, modules []string, opts options) (*moduleChain, error) {
 	if len(modules) == 0 {
-		return func(ctx context.Context, input []byte, durations []time.Duration) (contentData, error) {
-			_ = ctx
-			_ = durations
-			return contentData{bytes: input, encoding: dataEncodingRaw}, nil
-		}, nil
+		return &moduleChain{opts: opts}, nil
 	}
 
-	moduleBodies := make([][]byte, len(modules))
+	runtime := wazero.NewRuntime(ctx)
+	compiled := make([]wazero.CompiledModule, len(modules))
+	compileDurations := make([]time.Duration, len(modules))
+
 	for i, modulePath := range modules {
 		body, err := readModulePath(modulePath, opts)
 		if err != nil {
+			_ = runtime.Close(ctx)
 			return nil, err
 		}
-		moduleBodies[i] = body
+		start := time.Now()
+		cm, err := runtime.CompileModule(ctx, body)
+		compileDurations[i] = time.Since(start)
+		if err != nil {
+			_ = runtime.Close(ctx)
+			return nil, errors.New("Wasm module could not be compiled")
+		}
+		compiled[i] = cm
+		if opts.verbose {
+			vlogf(opts, "compiled module[%d] in %dms", i, compileDurations[i].Milliseconds())
+		}
 	}
 
-	return func(ctx context.Context, input []byte, durations []time.Duration) (contentData, error) {
-		if len(durations) > len(moduleBodies) {
-			durations = durations[:len(moduleBodies)]
+	return &moduleChain{
+		runtime:          runtime,
+		compiled:         compiled,
+		opts:             opts,
+		compileDurations: compileDurations,
+	}, nil
+}
+
+func (chain *moduleChain) Close(ctx context.Context) {
+	for _, cm := range chain.compiled {
+		_ = cm.Close(ctx)
+	}
+	if chain.runtime != nil {
+		_ = chain.runtime.Close(ctx)
+	}
+}
+
+func (chain *moduleChain) run(ctx context.Context, input []byte, requestID uint64) (chainResult, error) {
+	if len(chain.compiled) == 0 {
+		return chainResult{
+			output: contentData{bytes: input, encoding: dataEncodingRaw},
+			metrics: chainMetrics{
+				moduleDurations:        []time.Duration{},
+				instantiationDurations: []time.Duration{},
+			},
+		}, nil
+	}
+
+	moduleDurations := make([]time.Duration, len(chain.compiled))
+	instantiationDurations := make([]time.Duration, len(chain.compiled))
+	var output contentData
+	cur := input
+
+	for i, cm := range chain.compiled {
+		moduleName := fmt.Sprintf("req-%d-%d", requestID, i)
+		runStart := time.Now()
+		nextOutput, instDur, err := runModuleWithInput(ctx, chain.runtime, cm, cur, chain.opts, moduleName)
+		moduleDurations[i] = time.Since(runStart)
+		instantiationDurations[i] = instDur
+		if err != nil {
+			return chainResult{
+				output: output,
+				metrics: chainMetrics{
+					moduleDurations:        moduleDurations,
+					instantiationDurations: instantiationDurations,
+				},
+			}, err
 		}
-		var output contentData
-		cur := input
-		for i, body := range moduleBodies {
-			start := time.Now()
-			nextOutput, err := runModuleWithInput(ctx, body, cur, opts)
-			if i < len(durations) {
-				durations[i] = time.Since(start)
-			}
-			if err != nil {
-				return contentData{}, err
-			}
-			output = nextOutput
-			cur = output.bytes
-		}
-		return output, nil
+		output = nextOutput
+		cur = output.bytes
+	}
+
+	return chainResult{
+		output: output,
+		metrics: chainMetrics{
+			moduleDurations:        moduleDurations,
+			instantiationDurations: instantiationDurations,
+		},
 	}, nil
 }
 
@@ -901,17 +972,19 @@ func writeDevError(w http.ResponseWriter, err error) {
 	fmt.Fprintf(w, "<!doctype html><meta charset=\"utf-8\"><title>qip dev error</title><pre>%s\n%s</pre>", ts, html.EscapeString(err.Error()))
 }
 
-func formatDurationParts(total time.Duration, parts []time.Duration) string {
+func formatDurationParts(total time.Duration, moduleDurations []time.Duration, instantiationDurations []time.Duration) string {
 	totalMs := total.Milliseconds()
-	if len(parts) == 0 {
+	if len(moduleDurations) == 0 {
 		return fmt.Sprintf("duration_ms=%d", totalMs)
 	}
 	var b strings.Builder
-	b.Grow(40 + len(parts)*6)
+	b.Grow(60 + len(moduleDurations)*6)
 	b.WriteString("duration_ms=")
 	b.WriteString(strconv.FormatInt(totalMs, 10))
+	b.WriteString(" instantiation_ms=")
+	b.WriteString(strconv.FormatInt(sumDurations(instantiationDurations), 10))
 	b.WriteString(" module_durations_ms=[")
-	for i, part := range parts {
+	for i, part := range moduleDurations {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -919,4 +992,12 @@ func formatDurationParts(total time.Duration, parts []time.Duration) string {
 	}
 	b.WriteByte(']')
 	return b.String()
+}
+
+func sumDurations(values []time.Duration) int64 {
+	var total int64
+	for _, v := range values {
+		total += v.Milliseconds()
+	}
+	return total
 }
