@@ -59,8 +59,19 @@ examples-zig-wasm: $(patsubst examples/%.zig,examples/%.wasm,$(wildcard examples
 
 examples: examples-wat-wasm examples-c-wasm examples-zig-wasm
 
-test: qip examples test-zig test-snapshot
+test: qip examples test-zig test-snapshot test-link
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
+
+test-link: qip
+	@echo "Testing qip link..."
+	@test -f examples/hello.wasm || wat2wasm examples/hello.wat -o examples/hello.wasm
+	@test -f examples/trim.wasm || wat2wasm examples/trim.wat -o examples/trim.wasm
+	@./qip link -o /tmp/test-linked examples/hello.wasm examples/trim.wasm > /dev/null 2>&1
+	@test -f /tmp/test-linked.wasm || (echo "FAILED: linked WASM not generated" && exit 1)
+	@echo "test input" | ./qip run /tmp/test-linked.wasm > /tmp/link-output.txt 2>&1
+	@grep -q "Linked 2 modules" /tmp/link-output.txt || (echo "FAILED: linked module output incorrect" && exit 1)
+	@rm -f /tmp/test-linked.wasm /tmp/test-linked.wat /tmp/link-output.txt
+	@echo "Link tests pass."
 
 test-snapshot: qip examples
 	@mkdir -p test
