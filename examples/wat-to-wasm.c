@@ -72,6 +72,29 @@ uint32_t output_bytes_cap() {
 #define OP_I32_ROTL    0x77
 #define OP_I32_ROTR    0x78
 
+// F32 opcodes
+#define OP_F32_CONST   0x43
+#define OP_F32_EQ      0x5B
+#define OP_F32_NE      0x5C
+#define OP_F32_LT      0x5D
+#define OP_F32_GT      0x5E
+#define OP_F32_LE      0x5F
+#define OP_F32_GE      0x60
+#define OP_F32_ABS     0x8B
+#define OP_F32_NEG     0x8C
+#define OP_F32_CEIL    0x8D
+#define OP_F32_FLOOR   0x8E
+#define OP_F32_TRUNC   0x8F
+#define OP_F32_NEAREST 0x90
+#define OP_F32_SQRT    0x91
+#define OP_F32_ADD     0x92
+#define OP_F32_SUB     0x93
+#define OP_F32_MUL     0x94
+#define OP_F32_DIV     0x95
+#define OP_F32_MIN     0x96
+#define OP_F32_MAX     0x97
+#define OP_F32_COPYSIGN 0x98
+
 typedef struct {
     const char* input;
     uint32_t size;
@@ -186,6 +209,101 @@ static int parse_int(Parser* p, int64_t* value) {
     return 1;
 }
 
+static int parse_float(Parser* p, float* value) {
+    skip_whitespace(p);
+    uint32_t start = p->pos;
+    int negative = 0;
+    
+    if (p->pos < p->size && p->input[p->pos] == '-') {
+        negative = 1;
+        p->pos++;
+    } else if (p->pos < p->size && p->input[p->pos] == '+') {
+        p->pos++;
+    }
+    
+    float int_part = 0.0f;
+    int has_digit = 0;
+    
+    // Parse integer part
+    while (p->pos < p->size) {
+        char c = p->input[p->pos];
+        if (c >= '0' && c <= '9') {
+            int_part = int_part * 10.0f + (c - '0');
+            p->pos++;
+            has_digit = 1;
+        } else {
+            break;
+        }
+    }
+    
+    // Parse fractional part
+    float frac_part = 0.0f;
+    float divisor = 1.0f;
+    if (p->pos < p->size && p->input[p->pos] == '.') {
+        p->pos++;
+        while (p->pos < p->size) {
+            char c = p->input[p->pos];
+            if (c >= '0' && c <= '9') {
+                frac_part = frac_part * 10.0f + (c - '0');
+                divisor *= 10.0f;
+                p->pos++;
+                has_digit = 1;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // Parse exponent
+    if (p->pos < p->size && (p->input[p->pos] == 'e' || p->input[p->pos] == 'E')) {
+        p->pos++;
+        int exp_negative = 0;
+        if (p->pos < p->size && p->input[p->pos] == '-') {
+            exp_negative = 1;
+            p->pos++;
+        } else if (p->pos < p->size && p->input[p->pos] == '+') {
+            p->pos++;
+        }
+        
+        int exponent = 0;
+        int has_exp_digit = 0;
+        while (p->pos < p->size) {
+            char c = p->input[p->pos];
+            if (c >= '0' && c <= '9') {
+                exponent = exponent * 10 + (c - '0');
+                p->pos++;
+                has_exp_digit = 1;
+            } else {
+                break;
+            }
+        }
+        
+        if (has_exp_digit) {
+            float exp_multiplier = 1.0f;
+            for (int i = 0; i < exponent; i++) {
+                exp_multiplier *= 10.0f;
+            }
+            if (exp_negative) {
+                int_part /= exp_multiplier;
+                frac_part /= exp_multiplier;
+            } else {
+                int_part *= exp_multiplier;
+                frac_part *= exp_multiplier;
+            }
+        }
+    }
+    
+    if (!has_digit) {
+        p->pos = start;
+        return 0;
+    }
+    
+    float result = int_part + frac_part / divisor;
+    *value = negative ? -result : result;
+    return 1;
+}
+
+
 static void write_byte(Encoder* e, uint8_t byte) {
     if (e->pos < 65536) {
         e->output[e->pos++] = byte;
@@ -238,6 +356,20 @@ static uint32_t uleb128_size(uint32_t value) {
         size++;
     } while (value != 0);
     return size;
+}
+
+static void write_f32(Encoder* e, float value) {
+    // Write float as little-endian IEEE 754
+    union {
+        float f;
+        uint32_t i;
+    } u;
+    u.f = value;
+    
+    write_byte(e, (uint8_t)(u.i & 0xFF));
+    write_byte(e, (uint8_t)((u.i >> 8) & 0xFF));
+    write_byte(e, (uint8_t)((u.i >> 16) & 0xFF));
+    write_byte(e, (uint8_t)((u.i >> 24) & 0xFF));
 }
 
 static int parse_instruction(Parser* p, Encoder* e) {
@@ -322,6 +454,51 @@ static int parse_instruction(Parser* p, Encoder* e) {
         write_byte(e, OP_I32_ROTL);
     } else if (len == 8 && str_eq(ident, "i32.rotr", 8)) {
         write_byte(e, OP_I32_ROTR);
+    } else if (len == 9 && str_eq(ident, "f32.const", 9)) {
+        write_byte(e, OP_F32_CONST);
+        float val;
+        if (!parse_float(p, &val)) return 0;
+        write_f32(e, val);
+    } else if (len == 6 && str_eq(ident, "f32.eq", 6)) {
+        write_byte(e, OP_F32_EQ);
+    } else if (len == 6 && str_eq(ident, "f32.ne", 6)) {
+        write_byte(e, OP_F32_NE);
+    } else if (len == 6 && str_eq(ident, "f32.lt", 6)) {
+        write_byte(e, OP_F32_LT);
+    } else if (len == 6 && str_eq(ident, "f32.gt", 6)) {
+        write_byte(e, OP_F32_GT);
+    } else if (len == 6 && str_eq(ident, "f32.le", 6)) {
+        write_byte(e, OP_F32_LE);
+    } else if (len == 6 && str_eq(ident, "f32.ge", 6)) {
+        write_byte(e, OP_F32_GE);
+    } else if (len == 7 && str_eq(ident, "f32.abs", 7)) {
+        write_byte(e, OP_F32_ABS);
+    } else if (len == 7 && str_eq(ident, "f32.neg", 7)) {
+        write_byte(e, OP_F32_NEG);
+    } else if (len == 8 && str_eq(ident, "f32.ceil", 8)) {
+        write_byte(e, OP_F32_CEIL);
+    } else if (len == 9 && str_eq(ident, "f32.floor", 9)) {
+        write_byte(e, OP_F32_FLOOR);
+    } else if (len == 9 && str_eq(ident, "f32.trunc", 9)) {
+        write_byte(e, OP_F32_TRUNC);
+    } else if (len == 11 && str_eq(ident, "f32.nearest", 11)) {
+        write_byte(e, OP_F32_NEAREST);
+    } else if (len == 8 && str_eq(ident, "f32.sqrt", 8)) {
+        write_byte(e, OP_F32_SQRT);
+    } else if (len == 7 && str_eq(ident, "f32.add", 7)) {
+        write_byte(e, OP_F32_ADD);
+    } else if (len == 7 && str_eq(ident, "f32.sub", 7)) {
+        write_byte(e, OP_F32_SUB);
+    } else if (len == 7 && str_eq(ident, "f32.mul", 7)) {
+        write_byte(e, OP_F32_MUL);
+    } else if (len == 7 && str_eq(ident, "f32.div", 7)) {
+        write_byte(e, OP_F32_DIV);
+    } else if (len == 7 && str_eq(ident, "f32.min", 7)) {
+        write_byte(e, OP_F32_MIN);
+    } else if (len == 7 && str_eq(ident, "f32.max", 7)) {
+        write_byte(e, OP_F32_MAX);
+    } else if (len == 11 && str_eq(ident, "f32.copysign", 11)) {
+        write_byte(e, OP_F32_COPYSIGN);
     } else {
         // Unknown instruction
         return 0;
@@ -348,6 +525,17 @@ uint32_t run(uint32_t input_size) {
     Encoder code_encoder = { code_buffer, 0 };
     parse_instructions(&parser, &code_encoder);
     
+    // Detect if we're using f32 or i32 by scanning the encoded instructions
+    // f32 opcodes are in ranges: 0x43, 0x5B-0x60, 0x8B-0x98
+    int uses_f32 = 0;
+    for (uint32_t i = 0; i < code_encoder.pos; i++) {
+        uint8_t op = (uint8_t)code_encoder.output[i];
+        if (op == 0x43 || (op >= 0x5B && op <= 0x60) || (op >= 0x8B && op <= 0x98)) {
+            uses_f32 = 1;
+            break;
+        }
+    }
+    
     // Build the actual WASM module into output_buffer
     Encoder encoder = { output_buffer, 0 };
     
@@ -363,7 +551,7 @@ uint32_t run(uint32_t input_size) {
     write_byte(&encoder, 0x60); // func type
     write_uleb128(&encoder, 0); // 0 params
     write_uleb128(&encoder, 1); // 1 result
-    write_byte(&encoder, 0x7F); // i32
+    write_byte(&encoder, uses_f32 ? 0x7D : 0x7F); // f32 (0x7D) or i32 (0x7F)
     
     // Function section (id = 3)
     write_byte(&encoder, 0x03);

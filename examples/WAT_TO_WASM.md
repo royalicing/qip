@@ -11,10 +11,10 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 
 ## Supported Instructions
 
-### Constants
+### i32 Constants
 - `i32.const` - Push a 32-bit integer constant onto the stack
 
-### Arithmetic Operations
+### i32 Arithmetic Operations
 - `i32.add` - Add two i32 values
 - `i32.sub` - Subtract two i32 values  
 - `i32.mul` - Multiply two i32 values
@@ -23,7 +23,7 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 - `i32.rem_s` - Signed remainder
 - `i32.rem_u` - Unsigned remainder
 
-### Bitwise Operations
+### i32 Bitwise Operations
 - `i32.and` - Bitwise AND
 - `i32.or` - Bitwise OR
 - `i32.xor` - Bitwise XOR
@@ -36,7 +36,7 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 - `i32.ctz` - Count trailing zeros
 - `i32.popcnt` - Count number of 1 bits
 
-### Comparison Operations
+### i32 Comparison Operations
 - `i32.eqz` - Test if zero
 - `i32.eq` - Equal
 - `i32.ne` - Not equal
@@ -48,6 +48,35 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 - `i32.le_u` - Unsigned less than or equal
 - `i32.ge_s` - Signed greater than or equal
 - `i32.ge_u` - Unsigned greater than or equal
+
+### f32 Constants
+- `f32.const` - Push a 32-bit floating point constant onto the stack
+
+### f32 Arithmetic Operations
+- `f32.add` - Add two f32 values
+- `f32.sub` - Subtract two f32 values
+- `f32.mul` - Multiply two f32 values
+- `f32.div` - Divide two f32 values
+- `f32.min` - Minimum of two f32 values
+- `f32.max` - Maximum of two f32 values
+- `f32.sqrt` - Square root
+- `f32.abs` - Absolute value
+- `f32.neg` - Negate
+- `f32.copysign` - Copy sign from one value to another
+
+### f32 Rounding Operations
+- `f32.ceil` - Round up to integer
+- `f32.floor` - Round down to integer
+- `f32.trunc` - Round towards zero
+- `f32.nearest` - Round to nearest integer
+
+### f32 Comparison Operations
+- `f32.eq` - Equal
+- `f32.ne` - Not equal
+- `f32.lt` - Less than
+- `f32.gt` - Greater than
+- `f32.le` - Less than or equal
+- `f32.ge` - Greater than or equal
 
 ### Stack Operations
 - `drop` - Drop the top value from the stack
@@ -71,6 +100,13 @@ This will generate a **binary WASM module** that exports a function called `calc
 ```bash
 # Calculate (5 + 3) * 2 = 16
 echo "(i32.const 5) (i32.const 3) (i32.add) (i32.const 2) (i32.mul)" | qip run examples/wat-to-wasm.wasm > calc.wasm
+```
+
+### f32 Example
+
+```bash
+# Calculate 3.5 + 2.25 = 5.75
+echo "(f32.const 3.5) (f32.const 2.25) (f32.add)" | qip run examples/wat-to-wasm.wasm > float-calc.wasm
 ```
 
 ### Running the Generated WASM
