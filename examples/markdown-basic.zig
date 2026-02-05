@@ -150,9 +150,11 @@ fn isBlank(line: []const u8) bool {
     return true;
 }
 
-fn isFence(line: []const u8) bool {
+fn fenceLang(line: []const u8) ?[]const u8 {
     const trimmed = std.mem.trim(u8, line, " \t\r");
-    return std.mem.startsWith(u8, trimmed, "```");
+    if (!std.mem.startsWith(u8, trimmed, "```")) return null;
+    const rest = std.mem.trim(u8, trimmed[3..], " \t\r");
+    return rest;
 }
 
 fn stripCR(line: []const u8) []const u8 {
@@ -213,7 +215,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         i = line_end + 1;
 
         if (in_code) {
-            if (isFence(line)) {
+            if (fenceLang(line) != null) {
                 w.writeSlice("</code></pre>\n");
                 in_code = false;
                 continue;
@@ -223,7 +225,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             continue;
         }
 
-        if (isFence(line)) {
+        if (fenceLang(line)) |lang| {
             if (in_ul) {
                 w.writeSlice("</ul>\n");
                 in_ul = false;
@@ -236,7 +238,14 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
                 w.writeSlice("</blockquote>\n");
                 in_blockquote = false;
             }
-            w.writeSlice("<pre><code>");
+            w.writeSlice("<pre><code");
+            if (lang.len > 0) {
+                w.writeSlice(" class=\"language-");
+                w.writeEscaped(lang);
+                w.writeSlice("\">");
+            } else {
+                w.writeSlice(">");
+            }
             in_code = true;
             continue;
         }
@@ -387,10 +396,10 @@ test "lists" {
 
 test "blockquote and code block" {
     var out: [2048]u8 = undefined;
-    const input = "> hi\n> there\n```\nlet x = 1;\n```\n";
+    const input = "> hi\n> there\n```js\nlet x = 1;\n```\n";
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
-        "<blockquote>\n<p>hi</p>\n<p>there</p>\n</blockquote>\n<pre><code>let x = 1;\n</code></pre>\n",
+        "<blockquote>\n<p>hi</p>\n<p>there</p>\n</blockquote>\n<pre><code class=\"language-js\">let x = 1;\n</code></pre>\n",
         out[0..written],
     );
 }
