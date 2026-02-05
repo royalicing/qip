@@ -55,7 +55,7 @@ examples-zig-wasm: $(patsubst examples/%.zig,examples/%.wasm,$(wildcard examples
 
 examples: examples-wat-wasm examples-c-wasm examples-zig-wasm
 
-test: qip examples
+test: qip examples test-zig
 	@mkdir -p test
 	@rm -f test/latest.txt
 	@printf "%s\n" "module: base64-encode.wasm" >> test/latest.txt
@@ -101,6 +101,14 @@ test: qip examples
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
 	diff test/expected.txt test/latest.txt
 	cp test/latest.txt test/expected.txt
+
+ZIG_TEST_FILES := $(wildcard examples/*.zig)
+
+test-zig: $(ZIG_TEST_FILES)
+	@for f in $^; do \
+		echo "zig test $$f"; \
+		ZIG_CACHE_DIR=/tmp/zig-cache ZIG_GLOBAL_CACHE_DIR=/tmp/zig-global-cache zig test $$f; \
+	done
 
 test-svg: qip examples/svg-rasterize.wasm
 	@./test/svg-rasterize.sh
