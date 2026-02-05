@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -1048,17 +1049,46 @@ func linkCmd(args []string) {
 	}
 	
 	// Write output
-	if err := os.WriteFile(outputPath, linkedWasm, 0644); err != nil {
-		gameOver("failed to write output: %v", err)
+	watPath := outputPath
+	if !strings.HasSuffix(watPath, ".wat") {
+		watPath = outputPath + ".wat"
 	}
 	
-	vlogf(opts, "wrote linked module: %s (%d bytes)", outputPath, len(linkedWasm))
-	fmt.Printf("Successfully linked %d modules into %s\n", len(modules), outputPath)
-	fmt.Printf("\nNOTE: Output is in WAT (WebAssembly Text) format.\n")
-	fmt.Printf("To compile to WASM binary, use: wat2wasm %s -o %s\n", 
-		outputPath, strings.TrimSuffix(outputPath, ".wat")+".wasm")
-	fmt.Printf("\nThis is a proof-of-concept implementation. Full static linking\n")
-	fmt.Printf("would require:\n")
+	if err := os.WriteFile(watPath, linkedWasm, 0644); err != nil {
+		gameOver("failed to write WAT output: %v", err)
+	}
+	vlogf(opts, "wrote WAT file: %s (%d bytes)", watPath, len(linkedWasm))
+	
+	// Try to compile to WASM using wat2wasm if available
+	wasmPath := strings.TrimSuffix(watPath, ".wat") + ".wasm"
+	if wasmPath == watPath {
+		wasmPath = outputPath // Use original path if it doesn't end with .wat
+	}
+	
+	// Check if wat2wasm is available
+	if _, err := exec.LookPath("wat2wasm"); err == nil {
+		vlogf(opts, "compiling WAT to WASM using wat2wasm...")
+		cmd := exec.Command("wat2wasm", watPath, "-o", wasmPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: wat2wasm compilation failed: %v\n", err)
+			if len(output) > 0 {
+				fmt.Fprintf(os.Stderr, "wat2wasm output: %s\n", output)
+			}
+			fmt.Printf("\nSuccessfully generated WAT file: %s\n", watPath)
+			fmt.Printf("To compile manually, run: wat2wasm %s -o %s\n", watPath, wasmPath)
+		} else {
+			vlogf(opts, "compiled WASM binary: %s", wasmPath)
+			fmt.Printf("Successfully linked %d modules into %s\n", len(modules), wasmPath)
+			fmt.Printf("WAT source: %s\n", watPath)
+		}
+	} else {
+		fmt.Printf("\nSuccessfully generated WAT file: %s\n", watPath)
+		fmt.Printf("To compile to WASM binary, install wabt and run:\n")
+		fmt.Printf("  wat2wasm %s -o %s\n", watPath, wasmPath)
+	}
+	
+	fmt.Printf("\nNOTE: This is a proof-of-concept implementation.\n")
+	fmt.Printf("Full static linking would require:\n")
 	fmt.Printf("  - Deep WASM binary parsing\n")
 	fmt.Printf("  - Function body extraction and relocation\n")
 	fmt.Printf("  - Import/export merging\n")
@@ -1148,6 +1178,15 @@ func createLinkedWasmModule(ctx context.Context, moduleBodies [][]byte, opts opt
 		}
 	}
 	
+	// Write a message indicating this is a linked module - place data section before function
+	msg := fmt.Sprintf("[Linked %d modules - stub impl]", len(moduleBodies))
+	watBuf.WriteString(fmt.Sprintf("  ;; Status message: \"%s\"\n", msg))
+	watBuf.WriteString("  (data (i32.const 0x1000) \"")
+	for _, b := range []byte(msg) {
+		watBuf.WriteString(fmt.Sprintf("\\%02x", b))
+	}
+	watBuf.WriteString("\")\n\n")
+	
 	watBuf.WriteString("  ;; Main run function - chains all embedded modules\n")
 	watBuf.WriteString("  ;; NOTE: This is a stub. Full implementation would require\n")
 	watBuf.WriteString("  ;; a WASM interpreter in WASM or runtime support\n")
@@ -1164,19 +1203,10 @@ func createLinkedWasmModule(ctx context.Context, moduleBodies [][]byte, opts opt
 	watBuf.WriteString("    ;; 5. Return final output\n")
 	watBuf.WriteString("\n")
 	
-	// Write a message indicating this is a linked module
-	msg := fmt.Sprintf("[Linked %d modules - stub impl]", len(moduleBodies))
+	// Copy status message
 	watBuf.WriteString("    ;; Copy status message\n")
 	watBuf.WriteString("    (local.set $i (i32.const 0))\n")
 	watBuf.WriteString(fmt.Sprintf("    (local.set $len (i32.const %d))\n", len(msg)))
-	
-	// Embed message
-	watBuf.WriteString(fmt.Sprintf("    ;; Message: \"%s\"\n", msg))
-	watBuf.WriteString("    (data (i32.const 0x1000) \"")
-	for _, b := range []byte(msg) {
-		watBuf.WriteString(fmt.Sprintf("\\%02x", b))
-	}
-	watBuf.WriteString("\")\n")
 	
 	watBuf.WriteString("\n")
 	watBuf.WriteString("    ;; Copy message to output\n")
