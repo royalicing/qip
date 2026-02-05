@@ -11,7 +11,7 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 
 ## Supported Instructions
 
-### i32 Constants
+### i32 Constant
 - `i32.const` - Push a 32-bit integer constant onto the stack
 
 ### i32 Arithmetic Operations
@@ -49,7 +49,7 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 - `i32.ge_s` - Signed greater than or equal
 - `i32.ge_u` - Unsigned greater than or equal
 
-### f32 Constants
+### f32 Constant
 - `f32.const` - Push a 32-bit floating point constant onto the stack
 
 ### f32 Arithmetic Operations

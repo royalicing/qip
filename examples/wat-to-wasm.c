@@ -209,6 +209,9 @@ static int parse_int(Parser* p, int64_t* value) {
     return 1;
 }
 
+// Parse a floating point number from input
+// Supports: sign (+/-), decimal point, exponent notation (e.g., 1.5e-3)
+// Returns 1 on success, 0 on failure
 static int parse_float(Parser* p, float* value) {
     skip_whitespace(p);
     uint32_t start = p->pos;
@@ -358,6 +361,7 @@ static uint32_t uleb128_size(uint32_t value) {
     return size;
 }
 
+// Write a 32-bit float as little-endian IEEE 754 format
 static void write_f32(Encoder* e, float value) {
     // Write float as little-endian IEEE 754
     union {
