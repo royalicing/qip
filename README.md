@@ -16,7 +16,6 @@ These attribute make agentic coding ideal for creating modules. And you can use 
 
 ```
 go install github.com/RoyalIcing/qip@latest
-brew install RoyalIcing/tap/qip
 ```
 
 ## Usage
