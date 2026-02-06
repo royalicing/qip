@@ -1053,7 +1053,15 @@ func devCmd(args []string) {
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		contentType := "text/html; charset=utf-8"
+		if result.output.encoding == dataEncodingRaw {
+			if isICOBytes(body) {
+				contentType = "image/x-icon"
+			} else if isBMPBytes(body) {
+				contentType = "image/bmp"
+			}
+		}
+		w.Header().Set("Content-Type", contentType)
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(body); err != nil {
 			log.Printf("dev: %s %s write_error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
@@ -1351,6 +1359,74 @@ func formatOutputBytes(output contentData) ([]byte, error) {
 	default:
 		return nil, errors.New("Unknown output encoding")
 	}
+}
+
+func isBMPBytes(data []byte) bool {
+	if len(data) < 18 {
+		return false
+	}
+	if data[0] != 'B' || data[1] != 'M' {
+		return false
+	}
+
+	fileSize := binary.LittleEndian.Uint32(data[2:6])
+	if fileSize != 0 && fileSize > uint32(len(data)) {
+		return false
+	}
+
+	pixelOffset := binary.LittleEndian.Uint32(data[10:14])
+	if pixelOffset < 14 || pixelOffset > uint32(len(data)) {
+		return false
+	}
+
+	dibSize := binary.LittleEndian.Uint32(data[14:18])
+	if dibSize < 12 {
+		return false
+	}
+	if 14+dibSize > uint32(len(data)) {
+		return false
+	}
+
+	return true
+}
+
+func isICOBytes(data []byte) bool {
+	if len(data) < 22 {
+		return false
+	}
+	if binary.LittleEndian.Uint16(data[0:2]) != 0 {
+		return false
+	}
+	icoType := binary.LittleEndian.Uint16(data[2:4])
+	if icoType != 1 {
+		return false
+	}
+	count := binary.LittleEndian.Uint16(data[4:6])
+	if count == 0 {
+		return false
+	}
+	dirSize := 6 + int(count)*16
+	if len(data) < dirSize {
+		return false
+	}
+
+	// Validate the first directory entry payload bounds.
+	imageSize := binary.LittleEndian.Uint32(data[14:18])
+	imageOffset := binary.LittleEndian.Uint32(data[18:22])
+	if imageSize == 0 {
+		return false
+	}
+	if imageOffset < uint32(dirSize) {
+		return false
+	}
+	if imageOffset > uint32(len(data)) {
+		return false
+	}
+	if imageSize > uint32(len(data))-imageOffset {
+		return false
+	}
+
+	return true
 }
 
 func writeDevError(w http.ResponseWriter, err error) {

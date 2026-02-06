@@ -24,7 +24,7 @@ echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" />
 Dev server
 
 ```bash
-# Render this readme as Markdown
+# Preview this Markdown README as HTML page
 qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-page-wrap.wasm
 # http://127.0.0.1:4000
 ```
