@@ -51,6 +51,10 @@ qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-p
 qip dev -i qip-logo.svg -p 4001 -- examples/svg-rasterize.wasm examples/bmp-to-ico.wasm
 ```
 
+## TODO
+
+- [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
+
 ---
 
 ## Making modules
