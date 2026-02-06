@@ -113,7 +113,7 @@ fn isDigit(c: u8) bool {
 export fn run(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
 
-    // Always emit '+' first, then append only digits.
+    // Emit '+' then append only digits.
     output_buf[0] = '+';
     var out: usize = 1;
 
@@ -127,7 +127,7 @@ export fn run(input_size_in: u32) u32 {
         out += 1;
     }
 
-    // Invalid if we found no digits.
+    // Invalid when no digits were present.
     if (out == 1) return 0;
     return @as(u32, @intCast(out));
 }
