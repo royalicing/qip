@@ -150,6 +150,67 @@ fn trimIndent(line: []const u8) []const u8 {
     return line[i..];
 }
 
+fn hasPipe(line: []const u8) bool {
+    return std.mem.indexOfScalar(u8, line, '|') != null;
+}
+
+fn countCells(line: []const u8) usize {
+    const s = trimIndent(line);
+    if (s.len == 0) return 0;
+    if (!hasPipe(s)) return 0;
+    const leading_pipe = s[0] == '|';
+    const trailing_pipe = s[s.len - 1] == '|';
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= s.len) : (i += 1) {
+        if (i == s.len or s[i] == '|') {
+            const raw = s[start..i];
+            const trimmed = std.mem.trim(u8, raw, " \t");
+            if (!(trimmed.len == 0 and ((leading_pipe and count == 0) or (i == s.len and trailing_pipe)))) {
+                count += 1;
+            }
+            start = i + 1;
+        }
+    }
+    return count;
+}
+
+fn separatorCellValid(cell: []const u8) bool {
+    if (cell.len < 3) return false;
+    var i: usize = 0;
+    if (cell[i] == ':') i += 1;
+    var dashes: usize = 0;
+    while (i < cell.len and cell[i] == '-') : (i += 1) {
+        dashes += 1;
+    }
+    if (dashes < 3) return false;
+    if (i < cell.len and cell[i] == ':') i += 1;
+    return i == cell.len;
+}
+
+fn countSeparatorCells(line: []const u8) usize {
+    const s = trimIndent(line);
+    if (!hasPipe(s)) return 0;
+    const leading_pipe = s[0] == '|';
+    const trailing_pipe = s[s.len - 1] == '|';
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= s.len) : (i += 1) {
+        if (i == s.len or s[i] == '|') {
+            const raw = s[start..i];
+            const trimmed = std.mem.trim(u8, raw, " \t");
+            if (!(trimmed.len == 0 and ((leading_pipe and count == 0) or (i == s.len and trailing_pipe)))) {
+                if (!separatorCellValid(trimmed)) return 0;
+                count += 1;
+            }
+            start = i + 1;
+        }
+    }
+    return count;
+}
+
 fn isAsciiLetter(ch: u8) bool {
     return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z');
 }
@@ -182,6 +243,32 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
 
 fn isSpaceOrTab(ch: u8) bool {
     return ch == ' ' or ch == '\t';
+}
+
+fn writeTableRow(line: []const u8, w: *Writer, cell_tag: []const u8) void {
+    const s = trimIndent(line);
+    const leading_pipe = s.len > 0 and s[0] == '|';
+    const trailing_pipe = s.len > 0 and s[s.len - 1] == '|';
+    var start: usize = 0;
+    var count: usize = 0;
+    var i: usize = 0;
+    while (i <= s.len and !w.overflow) : (i += 1) {
+        if (i == s.len or s[i] == '|') {
+            const raw = s[start..i];
+            const trimmed = std.mem.trim(u8, raw, " \t");
+            if (!(trimmed.len == 0 and ((leading_pipe and count == 0) or (i == s.len and trailing_pipe)))) {
+                w.writeByte('<');
+                w.writeSlice(cell_tag);
+                w.writeByte('>');
+                w.writeInline(trimmed);
+                w.writeSlice("</");
+                w.writeSlice(cell_tag);
+                w.writeByte('>');
+                count += 1;
+            }
+            start = i + 1;
+        }
+    }
 }
 
 fn matchesType1Start(s: []const u8) bool {
@@ -461,6 +548,54 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             in_blockquote = false;
         }
 
+        const header_cells = countCells(line);
+        if (header_cells > 0) {
+            const next_start = i;
+            var next_end = next_start;
+            var next_line: []const u8 = &[_]u8{};
+            if (next_start < body.len) {
+                while (next_end < body.len and body[next_end] != '\n') : (next_end += 1) {}
+                next_line = stripCR(body[next_start..next_end]);
+            }
+            const sep_cells = countSeparatorCells(next_line);
+            if (sep_cells == header_cells and sep_cells > 0) {
+                if (in_ul) {
+                    w.writeSlice("</ul>\n");
+                    in_ul = false;
+                }
+                if (in_ol) {
+                    w.writeSlice("</ol>\n");
+                    in_ol = false;
+                }
+                w.writeSlice("<table>\n<thead>\n<tr>");
+                writeTableRow(line, &w, "th");
+                w.writeSlice("</tr>\n</thead>\n<tbody>\n");
+
+                const row_i: usize = if (next_end < body.len) next_end + 1 else body.len;
+                i = row_i;
+                while (i < body.len and !w.overflow) {
+                    var row_end = i;
+                    while (row_end < body.len and body[row_end] != '\n') : (row_end += 1) {}
+                    const row = stripCR(body[i..row_end]);
+                    if (isBlank(row)) {
+                        i = row_end + 1;
+                        break;
+                    }
+                    if (countCells(row) == 0) {
+                        break;
+                    }
+                    w.writeSlice("<tr>");
+                    writeTableRow(row, &w, "td");
+                    w.writeSlice("</tr>\n");
+                    i = row_end + 1;
+                }
+
+                w.writeSlice("</tbody>\n</table>\n");
+                prev_blank = true;
+                continue;
+            }
+        }
+
         if (headingLevel(line)) |h| {
             if (in_ul) {
                 w.writeSlice("</ul>\n");
@@ -607,6 +742,16 @@ test "html block passthrough" {
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
         "<div>\n*hi*\n</div>\n<p>after</p>\n",
+        out[0..written],
+    );
+}
+
+test "table with inline code" {
+    var out: [4096]u8 = undefined;
+    const input = "| A | B |\n| --- | --- |\n| `x` | **y** |\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<table>\n<thead>\n<tr><th>A</th><th>B</th></tr>\n</thead>\n<tbody>\n<tr><td><code>x</code></td><td><strong>y</strong></td></tr>\n</tbody>\n</table>\n",
         out[0..written],
     );
 }

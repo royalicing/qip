@@ -35,13 +35,13 @@ module: markdown-basic.wasm
 <h1>Title</h1>
 <p>Hello <strong>World</strong></p>
 
-module: markdown-table.wasm | markdown-basic.wasm
+module: markdown-basic.wasm (table)
 <table>
 <thead>
 <tr><th>A</th><th>B</th></tr>
 </thead>
 <tbody>
-<tr><td>1</td><td>2</td></tr>
+<tr><td><code>x</code></td><td><strong>y</strong></td></tr>
 </tbody>
 </table>
 

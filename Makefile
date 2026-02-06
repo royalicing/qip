@@ -96,8 +96,8 @@ test-snapshot: qip examples
 	@printf %s "49927398716" | ./qip run examples/luhn.wasm >> test/latest.txt
 	@printf "%s\n" "module: markdown-basic.wasm" >> test/latest.txt
 	@printf "%b" "# Title\nHello **World**\n" | ./qip run examples/markdown-basic.wasm >> test/latest.txt
-	@printf "%s\n" "module: markdown-table.wasm | markdown-basic.wasm" >> test/latest.txt
-	@printf "%b" "| A | B |\n| --- | --- |\n| 1 | 2 |\n" | ./qip run examples/markdown-table.wasm examples/markdown-basic.wasm >> test/latest.txt
+	@printf "%s\n" "module: markdown-basic.wasm (table)" >> test/latest.txt
+	@printf "%b" '| A | B |\n| --- | --- |\n| `x` | **y** |\n' | ./qip run examples/markdown-basic.wasm >> test/latest.txt
 	@printf "%s\n" "module: markdown-basic.wasm | html-page-wrap.wasm" >> test/latest.txt
 	@printf "%b" "# Title\nHello **World**\n" | ./qip run examples/markdown-basic.wasm examples/html-page-wrap.wasm >> test/latest.txt
 	@printf "%s\n" "module: rgb-to-hex.wasm" >> test/latest.txt
