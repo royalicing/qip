@@ -1,7 +1,7 @@
 #include <stdint.h>
 
-#define INPUT_CAP 65536u
-#define OUTPUT_CAP 65536u
+#define INPUT_CAP (4u * 1024u * 1024u)
+#define OUTPUT_CAP (4u * 1024u * 1024u)
 
 static char input_buffer[INPUT_CAP];
 static char output_buffer[OUTPUT_CAP];

@@ -65,6 +65,14 @@ qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/bla
 ## TODO
 
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
+- [ ] Add `qip duel` for comparing runtime performance of two modules. Great for iterating, especially using coding agents.
+- [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
+
+## Documentation
+
+- [Module Memory Guide](docs/module-memory.md)
+- [Module Patterns (including error semantics)](docs/module-patterns.md)
+- [Security Model](docs/security-model.md)
 
 ---
 
@@ -173,8 +181,8 @@ Here is a compact C module that trims leading/trailing ASCII whitespace.
 ```c
 #include <stdint.h>
 
-#define INPUT_CAP 65536u
-#define OUTPUT_CAP 65536u
+#define INPUT_CAP (4u * 1024u * 1024u)
+#define OUTPUT_CAP (4u * 1024u * 1024u)
 
 static char input_buffer[INPUT_CAP];
 static char output_buffer[OUTPUT_CAP];
