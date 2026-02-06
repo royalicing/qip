@@ -2,6 +2,9 @@ module: base64-encode.wasm
 aGVsbG8=
 module: base64-encode.wasm | base64-decode.wasm
 hello
+module: bmp-to-ico.wasm | base64-encode.wasm
+AAABAAEAAQEAAAEAGAAwAAAAFgAAACgAAAABAAAAAgAAAAEAGAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAA==
+
 module: crc.wasm
 352441c2
 module: css-class-validator.wasm
