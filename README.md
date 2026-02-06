@@ -1,12 +1,12 @@
 # `qip`
 
-Pockets of safe determinism in a probabilistic, generative world.
+Pockets of safe determinism in a probabilistic generative world.
 
 Run quarantined immutable portable WebAssembly modules from the web.
 
-- **Quarantined** with sandbox isolated from the host.
+- **Quarantined sandbox** isolated from the host.
 - **Immutable** with SHA256 digest checked for integrity before execution.
-- **Portable** WebAssembly modules that run identically on every platform.
+- **Portable pipelines** WebAssembly modules that run identically on every platform.
 
 ## Install
 
@@ -17,60 +17,21 @@ brew install qip
 ## Usage
 
 ```bash
-npx http-server . -o image.html -p 9999
-http://localhost:9999/image.html
+# Render Switzerland’s flag SVG to ICO
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
 ```
 
-```bash
-echo "abc" | qip run qip.dev@<hash>
-# Returns CRC of "abc": 1200128334
-cat README.md | qip run qip.dev@<hash>
-qip down qip.dev@<hash> > crc32.wasm
-cat README.md | qip run ./crc32.wasm
-```
+Dev server
 
 ```bash
-# Dev server (re-runs modules on every request)
+# Render this readme as Markdown
 qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-page-wrap.wasm
 # http://127.0.0.1:4000
 ```
 
 ## Making modules
 
-There are a few recommended way to write a module to work with qip: raw WebAssembly, C, or Zig.
-
-### LLM generated WebAssembly
-
-You can write WebAssembly by hand, or AI coding tools work great too.
-
-The contract looks like:
-
-```wasm
-(module $YourTextModule
-;; Memory must be exported with name "memory"
-  ;; At least 3 pages needed: input at 0x10000, output at 0x20000
-  (memory (export "memory") 3)
-
-  ;; Required globals for qip integration
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
-  (global $input_utf8_cap (export "input_utf8_cap") i32 (i32.const 0x10000))
-  (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
-  (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
-
-  ;; Required export: run(input_size) -> output_size
-  ;; Input is at input_ptr, output goes to output_ptr
-  ;; Return 0 for no output, or the length of output written
-  (func (export "run") (param i32 $input_size) (result i32)
-    ;; Write "Hello, World" as i64 + i32
-    ;; "Hello, W" as i64 (little-endian: 0x57202c6f6c6c6548)
-    (i64.store (global.get $output_ptr) (i64.const 0x57202c6f6c6c6548))
-    ;; "orld" as i32 (little-endian: 0x646c726f)
-    (i32.store (i32.add (global.get $output_ptr) (i32.const 8)) (i32.const 0x646c726f))
-    ;; Return size of output: 12 UTF-8 octets
-    (i32.const 12)
-  )
-)
-```
+There are a few recommended way to write a qip module: Zig, C, or even raw WebAssembly text format.
 
 ### C
 
@@ -202,7 +163,40 @@ Compile with:
 zig build-exe hello-zig.zig -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_utf8_cap
 ```
 
-## WebAssembly module exports
+### LLM generated WebAssembly
+
+You can write WebAssembly by hand, or AI coding tools work great too.
+
+The contract looks like:
+
+```wasm
+(module $YourTextModule
+;; Memory must be exported with name "memory"
+  ;; First page empty, input at 0x10000, output at 0x20000
+  (memory (export "memory") 3)
+
+  ;; Required globals for qip integration
+  (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
+  (global $input_utf8_cap (export "input_utf8_cap") i32 (i32.const 0x10000))
+  (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
+  (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
+
+  ;; Required export: run(input_size) -> output_size
+  ;; Input is at input_ptr, output goes to output_ptr
+  ;; Return length of output written
+  (func (export "run") (param i32 $input_size) (result i32)
+    ;; Write "Hello, World" as i64 + i32
+    ;; "Hello, W" as i64 (little-endian: 0x57202c6f6c6c6548)
+    (i64.store (global.get $output_ptr) (i64.const 0x57202c6f6c6c6548))
+    ;; "orld" as i32 (little-endian: 0x646c726f)
+    (i32.store (i32.add (global.get $output_ptr) (i32.const 8)) (i32.const 0x646c726f))
+    ;; Return size of output: 12 UTF-8 octets
+    (i32.const 12)
+  )
+)
+```
+
+## WebAssembly module contract
 
 ### `input_utf8_cap` / `input_bytes_cap`
 

@@ -38,6 +38,20 @@ const (
 	dataEncodingArrayI32
 )
 
+const tileSize = 64
+
+type tileStage struct {
+	mod         api.Module
+	mem         api.Memory
+	tileFunc    api.Function
+	inputPtr    uint32
+	uniformFunc api.Function
+	haloFunc    api.Function
+	inputCap    uint64
+	haloPx      int
+	tileSpan    int
+}
+
 type contentData struct {
 	bytes    []byte
 	encoding dataEncoding
@@ -47,10 +61,13 @@ type options struct {
 	verbose bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  image Run wasm filters on an input image\n  dev   Start a dev server to re-run modules per request"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  image Run wasm filters on an input image\n  dev   Start a dev server to re-run modules per request\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
 const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] [-- <module1> <module2> ...]"
+const usageHelp = "Usage: qip help [command]"
+
+const helpRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_len), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > out.ico"
 
 func main() {
 	args := os.Args[1:]
@@ -63,7 +80,9 @@ func main() {
 		gameOver(usageMain)
 	}
 
-	if args[0] == "run" {
+	if args[0] == "help" || args[0] == "doc" {
+		helpCmd(args[1:])
+	} else if args[0] == "run" {
 		run(args[1:])
 	} else if args[0] == "image" {
 		imageCmd(args[1:])
@@ -71,6 +90,25 @@ func main() {
 		devCmd(args[1:])
 	} else {
 		gameOver(usageMain)
+	}
+}
+
+func helpCmd(args []string) {
+	if len(args) == 0 {
+		fmt.Println(usageMain)
+		fmt.Println()
+		fmt.Println(helpRun)
+		return
+	}
+	switch args[0] {
+	case "run":
+		fmt.Println(helpRun)
+	case "image":
+		fmt.Println(usageImage)
+	case "dev":
+		fmt.Println(usageDev)
+	default:
+		gameOver(usageHelp)
 	}
 }
 
@@ -207,117 +245,51 @@ func run(args []string) {
 	}
 }
 
-func imageCmd(args []string) {
-	opts := options{}
-	var inputImagePath string
-	var outputImagePath string
-	fs := flag.NewFlagSet("image", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var imageVerbose bool
-	fs.BoolVar(&imageVerbose, "v", false, "enable verbose logging")
-	fs.BoolVar(&imageVerbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&inputImagePath, "i", "", "input image path")
-	fs.StringVar(&outputImagePath, "o", "", "output image path")
-	if err := fs.Parse(args); err != nil {
-		gameOver("%s %v", usageImage, err)
+func loadTileStage(ctx context.Context, mod api.Module) (tileStage, error) {
+	tileFunc := mod.ExportedFunction("tile_rgba_f32_64x64")
+	if tileFunc == nil {
+		return tileStage{}, errors.New("Wasm module must export tile_rgba_f32_64x64")
 	}
-	opts.verbose = opts.verbose || imageVerbose
-	modules := fs.Args()
-	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
-		gameOver(usageImage)
-	}
-
-	moduleBodies := make([][]byte, len(modules))
-	for i, modulePath := range modules {
-		body, err := readModulePath(modulePath, opts)
-		if err != nil {
-			gameOver("%v", err)
-		}
-		moduleBodies[i] = body
-	}
-
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	defer cancel()
-
-	inputImageBytes, err := os.ReadFile(inputImagePath)
-	if err != nil {
-		gameOver("Error reading image file: %v", err)
-	}
-	decodeImage := func(r io.Reader) (image.Image, error) {
-		img, _, err := image.Decode(r)
-		return img, err
-	}
-	if len(inputImageBytes) >= 8 && bytes.Equal(inputImageBytes[:8], []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}) {
-		decodeImage = png.Decode
-	}
-	inputImage, err := decodeImage(bytes.NewReader(inputImageBytes))
-	if err != nil {
-		gameOver("Error decoding image file: %v", err)
-	}
-	inputRGBA, ok := inputImage.(*image.RGBA)
+	uniformFunc := mod.ExportedFunction("uniform_set_width_and_height")
+	haloFunc := mod.ExportedFunction("calculate_halo_px")
+	mem := mod.Memory()
+	inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
 	if !ok {
-		bounds := inputImage.Bounds()
-		inputRGBA = image.NewRGBA(bounds)
-		draw.Draw(inputRGBA, bounds, inputImage, bounds.Min, draw.Src)
+		return tileStage{}, errors.New("Wasm module must export input_ptr as global or function")
 	}
+	inputCap, ok := getExportedValue(ctx, mod, "input_bytes_cap")
+	if !ok {
+		return tileStage{}, errors.New("Wasm module must export input_bytes_cap as global or function")
+	}
+	return tileStage{
+		mod:         mod,
+		mem:         mem,
+		tileFunc:    tileFunc,
+		inputPtr:    uint32(inputPtrValue),
+		uniformFunc: uniformFunc,
+		haloFunc:    haloFunc,
+		inputCap:    inputCap,
+	}, nil
+}
+
+func closeTileStages(ctx context.Context, stages []tileStage) {
+	for _, stage := range stages {
+		if stage.mod != nil {
+			_ = stage.mod.Close(ctx)
+		}
+	}
+}
+
+func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGBA) (*image.RGBA, []time.Duration, error) {
+	if len(stages) == 0 {
+		return inputRGBA, []time.Duration{}, nil
+	}
+
 	bounds := inputRGBA.Bounds()
-	outputRGBA := image.NewRGBA(bounds)
-
-	start := time.Now()
-	defer func() {
-		if opts.verbose {
-			vlogf(opts, "command took %dms", time.Since(start).Milliseconds())
-		}
-	}()
-
-	r := wazero.NewRuntime(ctx)
-	defer r.Close(ctx)
-
-	const tileSize = 64
-	type tileStage struct {
-		mem         api.Memory
-		tileFunc    api.Function
-		inputPtr    uint32
-		uniformFunc api.Function
-		haloFunc    api.Function
-		inputCap    uint64
-		haloPx      int
-		tileSpan    int
-	}
-	stages := make([]tileStage, len(moduleBodies))
-	for i, body := range moduleBodies {
-		mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
-		if err != nil {
-			gameOver("Wasm module could not be compiled")
-		}
-		tileFunc := mod.ExportedFunction("tile_rgba_f32_64x64")
-		if tileFunc == nil {
-			gameOver("Wasm module must export tile_rgba_f32_64x64")
-		}
-		uniformFunc := mod.ExportedFunction("uniform_set_width_and_height")
-		haloFunc := mod.ExportedFunction("calculate_halo_px")
-		mem := mod.Memory()
-		inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
-		if !ok {
-			gameOver("Wasm module must export input_ptr as global or function")
-		}
-		inputPtr := uint32(inputPtrValue)
-		inputCap, ok := getExportedValue(ctx, mod, "input_bytes_cap")
-		if !ok {
-			gameOver("Wasm module must export input_bytes_cap as global or function")
-		}
-		stages[i] = tileStage{
-			mem:         mem,
-			tileFunc:    tileFunc,
-			inputPtr:    inputPtr,
-			uniformFunc: uniformFunc,
-			haloFunc:    haloFunc,
-			inputCap:    inputCap,
-		}
-	}
 	width := bounds.Dx()
 	height := bounds.Dy()
+	outputRGBA := image.NewRGBA(bounds)
+
 	for i := range stages {
 		stage := &stages[i]
 		if stage.uniformFunc != nil {
@@ -326,13 +298,13 @@ func imageCmd(args []string) {
 				api.EncodeF32(float32(width)),
 				api.EncodeF32(float32(height)),
 			); err != nil {
-				gameOver("Error running uniform_set_width_and_height: %v", err)
+				return nil, nil, fmt.Errorf("Error running uniform_set_width_and_height: %v", err)
 			}
 		}
 		if stage.haloFunc != nil {
 			values, err := stage.haloFunc.Call(ctx)
 			if err != nil {
-				gameOver("Error running calculate_halo_px: %v", err)
+				return nil, nil, fmt.Errorf("Error running calculate_halo_px: %v", err)
 			}
 			if len(values) > 0 {
 				stage.haloPx = int(int32(values[0]))
@@ -344,7 +316,7 @@ func imageCmd(args []string) {
 		stage.tileSpan = tileSize + stage.haloPx*2
 		tileF32Size := uint64(stage.tileSpan) * uint64(stage.tileSpan) * 4 * 4
 		if tileF32Size > stage.inputCap {
-			gameOver("Tile buffer exceeds module input_bytes_cap")
+			return nil, nil, errors.New("Tile buffer exceeds module input_bytes_cap")
 		}
 	}
 
@@ -356,6 +328,8 @@ func imageCmd(args []string) {
 			break
 		}
 	}
+
+	stageDurations := make([]time.Duration, len(stages))
 
 	if useHalo {
 		floatSrc := make([]float32, width*height*4)
@@ -376,6 +350,7 @@ func imageCmd(args []string) {
 		}
 
 		for stageIndex := range stages {
+			stageStart := time.Now()
 			stage := &stages[stageIndex]
 			halo := stage.haloPx
 			tileSpan := stage.tileSpan
@@ -419,7 +394,7 @@ func imageCmd(args []string) {
 					}
 
 					if !stage.mem.Write(stage.inputPtr, tileBytes) {
-						gameOver("Could not write tile to wasm memory")
+						return nil, nil, errors.New("Could not write tile to wasm memory")
 					}
 					tileX := x - halo
 					tileY := y - halo
@@ -428,11 +403,11 @@ func imageCmd(args []string) {
 						api.EncodeF32(float32(tileX)),
 						api.EncodeF32(float32(tileY)),
 					); err != nil {
-						gameOver("Error running tile_rgba_f32_64x64: %v", err)
+						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %v", err)
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
-						gameOver("Could not read tile from wasm memory")
+						return nil, nil, errors.New("Could not read tile from wasm memory")
 					}
 					copy(tileBytes, tileOutBytes)
 
@@ -453,6 +428,7 @@ func imageCmd(args []string) {
 			}
 
 			floatSrc, floatDst = floatDst, floatSrc
+			stageDurations[stageIndex] = time.Since(stageStart)
 		}
 
 		outPix := outputRGBA.Pix
@@ -531,20 +507,21 @@ func imageCmd(args []string) {
 						tileF32[d+3] = float32(pix[s+3]) * inv255
 					}
 				}
-				for _, stage := range stages {
+				for stageIndex := range stages {
+					stage := &stages[stageIndex]
 					if !stage.mem.Write(stage.inputPtr, tileBytes) {
-						gameOver("Could not write tile to wasm memory")
+						return nil, nil, errors.New("Could not write tile to wasm memory")
 					}
 					if _, err := stage.tileFunc.Call(
 						ctx,
 						api.EncodeF32(float32(x)),
 						api.EncodeF32(float32(y)),
 					); err != nil {
-						gameOver("Error running tile_rgba_f32_64x64: %v", err)
+						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %v", err)
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
-						gameOver("Could not read tile from wasm memory")
+						return nil, nil, errors.New("Could not read tile from wasm memory")
 					}
 					copy(tileBytes, tileOutBytes)
 				}
@@ -592,6 +569,245 @@ func imageCmd(args []string) {
 			}
 		}
 	}
+
+	return outputRGBA, stageDurations, nil
+}
+
+func runTileStagesCompiled(ctx context.Context, runtime wazero.Runtime, compiled []wazero.CompiledModule, inputRGBA *image.RGBA, moduleNamePrefix string, stageOffset int) (*image.RGBA, []time.Duration, []time.Duration, error) {
+	stages := make([]tileStage, len(compiled))
+	instDurations := make([]time.Duration, len(compiled))
+
+	for i, cm := range compiled {
+		instStart := time.Now()
+		mod, err := runtime.InstantiateModule(ctx, cm, wazero.NewModuleConfig().WithName(fmt.Sprintf("%s-%d", moduleNamePrefix, stageOffset+i)))
+		instDurations[i] = time.Since(instStart)
+		if err != nil {
+			closeTileStages(ctx, stages)
+			return nil, instDurations, nil, errors.New("Wasm module could not be instantiated")
+		}
+		stage, err := loadTileStage(ctx, mod)
+		if err != nil {
+			closeTileStages(ctx, stages)
+			return nil, instDurations, nil, err
+		}
+		stages[i] = stage
+	}
+	defer closeTileStages(ctx, stages)
+
+	outputRGBA, stageDurations, err := runTileStages(ctx, stages, inputRGBA)
+	if err != nil {
+		return nil, instDurations, stageDurations, err
+	}
+	return outputRGBA, instDurations, stageDurations, nil
+}
+
+func decodeBMP(input []byte) (*image.RGBA, error) {
+	if len(input) < 54 {
+		return nil, errors.New("BMP input too small")
+	}
+	if input[0] != 'B' || input[1] != 'M' {
+		return nil, errors.New("Input is not a BMP file")
+	}
+
+	dataOffset := int(binary.LittleEndian.Uint32(input[10:14]))
+	dibSize := int(binary.LittleEndian.Uint32(input[14:18]))
+	if dibSize < 40 {
+		return nil, errors.New("Unsupported BMP DIB header")
+	}
+	width := int32(binary.LittleEndian.Uint32(input[18:22]))
+	height := int32(binary.LittleEndian.Uint32(input[22:26]))
+	planes := binary.LittleEndian.Uint16(input[26:28])
+	bpp := binary.LittleEndian.Uint16(input[28:30])
+	compression := binary.LittleEndian.Uint32(input[30:34])
+
+	if width <= 0 || height == 0 {
+		return nil, errors.New("Unsupported BMP dimensions")
+	}
+	if planes != 1 {
+		return nil, errors.New("Unsupported BMP planes")
+	}
+	if compression != 0 {
+		return nil, errors.New("Unsupported BMP compression")
+	}
+	if bpp != 24 && bpp != 32 {
+		return nil, errors.New("Unsupported BMP bit depth")
+	}
+
+	topDown := false
+	absHeight := int(height)
+	if height < 0 {
+		topDown = true
+		absHeight = -absHeight
+	}
+	absWidth := int(width)
+	if absWidth <= 0 || absHeight <= 0 {
+		return nil, errors.New("Unsupported BMP dimensions")
+	}
+
+	bytesPerPixel := int(bpp / 8)
+	rowStride := absWidth * bytesPerPixel
+	if bpp == 24 {
+		if rem := rowStride % 4; rem != 0 {
+			rowStride += 4 - rem
+		}
+	}
+
+	if dataOffset < 0 || dataOffset > len(input) {
+		return nil, errors.New("Invalid BMP data offset")
+	}
+	if dataOffset+rowStride*absHeight > len(input) {
+		return nil, errors.New("BMP pixel data out of range")
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, absWidth, absHeight))
+	for y := 0; y < absHeight; y++ {
+		srcY := y
+		if !topDown {
+			srcY = absHeight - 1 - y
+		}
+		srcRow := dataOffset + srcY*rowStride
+		for x := 0; x < absWidth; x++ {
+			s := srcRow + x*bytesPerPixel
+			b := input[s]
+			g := input[s+1]
+			r := input[s+2]
+			a := byte(0xFF)
+			if bytesPerPixel == 4 {
+				a = input[s+3]
+			}
+			d := img.PixOffset(x, y)
+			img.Pix[d] = r
+			img.Pix[d+1] = g
+			img.Pix[d+2] = b
+			img.Pix[d+3] = a
+		}
+	}
+
+	return img, nil
+}
+
+func encodeBMP(img *image.RGBA) ([]byte, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return nil, errors.New("Invalid BMP image size")
+	}
+
+	rowStride := width * 4
+	dataSize := rowStride * height
+	fileSize := 14 + 40 + dataSize
+	buf := make([]byte, fileSize)
+	buf[0] = 'B'
+	buf[1] = 'M'
+	binary.LittleEndian.PutUint32(buf[2:], uint32(fileSize))
+	binary.LittleEndian.PutUint32(buf[10:], 54)
+	binary.LittleEndian.PutUint32(buf[14:], 40)
+	binary.LittleEndian.PutUint32(buf[18:], uint32(width))
+	binary.LittleEndian.PutUint32(buf[22:], uint32(height))
+	binary.LittleEndian.PutUint16(buf[26:], 1)
+	binary.LittleEndian.PutUint16(buf[28:], 32)
+	binary.LittleEndian.PutUint32(buf[30:], 0)
+	binary.LittleEndian.PutUint32(buf[34:], uint32(dataSize))
+
+	for y := 0; y < height; y++ {
+		srcY := height - 1 - y
+		for x := 0; x < width; x++ {
+			s := img.PixOffset(bounds.Min.X+x, bounds.Min.Y+srcY)
+			d := 54 + y*rowStride + x*4
+			buf[d] = img.Pix[s+2]
+			buf[d+1] = img.Pix[s+1]
+			buf[d+2] = img.Pix[s]
+			buf[d+3] = img.Pix[s+3]
+		}
+	}
+
+	return buf, nil
+}
+
+func imageCmd(args []string) {
+	opts := options{}
+	var inputImagePath string
+	var outputImagePath string
+	fs := flag.NewFlagSet("image", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var imageVerbose bool
+	fs.BoolVar(&imageVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&imageVerbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&inputImagePath, "i", "", "input image path")
+	fs.StringVar(&outputImagePath, "o", "", "output image path")
+	if err := fs.Parse(args); err != nil {
+		gameOver("%s %v", usageImage, err)
+	}
+	opts.verbose = opts.verbose || imageVerbose
+	modules := fs.Args()
+	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
+		gameOver(usageImage)
+	}
+
+	moduleBodies := make([][]byte, len(modules))
+	for i, modulePath := range modules {
+		body, err := readModulePath(modulePath, opts)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		moduleBodies[i] = body
+	}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	inputImageBytes, err := os.ReadFile(inputImagePath)
+	if err != nil {
+		gameOver("Error reading image file: %v", err)
+	}
+	decodeImage := func(r io.Reader) (image.Image, error) {
+		img, _, err := image.Decode(r)
+		return img, err
+	}
+	if len(inputImageBytes) >= 8 && bytes.Equal(inputImageBytes[:8], []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}) {
+		decodeImage = png.Decode
+	}
+	inputImage, err := decodeImage(bytes.NewReader(inputImageBytes))
+	if err != nil {
+		gameOver("Error decoding image file: %v", err)
+	}
+	inputRGBA, ok := inputImage.(*image.RGBA)
+	if !ok {
+		bounds := inputImage.Bounds()
+		inputRGBA = image.NewRGBA(bounds)
+		draw.Draw(inputRGBA, bounds, inputImage, bounds.Min, draw.Src)
+	}
+
+	start := time.Now()
+	defer func() {
+		if opts.verbose {
+			vlogf(opts, "command took %dms", time.Since(start).Milliseconds())
+		}
+	}()
+
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+
+	stages := make([]tileStage, len(moduleBodies))
+	for i, body := range moduleBodies {
+		mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
+		if err != nil {
+			gameOver("Wasm module could not be compiled")
+		}
+		stage, err := loadTileStage(ctx, mod)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		stages[i] = stage
+	}
+	defer closeTileStages(ctx, stages)
+	outputRGBA, _, err := runTileStages(ctx, stages, inputRGBA)
+	if err != nil {
+		gameOver("%v", err)
+	}
+
 	outFile, err := os.Create(outputImagePath)
 	if err != nil {
 		gameOver("Error creating output image file: %v", err)
@@ -877,9 +1093,21 @@ type chainResult struct {
 	metrics chainMetrics
 }
 
+type stageKind uint8
+
+const (
+	stageKindRun stageKind = iota
+	stageKindTile
+)
+
+type moduleStage struct {
+	compiled wazero.CompiledModule
+	kind     stageKind
+}
+
 type moduleChain struct {
 	runtime          wazero.Runtime
-	compiled         []wazero.CompiledModule
+	stages           []moduleStage
 	opts             options
 	compileDurations []time.Duration
 }
@@ -890,7 +1118,7 @@ func buildModuleChain(ctx context.Context, modules []string, opts options) (*mod
 	}
 
 	runtime := wazero.NewRuntime(ctx)
-	compiled := make([]wazero.CompiledModule, len(modules))
+	stages := make([]moduleStage, len(modules))
 	compileDurations := make([]time.Duration, len(modules))
 
 	for i, modulePath := range modules {
@@ -906,23 +1134,46 @@ func buildModuleChain(ctx context.Context, modules []string, opts options) (*mod
 			_ = runtime.Close(ctx)
 			return nil, errors.New("Wasm module could not be compiled")
 		}
-		compiled[i] = cm
+		kind := stageKindRun
+		if _, ok := cm.ExportedFunctions()["tile_rgba_f32_64x64"]; ok {
+			kind = stageKindTile
+		}
+		stages[i] = moduleStage{
+			compiled: cm,
+			kind:     kind,
+		}
 		if opts.verbose {
 			vlogf(opts, "compiled module[%d] in %dms", i, compileDurations[i].Milliseconds())
 		}
 	}
 
+	seenTile := false
+	seenRunAfterTile := false
+	for i, stage := range stages {
+		if stage.kind == stageKindTile {
+			if seenRunAfterTile {
+				_ = runtime.Close(ctx)
+				return nil, fmt.Errorf("Image stages must be contiguous to compose (module %d)", i)
+			}
+			seenTile = true
+			continue
+		}
+		if seenTile {
+			seenRunAfterTile = true
+		}
+	}
+
 	return &moduleChain{
 		runtime:          runtime,
-		compiled:         compiled,
+		stages:           stages,
 		opts:             opts,
 		compileDurations: compileDurations,
 	}, nil
 }
 
 func (chain *moduleChain) Close(ctx context.Context) {
-	for _, cm := range chain.compiled {
-		_ = cm.Close(ctx)
+	for _, stage := range chain.stages {
+		_ = stage.compiled.Close(ctx)
 	}
 	if chain.runtime != nil {
 		_ = chain.runtime.Close(ctx)
@@ -930,7 +1181,7 @@ func (chain *moduleChain) Close(ctx context.Context) {
 }
 
 func (chain *moduleChain) run(ctx context.Context, input []byte, requestID uint64) (chainResult, error) {
-	if len(chain.compiled) == 0 {
+	if len(chain.stages) == 0 {
 		return chainResult{
 			output: contentData{bytes: input, encoding: dataEncodingRaw},
 			metrics: chainMetrics{
@@ -940,17 +1191,82 @@ func (chain *moduleChain) run(ctx context.Context, input []byte, requestID uint6
 		}, nil
 	}
 
-	moduleDurations := make([]time.Duration, len(chain.compiled))
-	instantiationDurations := make([]time.Duration, len(chain.compiled))
+	moduleDurations := make([]time.Duration, len(chain.stages))
+	instantiationDurations := make([]time.Duration, len(chain.stages))
 	var output contentData
 	cur := input
 
-	for i, cm := range chain.compiled {
-		moduleName := fmt.Sprintf("req-%d-%d", requestID, i)
-		runStart := time.Now()
-		nextOutput, instDur, err := runModuleWithInput(ctx, chain.runtime, cm, cur, chain.opts, moduleName)
-		moduleDurations[i] = time.Since(runStart)
-		instantiationDurations[i] = instDur
+	tileStart := -1
+	tileEnd := -1
+	for i, stage := range chain.stages {
+		if stage.kind == stageKindTile {
+			if tileStart == -1 {
+				tileStart = i
+			}
+			tileEnd = i
+		}
+	}
+
+	runRunStages := func(start, end int, inputBytes []byte) (contentData, []byte, error) {
+		curBytes := inputBytes
+		var localOutput contentData
+		for i := start; i < end; i++ {
+			stage := chain.stages[i]
+			moduleName := fmt.Sprintf("req-%d-%d", requestID, i)
+			runStart := time.Now()
+			nextOutput, instDur, err := runModuleWithInput(ctx, chain.runtime, stage.compiled, curBytes, chain.opts, moduleName)
+			moduleDurations[i] = time.Since(runStart)
+			instantiationDurations[i] = instDur
+			if err != nil {
+				return localOutput, curBytes, err
+			}
+			localOutput = nextOutput
+			curBytes = nextOutput.bytes
+		}
+		return localOutput, curBytes, nil
+	}
+
+	if tileStart == -1 {
+		out, curBytes, err := runRunStages(0, len(chain.stages), cur)
+		if err != nil {
+			return chainResult{
+				output: out,
+				metrics: chainMetrics{
+					moduleDurations:        moduleDurations,
+					instantiationDurations: instantiationDurations,
+				},
+			}, err
+		}
+		output = out
+		cur = curBytes
+	} else {
+		if tileStart > 0 {
+			out, curBytes, err := runRunStages(0, tileStart, cur)
+			if err != nil {
+				return chainResult{
+					output: out,
+					metrics: chainMetrics{
+						moduleDurations:        moduleDurations,
+						instantiationDurations: instantiationDurations,
+					},
+				}, err
+			}
+			output = out
+			cur = curBytes
+			if output.encoding != dataEncodingRaw {
+				return chainResult{
+					output: output,
+					metrics: chainMetrics{
+						moduleDurations:        moduleDurations,
+						instantiationDurations: instantiationDurations,
+					},
+				}, errors.New("Image stage requires raw BMP bytes as input")
+			}
+		} else {
+			output = contentData{bytes: cur, encoding: dataEncodingRaw}
+		}
+
+		inputRGBA, err := decodeBMP(cur)
 		if err != nil {
 			return chainResult{
 				output: output,
@@ -960,8 +1276,54 @@ func (chain *moduleChain) run(ctx context.Context, input []byte, requestID uint6
 				},
 			}, err
 		}
-		output = nextOutput
-		cur = output.bytes
+		tileCompiled := make([]wazero.CompiledModule, tileEnd-tileStart+1)
+		for i := tileStart; i <= tileEnd; i++ {
+			tileCompiled[i-tileStart] = chain.stages[i].compiled
+		}
+		moduleNamePrefix := fmt.Sprintf("req-%d", requestID)
+		tileOutput, instDurs, stageDurs, err := runTileStagesCompiled(ctx, chain.runtime, tileCompiled, inputRGBA, moduleNamePrefix, tileStart)
+		for i := range instDurs {
+			instantiationDurations[tileStart+i] = instDurs[i]
+		}
+		for i := range stageDurs {
+			moduleDurations[tileStart+i] = stageDurs[i]
+		}
+		if err != nil {
+			return chainResult{
+				output: output,
+				metrics: chainMetrics{
+					moduleDurations:        moduleDurations,
+					instantiationDurations: instantiationDurations,
+				},
+			}, err
+		}
+		bmpBytes, err := encodeBMP(tileOutput)
+		if err != nil {
+			return chainResult{
+				output: output,
+				metrics: chainMetrics{
+					moduleDurations:        moduleDurations,
+					instantiationDurations: instantiationDurations,
+				},
+			}, err
+		}
+		output = contentData{bytes: bmpBytes, encoding: dataEncodingRaw}
+		cur = bmpBytes
+
+		if tileEnd+1 < len(chain.stages) {
+			out, curBytes, err := runRunStages(tileEnd+1, len(chain.stages), cur)
+			if err != nil {
+				return chainResult{
+					output: out,
+					metrics: chainMetrics{
+						moduleDurations:        moduleDurations,
+						instantiationDurations: instantiationDurations,
+					},
+				}, err
+			}
+			output = out
+			cur = curBytes
+		}
 	}
 
 	return chainResult{
