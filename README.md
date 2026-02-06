@@ -2,6 +2,8 @@
 
 Pockets of safe determinism in a probabilistic generative world.
 
+![qip logo](qip-logo.svg)
+
 Run quarantined immutable portable WebAssembly modules from the web.
 
 - **Quarantined sandbox** isolated from the host.
@@ -17,8 +19,11 @@ brew install qip
 ## Usage
 
 ```bash
-# Render Switzerland’s flag SVG to ICO
-echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
+# Render qip-logo.svg to .ico
+./qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > qip-logo.ico
+
+# Render Switzerland flag svg to .ico
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
 ```
 
 Dev server
@@ -26,7 +31,9 @@ Dev server
 ```bash
 # Preview this Markdown README as HTML page
 qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-page-wrap.wasm
-# http://127.0.0.1:4000
+
+# Preview rendering qip-logo.svg to .ico in browser
+qip dev -i qip-logo.svg -p 4001 -- examples/svg-rasterize.wasm examples/bmp-to-ico.wasm
 ```
 
 ## Making modules
