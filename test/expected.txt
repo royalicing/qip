@@ -59,8 +59,8 @@ module: tld-validator.wasm
 
 module: trim.wasm
 hi
-module: utf8-validate.wasm
-Ran: 1
+module: utf8-must-be-valid.wasm
+hello
 module: wasm-to-js.wasm
 export async function run(input) {
   const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMDAgAABQMBAAMGHQR/AEGAgAQLfwBBgIAEC38AQYCACAt/AEGAgAQLB0wGBm1lbW9yeQIACWlucHV0X3B0cgMADmlucHV0X3V0ZjhfY2FwAwEKb3V0cHV0X3B0cgMCD291dHB1dF91dGY4X2NhcAMDA3J1bgABCroBAhkAIABBIEYgAEEJRiAAQQpGIABBDUZycnILnQEBBH9BASEDIABBAEsEQAJAA0AgASAATw0BIwAgAWotAAAhBCAEEABFBEBBACEDDAILIAFBAWohAQwACwsLIwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiADRQRAQQAhAUEHIQICQANAIAEgAE8NASMCIAJqIwAgAWotAAA6AAAgAUEBaiEBIAJBAWohAgwACwsLIAIL'), c => c.charCodeAt(0));

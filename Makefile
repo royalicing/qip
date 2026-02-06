@@ -112,8 +112,8 @@ test-snapshot: qip examples
 	@printf %s "com" | ./qip run examples/tld-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: trim.wasm" >> test/latest.txt
 	@printf %s "  hi  " | ./qip run examples/trim.wasm >> test/latest.txt
-	@printf "%s\n" "module: utf8-validate.wasm" >> test/latest.txt
-	@printf %s "hello" | ./qip run examples/utf8-validate.wasm >> test/latest.txt
+	@printf "%s\n" "module: utf8-must-be-valid.wasm" >> test/latest.txt
+	@printf %s "hello" | ./qip run examples/utf8-must-be-valid.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
 
