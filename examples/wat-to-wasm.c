@@ -561,28 +561,23 @@ uint32_t run(uint32_t input_size) {
         while (i >= 0) {
             uint8_t op = (uint8_t)code_encoder.output[i];
             
-            // f32-producing operations
-            if (op == 0x43 || // f32.const
-                (op >= 0x5B && op <= 0x60) || // f32 comparisons (produce i32 but use f32)
-                (op >= 0x8B && op <= 0x98) || // f32 arithmetic/math
-                (op >= 0xB2 && op <= 0xB3) || // f32.convert_i32_s/u
-                op == 0xBE) { // f32.reinterpret_i32
-                // For comparison ops (0x5B-0x60), they produce i32, not f32
-                if (op >= 0x5B && op <= 0x60) {
-                    uses_f32 = 0;
-                } else {
-                    uses_f32 = 1;
-                }
+            // i32-producing operations (check these first)
+            if (op == 0x41 || // i32.const
+                (op >= 0x45 && op <= 0x4F) || // i32 comparisons
+                (op >= 0x5B && op <= 0x60) || // f32 comparisons (produce i32)
+                (op >= 0x67 && op <= 0x78) || // i32 arithmetic
+                op == 0xA8 || op == 0xA9 || // i32.trunc_f32_s/u
+                op == 0xBC) { // i32.reinterpret_f32
+                uses_f32 = 0;
                 break;
             }
             
-            // i32-producing operations
-            if (op == 0x41 || // i32.const
-                (op >= 0x45 && op <= 0x4F) || // i32 comparisons
-                (op >= 0x67 && op <= 0x78) || // i32 arithmetic
-                (op >= 0xA8 && op <= 0xA9) || // i32.trunc_f32_s/u
-                op == 0xBC) { // i32.reinterpret_f32
-                uses_f32 = 0;
+            // f32-producing operations
+            if (op == 0x43 || // f32.const
+                (op >= 0x8B && op <= 0x98) || // f32 arithmetic/math
+                op == 0xB2 || op == 0xB3 || // f32.convert_i32_s/u
+                op == 0xBE) { // f32.reinterpret_i32
+                uses_f32 = 1;
                 break;
             }
             
