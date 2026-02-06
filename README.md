@@ -7,7 +7,7 @@ Pipelines of safe determinism in a probabilistic generative world.
 `qip` lets you compose small modules for text and images. Modules do one thing well and can be piped together to make powerful replayable tools.
 
 - **Quarantined**: modules run in a secure sandbox, with explicit input and output.
-- **Immutable**: modules are self-contained and usually don’t require updates.
+- **Immutable**: modules are self-contained and most can avoid constant dependency updates.
 - **Portable**: WebAssembly pipelines run identically across platforms.
 
 These attribute make agentic coding ideal for creating modules. And you can use C or Zig to get near-native performance.
