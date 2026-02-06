@@ -1,24 +1,36 @@
 # `qip`
 
-Pockets of safe determinism in a probabilistic generative world.
+Pipelines of safe determinism in a probabilistic generative world.
 
 ![qip logo](qip-logo.svg)
 
-Run quarantined immutable portable WebAssembly modules from the web.
+`qip` lets you compose small modules for text and images. Modules do one thing well and can be piped together to make powerful replayable tools.
 
-- **Quarantined sandbox** isolated from the host.
-- **Immutable** with SHA256 digest checked for integrity before execution.
-- **Portable pipelines** WebAssembly modules that run identically on every platform.
+- **Quick**: each module does one thing well, and you can quickly make new ones.
+- **Isolated**: modules run in a secure sandbox.
+- **Portable**: WebAssembly pipelines run identically across platforms.
 
 ## Install
 
 ```
-brew install qip
+brew install RoyalIcing/tap/qip
 ```
 
 ## Usage
 
 ```bash
+# Validate/normalize a fictional movie/TV-style 555 number
+echo "+1 (212) 555-0100" | ./qip run examples/e164.wasm
+# +12125550100
+
+# Convert WebAssembly purple from RGB to hex
+echo "101,79,240" | ./qip run examples/rgb-to-hex.wasm
+# #654ff0
+
+# Expand emoji shortcodes
+echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | ./qip run examples/shortcode-to-emoji.wasm
+# Run 🚀 WebAssembly pipelines identically on any computer ✨
+
 # Render qip-logo.svg to .ico
 ./qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > qip-logo.ico
 
@@ -35,6 +47,8 @@ qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-p
 # Preview rendering qip-logo.svg to .ico in browser
 qip dev -i qip-logo.svg -p 4001 -- examples/svg-rasterize.wasm examples/bmp-to-ico.wasm
 ```
+
+---
 
 ## Making modules
 
