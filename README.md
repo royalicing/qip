@@ -81,7 +81,7 @@ Goal: turn noisy phone input into `+` followed by digits.
 - `+1 (212) 555-0100` -> `+12125550100`
 - `  1212-555-0100  ` -> `+12125550100`
 
-#### 1. Create `e164-canonicalize.zig`
+#### 1. Create `e164.zig`
 
 ```zig
 const INPUT_CAP: usize = 64 * 1024;
@@ -136,7 +136,7 @@ export fn run(input_size_in: u32) u32 {
 #### 2. Compile it to WebAssembly
 
 ```bash
-zig build-exe e164-canonicalize.zig \
+zig build-exe e164.zig \
   -target wasm32-freestanding \
   -O ReleaseSmall \
   -fno-entry \
@@ -145,16 +145,16 @@ zig build-exe e164-canonicalize.zig \
   --export=input_utf8_cap \
   --export=output_ptr \
   --export=output_utf8_cap \
-  -femit-bin=e164-canonicalize.wasm
+  -femit-bin=e164.wasm
 ```
 
 #### 3. Run it with `qip`
 
 ```bash
-echo "+1 (212) 555-0100" | qip run e164-canonicalize.wasm
+echo "+1 (212) 555-0100" | qip run e164.wasm
 # +12125550100
 
-echo "  1212-555-0100  " | qip run e164-canonicalize.wasm
+echo "  1212-555-0100  " | qip run e164.wasm
 # +12125550100
 ```
 
@@ -168,7 +168,7 @@ echo "  1212-555-0100  " | qip run e164-canonicalize.wasm
 
 Here is a compact C module that trims leading/trailing ASCII whitespace.
 
-#### 1. Create `trim-whitespace.c`
+#### 1. Create `trim.c`
 
 ```c
 #include <stdint.h>
@@ -235,7 +235,7 @@ uint32_t run(uint32_t input_size) {
 #### 2. Compile it to WebAssembly
 
 ```bash
-zig cc trim-whitespace.c \
+zig cc trim.c \
   -target wasm32-freestanding \
   -nostdlib \
   -Wl,--no-entry \
@@ -246,16 +246,16 @@ zig cc trim-whitespace.c \
   -Wl,--export=output_ptr \
   -Wl,--export=output_utf8_cap \
   -Oz \
-  -o trim-whitespace.wasm
+  -o trim.wasm
 ```
 
 #### 3. Run it with `qip`
 
 ```bash
-echo "   hello world   " | qip run trim-whitespace.wasm
+echo "   hello world   " | qip run trim.wasm
 # hello world
 
-printf "\t  line one  \n" | qip run trim-whitespace.wasm
+printf "\t  line one  \n" | qip run trim.wasm
 # line one
 ```
 
