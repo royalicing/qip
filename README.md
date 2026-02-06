@@ -68,23 +68,117 @@ qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/bla
 
 ---
 
-## Making modules
+## Guide to making modules
 
-There are a few recommended way to write a qip module: Zig, C, or even raw WebAssembly text format.
+There are a few recommended ways to write a qip module: Zig, C, or even raw WebAssembly text format.
+
+### Zig
+
+Here is a concrete, useful module you can build in a few minutes: an E.164 canonicalizer.
+
+Goal: turn noisy phone input into `+` followed by digits.
+
+- `+1 (212) 555-0100` -> `+12125550100`
+- `  1212-555-0100  ` -> `+12125550100`
+
+#### 1. Create `e164-canonicalize.zig`
+
+```zig
+const INPUT_CAP: usize = 64 * 1024;
+const OUTPUT_CAP: usize = 64 * 1024;
+
+var input_buf: [INPUT_CAP]u8 = undefined;
+var output_buf: [OUTPUT_CAP]u8 = undefined;
+
+export fn input_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&input_buf)));
+}
+
+export fn input_utf8_cap() u32 {
+    return @as(u32, @intCast(INPUT_CAP));
+}
+
+export fn output_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&output_buf)));
+}
+
+export fn output_utf8_cap() u32 {
+    return @as(u32, @intCast(OUTPUT_CAP));
+}
+
+fn isDigit(c: u8) bool {
+    return c >= '0' and c <= '9';
+}
+
+export fn run(input_size_in: u32) u32 {
+    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+
+    // Always emit '+' first, then append only digits.
+    output_buf[0] = '+';
+    var out: usize = 1;
+
+    var i: usize = 0;
+    while (i < input_size) : (i += 1) {
+        const c = input_buf[i];
+        if (!isDigit(c)) continue;
+
+        if (out >= OUTPUT_CAP) return 0;
+        output_buf[out] = c;
+        out += 1;
+    }
+
+    // Invalid if we found no digits.
+    if (out == 1) return 0;
+    return @as(u32, @intCast(out));
+}
+```
+
+#### 2. Compile it to WebAssembly
+
+```bash
+zig build-exe e164-canonicalize.zig \
+  -target wasm32-freestanding \
+  -O ReleaseSmall \
+  -fno-entry \
+  --export=run \
+  --export=input_ptr \
+  --export=input_utf8_cap \
+  --export=output_ptr \
+  --export=output_utf8_cap \
+  -femit-bin=e164-canonicalize.wasm
+```
+
+#### 3. Run it with `qip`
+
+```bash
+echo "+1 (212) 555-0100" | qip run e164-canonicalize.wasm
+# +12125550100
+
+echo "  1212-555-0100  " | qip run e164-canonicalize.wasm
+# +12125550100
+```
+
+#### 4. Understand the contract
+
+- `input_ptr` / `input_utf8_cap`: where `qip` writes input bytes.
+- `output_ptr` / `output_utf8_cap`: where your module writes output bytes.
+- `run(input_size)`: process input and return output length in bytes.
 
 ### C
 
-Your C file must return functions that return the buffers pointers and capacity.
+Here is a compact C module that trims leading/trailing ASCII whitespace.
+
+#### 1. Create `trim-whitespace.c`
 
 ```c
-// hello-c.c
 #include <stdint.h>
 
-// Static memory buffers for input and output
-static char input_buffer[65536];   // 64KB
-static char output_buffer[65536];  // 64KB
+#define INPUT_CAP 65536u
+#define OUTPUT_CAP 65536u
 
-// Export memory pointer functions (qip will call these)
+static char input_buffer[INPUT_CAP];
+static char output_buffer[OUTPUT_CAP];
+
 __attribute__((export_name("input_ptr")))
 uint32_t input_ptr() {
     return (uint32_t)(uintptr_t)input_buffer;
@@ -105,104 +199,74 @@ uint32_t output_utf8_cap() {
     return sizeof(output_buffer);
 }
 
-// Simple memcpy
-static void copy_bytes(char* dest, const char* src, uint32_t n) {
-    for (uint32_t i = 0; i < n; i++) {
-        dest[i] = src[i];
-    }
+static int is_space(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
-// Main entry point
 __attribute__((export_name("run")))
 uint32_t run(uint32_t input_size) {
-    const char* prefix = "Hello, ";
-    copy_bytes(output_buffer, prefix, 7);
-
-    if (input_size > 0) {
-        copy_bytes(output_buffer + 7, input_buffer, input_size);
-        return 7 + input_size;
+    if (input_size > INPUT_CAP) {
+        input_size = INPUT_CAP;
     }
 
-    copy_bytes(output_buffer + 7, "World", 5);
-    return 12;
-}
-```
-
-Compile with a WebAssembly-enabled clang:
-
-```bash
-zig cc hello-c.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -O3 -o hello-c.wasm
-```
-
-### Zig
-
-Write your module in Zig targeting `wasm32-freestanding`:
-
-```zig
-// hello-zig.zig
-const std = @import("std");
-
-// Memory layout
-const INPUT_CAP: u32 = 0x10000;
-const OUTPUT_CAP: u32 = 0x10000;
-
-var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
-
-export fn input_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&input_buf)));
-}
-
-export fn input_utf8_cap() u32 {
-    return INPUT_CAP;
-}
-
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
-export fn output_utf8_cap() u32 {
-    return OUTPUT_CAP;
-}
-
-// Get input/output slices
-fn getInput(size: u32) []u8 {
-    return input_buf[0..@as(usize, @intCast(size))];
-}
-
-fn getOutput() []u8 {
-    return output_buf[0..];
-}
-
-// Main entry point
-export fn run(input_size: u32) u32 {
-    const input = getInput(input_size);
-    const output = getOutput();
-
-    // Example: prepend "Hello, " to input
-    const prefix = "Hello, ";
-    @memcpy(output[0..prefix.len], prefix);
-
-    if (input_size > 0) {
-        // Copy input after prefix
-        @memcpy(output[prefix.len..][0..input_size], input);
-        return prefix.len + input_size;
-    } else {
-        // Default to "World" if no input
-        const default_name = "World";
-        @memcpy(output[prefix.len..][0..default_name.len], default_name);
-        return prefix.len + default_name.len;
+    uint32_t start = 0;
+    while (start < input_size && is_space(input_buffer[start])) {
+        start++;
     }
+
+    uint32_t end = input_size;
+    while (end > start && is_space(input_buffer[end - 1])) {
+        end--;
+    }
+
+    uint32_t out_len = end - start;
+    if (out_len > OUTPUT_CAP) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < out_len; i++) {
+        output_buffer[i] = input_buffer[start + i];
+    }
+
+    return out_len;
 }
 ```
 
-Compile with:
+#### 2. Compile it to WebAssembly
 
 ```bash
-zig build-exe hello-zig.zig -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_utf8_cap
+zig cc trim-whitespace.c \
+  -target wasm32-freestanding \
+  -nostdlib \
+  -Wl,--no-entry \
+  -Wl,--export=run \
+  -Wl,--export-memory \
+  -Wl,--export=input_ptr \
+  -Wl,--export=input_utf8_cap \
+  -Wl,--export=output_ptr \
+  -Wl,--export=output_utf8_cap \
+  -Oz \
+  -o trim-whitespace.wasm
 ```
 
-### LLM generated WebAssembly
+#### 3. Run it with `qip`
+
+```bash
+echo "   hello world   " | qip run trim-whitespace.wasm
+# hello world
+
+printf "\t  line one  \n" | qip run trim-whitespace.wasm
+# line one
+```
+
+#### 4. Understand the pattern
+
+- `run(input_size)` clamps to your input capacity, then finds trimmed start/end indexes.
+- The module copies only the kept span into `output_buffer`.
+- Returning `out_len` tells `qip` exactly how many bytes to read from `output_ptr`.
+- The same pointer/capacity exports are used by all text modules, so you can swap logic without changing the host side.
+
+### Raw WebAssembly
 
 You can write WebAssembly by hand, or AI coding tools work great too.
 
