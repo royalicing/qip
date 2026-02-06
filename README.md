@@ -2,15 +2,15 @@
 
 Pipelines of safe determinism in a probabilistic generative world.
 
-![qip logo](qip-logo.svg)
-
 `qip` lets you compose small modules for text and images. Modules do one thing well and can be piped together to make powerful replayable tools.
 
 - **Quarantined**: modules run in a secure sandbox, with explicit input and output.
 - **Immutable**: modules are self-contained compiled .wasm units and usually avoid constant dependency updates.
 - **Portable**: WebAssembly pipelines run identically across platforms.
 
-These attribute make agentic coding ideal for creating modules. And you can use C or Zig to get near-native performance.
+These attribute make agentic coding a great fit for creating modules. WebAssembly is designed from the ground up for web browsers to be strongly isolated from the rest of the system. And you can use C or Zig to get near-native performance.
+
+![qip logo](qip-logo.svg)
 
 ## Install
 
