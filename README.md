@@ -6,13 +6,16 @@ Pipelines of safe determinism in a probabilistic generative world.
 
 `qip` lets you compose small modules for text and images. Modules do one thing well and can be piped together to make powerful replayable tools.
 
-- **Quick**: each module does one thing well, and you can quickly make new ones.
-- **Isolated**: modules run in a secure sandbox.
+- **Quarantined**: modules run in a secure sandbox, with explicit input and output.
+- **Immutable**: modules are self-contained and usually don’t require updates.
 - **Portable**: WebAssembly pipelines run identically across platforms.
+
+These attribute make agentic coding ideal for creating modules. And you can use C or Zig to get near-native performance.
 
 ## Install
 
 ```
+go install github.com/RoyalIcing/qip@latest
 brew install RoyalIcing/tap/qip
 ```
 
