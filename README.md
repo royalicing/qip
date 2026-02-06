@@ -259,12 +259,12 @@ printf "\t  line one  \n" | qip run trim-whitespace.wasm
 # line one
 ```
 
-#### 4. Understand the pattern
+#### 4. Understand the contract
 
-- `run(input_size)` clamps to your input capacity, then finds trimmed start/end indexes.
-- The module copies only the kept span into `output_buffer`.
-- Returning `out_len` tells `qip` exactly how many bytes to read from `output_ptr`.
-- The same pointer/capacity exports are used by all text modules, so you can swap logic without changing the host side.
+- `input_ptr` / `input_utf8_cap`: where `qip` writes input bytes.
+- `output_ptr` / `output_utf8_cap`: where your module writes output bytes.
+- `run(input_size)`: process input and return output length in bytes.
+- In this module, `run` trims leading/trailing whitespace and returns the length of the trimmed slice.
 
 ### Raw WebAssembly
 
