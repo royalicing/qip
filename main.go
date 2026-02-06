@@ -879,10 +879,6 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 		} else if cap, ok := getExportedValue(ctx, mod, "output_bytes_cap"); ok {
 			outputCap = uint32(cap)
 			output.encoding = dataEncodingRaw
-		} else if outputPtr == uint32(inputPtr) {
-			// Allow in-place output when output_ptr aliases input_ptr.
-			outputCap = uint32(inputCap)
-			output.encoding = input.encoding
 		} else {
 			returnErr = errors.New("Wasm module must export output_utf8_cap or output_i32_cap or output_bytes_cap function")
 			return
@@ -928,13 +924,8 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 			returnErr = errors.New("Module returned more bytes than its stated capacity")
 			return
 		}
-		if outputPtr == uint32(inputPtr) && outputItemFactor == 1 && outputCountBytes <= uint32(len(inputBytes)) {
-			// Fast path for in-place identity output.
-			output.bytes = inputBytes[:outputCountBytes]
-		} else {
-			outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
-			output.bytes = outputBytes
-		}
+		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
+		output.bytes = outputBytes
 		if opts.verbose && len(output.bytes) > 0 {
 			sum := sha256.Sum256(output.bytes)
 			vlogf(opts, "output sha256: %x", sum)
