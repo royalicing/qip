@@ -78,6 +78,14 @@ This example demonstrates a WebAssembly Text (WAT) to WebAssembly Binary (WASM) 
 - `f32.le` - Less than or equal
 - `f32.ge` - Greater than or equal
 
+### Type Conversion Operations
+- `i32.trunc_f32_s` - Convert f32 to i32 (signed, truncating towards zero)
+- `i32.trunc_f32_u` - Convert f32 to i32 (unsigned, truncating towards zero)
+- `f32.convert_i32_s` - Convert i32 to f32 (signed)
+- `f32.convert_i32_u` - Convert i32 to f32 (unsigned)
+- `i32.reinterpret_f32` - Reinterpret f32 bits as i32 (no conversion)
+- `f32.reinterpret_i32` - Reinterpret i32 bits as f32 (no conversion)
+
 ### Stack Operations
 - `drop` - Drop the top value from the stack
 - `select` - Select one of two values based on a condition
@@ -107,6 +115,13 @@ echo "(i32.const 5) (i32.const 3) (i32.add) (i32.const 2) (i32.mul)" | qip run e
 ```bash
 # Calculate 3.5 + 2.25 = 5.75
 echo "(f32.const 3.5) (f32.const 2.25) (f32.add)" | qip run examples/wat-to-wasm.wasm > float-calc.wasm
+```
+
+### Type Conversion Example
+
+```bash
+# Convert i32 to f32 and back: (i32 10 -> f32 10.0 -> add 3.5 -> truncate to i32 13)
+echo "(i32.const 10) (f32.convert_i32_s) (f32.const 3.5) (f32.add) (i32.trunc_f32_s)" | qip run examples/wat-to-wasm.wasm > convert.wasm
 ```
 
 ### Running the Generated WASM

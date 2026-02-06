@@ -95,6 +95,14 @@ uint32_t output_bytes_cap() {
 #define OP_F32_MAX     0x97
 #define OP_F32_COPYSIGN 0x98
 
+// Conversion opcodes
+#define OP_I32_TRUNC_F32_S     0xA8
+#define OP_I32_TRUNC_F32_U     0xA9
+#define OP_F32_CONVERT_I32_S   0xB2
+#define OP_F32_CONVERT_I32_U   0xB3
+#define OP_I32_REINTERPRET_F32 0xBC
+#define OP_F32_REINTERPRET_I32 0xBE
+
 typedef struct {
     const char* input;
     uint32_t size;
@@ -503,6 +511,18 @@ static int parse_instruction(Parser* p, Encoder* e) {
         write_byte(e, OP_F32_MAX);
     } else if (len == 11 && str_eq(ident, "f32.copysign", 11)) {
         write_byte(e, OP_F32_COPYSIGN);
+    } else if (len == 15 && str_eq(ident, "i32.trunc_f32_s", 15)) {
+        write_byte(e, OP_I32_TRUNC_F32_S);
+    } else if (len == 15 && str_eq(ident, "i32.trunc_f32_u", 15)) {
+        write_byte(e, OP_I32_TRUNC_F32_U);
+    } else if (len == 17 && str_eq(ident, "f32.convert_i32_s", 17)) {
+        write_byte(e, OP_F32_CONVERT_I32_S);
+    } else if (len == 17 && str_eq(ident, "f32.convert_i32_u", 17)) {
+        write_byte(e, OP_F32_CONVERT_I32_U);
+    } else if (len == 19 && str_eq(ident, "i32.reinterpret_f32", 19)) {
+        write_byte(e, OP_I32_REINTERPRET_F32);
+    } else if (len == 19 && str_eq(ident, "f32.reinterpret_i32", 19)) {
+        write_byte(e, OP_F32_REINTERPRET_I32);
     } else {
         // Unknown instruction
         return 0;
@@ -529,14 +549,44 @@ uint32_t run(uint32_t input_size) {
     Encoder code_encoder = { code_buffer, 0 };
     parse_instructions(&parser, &code_encoder);
     
-    // Detect if we're using f32 or i32 by scanning the encoded instructions
-    // f32 opcodes are in ranges: 0x43, 0x5B-0x60, 0x8B-0x98
+    // Detect return type by finding the last type-producing instruction
+    // This is a simplified heuristic: scan backwards for the last opcode that produces a value
     int uses_f32 = 0;
-    for (uint32_t i = 0; i < code_encoder.pos; i++) {
-        uint8_t op = (uint8_t)code_encoder.output[i];
-        if (op == 0x43 || (op >= 0x5B && op <= 0x60) || (op >= 0x8B && op <= 0x98)) {
-            uses_f32 = 1;
-            break;
+    
+    // Scan backwards to find the last instruction before 'end'
+    if (code_encoder.pos > 0) {
+        int i = code_encoder.pos - 1;
+        
+        // Skip any potential LEB128 data and find the last opcode
+        while (i >= 0) {
+            uint8_t op = (uint8_t)code_encoder.output[i];
+            
+            // f32-producing operations
+            if (op == 0x43 || // f32.const
+                (op >= 0x5B && op <= 0x60) || // f32 comparisons (produce i32 but use f32)
+                (op >= 0x8B && op <= 0x98) || // f32 arithmetic/math
+                (op >= 0xB2 && op <= 0xB3) || // f32.convert_i32_s/u
+                op == 0xBE) { // f32.reinterpret_i32
+                // For comparison ops (0x5B-0x60), they produce i32, not f32
+                if (op >= 0x5B && op <= 0x60) {
+                    uses_f32 = 0;
+                } else {
+                    uses_f32 = 1;
+                }
+                break;
+            }
+            
+            // i32-producing operations
+            if (op == 0x41 || // i32.const
+                (op >= 0x45 && op <= 0x4F) || // i32 comparisons
+                (op >= 0x67 && op <= 0x78) || // i32 arithmetic
+                (op >= 0xA8 && op <= 0xA9) || // i32.trunc_f32_s/u
+                op == 0xBC) { // i32.reinterpret_f32
+                uses_f32 = 0;
+                break;
+            }
+            
+            i--;
         }
     }
     
