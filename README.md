@@ -22,6 +22,8 @@ By default no wasm modules are included. You can clone this repo to see the `./e
 
 ## Usage
 
+You can pipe the results of other tools to stdin or pass files in via `-i`. You can then chain multiple wasm modules together.
+
 ```bash
 # Validate/normalize a fictional movie/TV-style 555 number
 echo "+1 (212) 555-0100" | qip run examples/e164.wasm
@@ -42,7 +44,7 @@ qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm exa
 echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
 ```
 
-Dev server
+### Dev server
 
 ```bash
 # Preview this Markdown README as HTML page
@@ -50,6 +52,14 @@ qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-p
 
 # Preview rendering qip-logo.svg to .ico in browser
 qip dev -i qip-logo.svg -p 4001 -- examples/svg-rasterize.wasm examples/bmp-to-ico.wasm
+```
+
+### Image
+
+You can process images through a chain of rgba shaders. It breaks the work into 64x64 tiles.
+
+```bash
+qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/black-and-white.wasm examples/rgba/invert.wasm examples/rgba/vignette.wasm
 ```
 
 ## TODO
