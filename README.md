@@ -18,26 +18,28 @@ These attribute make agentic coding ideal for creating modules. And you can use 
 go install github.com/RoyalIcing/qip@latest
 ```
 
+By default no wasm modules are included. You can clone this repo to see the `./examples` that are provided.
+
 ## Usage
 
 ```bash
 # Validate/normalize a fictional movie/TV-style 555 number
-echo "+1 (212) 555-0100" | ./qip run examples/e164.wasm
+echo "+1 (212) 555-0100" | qip run examples/e164.wasm
 # +12125550100
 
 # Convert WebAssembly purple from RGB to hex
-echo "101,79,240" | ./qip run examples/rgb-to-hex.wasm
+echo "101,79,240" | qip run examples/rgb-to-hex.wasm
 # #654ff0
 
 # Expand emoji shortcodes
-echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | ./qip run examples/shortcode-to-emoji.wasm
+echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run examples/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly pipelines identically on any computer ✨
 
 # Render qip-logo.svg to .ico
-./qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > qip-logo.ico
+qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > qip-logo.ico
 
 # Render Switzerland flag svg to .ico
-echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
 ```
 
 Dev server
