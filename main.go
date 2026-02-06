@@ -47,7 +47,8 @@ type options struct {
 	verbose bool
 }
 
-const usageRun = "Usage: qip <wasm module URL or file>...\n       qip run [-v] <wasm module URL or file>..."
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  image Run wasm filters on an input image\n  dev   Start a dev server to re-run modules per request"
+const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
 const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] [-- <module1> <module2> ...]"
 
@@ -55,11 +56,11 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) == 0 {
-		gameOver(usageRun)
+		gameOver(usageMain)
 	}
 
 	if args[0] == "-v" || args[0] == "--verbose" {
-		gameOver(usageRun)
+		gameOver(usageMain)
 	}
 
 	if args[0] == "run" {
@@ -69,7 +70,7 @@ func main() {
 	} else if args[0] == "dev" {
 		devCmd(args[1:])
 	} else {
-		run(args)
+		gameOver(usageMain)
 	}
 }
 
@@ -108,8 +109,10 @@ func run(args []string) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var runVerbose bool
+	var inputPath string
 	fs.BoolVar(&runVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&runVerbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&inputPath, "i", "", "input file path")
 	if err := fs.Parse(args); err != nil {
 		gameOver("%s %v", usageRun, err)
 	}
@@ -125,16 +128,30 @@ func run(args []string) {
 	defer cancel()
 
 	var input []byte
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		gameOver("Error checking stdin: %v", err)
-	}
-
-	// Check if stdin is a pipe or file (not a terminal)
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
+	if inputPath == "-" {
+		var err error
 		input, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			gameOver("Error reading stdin: %v", err)
+		}
+	} else if inputPath != "" {
+		var err error
+		input, err = os.ReadFile(inputPath)
+		if err != nil {
+			gameOver("Error reading input file: %v", err)
+		}
+	} else {
+		stat, err := os.Stdin.Stat()
+		if err != nil {
+			gameOver("Error checking stdin: %v", err)
+		}
+
+		// Check if stdin is a pipe or file (not a terminal)
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			input, err = io.ReadAll(os.Stdin)
+			if err != nil {
+				gameOver("Error reading stdin: %v", err)
+			}
 		}
 	}
 
