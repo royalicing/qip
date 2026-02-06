@@ -1,4 +1,3 @@
-// html-page-wrap.zig
 const std = @import("std");
 
 const INPUT_CAP: u32 = 0x40000;

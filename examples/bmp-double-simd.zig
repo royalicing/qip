@@ -1,4 +1,3 @@
-// bmp-double-simd.zig
 // SIMD variant of bmp-double for wasm32 + simd128.
 
 const builtin = @import("builtin");

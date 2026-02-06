@@ -1,4 +1,3 @@
-// markdown-basic.zig
 const std = @import("std");
 
 const INPUT_CAP: u32 = 0x20000;

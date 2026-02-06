@@ -1,4 +1,3 @@
-// bmp-double2.zig
 // Zig port of bmp-double.c
 
 const builtin = @import("builtin");

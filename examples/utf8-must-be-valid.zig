@@ -1,4 +1,3 @@
-// utf8-must-be-valid.zig
 // Traps on invalid UTF-8 input.
 
 const INPUT_CAP: usize = 1024 * 1024;

@@ -1,4 +1,3 @@
-// hello-zig.zig
 const std = @import("std");
 
 // Memory layout

@@ -1,4 +1,3 @@
-// js-to-bmp2.zig
 // Port of js-to-bmp.c to Zig.
 
 const INPUT_CAP: usize = 65536;
