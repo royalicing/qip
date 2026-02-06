@@ -55,6 +55,8 @@ module: markdown-basic.wasm | html-page-wrap.wasm
 
 module: rgb-to-hex.wasm
 #ff00aa
+module: rgb-to-hex.wasm (rgb())
+#654ff0
 module: tld-validator.wasm
 
 module: trim.wasm

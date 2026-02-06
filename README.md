@@ -30,7 +30,7 @@ echo "+1 (212) 555-0100" | qip run examples/e164.wasm
 # +12125550100
 
 # Convert WebAssembly purple from RGB to hex
-echo "101,79,240" | qip run examples/rgb-to-hex.wasm
+echo "rgb(101, 79, 240)" | qip run examples/rgb-to-hex.wasm
 # #654ff0
 
 # Expand emoji shortcodes

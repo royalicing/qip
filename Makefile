@@ -108,6 +108,8 @@ test-snapshot: qip examples
 	@printf "%b" "# Title\nHello **World**\n" | ./qip run examples/markdown-basic.wasm examples/html-page-wrap.wasm >> test/latest.txt
 	@printf "%s\n" "module: rgb-to-hex.wasm" >> test/latest.txt
 	@printf %s "255,0,170" | ./qip run examples/rgb-to-hex.wasm >> test/latest.txt
+	@printf "%s\n" "module: rgb-to-hex.wasm (rgb())" >> test/latest.txt
+	@printf %s " rgb( 101, 79, 240 ) " | ./qip run examples/rgb-to-hex.wasm >> test/latest.txt
 	@printf "%s\n" "module: tld-validator.wasm" >> test/latest.txt
 	@printf %s "com" | ./qip run examples/tld-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: trim.wasm" >> test/latest.txt

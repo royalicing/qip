@@ -30,6 +30,22 @@
     )
   )
 
+  ;; Convert ASCII letter to lowercase (non-letters unchanged)
+  (func $to_lower_ascii (param $c i32) (result i32)
+    (if (result i32)
+      (i32.and
+        (i32.ge_u (local.get $c) (i32.const 65))  ;; 'A'
+        (i32.le_u (local.get $c) (i32.const 90))  ;; 'Z'
+      )
+      (then
+        (i32.add (local.get $c) (i32.const 32))
+      )
+      (else
+        (local.get $c)
+      )
+    )
+  )
+
   ;; Parse a decimal number from input
   ;; Returns the number, or -1 if invalid
   ;; Updates the position parameter
@@ -198,6 +214,84 @@
     ;; If empty after trimming, invalid
     (if (i32.ge_u (local.get $start) (local.get $end))
       (then (return (i32.const 0)))
+    )
+
+    ;; Support optional rgb(...) wrapper (whitespace tolerant)
+    (if
+      (i32.ge_u (i32.sub (local.get $end) (local.get $start)) (i32.const 3))
+      (then
+        (if
+          (i32.and
+            (i32.eq
+              (call $to_lower_ascii
+                (i32.load8_u (i32.add (global.get $input_ptr) (local.get $start))))
+              (i32.const 114))  ;; 'r'
+            (i32.and
+              (i32.eq
+                (call $to_lower_ascii
+                  (i32.load8_u (i32.add (global.get $input_ptr) (i32.add (local.get $start) (i32.const 1)))))
+                (i32.const 103))  ;; 'g'
+              (i32.eq
+                (call $to_lower_ascii
+                  (i32.load8_u (i32.add (global.get $input_ptr) (i32.add (local.get $start) (i32.const 2)))))
+                (i32.const 98))   ;; 'b'
+            )
+          )
+          (then
+            (local.set $pos (i32.add (local.get $start) (i32.const 3)))
+
+            ;; Skip whitespace after rgb and before '('
+            (block $break_rgb_ws
+              (loop $continue_rgb_ws
+                (br_if $break_rgb_ws (i32.ge_u (local.get $pos) (local.get $end)))
+                (local.set $current_char (i32.load8_u (i32.add (global.get $input_ptr) (local.get $pos))))
+                (br_if $break_rgb_ws (i32.eqz (call $is_whitespace (local.get $current_char))))
+                (local.set $pos (i32.add (local.get $pos) (i32.const 1)))
+                (br $continue_rgb_ws)
+              )
+            )
+
+            ;; Require opening '('
+            (if
+              (i32.or
+                (i32.ge_u (local.get $pos) (local.get $end))
+                (i32.ne
+                  (i32.load8_u (i32.add (global.get $input_ptr) (local.get $pos)))
+                  (i32.const 40)))  ;; '('
+              (then (return (i32.const 0)))
+            )
+
+            ;; Parse range starts after '('
+            (local.set $start (i32.add (local.get $pos) (i32.const 1)))
+
+            ;; Find closing ')' at the end, ignoring whitespace before it
+            (local.set $pos (local.get $end))
+            (block $break_close_ws
+              (loop $continue_close_ws
+                (br_if $break_close_ws (i32.le_u (local.get $pos) (local.get $start)))
+                (local.set $current_char
+                  (i32.load8_u (i32.add (global.get $input_ptr) (i32.sub (local.get $pos) (i32.const 1)))))
+                (br_if $break_close_ws (i32.eqz (call $is_whitespace (local.get $current_char))))
+                (local.set $pos (i32.sub (local.get $pos) (i32.const 1)))
+                (br $continue_close_ws)
+              )
+            )
+
+            ;; Require closing ')'
+            (if
+              (i32.or
+                (i32.le_u (local.get $pos) (local.get $start))
+                (i32.ne
+                  (i32.load8_u (i32.add (global.get $input_ptr) (i32.sub (local.get $pos) (i32.const 1))))
+                  (i32.const 41)))  ;; ')'
+              (then (return (i32.const 0)))
+            )
+
+            ;; Parse range ends before ')'
+            (local.set $end (i32.sub (local.get $pos) (i32.const 1)))
+          )
+        )
+      )
     )
 
     ;; Parse R value
