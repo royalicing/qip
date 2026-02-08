@@ -37,6 +37,8 @@ echo "rgb(101, 79, 240)" | qip run examples/rgb-to-hex.wasm
 echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run examples/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly pipelines identically on any computer ✨
 
+ curl -s https://news.ycombinator.com | qip run examples/html-link-extractor.wasm | grep "^https:"
+
 # Render qip-logo.svg to .ico
 qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > qip-logo.ico
 
