@@ -42,10 +42,21 @@ qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm exa
 
 # Render Switzerland flag svg to .ico
 echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
+```
 
-# Benchmark two modules and verify identical output
-printf %s "World" > /tmp/qip-bench.txt
-qip bench -i /tmp/qip-bench.txt --benchtime=2s examples/hello.wasm examples/hello-c.wasm
+### Benchmark
+
+```bash
+# Benchmark module for two seconds
+echo "World" | qip bench -i - --benchtime=2s examples/hello.wasm
+# bench: outputs match
+
+# Benchmark two modules against each other and verify identical output
+echo "World" | qip bench -i - --benchtime=2s examples/hello.wasm examples/hello-c.wasm
+# bench: outputs match
+
+# Benchmark three modules against each other and verify identical output
+echo "World" | qip bench -i - --benchtime=2s examples/hello.wasm examples/hello-c.wasm examples/hello-zig.wasm
 # bench: outputs match
 ```
 
