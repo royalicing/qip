@@ -42,6 +42,11 @@ qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm exa
 
 # Render Switzerland flag svg to .ico
 echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
+
+# Benchmark two modules and verify identical output
+printf %s "World" > /tmp/qip-bench.txt
+qip bench -i /tmp/qip-bench.txt --benchtime=2s examples/hello.wasm examples/hello-c.wasm
+# bench: outputs match
 ```
 
 ### Dev server
@@ -65,7 +70,6 @@ qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/bla
 ## TODO
 
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
-- [ ] Add `qip duel` for comparing runtime performance of two modules. Great for iterating, especially using coding agents.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 
 ## Documentation

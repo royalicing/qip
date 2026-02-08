@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -16,9 +17,11 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -61,8 +64,9 @@ type options struct {
 	verbose bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  image Run wasm filters on an input image\n  dev   Start a dev server to re-run modules per request\n  help  Show command help"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server to re-run modules per request\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
+const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
 const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] [-- <module1> <module2> ...]"
 const usageHelp = "Usage: qip help [command]"
@@ -84,6 +88,8 @@ func main() {
 		helpCmd(args[1:])
 	} else if args[0] == "run" {
 		run(args[1:])
+	} else if args[0] == "bench" {
+		benchCmd(args[1:])
 	} else if args[0] == "image" {
 		imageCmd(args[1:])
 	} else if args[0] == "dev" {
@@ -103,6 +109,8 @@ func helpCmd(args []string) {
 	switch args[0] {
 	case "run":
 		fmt.Println(helpRun)
+	case "bench":
+		fmt.Println(usageBench)
 	case "image":
 		fmt.Println(usageImage)
 	case "dev":
@@ -242,6 +250,471 @@ func run(args []string) {
 				}
 			}
 		}
+	}
+}
+
+type benchSample struct {
+	total          time.Duration
+	instantiation  time.Duration
+	run            time.Duration
+	memoryBytes    uint64
+	inputCapBytes  uint64
+	outputCapBytes uint64
+}
+
+type durationStats struct {
+	mean   time.Duration
+	min    time.Duration
+	max    time.Duration
+	stddev time.Duration
+	p95    time.Duration
+}
+
+type benchSummary struct {
+	total   durationStats
+	run     durationStats
+	inst    durationStats
+	meanMem uint64
+	peakMem uint64
+}
+
+func benchCmd(args []string) {
+	opts := options{}
+	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var benchVerbose bool
+	var inputPath string
+	benchRuns := 1000
+	benchtimeStr := ""
+	timeoutMS := 250
+
+	fs.BoolVar(&benchVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&benchVerbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&inputPath, "i", "", "input file path ('-' for stdin)")
+	fs.IntVar(&benchRuns, "r", benchRuns, "benchmark runs per module")
+	fs.StringVar(&benchtimeStr, "benchtime", benchtimeStr, "target measured time per module (e.g. 3s)")
+	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "per-run timeout in milliseconds")
+
+	if err := fs.Parse(args); err != nil {
+		gameOver("%s %v", usageBench, err)
+	}
+	opts.verbose = benchVerbose
+
+	modules := fs.Args()
+	if inputPath == "" || len(modules) < 1 {
+		gameOver(usageBench)
+	}
+	if benchRuns <= 0 {
+		gameOver("Invalid benchmark runs: %d", benchRuns)
+	}
+	if timeoutMS <= 0 {
+		gameOver("Invalid timeout-ms: %d", timeoutMS)
+	}
+	var benchtime time.Duration
+	if benchtimeStr != "" {
+		parsed, err := time.ParseDuration(benchtimeStr)
+		if err != nil {
+			gameOver("Invalid benchtime: %v", err)
+		}
+		if parsed <= 0 {
+			gameOver("Invalid benchtime: must be > 0")
+		}
+		benchtime = parsed
+	}
+
+	var inputBytes []byte
+	var err error
+	if inputPath == "-" {
+		inputBytes, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			gameOver("Error reading stdin: %v", err)
+		}
+	} else {
+		inputBytes, err = os.ReadFile(inputPath)
+		if err != nil {
+			gameOver("Error reading input file: %v", err)
+		}
+	}
+
+	if opts.verbose {
+		inputDigest := sha256.Sum256(inputBytes)
+		vlogf(opts, "bench input sha256: %x", inputDigest)
+	}
+
+	ctx := context.Background()
+	runtime := wazero.NewRuntime(ctx)
+	defer runtime.Close(ctx)
+
+	moduleCount := len(modules)
+	compiled := make([]wazero.CompiledModule, moduleCount)
+	compileDur := make([]time.Duration, moduleCount)
+	moduleSizes := make([]uint64, moduleCount)
+	moduleGzipSizes := make([]uint64, moduleCount)
+	for i, modulePath := range modules {
+		body, err := readModulePath(modulePath, opts)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		moduleSizes[i] = uint64(len(body))
+		gzipSize, err := gzipSizeBytes(body)
+		if err != nil {
+			gameOver("Error gzipping module %s: %v", modulePath, err)
+		}
+		moduleGzipSizes[i] = gzipSize
+		start := time.Now()
+		cm, err := runtime.CompileModule(ctx, body)
+		compileDur[i] = time.Since(start)
+		if err != nil {
+			gameOver("Wasm module could not be compiled")
+		}
+		compiled[i] = cm
+		defer compiled[i].Close(ctx)
+	}
+
+	perRunTimeout := time.Duration(timeoutMS) * time.Millisecond
+	moduleInputCaps := make([]uint64, moduleCount)
+	moduleOutputCaps := make([]uint64, moduleCount)
+	firstSample, expected, err := runBenchSample(ctx, runtime, compiled[0], inputBytes, opts, "bench-0-check", perRunTimeout)
+	if err != nil {
+		gameOver("bench check failed for %s: %v", modules[0], err)
+	}
+	moduleInputCaps[0] = firstSample.inputCapBytes
+	moduleOutputCaps[0] = firstSample.outputCapBytes
+	for i := 1; i < moduleCount; i++ {
+		sample, output, err := runBenchSample(ctx, runtime, compiled[i], inputBytes, opts, fmt.Sprintf("bench-%d-check", i), perRunTimeout)
+		if err != nil {
+			gameOver("bench check failed for %s: %v", modules[i], err)
+		}
+		moduleInputCaps[i] = sample.inputCapBytes
+		moduleOutputCaps[i] = sample.outputCapBytes
+		if mismatch := describeContentMismatch(expected, output); mismatch != "" {
+			gameOver("bench mismatch for %s vs %s: %s", modules[i], modules[0], mismatch)
+		}
+	}
+
+	samples := make([][]benchSample, moduleCount)
+	for i := 0; i < moduleCount; i++ {
+		samples[i] = make([]benchSample, 0, benchRuns)
+	}
+	benchTimeTotals := make([]time.Duration, moduleCount)
+	for i := 0; ; i++ {
+		if benchtime == 0 && i >= benchRuns {
+			break
+		}
+		startIndex := i % moduleCount
+		for j := 0; j < moduleCount; j++ {
+			moduleIndex := (startIndex + j) % moduleCount
+			sample, output, err := runBenchSample(
+				ctx,
+				runtime,
+				compiled[moduleIndex],
+				inputBytes,
+				opts,
+				fmt.Sprintf("bench-%d-run-%d", moduleIndex, i),
+				perRunTimeout,
+			)
+			if err != nil {
+				gameOver("bench run failed for %s (run %d): %v", modules[moduleIndex], i+1, err)
+			}
+			if mismatch := describeContentMismatch(expected, output); mismatch != "" {
+				gameOver("bench output mismatch for %s (run %d): %s", modules[moduleIndex], i+1, mismatch)
+			}
+			samples[moduleIndex] = append(samples[moduleIndex], sample)
+			benchTimeTotals[moduleIndex] += sample.total
+		}
+		if benchtime > 0 && allDurationsAtLeast(benchTimeTotals, benchtime) {
+			break
+		}
+	}
+
+	summaries := make([]benchSummary, moduleCount)
+	for i := 0; i < moduleCount; i++ {
+		summaries[i] = summarizeBench(samples[i])
+	}
+
+	digest := sha256.Sum256(expected.bytes)
+	if moduleCount == 1 {
+		fmt.Printf("bench: baseline output captured\n")
+	} else {
+		fmt.Printf("bench: outputs match\n")
+	}
+	fmt.Printf("  encoding: %s\n", encodingName(expected.encoding))
+	fmt.Printf("  bytes:    %d\n", len(expected.bytes))
+	fmt.Printf("  sha256:   %x\n", digest)
+	if benchtime > 0 {
+		fmt.Printf("  benchtime target: %s per module\n", benchtime)
+	}
+	fmt.Printf("  measured: %d runs/module\n", len(samples[0]))
+	fmt.Printf("  timeout:  %s per run\n\n", perRunTimeout)
+
+	for i := 0; i < moduleCount; i++ {
+		printBenchBenchmarkReport(
+			i+1,
+			modules[i],
+			moduleSizes[i],
+			moduleGzipSizes[i],
+			moduleInputCaps[i],
+			moduleOutputCaps[i],
+			compileDur[i],
+			summaries[i],
+		)
+	}
+
+	if moduleCount > 1 {
+		bestIdx := 0
+		worstIdx := 0
+		for i := 1; i < moduleCount; i++ {
+			if summaries[i].total.mean < summaries[bestIdx].total.mean {
+				bestIdx = i
+			}
+			if summaries[i].total.mean > summaries[worstIdx].total.mean {
+				worstIdx = i
+			}
+		}
+		fastestMean := summaries[bestIdx].total.mean
+		slowestMean := summaries[worstIdx].total.mean
+		fmt.Printf("Summary\n")
+		fmt.Printf("  fastest: %q (mean total time %s)\n", modules[bestIdx], fastestMean)
+		if fastestMean > 0 && slowestMean > 0 && bestIdx != worstIdx {
+			ratio := float64(slowestMean) / float64(fastestMean)
+			fmt.Printf("  speedup vs slowest: %.2fx over %q\n", ratio, modules[worstIdx])
+		}
+	}
+}
+
+func runBenchSample(
+	parent context.Context,
+	runtime wazero.Runtime,
+	compiled wazero.CompiledModule,
+	inputBytes []byte,
+	opts options,
+	moduleName string,
+	timeout time.Duration,
+) (benchSample, contentData, error) {
+	ctx := parent
+	cancel := func() {}
+	if timeout > 0 {
+		ctxWithTimeout, cancelWithTimeout := context.WithTimeout(parent, timeout)
+		ctx = ctxWithTimeout
+		cancel = cancelWithTimeout
+	}
+	defer cancel()
+
+	exec, err := executeModuleWithInput(ctx, runtime, compiled, inputBytes, opts, moduleName)
+	if err != nil {
+		return benchSample{}, contentData{}, err
+	}
+	sample := benchSample{
+		total:          exec.total,
+		instantiation:  exec.instantiation,
+		run:            exec.run,
+		memoryBytes:    exec.memoryBytes,
+		inputCapBytes:  exec.inputCapBytes,
+		outputCapBytes: exec.outputCapBytes,
+	}
+	return sample, exec.output, nil
+}
+
+func summarizeBench(samples []benchSample) benchSummary {
+	totalValues := make([]time.Duration, len(samples))
+	runValues := make([]time.Duration, len(samples))
+	instValues := make([]time.Duration, len(samples))
+	memValues := make([]uint64, len(samples))
+
+	for i, sample := range samples {
+		totalValues[i] = sample.total
+		runValues[i] = sample.run
+		instValues[i] = sample.instantiation
+		memValues[i] = sample.memoryBytes
+	}
+
+	meanMem, peakMem := summarizeMemory(memValues)
+	return benchSummary{
+		total:   summarizeDurations(totalValues),
+		run:     summarizeDurations(runValues),
+		inst:    summarizeDurations(instValues),
+		meanMem: meanMem,
+		peakMem: peakMem,
+	}
+}
+
+func summarizeDurations(values []time.Duration) durationStats {
+	if len(values) == 0 {
+		return durationStats{}
+	}
+
+	n := len(values)
+	ns := make([]float64, n)
+	sorted := make([]int64, n)
+	var sum float64
+	for i, value := range values {
+		x := float64(value.Nanoseconds())
+		ns[i] = x
+		sum += x
+		sorted[i] = value.Nanoseconds()
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	mean := sum / float64(n)
+	var variance float64
+	for _, x := range ns {
+		delta := x - mean
+		variance += delta * delta
+	}
+	variance /= float64(n)
+
+	p95Index := int(math.Ceil(0.95*float64(n))) - 1
+	if p95Index < 0 {
+		p95Index = 0
+	}
+	if p95Index >= n {
+		p95Index = n - 1
+	}
+
+	return durationStats{
+		mean:   time.Duration(int64(math.Round(mean))),
+		min:    time.Duration(sorted[0]),
+		max:    time.Duration(sorted[n-1]),
+		stddev: time.Duration(int64(math.Round(math.Sqrt(variance)))),
+		p95:    time.Duration(sorted[p95Index]),
+	}
+}
+
+func summarizeMemory(values []uint64) (mean, peak uint64) {
+	if len(values) == 0 {
+		return 0, 0
+	}
+	var sum float64
+	for _, v := range values {
+		sum += float64(v)
+		if v > peak {
+			peak = v
+		}
+	}
+	return uint64(math.Round(sum / float64(len(values)))), peak
+}
+
+func allDurationsAtLeast(values []time.Duration, threshold time.Duration) bool {
+	for _, value := range values {
+		if value < threshold {
+			return false
+		}
+	}
+	return true
+}
+
+func gzipSizeBytes(data []byte) (uint64, error) {
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := zw.Write(data); err != nil {
+		_ = zw.Close()
+		return 0, err
+	}
+	if err := zw.Close(); err != nil {
+		return 0, err
+	}
+	return uint64(buf.Len()), nil
+}
+
+func formatBytesIEC(bytes uint64) string {
+	const unit = uint64(1024)
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := unit, 0
+	for n := bytes / unit; n >= unit && exp < 5; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, gzipSize uint64, inputCapBytes uint64, outputCapBytes uint64, compileDuration time.Duration, summary benchSummary) {
+	fmt.Printf("Benchmark %d: %s\n", index, modulePath)
+	fmt.Printf("  Time (mean ± stddev): %s ± %s [min: %s, p95: %s, max: %s]\n",
+		summary.total.mean,
+		summary.total.stddev,
+		summary.total.min,
+		summary.total.p95,
+		summary.total.max,
+	)
+	fmt.Printf("  Breakdown: run mean %s, instantiation mean %s, compile %s\n",
+		summary.run.mean,
+		summary.inst.mean,
+		compileDuration,
+	)
+	fmt.Printf("  Memory allocated: %s\n", formatBytesIEC(summary.peakMem))
+	fmt.Printf("  Capacity: input %s, output %s\n", formatBytesIEC(inputCapBytes), formatBytesIEC(outputCapBytes))
+	fmt.Printf("  Binary size: %d bytes, gzip %d bytes\n", binarySize, gzipSize)
+	fmt.Printf("\n")
+}
+
+func formatCapacityBytes(size uint64) string {
+	if size == 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%s (%d bytes)", formatBytesIEC(size), size)
+}
+
+func describeContentMismatch(expected, actual contentData) string {
+	if expected.encoding != actual.encoding {
+		return fmt.Sprintf("encoding differs (expected %s, actual %s)", encodingName(expected.encoding), encodingName(actual.encoding))
+	}
+	if bytes.Equal(expected.bytes, actual.bytes) {
+		return ""
+	}
+	diffAt := firstDiffIndex(expected.bytes, actual.bytes)
+	expSum := sha256.Sum256(expected.bytes)
+	actSum := sha256.Sum256(actual.bytes)
+	if diffAt >= 0 {
+		return fmt.Sprintf(
+			"output differs at byte %d (expected len=%d sha256=%x, actual len=%d sha256=%x)",
+			diffAt,
+			len(expected.bytes),
+			expSum,
+			len(actual.bytes),
+			actSum,
+		)
+	}
+	return fmt.Sprintf(
+		"output length differs (expected len=%d sha256=%x, actual len=%d sha256=%x)",
+		len(expected.bytes),
+		expSum,
+		len(actual.bytes),
+		actSum,
+	)
+}
+
+func firstDiffIndex(a, b []byte) int {
+	limit := len(a)
+	if len(b) < limit {
+		limit = len(b)
+	}
+	for i := 0; i < limit; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	if len(a) != len(b) {
+		return limit
+	}
+	return -1
+}
+
+func encodingName(encoding dataEncoding) string {
+	switch encoding {
+	case dataEncodingRaw:
+		return "raw"
+	case dataEncodingUTF8:
+		return "utf8"
+	case dataEncodingArrayI32:
+		return "i32[]"
+	default:
+		return fmt.Sprintf("unknown(%d)", encoding)
 	}
 }
 
@@ -837,7 +1310,30 @@ func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64,
 	return 0, false
 }
 
+type moduleExecutionResult struct {
+	output         contentData
+	instantiation  time.Duration
+	run            time.Duration
+	total          time.Duration
+	memoryBytes    uint64
+	inputCapBytes  uint64
+	outputCapBytes uint64
+}
+
 func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wazero.CompiledModule, inputBytes []byte, opts options, moduleName string) (output contentData, instantiation time.Duration, returnErr error) {
+	exec, err := executeModuleWithInput(ctx, runtime, compiled, inputBytes, opts, moduleName)
+	if err != nil {
+		return contentData{}, 0, err
+	}
+	return exec.output, exec.instantiation, nil
+}
+
+func executeModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wazero.CompiledModule, inputBytes []byte, opts options, moduleName string) (exec moduleExecutionResult, returnErr error) {
+	totalStart := time.Now()
+	defer func() {
+		exec.total = time.Since(totalStart)
+	}()
+
 	instStart := time.Now()
 	mod, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName(moduleName))
 	if err != nil {
@@ -845,7 +1341,7 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 		return
 	}
 	defer mod.Close(ctx)
-	instantiation = time.Since(instStart)
+	exec.instantiation = time.Since(instStart)
 
 	var input contentData
 	// Get input_ptr and input_cap (required)
@@ -865,6 +1361,7 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 		returnErr = errors.New("Wasm module must export input_utf8_cap or input_bytes_cap as global or function")
 		return
 	}
+	exec.inputCapBytes = inputCap
 
 	var outputPtr, outputCap uint32
 	if ptr, ok := getExportedValue(ctx, mod, "output_ptr"); ok {
@@ -872,25 +1369,21 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 
 		if cap, ok := getExportedValue(ctx, mod, "output_utf8_cap"); ok {
 			outputCap = uint32(cap)
-			output.encoding = dataEncodingUTF8
+			exec.output.encoding = dataEncodingUTF8
 		} else if cap, ok := getExportedValue(ctx, mod, "output_i32_cap"); ok {
 			outputCap = uint32(cap)
-			output.encoding = dataEncodingArrayI32
+			exec.output.encoding = dataEncodingArrayI32
 		} else if cap, ok := getExportedValue(ctx, mod, "output_bytes_cap"); ok {
 			outputCap = uint32(cap)
-			output.encoding = dataEncodingRaw
+			exec.output.encoding = dataEncodingRaw
 		} else {
 			returnErr = errors.New("Wasm module must export output_utf8_cap or output_i32_cap or output_bytes_cap function")
 			return
 		}
 	}
+	exec.outputCapBytes = uint64(outputCap)
 
 	runFunc := mod.ExportedFunction("run")
-
-	// inputPtrResult, err := mod.ExportedFunction("input_ptr").Call(ctx)
-	// if err != nil {
-	// 	gameOver("Wasm module must export an input_ptr() function")
-	// }
 
 	var inputSize = uint64(len(inputBytes))
 	if inputSize > inputCap {
@@ -898,12 +1391,15 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 		return
 	}
 
-	if !mod.Memory().Write(uint32(inputPtr), inputBytes) {
+	mem := mod.Memory()
+	if !mem.Write(uint32(inputPtr), inputBytes) {
 		returnErr = errors.New("Could not write input")
 		return
 	}
 
+	runStart := time.Now()
 	runResult, returnErr := runFunc.Call(ctx, inputSize)
+	exec.run = time.Since(runStart)
 	if returnErr != nil {
 		return
 	}
@@ -911,7 +1407,7 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 	outputCount := uint32(runResult[0])
 
 	var outputItemFactor uint32
-	if output.encoding == dataEncodingArrayI32 {
+	if exec.output.encoding == dataEncodingArrayI32 {
 		outputItemFactor = 4
 	} else {
 		outputItemFactor = 1
@@ -924,21 +1420,36 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 			returnErr = errors.New("Module returned more bytes than its stated capacity")
 			return
 		}
-		outputBytes, _ := mod.Memory().Read(outputPtr, uint32(outputCountBytes))
-		output.bytes = outputBytes
-		if opts.verbose && len(output.bytes) > 0 {
-			sum := sha256.Sum256(output.bytes)
+		outputBytes, ok := mem.Read(outputPtr, uint32(outputCountBytes))
+		if !ok {
+			returnErr = errors.New("Could not read output")
+			return
+		}
+		// Copy out of wasm memory so callers can safely use the bytes after module close.
+		exec.output.bytes = append([]byte(nil), outputBytes...)
+		if opts.verbose && len(exec.output.bytes) > 0 {
+			sum := sha256.Sum256(exec.output.bytes)
 			vlogf(opts, "output sha256: %x", sum)
 		}
 	} else {
 		fmt.Printf("Ran: %d\n", runResult[0])
 	}
 
-	// Detect if outputBytes are wasm module by checking for magic number
-	// if len(outputBytes) >= 4 && outputBytes[0] == 0x00 && outputBytes[1] == 0x61 && outputBytes[2] == 0x73 && outputBytes[3] == 0x6D {
-	// }
+	exec.memoryBytes = memorySizeBytes(mem)
+	return
+}
 
-	return output, instantiation, nil
+func memorySizeBytes(mem api.Memory) uint64 {
+	size := mem.Size()
+	if size != 0 {
+		return uint64(size)
+	}
+	// Work around wazero's uint32 overflow behavior on max memory.
+	pages, ok := mem.Grow(0)
+	if !ok {
+		return 0
+	}
+	return uint64(pages) * 65536
 }
 
 func gameOver(format string, args ...any) {
