@@ -25,11 +25,11 @@ By default no wasm modules are included. You can clone this repo to use the `./e
 You can pipe the results of other tools to stdin or pass files in via `-i`. You can then chain multiple wasm modules together.
 
 ```bash
-# Validate/normalize a fictional movie/TV-style 555 number
+# Normalize phone number
 echo "+1 (212) 555-0100" | qip run examples/e164.wasm
 # +12125550100
 
-# Convert WebAssembly purple from RGB to hex
+# Convert WebAssembly purple from rgb to hex
 echo "rgb(101, 79, 240)" | qip run examples/rgb-to-hex.wasm
 # #654ff0
 
@@ -37,9 +37,10 @@ echo "rgb(101, 79, 240)" | qip run examples/rgb-to-hex.wasm
 echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run examples/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly pipelines identically on any computer ✨
 
- curl -s https://news.ycombinator.com | qip run examples/html-link-extractor.wasm | grep "^https:"
+#  Load Hacker News, extractor all links with text
+curl -s https://news.ycombinator.com | qip run examples/html-link-extractor.wasm | grep "^https:"
 
-# Render qip-logo.svg to .ico
+# Render .svg to .ico
 qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > qip-logo.ico
 
 # Render Switzerland flag svg to .ico
