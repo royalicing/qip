@@ -18,7 +18,7 @@ These attribute make agentic coding a great fit for creating modules. WebAssembl
 go install github.com/royalicing/qip@latest
 ```
 
-By default no wasm modules are included. You can clone this repo to see the `./examples` that are provided.
+By default no wasm modules are included. You can clone this repo to use the `./examples` that are provided.
 
 ## Usage
 
