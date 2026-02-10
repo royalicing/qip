@@ -49,6 +49,8 @@ echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" />
 
 ### Benchmark and compare modules
 
+Benchmark the performance of one or more modules. If you compare multiple modules then it’ll check each output is exactly the same. This is great for porting say from C to Zig or asking your AI agent to implement optimizations and verifying that it works exactly the same as before.
+
 ```bash
 # Benchmark module for two seconds
 echo "World" | qip bench -i - --benchtime=2s examples/hello.wasm
