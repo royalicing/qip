@@ -1,4 +1,4 @@
-(module $Hello
+(module $HelloNaive
   ;; Memory must be exported with name "memory"
   ;; At least 3 pages needed: input at 0x10000, output at 0x20000
   (memory (export "memory") 3)
@@ -16,17 +16,18 @@
     (local $i i32)
     (local $out_pos i32)
 
-    ;; Write "Hello, World" as i64 + i32 (always write the default first)
-    ;; "Hello, W" as i64 (little-endian: 0x57202c6f6c6c6548)
-    (i64.store (global.get $output_ptr) (i64.const 0x57202c6f6c6c6548))
-    ;; "orld" as i32 (little-endian: 0x646c726f)
-    (i32.store (i32.add (global.get $output_ptr) (i32.const 8)) (i32.const 0x646c726f))
-    (local.set $out_pos (i32.const 12))
+    ;; Write prefix "Hello, " once for both branches.
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 0)) (i32.const 72))   ;; H
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 1)) (i32.const 101))  ;; e
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 2)) (i32.const 108))  ;; l
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 3)) (i32.const 108))  ;; l
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 4)) (i32.const 111))  ;; o
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 5)) (i32.const 44))   ;; ,
+    (i32.store8 (i32.add (global.get $output_ptr) (i32.const 6)) (i32.const 32))   ;; space
 
-    ;; If input is non-empty, overwrite after "Hello, "
     (if (i32.gt_u (local.get $input_size) (i32.const 0))
       (then
-        ;; Copy input starting at position 7 (after "Hello, ")
+        ;; Copy input after "Hello, ".
         (local.set $i (i32.const 0))
         (local.set $out_pos (i32.const 7))
         (block $break_copy
@@ -40,6 +41,15 @@
             (br $continue_copy)
           )
         )
+      )
+      (else
+        ;; Empty input: append "World".
+        (i32.store8 (i32.add (global.get $output_ptr) (i32.const 7)) (i32.const 87))   ;; W
+        (i32.store8 (i32.add (global.get $output_ptr) (i32.const 8)) (i32.const 111))  ;; o
+        (i32.store8 (i32.add (global.get $output_ptr) (i32.const 9)) (i32.const 114))  ;; r
+        (i32.store8 (i32.add (global.get $output_ptr) (i32.const 10)) (i32.const 108)) ;; l
+        (i32.store8 (i32.add (global.get $output_ptr) (i32.const 11)) (i32.const 100)) ;; d
+        (local.set $out_pos (i32.const 12))
       )
     )
 
