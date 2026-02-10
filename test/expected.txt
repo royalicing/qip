@@ -65,7 +65,7 @@ module: utf8-must-be-valid.wasm
 hello
 module: wasm-to-js.wasm
 export async function run(input) {
-  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMDAgAABQMBAAMGHQR/AEGAgAQLfwBBgIAEC38AQYCACAt/AEGAgAQLB0wGBm1lbW9yeQIACWlucHV0X3B0cgMADmlucHV0X3V0ZjhfY2FwAwEKb3V0cHV0X3B0cgMCD291dHB1dF91dGY4X2NhcAMDA3J1bgABCroBAhkAIABBIEYgAEEJRiAAQQpGIABBDUZycnILnQEBBH9BASEDIABBAEsEQAJAA0AgASAATw0BIwAgAWotAAAhBCAEEABFBEBBACEDDAILIAFBAWohAQwACwsLIwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiADRQRAQQAhAUEHIQICQANAIAEgAE8NASMCIAJqIwAgAWotAAA6AAAgAUEBaiEBIAJBAWohAgwACwsLIAIL'), c => c.charCodeAt(0));
+  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMCAQAFAwEAAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTAYGbWVtb3J5AgAJaW5wdXRfcHRyAwAOaW5wdXRfdXRmOF9jYXADAQpvdXRwdXRfcHRyAwIPb3V0cHV0X3V0ZjhfY2FwAwMDcnVuAAAKZwFlAQJ/IwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiAAQQBLBEBBACEBQQchAgJAA0AgASAATw0BIwIgAmojACABai0AADoAACABQQFqIQEgAkEBaiECDAALCwsgAgs='), c => c.charCodeAt(0));
   const module = await WebAssembly.compile(wasmBytes);
   const instance = await WebAssembly.instantiate(module);
   const exports = instance.exports;

@@ -4,6 +4,9 @@ default: qip
 
 include ./examples/sqlite3/sqlite.mk
 
+WASM_STACK_SIZE ?= 65536
+WASM_STACK_FLAG := -Wl,-z,stack-size=$(WASM_STACK_SIZE)
+
 qip: main.go go.mod go.sum
 	go fmt main.go
 	go build -ldflags="-s -w" -trimpath
@@ -17,16 +20,16 @@ examples/rgba/%.wasm: examples/rgba/%.wat
 examples-wat-wasm: $(patsubst examples/%.wat,examples/%.wasm,$(wildcard examples/*.wat)) $(patsubst examples/rgba/%.wat,examples/rgba/%.wasm,$(wildcard examples/rgba/*.wat))
 
 examples/sqlite-table-names.wasm: examples/sqlite-table-names.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 examples/svg-rasterize.wasm: examples/svg-rasterize.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
 examples/text-to-bmp.wasm: examples/text-to-bmp.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=uniform_set_leading -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export=uniform_set_leading -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 examples/bmp-double.wasm: examples/bmp-double.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 examples/bmp-double2.wasm: examples/bmp-double2.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
@@ -35,14 +38,14 @@ examples/bmp-double-simd.wasm: examples/bmp-double-simd.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry -mcpu=generic+simd128 --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
 examples/js-to-bmp.wasm: examples/js-to-bmp.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
 ZIG_ENV := ZIG_CACHE_DIR=$(ZIG_CACHE_DIR) ZIG_GLOBAL_CACHE_DIR=$(ZIG_GLOBAL_CACHE_DIR)
 
 examples/c-to-bmp.wasm: examples/c-to-bmp.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 examples/js-to-bmp2.wasm: examples/js-to-bmp2.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
@@ -51,7 +54,7 @@ examples/bmp-to-ico.wasm: examples/bmp-to-ico.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
 examples/%.wasm: examples/%.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 examples-c-wasm: $(patsubst examples/%.c,examples/%.wasm,$(wildcard examples/*.c))
 
