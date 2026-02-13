@@ -464,12 +464,16 @@ func benchCmd(args []string) {
 	if moduleCount > 1 {
 		bestIdx := 0
 		worstIdx := 0
+		lowestPeakMemIdx := 0
 		for i := 1; i < moduleCount; i++ {
 			if summaries[i].total.mean < summaries[bestIdx].total.mean {
 				bestIdx = i
 			}
 			if summaries[i].total.mean > summaries[worstIdx].total.mean {
 				worstIdx = i
+			}
+			if summaries[i].peakMem < summaries[lowestPeakMemIdx].peakMem {
+				lowestPeakMemIdx = i
 			}
 		}
 		fastestMean := summaries[bestIdx].total.mean
@@ -480,6 +484,7 @@ func benchCmd(args []string) {
 			ratio := float64(slowestMean) / float64(fastestMean)
 			fmt.Printf("  speedup vs slowest: %.2fx over %q\n", ratio, modules[worstIdx])
 		}
+		fmt.Printf("  lowest peak memory: %q (peak %s, mean %s)\n", modules[lowestPeakMemIdx], formatBytesIEC(summaries[lowestPeakMemIdx].peakMem), formatBytesIEC(summaries[lowestPeakMemIdx].meanMem))
 	}
 }
 
@@ -647,7 +652,7 @@ func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, 
 		summary.inst.mean,
 		compileDuration,
 	)
-	fmt.Printf("  Memory allocated: %s\n", formatBytesIEC(summary.peakMem))
+	fmt.Printf("  Memory allocated: mean %s, peak %s\n", formatBytesIEC(summary.meanMem), formatBytesIEC(summary.peakMem))
 	fmt.Printf("  Capacity: input %s, output %s\n", formatBytesIEC(inputCapBytes), formatBytesIEC(outputCapBytes))
 	fmt.Printf("  Binary size: %d bytes, gzip %d bytes\n", binarySize, gzipSize)
 	fmt.Printf("\n")
