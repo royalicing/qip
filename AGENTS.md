@@ -51,3 +51,7 @@
 ## Tests
 
 We have snapshots in `test/latest.txt` that are matched against `test/expected.txt`. When updating the tests within `Makefile` please run `make test` and verify all the tests pass.
+
+## Optimization
+
+When implementing a common algorithm, benchmark against other implementations. For example Go stdlib has many, so does Python, and Zig has a few. Or use what CLIs are installed. When looking at making a performance improvement, be sure to benchmark before and after to measure what the improvement was. You can use `qip bench` to benchmark the module. For big changes I’m ok with cloning the module, this way we can compare the before and after more easily.
