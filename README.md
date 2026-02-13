@@ -109,6 +109,8 @@ qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/bla
 
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
+- [ ] Add `qip router build` for building a web app.
+- [ ] Add `qip form` for multi step modules that work over CLI and web forms.
 
 ## Documentation
 
