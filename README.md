@@ -33,6 +33,14 @@ echo "+1 (212) 555-0100" | qip run examples/e164.wasm
 echo "rgb(101, 79, 240)" | qip run examples/rgb-to-hex.wasm
 # #654ff0
 
+# Create zlib bytes (dynamic Huffman, shown as base64)
+echo "qip + wasm" | qip run examples/zlib-compress-dynamic-huffman.wasm examples/base64-encode.wasm
+# eAEFwKENAAAMArBX8LtqcmIJBMH7VEcMsv4CEnkDbg==
+
+# Round-trip zlib back to original text
+echo "qip + wasm" | qip run examples/zlib-compress-dynamic-huffman.wasm examples/zlib-decompress.wasm
+# qip + wasm
+
 # Expand emoji shortcodes
 echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run examples/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly pipelines identically on any computer ✨
@@ -48,6 +56,20 @@ echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" />
 ```
 
 ### Benchmark and compare modules
+
+### Compare Compression Ratios
+
+Use the comparison harness to measure ratio and speed across `qip`, Python, Go, Bun, and available PATH tools.
+
+```bash
+# Compare on existing files
+./tools/compare-deflate.py --runs 5 --warmup 1 README.md main.go
+
+# Compare on synthetic data
+head -c 262144 /dev/zero > /tmp/qip-bench-zeros-256k.bin
+head -c 262144 /dev/urandom > /tmp/qip-bench-random-256k.bin
+./tools/compare-deflate.py --runs 5 --warmup 1 /tmp/qip-bench-zeros-256k.bin /tmp/qip-bench-random-256k.bin
+```
 
 Benchmark the performance of one or more modules. If you compare multiple modules then it’ll check each output is exactly the same. This is great for porting say from C to Zig or asking your AI agent to implement optimizations and verifying that it works exactly the same as before.
 

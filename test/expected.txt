@@ -11,6 +11,18 @@ module: css-class-validator.wasm
 btn-primary
 module: e164.wasm
 +14155552671
+module: zlib-compress.wasm | base64-encode.wasm
+eAEBCgD1/3FpcCArIHdhc20SeQNu
+module: zlib-compress.wasm | zlib-decompress.wasm
+qip + wasm
+module: zlib-compress-fixed-huffman.wasm | base64-encode.wasm
+eAErzCxQ0FYoTyzOBQASeQNu
+module: zlib-compress-fixed-huffman.wasm | zlib-decompress.wasm
+qip + wasm
+module: zlib-compress-dynamic-huffman.wasm | base64-encode.wasm
+eAEFwLENAAAIArBX2LmKkYEE4+D7dlwQp80DEnkDbg==
+module: zlib-compress-dynamic-huffman.wasm | zlib-decompress.wasm
+qip + wasm
 module: hello.wasm
 Hello, World
 module: hello-c.wasm

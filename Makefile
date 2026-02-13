@@ -53,6 +53,21 @@ examples/js-to-bmp2.wasm: examples/js-to-bmp2.zig
 examples/bmp-to-ico.wasm: examples/bmp-to-ico.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
+examples/zlib-compress.wasm: examples/zlib-compress.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+
+examples/zlib-compress-fixed-huffman.wasm: examples/zlib-compress-fixed-huffman.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+
+examples/zlib-compress-dynamic-huffman.wasm: examples/zlib-compress-dynamic-huffman.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+
+
+examples/zlib-compress-dynamic-huffman-opt.wasm: examples/zlib-compress-dynamic-huffman-opt.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+examples/zlib-decompress.wasm: examples/zlib-decompress.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
+
 examples/%.wasm: examples/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
@@ -85,6 +100,21 @@ test-snapshot: qip examples
 	@printf %s "btn-primary" | ./qip run examples/css-class-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: e164.wasm" >> test/latest.txt
 	@printf %s "+14155552671" | ./qip run examples/e164.wasm >> test/latest.txt
+	@printf "%s\n" "module: zlib-compress.wasm | base64-encode.wasm" >> test/latest.txt
+	@printf %s "qip + wasm" | ./qip run examples/zlib-compress.wasm examples/base64-encode.wasm >> test/latest.txt
+	@printf "%s\n" "module: zlib-compress.wasm | zlib-decompress.wasm" >> test/latest.txt
+	@printf %s "qip + wasm" | ./qip run examples/zlib-compress.wasm examples/zlib-decompress.wasm >> test/latest.txt
+	@printf "\n" >> test/latest.txt
+	@printf "%s\n" "module: zlib-compress-fixed-huffman.wasm | base64-encode.wasm" >> test/latest.txt
+	@printf %s "qip + wasm" | ./qip run examples/zlib-compress-fixed-huffman.wasm examples/base64-encode.wasm >> test/latest.txt
+	@printf "%s\n" "module: zlib-compress-fixed-huffman.wasm | zlib-decompress.wasm" >> test/latest.txt
+	@printf %s "qip + wasm" | ./qip run examples/zlib-compress-fixed-huffman.wasm examples/zlib-decompress.wasm >> test/latest.txt
+	@printf "\n" >> test/latest.txt
+	@printf "%s\n" "module: zlib-compress-dynamic-huffman.wasm | base64-encode.wasm" >> test/latest.txt
+	@printf %s "qip + wasm" | ./qip run examples/zlib-compress-dynamic-huffman.wasm examples/base64-encode.wasm >> test/latest.txt
+	@printf "%s\n" "module: zlib-compress-dynamic-huffman.wasm | zlib-decompress.wasm" >> test/latest.txt
+	@printf %s "qip + wasm" | ./qip run examples/zlib-compress-dynamic-huffman.wasm examples/zlib-decompress.wasm >> test/latest.txt
+	@printf "\n" >> test/latest.txt
 	@printf "%s\n" "module: hello.wasm" >> test/latest.txt
 	@printf %s "World" | ./qip run examples/hello.wasm >> test/latest.txt
 	@printf "%s\n" "module: hello-c.wasm" >> test/latest.txt
