@@ -16,17 +16,22 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
+	"io/fs"
 	"log"
 	"math"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/tetratelabs/wazero"
@@ -64,11 +69,11 @@ type options struct {
 	verbose bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server to re-run modules per request\n  help  Show command help"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server for a content directory with optional recipes\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
-const usageDev = "Usage: qip dev -i <input> [-p <port>] [-v|--verbose] [-- <module1> <module2> ...]"
+const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [-p <port>] [-v|--verbose]"
 const usageHelp = "Usage: qip help [command]"
 
 const helpRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_len), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > out.ico"
@@ -1470,54 +1475,76 @@ func vlogf(opts options, format string, args ...any) {
 	log.Printf(format, args...)
 }
 
+type devContentRoute struct {
+	filePath   string
+	sourceMIME string
+}
+
+type recipeCandidate struct {
+	path     string
+	filename string
+	order    int
+	digest   [32]byte
+}
+
 func devCmd(args []string) {
 	opts := options{}
-	var inputPath string
+	var recipesRoot string
 	port := 4000
 	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var devVerbose bool
 	fs.BoolVar(&devVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&devVerbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&inputPath, "i", "", "input file path")
+	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
 	fs.IntVar(&port, "p", 4000, "port")
-
-	separator := -1
-	for i, arg := range args {
-		if arg == "--" {
-			separator = i
-			break
-		}
-	}
-	var modules []string
-	if separator == -1 {
-		if err := fs.Parse(args); err != nil {
-			gameOver("%s %v", usageDev, err)
-		}
-		modules = fs.Args()
-	} else {
-		if err := fs.Parse(args[:separator]); err != nil {
-			gameOver("%s %v", usageDev, err)
-		}
-		if len(fs.Args()) > 0 {
-			gameOver(usageDev)
-		}
-		modules = args[separator+1:]
+	if err := fs.Parse(normalizeDevArgs(args)); err != nil {
+		gameOver("%s %v", usageDev, err)
 	}
 
 	opts.verbose = devVerbose
-	if inputPath == "" {
+	contentArgs := fs.Args()
+	if len(contentArgs) != 1 {
 		gameOver(usageDev)
 	}
+	contentRoot := contentArgs[0]
 	if port <= 0 || port > 65535 {
 		gameOver("Invalid port: %d", port)
 	}
 
-	chain, err := buildModuleChain(context.Background(), modules, opts)
+	contentInfo, err := os.Stat(contentRoot)
+	if err != nil {
+		gameOver("Invalid content directory: %v", err)
+	}
+	if !contentInfo.IsDir() {
+		gameOver("Invalid content directory: %q is not a directory", contentRoot)
+	}
+
+	if recipesRoot != "" {
+		recipeInfo, err := os.Stat(recipesRoot)
+		if err != nil {
+			gameOver("Invalid recipes directory: %v", err)
+		}
+		if !recipeInfo.IsDir() {
+			gameOver("Invalid recipes directory: %q is not a directory", recipesRoot)
+		}
+	}
+
+	contentRoutes, err := buildDevContentRoutes(contentRoot)
 	if err != nil {
 		gameOver("%v", err)
 	}
-	defer chain.Close(context.Background())
+
+	recipeChains, recipeDigests, err := loadRecipeChains(context.Background(), recipesRoot, opts)
+	if err != nil {
+		gameOver("%v", err)
+	}
+	defer closeModuleChains(context.Background(), recipeChains)
+
+	log.Printf("dev: indexed %d request paths from %s", len(contentRoutes), contentRoot)
+	if recipesRoot != "" {
+		log.Printf("dev: loaded %d recipe mime chains from %s", len(recipeChains), recipesRoot)
+	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	mux := http.NewServeMux()
@@ -1525,7 +1552,7 @@ func devCmd(args []string) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		reqID := atomic.AddUint64(&requestID, 1)
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			emptyDurations := []time.Duration{}
 			emptyInst := []time.Duration{}
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1533,7 +1560,16 @@ func devCmd(args []string) {
 			return
 		}
 
-		inputBytes, err := os.ReadFile(inputPath)
+		route, ok := resolveDevContentRoute(contentRoutes, r.URL.Path)
+		if !ok {
+			emptyDurations := []time.Duration{}
+			emptyInst := []time.Duration{}
+			http.NotFound(w, r)
+			log.Printf("dev: %s %s status=404 %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), emptyDurations, emptyInst))
+			return
+		}
+
+		inputBytes, err := os.ReadFile(route.filePath)
 		if err != nil {
 			emptyDurations := []time.Duration{}
 			emptyInst := []time.Duration{}
@@ -1541,16 +1577,27 @@ func devCmd(args []string) {
 			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), emptyDurations, emptyInst))
 			return
 		}
+		sourceDigest := sha256.Sum256(inputBytes)
 
-		ctx := context.Background()
-		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-		defer cancel()
-
-		result, err := chain.run(ctx, inputBytes, reqID)
-		if err != nil {
-			writeDevError(w, err)
-			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
-			return
+		result := chainResult{
+			output: contentData{bytes: inputBytes, encoding: dataEncodingRaw},
+			metrics: chainMetrics{
+				moduleDurations:        []time.Duration{},
+				instantiationDurations: []time.Duration{},
+			},
+		}
+		_, hasRecipes := recipeChains[route.sourceMIME]
+		if hasRecipes {
+			chain := recipeChains[route.sourceMIME]
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+			defer cancel()
+			result, err = chain.run(ctx, inputBytes, reqID)
+			if err != nil {
+				writeDevError(w, err)
+				log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
+				return
+			}
 		}
 
 		body, err := formatOutputBytes(result.output)
@@ -1560,20 +1607,25 @@ func devCmd(args []string) {
 			return
 		}
 
-		contentType := "text/html; charset=utf-8"
-		if result.output.encoding == dataEncodingRaw {
-			if isICOBytes(body) {
-				contentType = "image/x-icon"
-			} else if isBMPBytes(body) {
-				contentType = "image/bmp"
+		etag := buildDevETag(sourceDigest, recipeDigests[route.sourceMIME])
+		if etag != "" {
+			w.Header().Set("ETag", etag)
+			if r.Header.Get("If-None-Match") == etag {
+				w.WriteHeader(http.StatusNotModified)
+				log.Printf("dev: %s %s status=304 %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
+				return
 			}
 		}
+		contentType := devResponseContentType(route.sourceMIME, hasRecipes, result.output, body)
 		w.Header().Set("Content-Type", contentType)
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(body); err != nil {
-			log.Printf("dev: %s %s write_error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
+		if r.Method != http.MethodHead {
+			if _, err := w.Write(body); err != nil {
+				log.Printf("dev: %s %s write_error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
+				return
+			}
 		}
-		log.Printf("dev: %s %s ok %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
+		log.Printf("dev: %s %s status=200 %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 	})
 
 	server := &http.Server{
@@ -1596,6 +1648,356 @@ func devCmd(args []string) {
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		gameOver("dev server error: %v", err)
 	}
+}
+
+func normalizeDevArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	first := args[0]
+	if strings.HasPrefix(first, "-") {
+		return args
+	}
+
+	normalized := make([]string, 0, len(args))
+	normalized = append(normalized, args[1:]...)
+	normalized = append(normalized, first)
+	return normalized
+}
+
+func buildDevContentRoutes(contentRoot string) (map[string]devContentRoute, error) {
+	files := make([]struct {
+		rel  string
+		full string
+	}, 0, 32)
+	err := filepath.WalkDir(contentRoot, func(fullPath string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("content entry %q must be a regular file", fullPath)
+		}
+		relPath, err := filepath.Rel(contentRoot, fullPath)
+		if err != nil {
+			return err
+		}
+		relPath = filepath.ToSlash(relPath)
+		if !utf8.ValidString(relPath) {
+			return fmt.Errorf("content path %q must be valid UTF-8", relPath)
+		}
+		if strings.Contains(relPath, "\\") {
+			return fmt.Errorf("content path %q must not contain backslash", relPath)
+		}
+		if strings.HasPrefix(relPath, "/") {
+			return fmt.Errorf("content path %q must not start with /", relPath)
+		}
+		cleanRel := path.Clean(relPath)
+		if cleanRel != relPath || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+			return fmt.Errorf("content path %q is not canonical", relPath)
+		}
+		files = append(files, struct {
+			rel  string
+			full string
+		}{rel: relPath, full: fullPath})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].rel < files[j].rel
+	})
+
+	routes := make(map[string]devContentRoute, len(files))
+	for _, entry := range files {
+		aliases := contentRequestPaths(entry.rel)
+		route := devContentRoute{
+			filePath:   entry.full,
+			sourceMIME: detectSourceMIME(entry.rel),
+		}
+		for _, requestPath := range aliases {
+			if prev, exists := routes[requestPath]; exists && prev.filePath != route.filePath {
+				return nil, fmt.Errorf("duplicate route path %q for %q and %q", requestPath, prev.filePath, route.filePath)
+			}
+			routes[requestPath] = route
+		}
+	}
+
+	return routes, nil
+}
+
+func contentRequestPaths(relPath string) []string {
+	out := make([]string, 0, 4)
+	appendUnique := func(value string) {
+		for _, existing := range out {
+			if existing == value {
+				return
+			}
+		}
+		out = append(out, value)
+	}
+
+	appendUnique("/" + relPath)
+	ext := path.Ext(relPath)
+	lowerExt := strings.ToLower(ext)
+	if lowerExt == ".html" || lowerExt == ".md" || lowerExt == ".markdown" {
+		base := path.Base(relPath)
+		if strings.EqualFold(base, "index"+ext) {
+			dir := path.Dir(relPath)
+			if dir == "." {
+				appendUnique("/")
+			} else {
+				appendUnique("/" + dir)
+				appendUnique("/" + dir + "/")
+			}
+		} else {
+			appendUnique("/" + strings.TrimSuffix(relPath, ext))
+		}
+	}
+	return out
+}
+
+func detectSourceMIME(relPath string) string {
+	ext := strings.ToLower(path.Ext(relPath))
+	switch ext {
+	case ".md", ".markdown":
+		return "text/markdown"
+	}
+
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		return "application/octet-stream"
+	}
+	if cut := strings.IndexByte(mimeType, ';'); cut != -1 {
+		mimeType = strings.TrimSpace(mimeType[:cut])
+	}
+	if mimeType == "" {
+		return "application/octet-stream"
+	}
+	return mimeType
+}
+
+func resolveDevContentRoute(routes map[string]devContentRoute, requestPath string) (devContentRoute, bool) {
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	if !strings.HasPrefix(requestPath, "/") {
+		requestPath = "/" + requestPath
+	}
+
+	candidates := []string{requestPath}
+	clean := path.Clean(requestPath)
+	if clean == "." {
+		clean = "/"
+	}
+	if !strings.HasPrefix(clean, "/") {
+		clean = "/" + clean
+	}
+	if clean != requestPath {
+		candidates = append(candidates, clean)
+	}
+	if requestPath != "/" {
+		if strings.HasSuffix(requestPath, "/") {
+			candidates = append(candidates, strings.TrimSuffix(requestPath, "/"))
+		} else {
+			candidates = append(candidates, requestPath+"/")
+		}
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		if route, ok := routes[candidate]; ok {
+			return route, true
+		}
+	}
+	return devContentRoute{}, false
+}
+
+func parseRecipeFilename(filename string) (order int, disabled bool, err error) {
+	if !isASCII(filename) {
+		return 0, false, errors.New("filename must be ASCII")
+	}
+	if !strings.HasSuffix(filename, ".wasm") {
+		return 0, false, errors.New("filename must end with .wasm")
+	}
+
+	trimmed := filename
+	if strings.HasPrefix(trimmed, "-") {
+		disabled = true
+		trimmed = trimmed[1:]
+	}
+
+	if len(trimmed) < len("00-a.wasm") {
+		return 0, disabled, errors.New("filename must match NN-name.wasm")
+	}
+	if trimmed[0] < '0' || trimmed[0] > '9' || trimmed[1] < '0' || trimmed[1] > '9' {
+		return 0, disabled, errors.New("filename prefix must be two digits")
+	}
+	if trimmed[2] != '-' {
+		return 0, disabled, errors.New("filename must match NN-name.wasm")
+	}
+	namePart := strings.TrimSuffix(trimmed, ".wasm")[3:]
+	if namePart == "" {
+		return 0, disabled, errors.New("recipe name must not be empty")
+	}
+
+	order = int(trimmed[0]-'0')*10 + int(trimmed[1]-'0')
+	return order, disabled, nil
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] > 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func loadRecipeChains(ctx context.Context, recipesRoot string, opts options) (map[string]*moduleChain, map[string][][32]byte, error) {
+	chains := make(map[string]*moduleChain)
+	digestsByMIME := make(map[string][][32]byte)
+	if recipesRoot == "" {
+		return chains, digestsByMIME, nil
+	}
+
+	candidatesByMIME := make(map[string][]recipeCandidate)
+	err := filepath.WalkDir(recipesRoot, func(fullPath string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("recipe entry %q must be a regular file", fullPath)
+		}
+
+		relPath, err := filepath.Rel(recipesRoot, fullPath)
+		if err != nil {
+			return err
+		}
+		relPath = filepath.ToSlash(relPath)
+		filename := path.Base(relPath)
+		if !strings.HasSuffix(filename, ".wasm") {
+			return nil
+		}
+		parts := strings.Split(relPath, "/")
+		if len(parts) != 3 {
+			return fmt.Errorf("recipe path %q must match <type>/<subtype>/<file>", relPath)
+		}
+		mimeType := parts[0] + "/" + parts[1]
+		filename = parts[2]
+
+		order, disabled, err := parseRecipeFilename(filename)
+		if err != nil {
+			return fmt.Errorf("invalid recipe filename %q: %w", relPath, err)
+		}
+		if disabled {
+			return nil
+		}
+
+		body, err := os.ReadFile(fullPath)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(body)
+		candidatesByMIME[mimeType] = append(candidatesByMIME[mimeType], recipeCandidate{
+			path:     fullPath,
+			filename: filename,
+			order:    order,
+			digest:   digest,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mimeTypes := make([]string, 0, len(candidatesByMIME))
+	for mimeType := range candidatesByMIME {
+		mimeTypes = append(mimeTypes, mimeType)
+	}
+	sort.Strings(mimeTypes)
+
+	for _, mimeType := range mimeTypes {
+		candidates := candidatesByMIME[mimeType]
+		sort.Slice(candidates, func(i, j int) bool {
+			if candidates[i].order != candidates[j].order {
+				return candidates[i].order < candidates[j].order
+			}
+			return candidates[i].filename < candidates[j].filename
+		})
+		seenOrder := make(map[int]string, len(candidates))
+		for _, candidate := range candidates {
+			if prevPath, exists := seenOrder[candidate.order]; exists {
+				return nil, nil, fmt.Errorf("duplicate recipe prefix for %s: %02d in %q and %q", mimeType, candidate.order, prevPath, candidate.path)
+			}
+			seenOrder[candidate.order] = candidate.path
+		}
+		modulePaths := make([]string, len(candidates))
+		digests := make([][32]byte, len(candidates))
+		for i, candidate := range candidates {
+			modulePaths[i] = candidate.path
+			digests[i] = candidate.digest
+		}
+		chain, err := buildModuleChain(ctx, modulePaths, opts)
+		if err != nil {
+			closeModuleChains(ctx, chains)
+			return nil, nil, err
+		}
+		chains[mimeType] = chain
+		digestsByMIME[mimeType] = digests
+	}
+
+	return chains, digestsByMIME, nil
+}
+
+func closeModuleChains(ctx context.Context, chains map[string]*moduleChain) {
+	for _, chain := range chains {
+		chain.Close(ctx)
+	}
+}
+
+func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte) string {
+	if len(recipeDigests) == 0 {
+		return fmt.Sprintf("\"%x\"", sourceDigest)
+	}
+	h := sha256.New()
+	_, _ = h.Write(sourceDigest[:])
+	for _, digest := range recipeDigests {
+		_, _ = h.Write(digest[:])
+	}
+	return fmt.Sprintf("\"%x\"", h.Sum(nil))
+}
+
+func devResponseContentType(sourceMIME string, recipesApplied bool, output contentData, body []byte) string {
+	if recipesApplied && sourceMIME == "text/markdown" {
+		return "text/html; charset=utf-8"
+	}
+	if output.encoding == dataEncodingRaw {
+		if isICOBytes(body) {
+			return "image/x-icon"
+		}
+		if isBMPBytes(body) {
+			return "image/bmp"
+		}
+	}
+	if sourceMIME == "" {
+		return "application/octet-stream"
+	}
+	if strings.HasPrefix(sourceMIME, "text/") {
+		return sourceMIME + "; charset=utf-8"
+	}
+	return sourceMIME
 }
 
 type chainMetrics struct {

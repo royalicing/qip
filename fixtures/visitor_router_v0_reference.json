@@ -1,0 +1,38 @@
+{
+  "abi_version": "visitor-router-abi-v0",
+  "input_encoding": "utf-8",
+  "input_layout": "path_bytes|query_bytes",
+  "cases": [
+    {
+      "name": "home-page",
+      "path": "/",
+      "query": "",
+      "expected": {
+        "kind": "respond",
+        "status": 200,
+        "content_sha256_count": 1,
+        "recipe_sha256_count": 0,
+        "location_len": 0
+      }
+    },
+    {
+      "name": "legacy-redirect",
+      "path": "/old",
+      "query": "ref=nav",
+      "expected": {
+        "kind": "redirect",
+        "status": 302,
+        "location_len_gt": 0
+      }
+    },
+    {
+      "name": "not-found",
+      "path": "/missing",
+      "query": "",
+      "expected": {
+        "kind": "error",
+        "status": 404
+      }
+    }
+  ]
+}

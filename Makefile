@@ -68,6 +68,12 @@ examples/zlib-compress-dynamic-huffman-opt.wasm: examples/zlib-compress-dynamic-
 examples/zlib-decompress.wasm: examples/zlib-decompress.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_bytes_cap --export=output_ptr --export=output_bytes_cap -femit-bin=$@
 
+recipes/text/markdown/10-markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_utf8_cap -femit-bin=$@
+
+examples/markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.wasm
+	cp $< $@
+
 examples/%.wasm: examples/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=run -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
@@ -77,6 +83,8 @@ examples/%.wasm: examples/%.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_utf8_cap -femit-bin=$@
 
 examples-zig-wasm: $(patsubst examples/%.zig,examples/%.wasm,$(wildcard examples/*.zig))
+examples-zig-wasm: examples/markdown-basic.wasm
+examples-zig-wasm: recipes/text/markdown/10-markdown-basic.wasm
 
 examples: examples-wat-wasm examples-c-wasm examples-zig-wasm
 
@@ -152,7 +160,7 @@ test-snapshot: qip examples
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
 
-ZIG_TEST_FILES := $(wildcard examples/*.zig)
+ZIG_TEST_FILES := $(wildcard examples/*.zig) recipes/text/markdown/10-markdown-basic.zig
 
 test-zig: $(ZIG_TEST_FILES)
 	@for f in $^; do \

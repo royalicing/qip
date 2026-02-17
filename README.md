@@ -90,11 +90,12 @@ echo "World" | qip bench -i - --benchtime=2s examples/hello.wasm examples/hello-
 ### Dev server
 
 ```bash
-# Preview this Markdown README as HTML page
-qip dev -i README.md -p 4000 -- ./examples/markdown-basic.wasm ./examples/html-page-wrap.wasm
+# Serve a docs directory as a website.
+# If recipes/text/markdown/*.wasm exists, markdown files are transformed before serving.
+qip dev ./docs --recipes ./recipes -p 4000
 
-# Preview rendering qip-logo.svg to .ico in browser
-qip dev -i qip-logo.svg -p 4001 -- examples/svg-rasterize.wasm examples/bmp-to-ico.wasm
+# Serve static assets with no recipe transforms
+qip dev ./public -p 4001
 ```
 
 ### Image
