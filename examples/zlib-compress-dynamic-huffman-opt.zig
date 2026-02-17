@@ -25,11 +25,16 @@ var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 var head: [HASH_SIZE]i32 = undefined;
 var prev: [WINDOW_SIZE]i32 = undefined;
+var token_buf: [INPUT_CAP]u32 = undefined;
+
+const TOKEN_MATCH_FLAG: u32 = 0x8000_0000;
+const TOKEN_LEN_MASK: u32 = 0x1ff;
+const TOKEN_DIST_SHIFT: u5 = 9;
 
 const LENGTH_BASE = [_]u16{
-    3,   4,   5,   6,   7,   8,   9,   10,
-    11,  13,  15,  17,  19,  23,  27,  31,
-    35,  43,  51,  59,  67,  83,  99,  115,
+    3,   4,   5,   6,   7,   8,  9,  10,
+    11,  13,  15,  17,  19,  23, 27, 31,
+    35,  43,  51,  59,  67,  83, 99, 115,
     131, 163, 195, 227, 258,
 };
 
@@ -41,16 +46,16 @@ const LENGTH_EXTRA = [_]u8{
 };
 
 const DIST_BASE = [_]u16{
-    1,    2,    3,    4,    5,    7,    9,    13,
-    17,   25,   33,   49,   65,   97,   129,  193,
-    257,  385,  513,  769,  1025, 1537, 2049, 3073,
+    1,    2,    3,    4,     5,     7,     9,    13,
+    17,   25,   33,   49,    65,    97,    129,  193,
+    257,  385,  513,  769,   1025,  1537,  2049, 3073,
     4097, 6145, 8193, 12289, 16385, 24577,
 };
 
 const DIST_EXTRA = [_]u8{
-    0, 0, 0, 0, 1, 1, 2, 2,
-    3, 3, 4, 4, 5, 5, 6, 6,
-    7, 7, 8, 8, 9, 9, 10, 10,
+    0,  0,  0,  0,  1,  1,  2,  2,
+    3,  3,  4,  4,  5,  5,  6,  6,
+    7,  7,  8,  8,  9,  9,  10, 10,
     11, 11, 12, 12, 13, 13,
 };
 
@@ -414,7 +419,40 @@ fn buildCanonicalCodes(comptime N: usize, lengths: *const [N]u8, codes: *[N]u16,
     return true;
 }
 
-fn computeTokenFreqs(input: []const u8, lit_freq: *[LIT_CODE_COUNT]u32, dist_freq: *[DIST_CODE_COUNT]u32) void {
+fn encodeLiteralToken(byte: u8) u32 {
+    return @as(u32, byte);
+}
+
+fn encodeMatchToken(length: usize, distance: usize) u32 {
+    return TOKEN_MATCH_FLAG |
+        (@as(u32, @intCast(distance - 1)) << TOKEN_DIST_SHIFT) |
+        @as(u32, @intCast(length));
+}
+
+fn tokenIsMatch(token: u32) bool {
+    return (token & TOKEN_MATCH_FLAG) != 0;
+}
+
+fn tokenLiteral(token: u32) u8 {
+    return @as(u8, @intCast(token & 0xff));
+}
+
+fn tokenLength(token: u32) usize {
+    return @as(usize, @intCast(token & TOKEN_LEN_MASK));
+}
+
+fn tokenDistance(token: u32) usize {
+    return @as(usize, @intCast((token >> TOKEN_DIST_SHIFT) & 0x7fff)) + 1;
+}
+
+fn tokenizeAndCount(
+    input: []const u8,
+    tokens: *[INPUT_CAP]u32,
+    token_len: *usize,
+    lit_freq: *[LIT_CODE_COUNT]u32,
+    dist_freq: *[DIST_CODE_COUNT]u32,
+) bool {
+    token_len.* = 0;
     @memset(lit_freq[0..], 0);
     @memset(dist_freq[0..], 0);
 
@@ -430,13 +468,21 @@ fn computeTokenFreqs(input: []const u8, lit_freq: *[LIT_CODE_COUNT]u32, dist_fre
             insertPosition(input, pos);
             const next = findMatch(input, pos + 1);
             if (next.len > m.len + LAZY_MATCH_BONUS) {
-                lit_freq[input[pos]] += 1;
+                if (token_len.* >= INPUT_CAP) return false;
+                const b = input[pos];
+                tokens[token_len.*] = encodeLiteralToken(b);
+                token_len.* += 1;
+                lit_freq[b] += 1;
                 pos += 1;
                 continue;
             }
         }
 
         if (m.len >= MIN_MATCH) {
+            if (token_len.* >= INPUT_CAP) return false;
+            tokens[token_len.*] = encodeMatchToken(m.len, m.dist);
+            token_len.* += 1;
+
             const len_enc = encodeLength(m.len);
             const dist_enc = encodeDistance(m.dist);
             lit_freq[len_enc.symbol] += 1;
@@ -449,7 +495,12 @@ fn computeTokenFreqs(input: []const u8, lit_freq: *[LIT_CODE_COUNT]u32, dist_fre
             }
             pos = end;
         } else {
-            lit_freq[input[pos]] += 1;
+            if (token_len.* >= INPUT_CAP) return false;
+            const b = input[pos];
+            tokens[token_len.*] = encodeLiteralToken(b);
+            token_len.* += 1;
+
+            lit_freq[b] += 1;
             insertPosition(input, pos);
             pos += 1;
         }
@@ -469,6 +520,8 @@ fn computeTokenFreqs(input: []const u8, lit_freq: *[LIT_CODE_COUNT]u32, dist_fre
         // Dynamic Huffman requires at least one distance code.
         dist_freq[0] = 1;
     }
+
+    return true;
 }
 fn getCodeLen(lit_len: *const [LIT_CODE_COUNT]u8, num_lit: usize, dist_len: *const [DIST_CODE_COUNT]u8, idx: usize) u8 {
     if (idx < num_lit) return lit_len[idx];
@@ -541,53 +594,29 @@ fn encodeCodeLengthRle(
     return true;
 }
 
-fn emitTokensDynamic(
-    input: []const u8,
+fn emitTokenBuffer(
+    tokens: []const u32,
     writer: *BitWriter,
     lit_len: *const [LIT_CODE_COUNT]u8,
     lit_code: *const [LIT_CODE_COUNT]u16,
     dist_len: *const [DIST_CODE_COUNT]u8,
     dist_code: *const [DIST_CODE_COUNT]u16,
 ) bool {
-    initMatcher();
+    for (tokens) |token| {
+        if (tokenIsMatch(token)) {
+            const m_len = tokenLength(token);
+            const m_dist = tokenDistance(token);
 
-    var pos: usize = 0;
-    while (pos < input.len) {
-        const m = findMatch(input, pos);
-
-        var used_lookahead = false;
-        if (m.len >= MIN_MATCH and m.len < MAX_MATCH and pos + 1 < input.len) {
-            used_lookahead = true;
-            insertPosition(input, pos);
-            const next = findMatch(input, pos + 1);
-            if (next.len > m.len + LAZY_MATCH_BONUS) {
-                const b = input[pos];
-                if (!writer.writeBits(lit_code[b], lit_len[b])) return false;
-                pos += 1;
-                continue;
-            }
-        }
-
-        if (m.len >= MIN_MATCH) {
-            const len_enc = encodeLength(m.len);
-            const dist_enc = encodeDistance(m.dist);
+            const len_enc = encodeLength(m_len);
+            const dist_enc = encodeDistance(m_dist);
 
             if (!writer.writeBits(lit_code[len_enc.symbol], lit_len[len_enc.symbol])) return false;
             if (!writer.writeBits(len_enc.extra_value, len_enc.extra_bits)) return false;
             if (!writer.writeBits(dist_code[dist_enc.symbol], dist_len[dist_enc.symbol])) return false;
             if (!writer.writeBits(dist_enc.extra_value, dist_enc.extra_bits)) return false;
-
-            var p: usize = if (used_lookahead) pos + 1 else pos;
-            const end = pos + m.len;
-            while (p < end) : (p += 1) {
-                insertPosition(input, p);
-            }
-            pos = end;
         } else {
-            const b = input[pos];
+            const b = tokenLiteral(token);
             if (!writer.writeBits(lit_code[b], lit_len[b])) return false;
-            insertPosition(input, pos);
-            pos += 1;
         }
     }
 
@@ -601,7 +630,8 @@ export fn run(input_size_in: u32) u32 {
 
     var lit_freq: [LIT_CODE_COUNT]u32 = undefined;
     var dist_freq: [DIST_CODE_COUNT]u32 = undefined;
-    computeTokenFreqs(input, &lit_freq, &dist_freq);
+    var token_count: usize = 0;
+    if (!tokenizeAndCount(input, &token_buf, &token_count, &lit_freq, &dist_freq)) return 0;
 
     var lit_len: [LIT_CODE_COUNT]u8 = undefined;
     var dist_len: [DIST_CODE_COUNT]u8 = undefined;
@@ -664,7 +694,7 @@ export fn run(input_size_in: u32) u32 {
         if (!writer.writeBits(e.extra_value, e.extra_bits)) return 0;
     }
 
-    if (!emitTokensDynamic(input, &writer, &lit_len, &lit_code, &dist_len, &dist_code)) return 0;
+    if (!emitTokenBuffer(token_buf[0..token_count], &writer, &lit_len, &lit_code, &dist_len, &dist_code)) return 0;
     if (!writer.flush()) return 0;
 
     if (writer.out_i + 4 > OUTPUT_CAP) return 0;
