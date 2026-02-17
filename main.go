@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -1487,6 +1488,12 @@ type recipeCandidate struct {
 	digest   [32]byte
 }
 
+type devRuntimeState struct {
+	contentRoutes map[string]devContentRoute
+	recipeChains  map[string]*moduleChain
+	recipeDigests map[string][][32]byte
+}
+
 func devCmd(args []string) {
 	opts := options{}
 	var recipesRoot string
@@ -1530,20 +1537,24 @@ func devCmd(args []string) {
 		}
 	}
 
-	contentRoutes, err := buildDevContentRoutes(contentRoot)
+	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, opts)
 	if err != nil {
 		gameOver("%v", err)
 	}
+	var stateMu sync.RWMutex
+	defer func() {
+		stateMu.Lock()
+		current := state
+		state = nil
+		stateMu.Unlock()
+		if current != nil {
+			closeModuleChains(context.Background(), current.recipeChains)
+		}
+	}()
 
-	recipeChains, recipeDigests, err := loadRecipeChains(context.Background(), recipesRoot, opts)
-	if err != nil {
-		gameOver("%v", err)
-	}
-	defer closeModuleChains(context.Background(), recipeChains)
-
-	log.Printf("dev: indexed %d request paths from %s", len(contentRoutes), contentRoot)
+	log.Printf("dev: indexed %d request paths from %s", len(state.contentRoutes), contentRoot)
 	if recipesRoot != "" {
-		log.Printf("dev: loaded %d recipe mime chains from %s", len(recipeChains), recipesRoot)
+		log.Printf("dev: loaded %d recipe mime chains from %s", len(state.recipeChains), recipesRoot)
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -1560,8 +1571,10 @@ func devCmd(args []string) {
 			return
 		}
 
-		route, ok := resolveDevContentRoute(contentRoutes, r.URL.Path)
+		stateMu.RLock()
+		route, ok := resolveDevContentRoute(state.contentRoutes, r.URL.Path)
 		if !ok {
+			stateMu.RUnlock()
 			emptyDurations := []time.Duration{}
 			emptyInst := []time.Duration{}
 			http.NotFound(w, r)
@@ -1571,6 +1584,7 @@ func devCmd(args []string) {
 
 		inputBytes, err := os.ReadFile(route.filePath)
 		if err != nil {
+			stateMu.RUnlock()
 			emptyDurations := []time.Duration{}
 			emptyInst := []time.Duration{}
 			writeDevError(w, err)
@@ -1586,14 +1600,15 @@ func devCmd(args []string) {
 				instantiationDurations: []time.Duration{},
 			},
 		}
-		_, hasRecipes := recipeChains[route.sourceMIME]
+		_, hasRecipes := state.recipeChains[route.sourceMIME]
 		if hasRecipes {
-			chain := recipeChains[route.sourceMIME]
+			chain := state.recipeChains[route.sourceMIME]
 			ctx := context.Background()
 			ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 			defer cancel()
 			result, err = chain.run(ctx, inputBytes, reqID)
 			if err != nil {
+				stateMu.RUnlock()
 				writeDevError(w, err)
 				log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 				return
@@ -1602,12 +1617,14 @@ func devCmd(args []string) {
 
 		body, err := formatOutputBytes(result.output)
 		if err != nil {
+			stateMu.RUnlock()
 			writeDevError(w, err)
 			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 			return
 		}
 
-		etag := buildDevETag(sourceDigest, recipeDigests[route.sourceMIME])
+		etag := buildDevETag(sourceDigest, state.recipeDigests[route.sourceMIME])
+		stateMu.RUnlock()
 		if etag != "" {
 			w.Header().Set("ETag", etag)
 			if r.Header.Get("If-None-Match") == etag {
@@ -1634,7 +1651,41 @@ func devCmd(args []string) {
 	}
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	hupCh := make(chan os.Signal, 1)
+	signal.Notify(hupCh, syscall.SIGHUP)
+	defer signal.Stop(hupCh)
+
+	var reloadWG sync.WaitGroup
+	reloadWG.Add(1)
+	go func() {
+		defer reloadWG.Done()
+		for {
+			select {
+			case <-signalCtx.Done():
+				return
+			case <-hupCh:
+				reloadStart := time.Now()
+				nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, opts)
+				if err != nil {
+					log.Printf("dev: reload failed: %v", err)
+					continue
+				}
+
+				stateMu.Lock()
+				previous := state
+				state = nextState
+				stateMu.Unlock()
+				if previous != nil {
+					closeModuleChains(context.Background(), previous.recipeChains)
+				}
+				log.Printf("dev: reloaded paths=%d recipe_mimes=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), time.Since(reloadStart).Milliseconds())
+			}
+		}
+	}()
+	defer func() {
+		stop()
+		reloadWG.Wait()
+	}()
 
 	go func() {
 		<-signalCtx.Done()
@@ -1644,10 +1695,27 @@ func devCmd(args []string) {
 	}()
 
 	log.Printf("dev: listening on http://%s", addr)
+	log.Printf("dev: send SIGHUP to reload routes and recipes: `kill -HUP %d`", os.Getpid())
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		gameOver("dev server error: %v", err)
 	}
+}
+
+func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot string, opts options) (*devRuntimeState, error) {
+	contentRoutes, err := buildDevContentRoutes(contentRoot)
+	if err != nil {
+		return nil, err
+	}
+	recipeChains, recipeDigests, err := loadRecipeChains(ctx, recipesRoot, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &devRuntimeState{
+		contentRoutes: contentRoutes,
+		recipeChains:  recipeChains,
+		recipeDigests: recipeDigests,
+	}, nil
 }
 
 func normalizeDevArgs(args []string) []string {

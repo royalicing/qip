@@ -96,6 +96,9 @@ qip dev ./docs --recipes ./recipes -p 4000
 
 # Serve static assets with no recipe transforms
 qip dev ./public -p 4001
+
+# Reload routes and recipes without stopping the server
+kill -HUP <qip-dev-pid>
 ```
 
 ### Image
