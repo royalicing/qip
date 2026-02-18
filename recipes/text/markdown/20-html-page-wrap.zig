@@ -3,6 +3,13 @@ const std = @import("std");
 const INPUT_CAP: u32 = 0x40000;
 const OUTPUT_CAP: u32 = 0x80000;
 const TITLE_CAP: usize = 1024;
+const EMBEDDED_STYLES = std.mem.trimRight(u8, @embedFile("styles.css"), "\r\n");
+
+comptime {
+    if (containsClosingStyleTag(EMBEDDED_STYLES)) {
+        @compileError("styles.css contains closing </style sequence; remove it or split as <\\/style");
+    }
+}
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -118,13 +125,19 @@ fn extractTitle(input: []const u8, buf: []u8) []const u8 {
     return buf[start..end];
 }
 
+fn containsClosingStyleTag(css: []const u8) bool {
+    return std.mem.indexOf(u8, css, "</style") != null;
+}
+
 fn wrapHtml(input: []const u8, output: []u8, title_buf: []u8) usize {
     var w = Writer.init(output);
     const title = extractTitle(input, title_buf);
 
     w.writeSlice("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>");
     w.writeEscaped(title);
-    w.writeSlice("</title><style>body{font-family:system-ui,sans-serif;line-height:1.5;}main{max-width:44em;margin:0 auto}code,pre{font-family:ui-monospace,monospace}pre{overflow:auto}img{max-width:100%;height:auto}@media (prefers-color-scheme: dark){body{background:#0f1115;color:#e6e6e6}a{color:#8ab4ff}}</style></head><body><main>");
+    w.writeSlice("</title><style>");
+    w.writeSlice(EMBEDDED_STYLES);
+    w.writeSlice("</style></head><body><main>");
     w.writeSlice(input);
     w.writeSlice("</main></body></html>");
     w.writeByte('\n');
@@ -145,8 +158,12 @@ test "wraps with title from h1" {
     var title_buf: [TITLE_CAP]u8 = undefined;
     const input = "<h1>Hello <em>World</em></h1><p>Hi</p>";
     const written = wrapHtml(input, out[0..], title_buf[0..]);
+    const expected = std.fmt.comptimePrint(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Hello World</title><style>{s}</style></head><body><main><h1>Hello <em>World</em></h1><p>Hi</p></main></body></html>\n",
+        .{EMBEDDED_STYLES},
+    );
     try std.testing.expectEqualStrings(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Hello World</title><style>body{font-family:system-ui,sans-serif;line-height:1.5;}main{max-width:44em;margin:0 auto}code,pre{font-family:ui-monospace,monospace}pre{overflow:auto}img{max-width:100%;height:auto}@media (prefers-color-scheme: dark){body{background:#0f1115;color:#e6e6e6}a{color:#8ab4ff}}</style></head><body><main><h1>Hello <em>World</em></h1><p>Hi</p></main></body></html>\n",
+        expected,
         out[0..written],
     );
 }
@@ -156,8 +173,12 @@ test "defaults title when no h1" {
     var title_buf: [TITLE_CAP]u8 = undefined;
     const input = "<p>No heading</p>";
     const written = wrapHtml(input, out[0..], title_buf[0..]);
+    const expected = std.fmt.comptimePrint(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Document</title><style>{s}</style></head><body><main><p>No heading</p></main></body></html>\n",
+        .{EMBEDDED_STYLES},
+    );
     try std.testing.expectEqualStrings(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Document</title><style>body{font-family:system-ui,sans-serif;line-height:1.5;}main{max-width:44em;margin:0 auto}code,pre{font-family:ui-monospace,monospace}pre{overflow:auto}img{max-width:100%;height:auto}@media (prefers-color-scheme: dark){body{background:#0f1115;color:#e6e6e6}a{color:#8ab4ff}}</style></head><body><main><p>No heading</p></main></body></html>\n",
+        expected,
         out[0..written],
     );
 }

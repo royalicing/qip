@@ -71,7 +71,7 @@ examples/zlib-decompress.wasm: examples/zlib-decompress.zig
 recipes/text/markdown/10-markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_utf8_cap -femit-bin=$@
 
-recipes/text/markdown/20-html-page-wrap.wasm: recipes/text/markdown/20-html-page-wrap.zig
+recipes/text/markdown/20-html-page-wrap.wasm: recipes/text/markdown/20-html-page-wrap.zig recipes/text/markdown/styles.css
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseSmall -fno-entry --export=run --export=input_ptr --export=input_utf8_cap --export=output_ptr --export=output_utf8_cap -femit-bin=$@
 
 examples/markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.wasm
