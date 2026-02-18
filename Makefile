@@ -1,6 +1,6 @@
 .PHONY: examples recipes examples-wat-wasm examples-c-wasm examples-zig-wasm test
 
-default: qip
+default: qip examples recipes
 
 include ./examples/sqlite3/sqlite.mk
 
