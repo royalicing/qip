@@ -9,6 +9,7 @@ WASM_STACK_FLAG := -Wl,-z,stack-size=$(WASM_STACK_SIZE)
 ZIG_WASM_FLAGS := -target wasm32-freestanding -O ReleaseSmall -fno-entry -rdynamic
 
 qip: main.go go.mod go.sum
+	go fix ./...
 	go fmt main.go
 	go build -ldflags="-s -w" -trimpath
 
