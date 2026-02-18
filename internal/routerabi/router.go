@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -378,22 +379,22 @@ func formatTypes(types []api.ValueType) string {
 	if len(types) == 0 {
 		return ""
 	}
-	out := ""
+	var out strings.Builder
 	for i, t := range types {
 		if i > 0 {
-			out += ","
+			out.WriteString(",")
 		}
 		if t == api.ValueTypeI32 {
-			out += "i32"
+			out.WriteString("i32")
 		} else if t == api.ValueTypeI64 {
-			out += "i64"
+			out.WriteString("i64")
 		} else if t == api.ValueTypeF32 {
-			out += "f32"
+			out.WriteString("f32")
 		} else if t == api.ValueTypeF64 {
-			out += "f64"
+			out.WriteString("f64")
 		} else {
-			out += fmt.Sprintf("0x%x", byte(t))
+			out.WriteString(fmt.Sprintf("0x%x", byte(t)))
 		}
 	}
-	return out
+	return out.String()
 }

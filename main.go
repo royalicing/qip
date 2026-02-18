@@ -25,6 +25,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -246,7 +247,7 @@ func run(args []string) {
 			bufSize := count * 9
 			writer := bufio.NewWriterSize(os.Stdout, bufSize)
 			defer writer.Flush()
-			for i := 0; i < count; i++ {
+			for i := range count {
 				v := binary.LittleEndian.Uint32(result.output.bytes[i*4:])
 				if opts.verbose {
 					vlogf(opts, "u32: %d", v)
@@ -400,7 +401,7 @@ func benchCmd(args []string) {
 	}
 
 	samples := make([][]benchSample, moduleCount)
-	for i := 0; i < moduleCount; i++ {
+	for i := range moduleCount {
 		samples[i] = make([]benchSample, 0, benchRuns)
 	}
 	benchTimeTotals := make([]time.Duration, moduleCount)
@@ -409,7 +410,7 @@ func benchCmd(args []string) {
 			break
 		}
 		startIndex := i % moduleCount
-		for j := 0; j < moduleCount; j++ {
+		for j := range moduleCount {
 			moduleIndex := (startIndex + j) % moduleCount
 			sample, output, err := runBenchSample(
 				ctx,
@@ -435,7 +436,7 @@ func benchCmd(args []string) {
 	}
 
 	summaries := make([]benchSummary, moduleCount)
-	for i := 0; i < moduleCount; i++ {
+	for i := range moduleCount {
 		summaries[i] = summarizeBench(samples[i])
 	}
 
@@ -454,7 +455,7 @@ func benchCmd(args []string) {
 	fmt.Printf("  measured: %d runs/module\n", len(samples[0]))
 	fmt.Printf("  timeout:  %s per run\n\n", perRunTimeout)
 
-	for i := 0; i < moduleCount; i++ {
+	for i := range moduleCount {
 		printBenchBenchmarkReport(
 			i+1,
 			modules[i],
@@ -565,7 +566,7 @@ func summarizeDurations(values []time.Duration) durationStats {
 		sum += x
 		sorted[i] = value.Nanoseconds()
 	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 
 	mean := sum / float64(n)
 	var variance float64
@@ -575,10 +576,7 @@ func summarizeDurations(values []time.Duration) durationStats {
 	}
 	variance /= float64(n)
 
-	p95Index := int(math.Ceil(0.95*float64(n))) - 1
-	if p95Index < 0 {
-		p95Index = 0
-	}
+	p95Index := max(int(math.Ceil(0.95*float64(n)))-1, 0)
 	if p95Index >= n {
 		p95Index = n - 1
 	}
@@ -701,10 +699,7 @@ func describeContentMismatch(expected, actual contentData) string {
 }
 
 func firstDiffIndex(a, b []byte) int {
-	limit := len(a)
-	if len(b) < limit {
-		limit = len(b)
-	}
+	limit := min(len(b), len(a))
 	for i := 0; i < limit; i++ {
 		if a[i] != b[i] {
 			return i
@@ -820,10 +815,10 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 		floatDst := make([]float32, len(floatSrc))
 		pix := inputRGBA.Pix
 		stride := inputRGBA.Stride
-		for y := 0; y < height; y++ {
+		for y := range height {
 			srcRow := y * stride
 			dstRow := y * width * 4
-			for x := 0; x < width; x++ {
+			for x := range width {
 				s := srcRow + x*4
 				d := dstRow + x*4
 				floatSrc[d] = float32(pix[s]) * inv255
@@ -852,7 +847,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 					if x+tileW > width {
 						tileW = width - x
 					}
-					for row := 0; row < tileSpan; row++ {
+					for row := range tileSpan {
 						srcY := y + row - halo
 						if srcY < 0 {
 							srcY = 0
@@ -861,7 +856,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						}
 						srcRow := srcY * width * 4
 						dstRow := row * tileSpan * 4
-						for col := 0; col < tileSpan; col++ {
+						for col := range tileSpan {
 							srcX := x + col - halo
 							if srcX < 0 {
 								srcX = 0
@@ -917,10 +912,10 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 
 		outPix := outputRGBA.Pix
 		outStride := outputRGBA.Stride
-		for y := 0; y < height; y++ {
+		for y := range height {
 			srcRow := y * width * 4
 			dstRow := y * outStride
-			for x := 0; x < width; x++ {
+			for x := range width {
 				s := srcRow + x*4
 				d := dstRow + x*4
 				v := floatSrc[s]
@@ -1150,7 +1145,7 @@ func decodeBMP(input []byte) (*image.RGBA, error) {
 			srcY = absHeight - 1 - y
 		}
 		srcRow := dataOffset + srcY*rowStride
-		for x := 0; x < absWidth; x++ {
+		for x := range absWidth {
 			s := srcRow + x*bytesPerPixel
 			b := input[s]
 			g := input[s+1]
@@ -1194,9 +1189,9 @@ func encodeBMP(img *image.RGBA) ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf[30:], 0)
 	binary.LittleEndian.PutUint32(buf[34:], uint32(dataSize))
 
-	for y := 0; y < height; y++ {
+	for y := range height {
 		srcY := height - 1 - y
-		for x := 0; x < width; x++ {
+		for x := range width {
 			s := img.PixOffset(bounds.Min.X+x, bounds.Min.Y+srcY)
 			d := 54 + y*rowStride + x*4
 			buf[d] = img.Pix[s+2]
@@ -1656,9 +1651,7 @@ func devCmd(args []string) {
 	defer signal.Stop(hupCh)
 
 	var reloadWG sync.WaitGroup
-	reloadWG.Add(1)
-	go func() {
-		defer reloadWG.Done()
+	reloadWG.Go(func() {
 		for {
 			select {
 			case <-signalCtx.Done():
@@ -1681,7 +1674,7 @@ func devCmd(args []string) {
 				log.Printf("dev: reloaded paths=%d recipe_mimes=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), time.Since(reloadStart).Milliseconds())
 			}
 		}
-	}()
+	})
 	defer func() {
 		stop()
 		reloadWG.Wait()
@@ -1801,10 +1794,8 @@ func buildDevContentRoutes(contentRoot string) (map[string]devContentRoute, erro
 func contentRequestPaths(relPath string) []string {
 	out := make([]string, 0, 4)
 	appendUnique := func(value string) {
-		for _, existing := range out {
-			if existing == value {
-				return
-			}
+		if slices.Contains(out, value) {
+			return
 		}
 		out = append(out, value)
 	}
@@ -1869,8 +1860,8 @@ func resolveDevContentRoute(routes map[string]devContentRoute, requestPath strin
 		candidates = append(candidates, clean)
 	}
 	if requestPath != "/" {
-		if strings.HasSuffix(requestPath, "/") {
-			candidates = append(candidates, strings.TrimSuffix(requestPath, "/"))
+		if before, ok := strings.CutSuffix(requestPath, "/"); ok {
+			candidates = append(candidates, before)
 		} else {
 			candidates = append(candidates, requestPath+"/")
 		}
@@ -2328,7 +2319,7 @@ func formatOutputBytes(output contentData) ([]byte, error) {
 		count := len(output.bytes) / 4
 		var buf bytes.Buffer
 		buf.Grow(count * 9)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			v := binary.LittleEndian.Uint32(output.bytes[i*4:])
 			fmt.Fprintf(&buf, "%08x\n", v)
 		}
