@@ -36,6 +36,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	qinternal "github.com/royalicing/qip/internal"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -71,11 +72,12 @@ type options struct {
 	verbose bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server for a content directory with optional recipes\n  help  Show command help"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server for a content directory with optional recipes\n  form  Run an interactive wasm form module in the terminal\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
 const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [-p <port>] [-v|--verbose]"
+const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 const usageHelp = "Usage: qip help [command]"
 
 const helpRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_len), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > out.ico"
@@ -101,6 +103,8 @@ func main() {
 		imageCmd(args[1:])
 	} else if args[0] == "dev" {
 		devCmd(args[1:])
+	} else if args[0] == "form" {
+		formCmd(args[1:])
 	} else {
 		gameOver(usageMain)
 	}
@@ -122,8 +126,16 @@ func helpCmd(args []string) {
 		fmt.Println(usageImage)
 	case "dev":
 		fmt.Println(usageDev)
+	case "form":
+		fmt.Println(usageForm)
 	default:
 		gameOver(usageHelp)
+	}
+}
+
+func formCmd(args []string) {
+	if err := qinternal.RunFormCommand(args); err != nil {
+		gameOver("%v", err)
 	}
 }
 
@@ -700,7 +712,7 @@ func describeContentMismatch(expected, actual contentData) string {
 
 func firstDiffIndex(a, b []byte) int {
 	limit := min(len(b), len(a))
-	for i := 0; i < limit; i++ {
+	for i := range limit {
 		if a[i] != b[i] {
 			return i
 		}
