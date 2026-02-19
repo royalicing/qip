@@ -94,10 +94,14 @@ echo "World" | qip bench -i - --benchtime=2s examples/hello.wasm examples/hello-
 # If recipes/text/markdown/*.wasm exists, markdown files are transformed before serving.
 qip dev ./docs --recipes ./recipes -p 4000
 
+# Enable client-side <qip-form> tags.
+# <qip-form name="contact"></qip-form> resolves to ./examples/contact.wasm.
+qip dev ./docs --recipes ./recipes --forms ./examples -p 4000
+
 # Serve static assets with no recipe transforms
 qip dev ./public -p 4001
 
-# Reload routes and recipes without stopping the server
+# Reload routes, recipes, and forms without stopping the server
 kill -HUP <qip-dev-pid>
 ```
 
@@ -114,7 +118,6 @@ qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/bla
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Add `qip router build` for building a web app.
-- [ ] Add `qip form` for multi step modules that work over CLI and web forms.
 
 ## Documentation
 

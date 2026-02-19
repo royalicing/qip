@@ -6,7 +6,9 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +27,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -76,9 +79,12 @@ const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
 const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
-const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [-p <port>] [-v|--verbose]"
+const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [-p <port>] [-v|--verbose]"
 const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 const usageHelp = "Usage: qip help [command]"
+
+var qipFormTagPattern = regexp.MustCompile(`(?is)<qip-form\b[^>]*>`)
+var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+))")
 
 const helpRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_len), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > out.ico"
 
@@ -1499,11 +1505,14 @@ type devRuntimeState struct {
 	contentRoutes map[string]devContentRoute
 	recipeChains  map[string]*moduleChain
 	recipeDigests map[string][][32]byte
+	formModules   map[string][]byte
+	formDigests   map[string][32]byte
 }
 
 func devCmd(args []string) {
 	opts := options{}
 	var recipesRoot string
+	var formsRoot string
 	port := 4000
 	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -1511,6 +1520,7 @@ func devCmd(args []string) {
 	fs.BoolVar(&devVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&devVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
+	fs.StringVar(&formsRoot, "forms", "", "form modules root directory")
 	fs.IntVar(&port, "p", 4000, "port")
 	if err := fs.Parse(normalizeDevArgs(args)); err != nil {
 		gameOver("%s %v", usageDev, err)
@@ -1544,7 +1554,17 @@ func devCmd(args []string) {
 		}
 	}
 
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, opts)
+	if formsRoot != "" {
+		formInfo, err := os.Stat(formsRoot)
+		if err != nil {
+			gameOver("Invalid forms directory: %v", err)
+		}
+		if !formInfo.IsDir() {
+			gameOver("Invalid forms directory: %q is not a directory", formsRoot)
+		}
+	}
+
+	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, opts)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -1562,6 +1582,9 @@ func devCmd(args []string) {
 	log.Printf("dev: indexed %d request paths from %s", len(state.contentRoutes), contentRoot)
 	if recipesRoot != "" {
 		log.Printf("dev: loaded %d recipe mime chains from %s", len(state.recipeChains), recipesRoot)
+	}
+	if formsRoot != "" {
+		log.Printf("dev: loaded %d form modules from %s", len(state.formModules), formsRoot)
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -1629,8 +1652,19 @@ func devCmd(args []string) {
 			log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
 			return
 		}
+		contentType := devResponseContentType(route.sourceMIME, hasRecipes, result.output, body)
+		formDigests := make([][32]byte, 0)
+		if strings.HasPrefix(contentType, "text/html") {
+			body, formDigests, err = injectQIPFormRuntime(body, state.formModules, state.formDigests)
+			if err != nil {
+				stateMu.RUnlock()
+				writeDevError(w, err)
+				log.Printf("dev: %s %s error=%v %s", r.Method, r.URL.Path, err, formatDurationParts(time.Since(start), result.metrics.moduleDurations, result.metrics.instantiationDurations))
+				return
+			}
+		}
 
-		etag := buildDevETag(sourceDigest, state.recipeDigests[route.sourceMIME])
+		etag := buildDevETag(sourceDigest, state.recipeDigests[route.sourceMIME], formDigests)
 		stateMu.RUnlock()
 		if etag != "" {
 			w.Header().Set("ETag", etag)
@@ -1640,7 +1674,6 @@ func devCmd(args []string) {
 				return
 			}
 		}
-		contentType := devResponseContentType(route.sourceMIME, hasRecipes, result.output, body)
 		w.Header().Set("Content-Type", contentType)
 		w.WriteHeader(http.StatusOK)
 		if r.Method != http.MethodHead {
@@ -1670,7 +1703,7 @@ func devCmd(args []string) {
 				return
 			case <-hupCh:
 				reloadStart := time.Now()
-				nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, opts)
+				nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, opts)
 				if err != nil {
 					log.Printf("dev: reload failed: %v", err)
 					continue
@@ -1683,7 +1716,7 @@ func devCmd(args []string) {
 				if previous != nil {
 					closeModuleChains(context.Background(), previous.recipeChains)
 				}
-				log.Printf("dev: reloaded paths=%d recipe_mimes=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), time.Since(reloadStart).Milliseconds())
+				log.Printf("dev: reloaded paths=%d recipe_mimes=%d forms=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), time.Since(reloadStart).Milliseconds())
 			}
 		}
 	})
@@ -1700,14 +1733,14 @@ func devCmd(args []string) {
 	}()
 
 	log.Printf("dev: listening on http://%s", addr)
-	log.Printf("dev: send SIGHUP to reload routes and recipes: `kill -HUP %d`", os.Getpid())
+	log.Printf("dev: send SIGHUP to reload routes, recipes, and forms: `kill -HUP %d`", os.Getpid())
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		gameOver("dev server error: %v", err)
 	}
 }
 
-func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot string, opts options) (*devRuntimeState, error) {
+func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot string, formsRoot string, opts options) (*devRuntimeState, error) {
 	contentRoutes, err := buildDevContentRoutes(contentRoot)
 	if err != nil {
 		return nil, err
@@ -1716,10 +1749,17 @@ func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot st
 	if err != nil {
 		return nil, err
 	}
+	formModules, formDigests, err := loadFormModules(formsRoot)
+	if err != nil {
+		closeModuleChains(ctx, recipeChains)
+		return nil, err
+	}
 	return &devRuntimeState{
 		contentRoutes: contentRoutes,
 		recipeChains:  recipeChains,
 		recipeDigests: recipeDigests,
+		formModules:   formModules,
+		formDigests:   formDigests,
 	}, nil
 }
 
@@ -2032,14 +2072,77 @@ func loadRecipeChains(ctx context.Context, recipesRoot string, opts options) (ma
 	return chains, digestsByMIME, nil
 }
 
+func loadFormModules(formsRoot string) (map[string][]byte, map[string][32]byte, error) {
+	modules := make(map[string][]byte)
+	digests := make(map[string][32]byte)
+	if formsRoot == "" {
+		return modules, digests, nil
+	}
+
+	modulePaths := make(map[string]string)
+	err := filepath.WalkDir(formsRoot, func(fullPath string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("form entry %q must be a regular file", fullPath)
+		}
+
+		relPath, err := filepath.Rel(formsRoot, fullPath)
+		if err != nil {
+			return err
+		}
+		relPath = filepath.ToSlash(relPath)
+		if !utf8.ValidString(relPath) {
+			return fmt.Errorf("form path %q must be valid UTF-8", relPath)
+		}
+		if strings.HasPrefix(relPath, "/") {
+			return fmt.Errorf("form path %q must not start with /", relPath)
+		}
+		cleanRel := path.Clean(relPath)
+		if cleanRel != relPath || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+			return fmt.Errorf("form path %q is not canonical", relPath)
+		}
+		if strings.ToLower(path.Ext(relPath)) != ".wasm" {
+			return nil
+		}
+
+		formName := strings.TrimSuffix(relPath, path.Ext(relPath))
+		if formName == "" {
+			return fmt.Errorf("form path %q must include a name before .wasm", relPath)
+		}
+
+		if prev, exists := modulePaths[formName]; exists {
+			return fmt.Errorf("duplicate form module name %q in %q and %q", formName, prev, fullPath)
+		}
+
+		body, err := os.ReadFile(fullPath)
+		if err != nil {
+			return err
+		}
+		modules[formName] = body
+		digests[formName] = sha256.Sum256(body)
+		modulePaths[formName] = fullPath
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return modules, digests, nil
+}
+
 func closeModuleChains(ctx context.Context, chains map[string]*moduleChain) {
 	for _, chain := range chains {
 		chain.Close(ctx)
 	}
 }
 
-func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte) string {
-	if len(recipeDigests) == 0 {
+func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte, formDigests [][32]byte) string {
+	if len(recipeDigests) == 0 && len(formDigests) == 0 {
 		return fmt.Sprintf("\"%x\"", sourceDigest)
 	}
 	h := sha256.New()
@@ -2047,8 +2150,357 @@ func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte) string {
 	for _, digest := range recipeDigests {
 		_, _ = h.Write(digest[:])
 	}
+	for _, digest := range formDigests {
+		_, _ = h.Write(digest[:])
+	}
 	return fmt.Sprintf("\"%x\"", h.Sum(nil))
 }
+
+func injectQIPFormRuntime(body []byte, formModules map[string][]byte, formDigests map[string][32]byte) ([]byte, [][32]byte, error) {
+	formNames, err := extractQIPFormNames(body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(formNames) == 0 {
+		return body, nil, nil
+	}
+	if len(formModules) == 0 {
+		return nil, nil, errors.New("qip-form tags detected, but no form modules are loaded (pass --forms <forms_dir>)")
+	}
+
+	usedDigests := make([][32]byte, len(formNames))
+	for i, name := range formNames {
+		if _, ok := formModules[name]; !ok {
+			return nil, nil, fmt.Errorf("qip-form name %q has no matching module in --forms", name)
+		}
+		digest, ok := formDigests[name]
+		if !ok {
+			return nil, nil, fmt.Errorf("qip-form name %q is missing digest metadata", name)
+		}
+		usedDigests[i] = digest
+	}
+
+	script, err := buildQIPFormInlineScript(formNames, formModules)
+	if err != nil {
+		return nil, nil, err
+	}
+	return injectInlineModuleScript(body, script), usedDigests, nil
+}
+
+func extractQIPFormNames(body []byte) ([]string, error) {
+	tags := qipFormTagPattern.FindAll(body, -1)
+	if len(tags) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[string]struct{}, len(tags))
+	names := make([]string, 0, len(tags))
+	for _, tagBytes := range tags {
+		matches := qipFormNamePattern.FindSubmatch(tagBytes)
+		if len(matches) == 0 {
+			return nil, errors.New("<qip-form> tag is missing required name attribute")
+		}
+
+		var rawName string
+		for i := 1; i <= 3; i++ {
+			if len(matches[i]) > 0 {
+				rawName = string(matches[i])
+				break
+			}
+		}
+		name := strings.TrimSpace(html.UnescapeString(rawName))
+		if name == "" {
+			return nil, errors.New("<qip-form> name attribute must not be empty")
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+	return names, nil
+}
+
+func buildQIPFormInlineScript(formNames []string, formModules map[string][]byte) ([]byte, error) {
+	var b strings.Builder
+	b.Grow(4096 + len(formNames)*256)
+	b.WriteString("<script type=\"module\">\n")
+	b.WriteString("const qipFormModules = new Map([\n")
+	for _, name := range formNames {
+		moduleBytes := formModules[name]
+		nameJSON, err := json.Marshal(name)
+		if err != nil {
+			return nil, err
+		}
+		encodedJSON, err := json.Marshal(base64.StdEncoding.EncodeToString(moduleBytes))
+		if err != nil {
+			return nil, err
+		}
+		b.WriteString("  [")
+		b.Write(nameJSON)
+		b.WriteString(", ")
+		b.Write(encodedJSON)
+		b.WriteString("],\n")
+	}
+	b.WriteString("]);\n")
+	b.WriteString(qipFormClientRuntimeModuleJS)
+	b.WriteString("\n</script>")
+	return []byte(b.String()), nil
+}
+
+func injectInlineModuleScript(body []byte, script []byte) []byte {
+	lower := strings.ToLower(string(body))
+	idx := strings.LastIndex(lower, "</body>")
+	if idx == -1 {
+		out := make([]byte, 0, len(body)+len(script))
+		out = append(out, body...)
+		out = append(out, script...)
+		return out
+	}
+
+	out := make([]byte, 0, len(body)+len(script))
+	out = append(out, body[:idx]...)
+	out = append(out, script...)
+	out = append(out, body[idx:]...)
+	return out
+}
+
+const qipFormClientRuntimeModuleJS = `
+const qipFormTextEncoder = new TextEncoder();
+const qipFormTextDecoder = new TextDecoder("utf-8", { fatal: true });
+const qipFormRequiredExports = [
+  "memory",
+  "input_ptr",
+  "input_utf8_cap",
+  "run",
+  "output_ptr",
+  "output_utf8_cap",
+  "input_step",
+  "input_max_step",
+  "input_key_ptr",
+  "input_key_len",
+  "input_label_ptr",
+  "input_label_len",
+  "error_message_ptr",
+  "error_message_len",
+];
+
+function qipFormDecodeBase64(input) {
+  const binary = atob(input);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return out;
+}
+
+function qipFormCallI32(exportsObj, fnName, args) {
+  const fn = exportsObj[fnName];
+  if (typeof fn !== "function") {
+    throw new Error("form module missing export " + fnName);
+  }
+  const result = fn(...(args || []));
+  return result | 0;
+}
+
+function qipFormReadSlice(exportsObj, ptr, len, label) {
+  if (ptr < 0 || len < 0) {
+    throw new Error(label + " returned negative pointer/length");
+  }
+  const mem = new Uint8Array(exportsObj.memory.buffer);
+  const start = ptr >>> 0;
+  const size = len >>> 0;
+  const end = start + size;
+  if (end < start || end > mem.length) {
+    throw new Error(label + " exceeds wasm memory bounds");
+  }
+  return mem.slice(start, end);
+}
+
+function qipFormReadExportedString(exportsObj, ptrExport, lenExport) {
+  const ptr = qipFormCallI32(exportsObj, ptrExport);
+  const len = qipFormCallI32(exportsObj, lenExport);
+  if (len === 0) {
+    return "";
+  }
+  const bytes = qipFormReadSlice(exportsObj, ptr, len, ptrExport + "/" + lenExport);
+  return qipFormTextDecoder.decode(bytes);
+}
+
+function qipFormReadOutput(exportsObj, outLen) {
+  if (outLen < 0) {
+    throw new Error("run returned negative output length: " + String(outLen));
+  }
+  if (outLen === 0) {
+    return "";
+  }
+  const outPtr = qipFormCallI32(exportsObj, "output_ptr");
+  const outCap = qipFormCallI32(exportsObj, "output_utf8_cap");
+  if (outPtr < 0 || outCap < 0) {
+    throw new Error("module returned invalid output pointer/capacity");
+  }
+  if (outLen > outCap) {
+    throw new Error("run output length exceeds output_utf8_cap");
+  }
+  const bytes = qipFormReadSlice(exportsObj, outPtr, outLen, "output_ptr/output_utf8_cap");
+  return qipFormTextDecoder.decode(bytes);
+}
+
+function qipFormWriteInput(exportsObj, value) {
+  const inputPtr = qipFormCallI32(exportsObj, "input_ptr");
+  const inputCap = qipFormCallI32(exportsObj, "input_utf8_cap");
+  if (inputPtr < 0 || inputCap < 0) {
+    throw new Error("module returned invalid input pointer/capacity");
+  }
+  const bytes = qipFormTextEncoder.encode(value);
+  if (bytes.length > inputCap) {
+    throw new Error("input value exceeds module input_utf8_cap");
+  }
+
+  const mem = new Uint8Array(exportsObj.memory.buffer);
+  const start = inputPtr >>> 0;
+  const end = start + bytes.length;
+  if (end < start || end > mem.length) {
+    throw new Error("input write exceeds wasm memory bounds");
+  }
+  mem.set(bytes, start);
+  return bytes.length;
+}
+
+class QIPFormElement extends HTMLElement {
+  constructor() {
+    super();
+    this._started = false;
+    this._exports = null;
+    this._hasRun = false;
+    this._lastOutputLen = 0;
+  }
+
+  async connectedCallback() {
+    if (this._started) {
+      return;
+    }
+    this._started = true;
+    try {
+      await this._init();
+      this._render();
+    } catch (err) {
+      this._renderFatal(err);
+    }
+  }
+
+  async _init() {
+    const formName = (this.getAttribute("name") || "").trim();
+    if (formName === "") {
+      throw new Error("qip-form requires a non-empty name attribute");
+    }
+    const encodedModule = qipFormModules.get(formName);
+    if (typeof encodedModule !== "string") {
+      throw new Error("qip-form module not found for name " + formName);
+    }
+    const moduleBytes = qipFormDecodeBase64(encodedModule);
+    const instantiated = await WebAssembly.instantiate(moduleBytes, {});
+    const exportsObj = instantiated.instance.exports;
+    for (const exportName of qipFormRequiredExports) {
+      if (!(exportName in exportsObj)) {
+        throw new Error("form module missing export " + exportName);
+      }
+    }
+    if (!(exportsObj.memory instanceof WebAssembly.Memory)) {
+      throw new Error("form module export memory must be WebAssembly.Memory");
+    }
+    this._exports = exportsObj;
+  }
+
+  _render() {
+    const exportsObj = this._exports;
+    if (!exportsObj) {
+      throw new Error("form module is not initialized");
+    }
+
+    const step = qipFormCallI32(exportsObj, "input_step");
+    const maxStep = qipFormCallI32(exportsObj, "input_max_step");
+    if (step < 0 || maxStep < 0) {
+      throw new Error("module returned invalid step values");
+    }
+
+    if (step > maxStep) {
+      if (!this._hasRun) {
+        this._lastOutputLen = qipFormCallI32(exportsObj, "run", [0]);
+        this._hasRun = true;
+      }
+      const outputText = qipFormReadOutput(exportsObj, this._lastOutputLen);
+      const pre = document.createElement("pre");
+      pre.textContent = outputText;
+      this.replaceChildren(pre);
+      return;
+    }
+
+    const errorMessage = qipFormReadExportedString(exportsObj, "error_message_ptr", "error_message_len");
+    const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_len");
+    const inputLabel = qipFormReadExportedString(exportsObj, "input_label_ptr", "input_label_len");
+    const prompt = inputLabel.trim() || inputKey.trim() || ("Step " + String(step + 1));
+
+    const container = document.createElement("form");
+    container.noValidate = true;
+
+    const progress = document.createElement("p");
+    progress.textContent = "[" + String(step + 1) + "/" + String(maxStep + 1) + "]";
+    container.appendChild(progress);
+
+    if (errorMessage !== "") {
+      const errorNode = document.createElement("p");
+      errorNode.setAttribute("role", "alert");
+      errorNode.textContent = errorMessage;
+      container.appendChild(errorNode);
+    }
+
+    const labelNode = document.createElement("label");
+    labelNode.textContent = prompt;
+    container.appendChild(labelNode);
+
+    const inputNode = document.createElement("input");
+    inputNode.type = "text";
+    inputNode.required = true;
+    inputNode.name = inputKey || ("step-" + String(step + 1));
+    inputNode.autocomplete = "off";
+    container.appendChild(inputNode);
+
+    const submitNode = document.createElement("button");
+    submitNode.type = "submit";
+    submitNode.textContent = "Continue";
+    container.appendChild(submitNode);
+
+    container.addEventListener("submit", (event) => {
+      event.preventDefault();
+      try {
+        const inputLen = qipFormWriteInput(exportsObj, inputNode.value);
+        this._lastOutputLen = qipFormCallI32(exportsObj, "run", [inputLen]);
+        this._hasRun = true;
+        this._render();
+      } catch (err) {
+        this._renderFatal(err);
+      }
+    });
+
+    this.replaceChildren(container);
+    inputNode.focus();
+  }
+
+  _renderFatal(err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const pre = document.createElement("pre");
+    pre.textContent = "Form error: " + message;
+    this.replaceChildren(pre);
+  }
+}
+
+if (!customElements.get("qip-form")) {
+  customElements.define("qip-form", QIPFormElement);
+}
+`
 
 func devResponseContentType(sourceMIME string, recipesApplied bool, output contentData, body []byte) string {
 	if recipesApplied && sourceMIME == "text/markdown" {
