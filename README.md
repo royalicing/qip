@@ -113,6 +113,27 @@ You can process images through a chain of rgba shaders. It breaks the work into 
 qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/black-and-white.wasm examples/rgba/invert.wasm examples/rgba/vignette.wasm
 ```
 
+#### Example: Process a GitHub Profile Picture
+
+Download a GitHub profile picture and apply interesting image effects:
+
+```bash
+# Download GitHub profile picture
+curl -L -o tmp/github-profile.png https://github.com/royalicing.png
+
+# Apply color halftone effect
+qip image -i tmp/github-profile.png -o tmp/profile-halftone.png examples/rgba/color-halftone.wasm
+
+# Create an artistic edge-detected effect
+qip image -i tmp/github-profile.png -o tmp/profile-edges.png examples/rgba/gaussian-blur.wasm examples/rgba/find-edges.wasm examples/rgba/invert.wasm
+
+# Posterize with vignette for a retro look
+qip image -i tmp/github-profile.png -o tmp/profile-retro.png examples/rgba/posterize-4.wasm examples/rgba/vignette.wasm
+
+# Combine multiple effects for a stylized result
+qip image -i tmp/github-profile.png -o tmp/profile-stylized.png examples/rgba/cutout.wasm examples/rgba/saturation.wasm examples/rgba/contrast.wasm
+```
+
 ## TODO
 
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
