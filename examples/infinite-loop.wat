@@ -7,14 +7,15 @@
 ;; Usage:
 ;;   echo "test" | qip run examples/infinite-loop.wasm
 ;;   
-;; Expected behavior:
-;;   - With qip run: May hang indefinitely (100ms timeout is set but may not be enforced)
-;;   - With qip bench --timeout-ms 100: Should timeout after 100ms
+;; Expected behavior (with WithCloseOnContextDone enabled):
+;;   - With qip run: Terminates after 100ms with "context deadline exceeded"
+;;   - With qip bench --timeout-ms N: Terminates after N milliseconds
 ;;
 ;; This module is useful for:
 ;;   - Testing WebAssembly runtime timeout/quota mechanisms
 ;;   - Verifying context cancellation in qip
 ;;   - Benchmarking overhead of quota enforcement
+;;   - Demonstrating proper resource limits in production use
 ;;
 (module $InfiniteLoop
   ;; Memory must be exported with name "memory"
