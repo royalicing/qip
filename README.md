@@ -45,6 +45,16 @@ echo "qip + wasm" | qip run examples/zlib-compress-dynamic-huffman.wasm examples
 echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run examples/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly pipelines identically on any computer ✨
 
+# Render a calendar for a specific month
+printf "2024-03" | qip run examples/calendar.wasm
+# March 2024
+# Mo Tu We Th Fr Sa Su
+#              1  2  3
+#  4  5  6  7  8  9 10
+# 11 12 13 14 15 16 17
+# 18 19 20 21 22 23 24
+# 25 26 27 28 29 30 31
+
 #  Load Hacker News, extractor all links with text
 curl -s https://news.ycombinator.com | qip run examples/html-link-extractor.wasm | grep "^https:"
 

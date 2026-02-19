@@ -83,6 +83,9 @@ test-snapshot: qip examples
 	@printf "%s\n" "module: base64-encode.wasm | base64-decode.wasm" >> test/latest.txt
 	@printf %s "hello" | ./qip run examples/base64-encode.wasm examples/base64-decode.wasm >> test/latest.txt
 	@printf "\n" >> test/latest.txt
+	@printf "%s\n" "module: calendar.wasm" >> test/latest.txt
+	@printf %s "2024-03" | ./qip run examples/calendar.wasm >> test/latest.txt
+	@printf "\n" >> test/latest.txt
 	@printf "%s\n" "module: bmp-to-ico.wasm | base64-encode.wasm" >> test/latest.txt
 	@printf %s "424D3A0000000000000036000000280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00" | xxd -r -p | ./qip run examples/bmp-to-ico.wasm examples/base64-encode.wasm >> test/latest.txt
 	@printf "\n" >> test/latest.txt
