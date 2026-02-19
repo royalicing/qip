@@ -17,8 +17,6 @@ Scope:
 - `run(input_len: i32) -> i32`
 - `output_ptr() -> i32`
 - `output_utf8_cap() -> i32`
-- `input_step() -> i32`
-- `input_max_step() -> i32`
 - `input_key_ptr() -> i32`
 - `input_key_len() -> i32`
 - `input_label_ptr() -> i32`
@@ -39,10 +37,8 @@ Host must ensure:
 
 ## Step Semantics
 
-- `input_step()` is the current zero-based step index.
-- `input_max_step()` is the maximum zero-based step index.
-- Form is complete when:
-  - `input_step() > input_max_step()`
+- `input_key()` identifies the current step.
+- Form is complete when `input_key_len() == 0`.
 
 For the current step, module provides:
 
@@ -53,7 +49,7 @@ For the current step, module provides:
 
 Host flow:
 
-1. Read current step metadata (`input_step`, `input_max_step`, key/label, error).
+1. Read current step metadata (key/label, error).
 2. Collect one input value.
 3. Write value bytes to `input_ptr`.
 4. Call `run(input_len)`.
@@ -61,7 +57,7 @@ Host flow:
 Module behavior:
 
 - On validation failure:
-  - keep `input_step` unchanged
+  - keep `input_key` unchanged
   - set `error_message_len > 0`
 - On success:
   - advance step (or move to completion state)

@@ -2277,8 +2277,6 @@ const qipFormRequiredExports = [
   "run",
   "output_ptr",
   "output_utf8_cap",
-  "input_step",
-  "input_max_step",
   "input_key_ptr",
   "input_key_len",
   "input_label_ptr",
@@ -2420,13 +2418,8 @@ class QIPFormElement extends HTMLElement {
       throw new Error("form module is not initialized");
     }
 
-    const step = qipFormCallI32(exportsObj, "input_step");
-    const maxStep = qipFormCallI32(exportsObj, "input_max_step");
-    if (step < 0 || maxStep < 0) {
-      throw new Error("module returned invalid step values");
-    }
-
-    if (step > maxStep) {
+    const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_len");
+    if (inputKey.trim() === "") {
       if (!this._hasRun) {
         this._lastOutputLen = qipFormCallI32(exportsObj, "run", [0]);
         this._hasRun = true;
@@ -2439,16 +2432,11 @@ class QIPFormElement extends HTMLElement {
     }
 
     const errorMessage = qipFormReadExportedString(exportsObj, "error_message_ptr", "error_message_len");
-    const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_len");
     const inputLabel = qipFormReadExportedString(exportsObj, "input_label_ptr", "input_label_len");
-    const prompt = inputLabel.trim() || inputKey.trim() || ("Step " + String(step + 1));
+    const prompt = inputLabel.trim() || inputKey.trim() || "Input";
 
     const container = document.createElement("form");
     container.noValidate = true;
-
-    const progress = document.createElement("p");
-    progress.textContent = "[" + String(step + 1) + "/" + String(maxStep + 1) + "]";
-    container.appendChild(progress);
 
     if (errorMessage !== "") {
       const errorNode = document.createElement("p");
@@ -2464,7 +2452,7 @@ class QIPFormElement extends HTMLElement {
     const inputNode = document.createElement("input");
     inputNode.type = "text";
     inputNode.required = true;
-    inputNode.name = inputKey || ("step-" + String(step + 1));
+    inputNode.name = inputKey || "step";
     inputNode.autocomplete = "off";
     container.appendChild(inputNode);
 
