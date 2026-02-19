@@ -425,6 +425,26 @@ fn orderedItem(line: []const u8) ?[]const u8 {
     return null;
 }
 
+fn isThematicBreak(line: []const u8) bool {
+    const s = trimIndent(line);
+    if (s.len == 0) return false;
+
+    var marker: u8 = 0;
+    var count: usize = 0;
+    for (s) |ch| {
+        if (ch == ' ' or ch == '\t') continue;
+        if (ch != '-' and ch != '_' and ch != '*') return false;
+        if (marker == 0) {
+            marker = ch;
+        } else if (marker != ch) {
+            return false;
+        }
+        count += 1;
+    }
+
+    return count >= 3;
+}
+
 fn closeUnorderedListsToDepth(w: *Writer, target_depth: usize, ul_depth: *usize, ul_li_open: *[32]bool) void {
     while (ul_depth.* > target_depth and !w.overflow) {
         const idx = ul_depth.* - 1;
@@ -645,6 +665,18 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             continue;
         }
 
+        if (isThematicBreak(line)) {
+            closeParagraph(&w, &in_paragraph);
+            closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
+            if (in_ol) {
+                w.writeSlice("</ol>\n");
+                in_ol = false;
+            }
+            w.writeSlice("<hr>\n");
+            prev_blank = false;
+            continue;
+        }
+
         if (unorderedItem(line)) |item| {
             closeParagraph(&w, &in_paragraph);
             if (in_ol) {
@@ -747,6 +779,26 @@ test "paragraph requires blank line split" {
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
         "<p>line one\nline two</p>\n",
+        out[0..written],
+    );
+}
+
+test "thematic break renders hr" {
+    var out: [1024]u8 = undefined;
+    const input = "before\n\n---\n\nafter\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<p>before</p>\n<hr>\n<p>after</p>\n",
+        out[0..written],
+    );
+}
+
+test "spaced thematic break wins over unordered list" {
+    var out: [1024]u8 = undefined;
+    const input = "- - -\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<hr>\n",
         out[0..written],
     );
 }
