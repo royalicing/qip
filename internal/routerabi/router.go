@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/royalicing/qip/internal/wasmruntime"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -29,7 +30,7 @@ func Load(ctx context.Context, wasm []byte) (*Router, error) {
 		return nil, fmt.Errorf("%w: empty wasm", ErrRouterInternal)
 	}
 
-	runtime := wazero.NewRuntime(ctx)
+	runtime := wasmruntime.New(ctx)
 	compiled, err := runtime.CompileModule(ctx, wasm)
 	if err != nil {
 		_ = runtime.Close(ctx)

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/royalicing/qip/internal/wasmruntime"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -76,7 +77,7 @@ func RunFormCommand(args []string) error {
 	}
 
 	ctx := context.Background()
-	runtime := wazero.NewRuntime(ctx)
+	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
 	compiled, err := runtime.CompileModule(ctx, body)

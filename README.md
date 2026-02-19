@@ -53,6 +53,10 @@ qip run -i qip-logo.svg examples/svg-rasterize.wasm examples/bmp-double.wasm exa
 
 # Render Switzerland flag svg to .ico
 echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run examples/svg-rasterize.wasm examples/bmp-to-ico.wasm > switzerland-flag.ico
+
+# Test execution timeout safeguards with a module that never returns
+echo "x" | qip run examples/infinite-loop.wasm
+# Wasm module exceeded the execution time limit
 ```
 
 ### Benchmark and compare modules

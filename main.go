@@ -40,6 +40,7 @@ import (
 	"unsafe"
 
 	qinternal "github.com/royalicing/qip/internal"
+	"github.com/royalicing/qip/internal/wasmruntime"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -368,7 +369,7 @@ func benchCmd(args []string) {
 	}
 
 	ctx := context.Background()
-	runtime := wazero.NewRuntime(ctx)
+	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
 	moduleCount := len(modules)
@@ -900,7 +901,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						api.EncodeF32(float32(tileX)),
 						api.EncodeF32(float32(tileY)),
 					); err != nil {
-						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %v", err)
+						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(err))
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
@@ -1014,7 +1015,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						api.EncodeF32(float32(x)),
 						api.EncodeF32(float32(y)),
 					); err != nil {
-						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %v", err)
+						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(err))
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
@@ -1284,7 +1285,7 @@ func imageCmd(args []string) {
 		}
 	}()
 
-	r := wazero.NewRuntime(ctx)
+	r := wasmruntime.New(ctx)
 	defer r.Close(ctx)
 
 	stages := make([]tileStage, len(moduleBodies))
@@ -1425,6 +1426,7 @@ func executeModuleWithInput(ctx context.Context, runtime wazero.Runtime, compile
 	runResult, returnErr := runFunc.Call(ctx, inputSize)
 	exec.run = time.Since(runStart)
 	if returnErr != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(returnErr)
 		return
 	}
 
@@ -2557,7 +2559,7 @@ func buildModuleChain(ctx context.Context, modules []string, opts options) (*mod
 		return &moduleChain{opts: opts}, nil
 	}
 
-	runtime := wazero.NewRuntime(ctx)
+	runtime := wasmruntime.New(ctx)
 	stages := make([]moduleStage, len(modules))
 	compileDurations := make([]time.Duration, len(modules))
 
