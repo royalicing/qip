@@ -441,6 +441,13 @@ fn closeAllUnorderedLists(w: *Writer, ul_depth: *usize, ul_li_open: *[32]bool) v
     closeUnorderedListsToDepth(w, 0, ul_depth, ul_li_open);
 }
 
+fn closeParagraph(w: *Writer, in_paragraph: *bool) void {
+    if (in_paragraph.*) {
+        w.writeSlice("</p>\n");
+        in_paragraph.* = false;
+    }
+}
+
 fn renderMarkdown(input: []const u8, output: []u8) usize {
     var w = Writer.init(output);
 
@@ -451,6 +458,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
     var ul_li_open: [32]bool = [_]bool{false} ** 32;
     var in_ol = false;
     var in_blockquote = false;
+    var in_paragraph = false;
     var prev_blank = true;
 
     var i: usize = 0;
@@ -488,6 +496,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (fenceLang(line)) |lang| {
+            closeParagraph(&w, &in_paragraph);
             closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
@@ -511,6 +520,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
 
         const html_block = detectHtmlBlockStart(line, prev_blank);
         if (html_block != .none) {
+            closeParagraph(&w, &in_paragraph);
             closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
@@ -536,6 +546,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (isBlank(line)) {
+            closeParagraph(&w, &in_paragraph);
             closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
@@ -550,6 +561,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (line.len > 0 and line[0] == '>') {
+            closeParagraph(&w, &in_paragraph);
             if (!in_blockquote) {
                 closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
                 if (in_ol) {
@@ -580,6 +592,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             }
             const sep_cells = countSeparatorCells(next_line);
             if (sep_cells == header_cells and sep_cells > 0) {
+                closeParagraph(&w, &in_paragraph);
                 closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
                 if (in_ol) {
                     w.writeSlice("</ol>\n");
@@ -615,6 +628,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (headingLevel(line)) |h| {
+            closeParagraph(&w, &in_paragraph);
             closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
@@ -632,6 +646,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (unorderedItem(line)) |item| {
+            closeParagraph(&w, &in_paragraph);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
                 in_ol = false;
@@ -663,6 +678,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (orderedItem(line)) |item| {
+            closeParagraph(&w, &in_paragraph);
             closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (!in_ol) {
                 w.writeSlice("<ol>\n");
@@ -681,14 +697,21 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             in_ol = false;
         }
 
-        w.writeSlice("<p>");
+        if (!in_paragraph) {
+            w.writeSlice("<p>");
+            in_paragraph = true;
+        } else {
+            w.writeByte('\n');
+        }
         w.writeInline(line);
-        w.writeSlice("</p>\n");
         prev_blank = false;
     }
 
     if (in_code) {
+        closeParagraph(&w, &in_paragraph);
         w.writeSlice("</code></pre>\n");
+    } else {
+        closeParagraph(&w, &in_paragraph);
     }
     closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
     if (in_ol) {
@@ -714,6 +737,16 @@ test "heading and paragraph" {
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
         "<h1>Title</h1>\n<p>Hello <strong>World</strong></p>\n",
+        out[0..written],
+    );
+}
+
+test "paragraph requires blank line split" {
+    var out: [1024]u8 = undefined;
+    const input = "line one\nline two\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<p>line one\nline two</p>\n",
         out[0..written],
     );
 }
