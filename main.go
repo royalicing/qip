@@ -368,7 +368,8 @@ func benchCmd(args []string) {
 	}
 
 	ctx := context.Background()
-	runtime := wazero.NewRuntime(ctx)
+	runtimeConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
+	runtime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer runtime.Close(ctx)
 
 	moduleCount := len(modules)
@@ -1284,7 +1285,8 @@ func imageCmd(args []string) {
 		}
 	}()
 
-	r := wazero.NewRuntime(ctx)
+	runtimeConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
+	r := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer r.Close(ctx)
 
 	stages := make([]tileStage, len(moduleBodies))
@@ -2557,7 +2559,8 @@ func buildModuleChain(ctx context.Context, modules []string, opts options) (*mod
 		return &moduleChain{opts: opts}, nil
 	}
 
-	runtime := wazero.NewRuntime(ctx)
+	runtimeConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
+	runtime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	stages := make([]moduleStage, len(modules))
 	compileDurations := make([]time.Duration, len(modules))
 
