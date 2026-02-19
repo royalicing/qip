@@ -17,6 +17,10 @@ img {
   max-width: 100%;
   height: auto;
 }
+hr {
+  border: none;
+  border-top: 1px solid currentColor;
+}
 @media (prefers-color-scheme: dark) {
   body {
     background: #0f1115;
