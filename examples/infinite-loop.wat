@@ -1,3 +1,21 @@
+;; Infinite Loop Module
+;; 
+;; This module contains an intentional infinite loop designed to test qip's
+;; quota and timeout handling capabilities. The run function will loop forever,
+;; incrementing a counter indefinitely.
+;;
+;; Usage:
+;;   echo "test" | qip run examples/infinite-loop.wasm
+;;   
+;; Expected behavior:
+;;   - With qip run: May hang indefinitely (100ms timeout is set but may not be enforced)
+;;   - With qip bench --timeout-ms 100: Should timeout after 100ms
+;;
+;; This module is useful for:
+;;   - Testing WebAssembly runtime timeout/quota mechanisms
+;;   - Verifying context cancellation in qip
+;;   - Benchmarking overhead of quota enforcement
+;;
 (module $InfiniteLoop
   ;; Memory must be exported with name "memory"
   ;; At least 3 pages needed: input at 0x10000, output at 0x20000
