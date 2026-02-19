@@ -391,11 +391,28 @@ fn headingLevel(line: []const u8) ?struct { level: u8, text: []const u8 } {
     return null;
 }
 
-fn unorderedItem(line: []const u8) ?[]const u8 {
-    if (line.len >= 2 and (line[0] == '-' or line[0] == '*') and line[1] == ' ') {
-        return line[2..];
+const UnorderedItem = struct {
+    depth: usize,
+    text: []const u8,
+};
+
+fn unorderedItem(line: []const u8) ?UnorderedItem {
+    var spaces: usize = 0;
+    while (spaces < line.len and line[spaces] == ' ') : (spaces += 1) {}
+    if (spaces >= line.len) return null;
+
+    if (spaces == 1 or (spaces > 1 and spaces % 2 != 0)) {
+        return null;
     }
-    return null;
+    if (spaces + 1 >= line.len) return null;
+
+    const marker = line[spaces];
+    if ((marker != '-' and marker != '*') or line[spaces + 1] != ' ') {
+        return null;
+    }
+
+    const depth = if (spaces == 0) 1 else (spaces / 2) + 1;
+    return .{ .depth = depth, .text = line[spaces + 2 ..] };
 }
 
 fn orderedItem(line: []const u8) ?[]const u8 {
@@ -408,13 +425,30 @@ fn orderedItem(line: []const u8) ?[]const u8 {
     return null;
 }
 
+fn closeUnorderedListsToDepth(w: *Writer, target_depth: usize, ul_depth: *usize, ul_li_open: *[32]bool) void {
+    while (ul_depth.* > target_depth and !w.overflow) {
+        const idx = ul_depth.* - 1;
+        if (ul_li_open.*[idx]) {
+            w.writeSlice("</li>\n");
+            ul_li_open.*[idx] = false;
+        }
+        w.writeSlice("</ul>\n");
+        ul_depth.* -= 1;
+    }
+}
+
+fn closeAllUnorderedLists(w: *Writer, ul_depth: *usize, ul_li_open: *[32]bool) void {
+    closeUnorderedListsToDepth(w, 0, ul_depth, ul_li_open);
+}
+
 fn renderMarkdown(input: []const u8, output: []u8) usize {
     var w = Writer.init(output);
 
     const body = stripFrontMatter(input);
     var in_code = false;
     var in_html: HtmlBlockType = .none;
-    var in_ul = false;
+    var ul_depth: usize = 0;
+    var ul_li_open: [32]bool = [_]bool{false} ** 32;
     var in_ol = false;
     var in_blockquote = false;
     var prev_blank = true;
@@ -454,10 +488,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (fenceLang(line)) |lang| {
-            if (in_ul) {
-                w.writeSlice("</ul>\n");
-                in_ul = false;
-            }
+            closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
                 in_ol = false;
@@ -480,10 +511,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
 
         const html_block = detectHtmlBlockStart(line, prev_blank);
         if (html_block != .none) {
-            if (in_ul) {
-                w.writeSlice("</ul>\n");
-                in_ul = false;
-            }
+            closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
                 in_ol = false;
@@ -508,10 +536,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (isBlank(line)) {
-            if (in_ul) {
-                w.writeSlice("</ul>\n");
-                in_ul = false;
-            }
+            closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
                 in_ol = false;
@@ -526,10 +551,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
 
         if (line.len > 0 and line[0] == '>') {
             if (!in_blockquote) {
-                if (in_ul) {
-                    w.writeSlice("</ul>\n");
-                    in_ul = false;
-                }
+                closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
                 if (in_ol) {
                     w.writeSlice("</ol>\n");
                     in_ol = false;
@@ -558,10 +580,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             }
             const sep_cells = countSeparatorCells(next_line);
             if (sep_cells == header_cells and sep_cells > 0) {
-                if (in_ul) {
-                    w.writeSlice("</ul>\n");
-                    in_ul = false;
-                }
+                closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
                 if (in_ol) {
                     w.writeSlice("</ol>\n");
                     in_ol = false;
@@ -596,10 +615,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
         }
 
         if (headingLevel(line)) |h| {
-            if (in_ul) {
-                w.writeSlice("</ul>\n");
-                in_ul = false;
-            }
+            closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (in_ol) {
                 w.writeSlice("</ol>\n");
                 in_ol = false;
@@ -620,22 +636,34 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
                 w.writeSlice("</ol>\n");
                 in_ol = false;
             }
-            if (!in_ul) {
-                w.writeSlice("<ul>\n");
-                in_ul = true;
+            var target_depth = item.depth;
+            if (target_depth == 0) target_depth = 1;
+            if (target_depth > ul_depth + 1) {
+                target_depth = ul_depth + 1;
             }
+
+            closeUnorderedListsToDepth(&w, target_depth, &ul_depth, &ul_li_open);
+            if (target_depth > 0 and ul_li_open[target_depth - 1]) {
+                w.writeSlice("</li>\n");
+                ul_li_open[target_depth - 1] = false;
+            }
+
+            while (ul_depth < target_depth and !w.overflow) {
+                w.writeSlice("<ul>\n");
+                ul_depth += 1;
+            }
+
             w.writeSlice("<li>");
-            w.writeInline(item);
-            w.writeSlice("</li>\n");
+            w.writeInline(item.text);
+            if (target_depth > 0) {
+                ul_li_open[target_depth - 1] = true;
+            }
             prev_blank = false;
             continue;
         }
 
         if (orderedItem(line)) |item| {
-            if (in_ul) {
-                w.writeSlice("</ul>\n");
-                in_ul = false;
-            }
+            closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
             if (!in_ol) {
                 w.writeSlice("<ol>\n");
                 in_ol = true;
@@ -647,10 +675,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             continue;
         }
 
-        if (in_ul) {
-            w.writeSlice("</ul>\n");
-            in_ul = false;
-        }
+        closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
         if (in_ol) {
             w.writeSlice("</ol>\n");
             in_ol = false;
@@ -665,9 +690,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
     if (in_code) {
         w.writeSlice("</code></pre>\n");
     }
-    if (in_ul) {
-        w.writeSlice("</ul>\n");
-    }
+    closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
     if (in_ol) {
         w.writeSlice("</ol>\n");
     }
@@ -701,6 +724,16 @@ test "lists" {
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
         "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n<ol>\n<li>One</li>\n<li>Two</li>\n</ol>\n",
+        out[0..written],
+    );
+}
+
+test "nested unordered list with two-space indent" {
+    var out: [2048]u8 = undefined;
+    const input = "- parent\n  - child\n- sibling\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<ul>\n<li>parent<ul>\n<li>child</li>\n</ul>\n</li>\n<li>sibling</li>\n</ul>\n",
         out[0..written],
     );
 }
