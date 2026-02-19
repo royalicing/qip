@@ -196,7 +196,7 @@ func run(args []string) {
 	}
 
 	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
 	var input []byte
@@ -526,7 +526,7 @@ func runBenchSample(
 	ctx := parent
 	cancel := func() {}
 	if timeout > 0 {
-		ctxWithTimeout, cancelWithTimeout := context.WithTimeout(parent, timeout)
+		ctxWithTimeout, cancelWithTimeout := wasmruntime.WithExecutionTimeout(parent, timeout)
 		ctx = ctxWithTimeout
 		cancel = cancelWithTimeout
 	}
@@ -901,7 +901,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						api.EncodeF32(float32(tileX)),
 						api.EncodeF32(float32(tileY)),
 					); err != nil {
-						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(err))
+						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(ctx, err))
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
@@ -1015,7 +1015,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						api.EncodeF32(float32(x)),
 						api.EncodeF32(float32(y)),
 					); err != nil {
-						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(err))
+						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(ctx, err))
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
@@ -1253,7 +1253,7 @@ func imageCmd(args []string) {
 	}
 
 	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
 	inputImageBytes, err := os.ReadFile(inputImagePath)
@@ -1426,7 +1426,7 @@ func executeModuleWithInput(ctx context.Context, runtime wazero.Runtime, compile
 	runResult, returnErr := runFunc.Call(ctx, inputSize)
 	exec.run = time.Since(runStart)
 	if returnErr != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(returnErr)
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, returnErr)
 		return
 	}
 
@@ -1636,7 +1636,7 @@ func devCmd(args []string) {
 		if hasRecipes {
 			chain := state.recipeChains[route.sourceMIME]
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+			ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, 100*time.Millisecond)
 			defer cancel()
 			result, err = chain.run(ctx, inputBytes, reqID)
 			if err != nil {

@@ -56,7 +56,7 @@ echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" />
 
 # Test execution timeout safeguards with a module that never returns
 echo "x" | qip run examples/infinite-loop.wasm
-# Wasm module exceeded the execution time limit
+# Wasm module exceeded the execution time limit (100ms)
 ```
 
 ### Benchmark and compare modules
