@@ -78,15 +78,23 @@ type contentData struct {
 	encoding dataEncoding
 }
 
+type runtimeMode string
+
+const (
+	modeDev  runtimeMode = "dev"
+	modeProd runtimeMode = "prod"
+)
+
 type options struct {
 	verbose bool
+	mode    runtimeMode
 }
 
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server for a content directory with optional recipes\n  form  Run an interactive wasm form module in the terminal\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file> [?key=value ...] ..."
-const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [-p <port>] [-v|--verbose]"
+const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--mode <dev|prod>] [-p <port>] [-v|--verbose]"
 const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 const usageHelp = "Usage: qip help [command]"
 
@@ -1631,10 +1639,16 @@ type recipeCandidate struct {
 	digest   [32]byte
 }
 
+type moduleFileStamp struct {
+	modTimeUnixNano int64
+	sizeBytes       int64
+}
+
 type devRuntimeState struct {
 	contentRoutes map[string]devContentRoute
 	recipeChains  map[string]*moduleChain
 	recipeDigests map[string][][32]byte
+	recipeStamps  map[string]moduleFileStamp
 	formModules   map[string][]byte
 	formDigests   map[string][32]byte
 }
@@ -1643,6 +1657,7 @@ func devCmd(args []string) {
 	opts := options{}
 	var recipesRoot string
 	var formsRoot string
+	var modeRaw string
 	port := 4000
 	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -1651,12 +1666,19 @@ func devCmd(args []string) {
 	fs.BoolVar(&devVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
 	fs.StringVar(&formsRoot, "forms", "", "form modules root directory")
+	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
 	fs.IntVar(&port, "p", 4000, "port")
 	if err := fs.Parse(normalizeDevArgs(args)); err != nil {
 		gameOver("%s %v", usageDev, err)
 	}
 
+	mode, err := parseRuntimeMode(modeRaw)
+	if err != nil {
+		gameOver("%v", err)
+	}
+
 	opts.verbose = devVerbose
+	opts.mode = mode
 	contentArgs := fs.Args()
 	if len(contentArgs) != 1 {
 		gameOver(usageDev)
@@ -1699,6 +1721,63 @@ func devCmd(args []string) {
 		gameOver("%v", err)
 	}
 	var stateMu sync.RWMutex
+	var reloadMu sync.Mutex
+	swapRuntimeState := func(nextState *devRuntimeState) {
+		stateMu.Lock()
+		previous := state
+		state = nextState
+		stateMu.Unlock()
+		if previous != nil {
+			closeModuleChains(context.Background(), previous.recipeChains)
+		}
+	}
+	reloadRuntimeState := func(reason string) {
+		reloadMu.Lock()
+		defer reloadMu.Unlock()
+
+		reloadStart := time.Now()
+		nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, opts)
+		if err != nil {
+			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
+			return
+		}
+
+		swapRuntimeState(nextState)
+		log.Printf("dev: reloaded reason=%s paths=%d recipe_mimes=%d forms=%d duration_ms=%d", reason, len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), time.Since(reloadStart).Milliseconds())
+	}
+	reloadRecipesIfChanged := func() {
+		if opts.mode != modeDev || recipesRoot == "" {
+			return
+		}
+
+		reloadMu.Lock()
+		defer reloadMu.Unlock()
+
+		stamps, err := scanRecipeModuleStamps(recipesRoot)
+		if err != nil {
+			log.Printf("dev: recipe change check failed: %v", err)
+			return
+		}
+
+		stateMu.RLock()
+		currentStamps := state.recipeStamps
+		unchanged := recipeModuleStampsEqual(currentStamps, stamps)
+		stateMu.RUnlock()
+		if unchanged {
+			return
+		}
+
+		reloadStart := time.Now()
+		nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, opts)
+		if err != nil {
+			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
+			return
+		}
+
+		swapRuntimeState(nextState)
+		log.Printf("dev: reloaded reason=recipe_change paths=%d recipe_mimes=%d forms=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), time.Since(reloadStart).Milliseconds())
+	}
+
 	defer func() {
 		stateMu.Lock()
 		current := state
@@ -1730,6 +1809,8 @@ func devCmd(args []string) {
 			log.Printf("dev: %s %s %s", r.Method, r.URL.Path, formatDurationParts(time.Since(start), emptyDurations, emptyInst))
 			return
 		}
+
+		reloadRecipesIfChanged()
 
 		stateMu.RLock()
 		route, ok := resolveDevContentRoute(state.contentRoutes, r.URL.Path)
@@ -1832,21 +1913,7 @@ func devCmd(args []string) {
 			case <-signalCtx.Done():
 				return
 			case <-hupCh:
-				reloadStart := time.Now()
-				nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, opts)
-				if err != nil {
-					log.Printf("dev: reload failed: %v", err)
-					continue
-				}
-
-				stateMu.Lock()
-				previous := state
-				state = nextState
-				stateMu.Unlock()
-				if previous != nil {
-					closeModuleChains(context.Background(), previous.recipeChains)
-				}
-				log.Printf("dev: reloaded paths=%d recipe_mimes=%d forms=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), time.Since(reloadStart).Milliseconds())
+				reloadRuntimeState("signal_hup")
 			}
 		}
 	})
@@ -1879,6 +1946,11 @@ func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot st
 	if err != nil {
 		return nil, err
 	}
+	recipeStamps, err := scanRecipeModuleStamps(recipesRoot)
+	if err != nil {
+		closeModuleChains(ctx, recipeChains)
+		return nil, err
+	}
 	formModules, formDigests, err := loadFormModules(formsRoot)
 	if err != nil {
 		closeModuleChains(ctx, recipeChains)
@@ -1888,6 +1960,7 @@ func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot st
 		contentRoutes: contentRoutes,
 		recipeChains:  recipeChains,
 		recipeDigests: recipeDigests,
+		recipeStamps:  recipeStamps,
 		formModules:   formModules,
 		formDigests:   formDigests,
 	}, nil
@@ -1906,6 +1979,16 @@ func normalizeDevArgs(args []string) []string {
 	normalized = append(normalized, args[1:]...)
 	normalized = append(normalized, first)
 	return normalized
+}
+
+func parseRuntimeMode(raw string) (runtimeMode, error) {
+	mode := runtimeMode(strings.ToLower(strings.TrimSpace(raw)))
+	switch mode {
+	case modeDev, modeProd:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid mode %q (expected dev or prod)", raw)
+	}
 }
 
 func buildDevContentRoutes(contentRoot string) (map[string]devContentRoute, error) {
@@ -2200,6 +2283,63 @@ func loadRecipeChains(ctx context.Context, recipesRoot string, opts options) (ma
 	}
 
 	return chains, digestsByMIME, nil
+}
+
+func scanRecipeModuleStamps(recipesRoot string) (map[string]moduleFileStamp, error) {
+	stamps := make(map[string]moduleFileStamp)
+	if recipesRoot == "" {
+		return stamps, nil
+	}
+
+	err := filepath.WalkDir(recipesRoot, func(fullPath string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("recipe entry %q must be a regular file", fullPath)
+		}
+		if strings.ToLower(path.Ext(fullPath)) != ".wasm" {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(recipesRoot, fullPath)
+		if err != nil {
+			return err
+		}
+		relPath = filepath.ToSlash(relPath)
+		stamps[relPath] = moduleFileStamp{
+			modTimeUnixNano: info.ModTime().UnixNano(),
+			sizeBytes:       info.Size(),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return stamps, nil
+}
+
+func recipeModuleStampsEqual(a map[string]moduleFileStamp, b map[string]moduleFileStamp) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for path, stampA := range a {
+		stampB, ok := b[path]
+		if !ok {
+			return false
+		}
+		if stampA != stampB {
+			return false
+		}
+	}
+	return true
 }
 
 func loadFormModules(formsRoot string) (map[string][]byte, map[string][32]byte, error) {

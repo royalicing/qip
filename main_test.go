@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseRecipeFilename(t *testing.T) {
@@ -125,6 +126,78 @@ func TestNormalizeDevArgs(t *testing.T) {
 			t.Fatalf("args=%v, want %v", got, in)
 		}
 	})
+}
+
+func TestParseRuntimeMode(t *testing.T) {
+	t.Run("dev", func(t *testing.T) {
+		got, err := parseRuntimeMode("dev")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != modeDev {
+			t.Fatalf("mode=%q, want %q", got, modeDev)
+		}
+	})
+
+	t.Run("prod uppercase", func(t *testing.T) {
+		got, err := parseRuntimeMode("PROD")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != modeProd {
+			t.Fatalf("mode=%q, want %q", got, modeProd)
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		if _, err := parseRuntimeMode("staging"); err == nil {
+			t.Fatal("expected invalid mode error")
+		}
+	})
+}
+
+func TestScanRecipeModuleStampsDetectsChanges(t *testing.T) {
+	root := t.TempDir()
+	recipeDir := filepath.Join(root, "text", "markdown")
+	if err := os.MkdirAll(recipeDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	wasmA := filepath.Join(recipeDir, "10-a.wasm")
+	if err := os.WriteFile(wasmA, []byte{0x00, 0x61, 0x73, 0x6d}, 0o644); err != nil {
+		t.Fatalf("write wasm a: %v", err)
+	}
+
+	first, err := scanRecipeModuleStamps(root)
+	if err != nil {
+		t.Fatalf("scanRecipeModuleStamps error: %v", err)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	if err := os.WriteFile(wasmA, []byte{0x00, 0x61, 0x73, 0x6d, 0x01}, 0o644); err != nil {
+		t.Fatalf("rewrite wasm a: %v", err)
+	}
+
+	second, err := scanRecipeModuleStamps(root)
+	if err != nil {
+		t.Fatalf("scanRecipeModuleStamps error: %v", err)
+	}
+	if recipeModuleStampsEqual(first, second) {
+		t.Fatal("expected stamp maps to differ after mtime/size change")
+	}
+
+	wasmB := filepath.Join(recipeDir, "20-b.wasm")
+	if err := os.WriteFile(wasmB, []byte{0x00, 0x61, 0x73, 0x6d}, 0o644); err != nil {
+		t.Fatalf("write wasm b: %v", err)
+	}
+
+	third, err := scanRecipeModuleStamps(root)
+	if err != nil {
+		t.Fatalf("scanRecipeModuleStamps error: %v", err)
+	}
+	if recipeModuleStampsEqual(second, third) {
+		t.Fatal("expected stamp maps to differ after adding new module")
+	}
 }
 
 func TestLoadRecipeChainsIgnoresNonWasm(t *testing.T) {
