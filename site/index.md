@@ -1,4 +1,4 @@
-# qip
+# qip: _pockets of speed safely sewn together_
 
 ## Small, secure, and predictable software components
 
