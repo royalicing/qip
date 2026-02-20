@@ -12,11 +12,11 @@ const LABEL_DATE = "Event date (YYYY-MM-DD)";
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var error_buf: [256]u8 = undefined;
-var error_len: u32 = 0;
+var error_size: u32 = 0;
 
 var step: u32 = 0;
 var title_buf: [TITLE_CAP]u8 = undefined;
-var title_len: u32 = 0;
+var title_size: u32 = 0;
 var date_buf: [10]u8 = undefined; // YYYY-MM-DD
 
 export fn input_ptr() u32 {
@@ -43,7 +43,7 @@ export fn input_key_ptr() u32 {
     };
 }
 
-export fn input_key_len() u32 {
+export fn input_key_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(KEY_TITLE.len)),
         1 => @as(u32, @intCast(KEY_DATE.len)),
@@ -59,7 +59,7 @@ export fn input_label_ptr() u32 {
     };
 }
 
-export fn input_label_len() u32 {
+export fn input_label_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(LABEL_TITLE.len)),
         1 => @as(u32, @intCast(LABEL_DATE.len)),
@@ -71,8 +71,8 @@ export fn error_message_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&error_buf)));
 }
 
-export fn error_message_len() u32 {
-    return error_len;
+export fn error_message_size() u32 {
+    return error_size;
 }
 
 const Date = struct {
@@ -97,13 +97,13 @@ const Writer = struct {
 };
 
 fn resetError() void {
-    error_len = 0;
+    error_size = 0;
 }
 
 fn setError(msg: []const u8) void {
     const n = @min(msg.len, error_buf.len);
     if (n > 0) @memcpy(error_buf[0..n], msg[0..n]);
-    error_len = @as(u32, @intCast(n));
+    error_size = @as(u32, @intCast(n));
 }
 
 fn isSpace(ch: u8) bool {
@@ -129,7 +129,7 @@ fn storeTitle(input: []const u8) bool {
         return false;
     }
     @memcpy(title_buf[0..title.len], title);
-    title_len = @as(u32, @intCast(title.len));
+    title_size = @as(u32, @intCast(title.len));
     return true;
 }
 
@@ -215,7 +215,7 @@ fn buildICS() u32 {
     writeDateCompact(&compact_start, date);
     writeDateCompact(&compact_end, date_end);
 
-    const title = title_buf[0..@as(usize, @intCast(title_len))];
+    const title = title_buf[0..@as(usize, @intCast(title_size))];
 
     var w = Writer{};
     w.writeSlice("BEGIN:VCALENDAR\r\n");
@@ -269,8 +269,8 @@ export fn run(input_size: u32) u32 {
 
 fn resetState() void {
     step = 0;
-    title_len = 0;
-    error_len = 0;
+    title_size = 0;
+    error_size = 0;
 }
 
 test "successful flow outputs simple ical event" {
@@ -279,15 +279,15 @@ test "successful flow outputs simple ical event" {
     const t = "Team Sync";
     @memcpy(input_buf[0..t.len], t);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(t.len))));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
 
     const d = "2026-03-14";
     @memcpy(input_buf[0..d.len], d);
-    const out_len = run(@as(u32, @intCast(d.len)));
-    try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 0), input_key_len());
+    const out_size = run(@as(u32, @intCast(d.len)));
+    try std.testing.expect(out_size > 0);
+    try std.testing.expectEqual(@as(u32, 0), input_key_size());
 
-    const out = output_buf[0..@as(usize, @intCast(out_len))];
+    const out = output_buf[0..@as(usize, @intCast(out_size))];
     try std.testing.expect(std.mem.indexOf(u8, out, "BEGIN:VCALENDAR\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "SUMMARY:Team Sync\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "DTSTART;VALUE=DATE:20260314\r\n") != null);
@@ -300,8 +300,8 @@ test "invalid title keeps step and sets error" {
     const t = "   ";
     @memcpy(input_buf[0..t.len], t);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(t.len))));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_TITLE.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_TITLE.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }
 
 test "invalid date keeps step and sets error" {
@@ -310,11 +310,11 @@ test "invalid date keeps step and sets error" {
     const t = "Demo";
     @memcpy(input_buf[0..t.len], t);
     _ = run(@as(u32, @intCast(t.len)));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
 
     const d = "2026-02-30";
     @memcpy(input_buf[0..d.len], d);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(d.len))));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }

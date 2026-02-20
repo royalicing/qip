@@ -23,7 +23,7 @@ Exports:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
-- `run(input_len) -> i32`
+- `run(input_size) -> i32`
 
 Do not export `output_ptr` or output caps.
 
@@ -46,13 +46,13 @@ Exports:
 - `input_utf8_cap`
 - `output_ptr`
 - `output_utf8_cap`
-- `run(input_len) -> output_len`
+- `run(input_size) -> output_size`
 
 Host behavior:
 
 - Input is bounded by `input_utf8_cap`.
 - Return value is interpreted as output byte length.
-- Host checks `output_len <= output_utf8_cap`.
+- Host checks `output_size <= output_utf8_cap`.
 
 Good for:
 
@@ -70,7 +70,7 @@ Exports:
 - `input_bytes_cap`
 - `output_ptr`
 - `output_bytes_cap`
-- `run(input_len) -> output_len`
+- `run(input_size) -> output_size`
 
 Host behavior matches Pattern 2, but no UTF-8 assumptions.
 

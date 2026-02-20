@@ -18,7 +18,7 @@ A text/binary module exports a small ABI:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
-- `run(input_len)`
+- `run(input_size)`
 - `output_ptr`
 - `output_utf8_cap` or `output_bytes_cap` (or `output_i32_cap`)
 

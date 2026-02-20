@@ -86,10 +86,10 @@ func (r *Router) Route(ctx context.Context, path, query string) (RouteResult, er
 	pathBytes := []byte(path)
 	queryBytes := []byte(query)
 	if len(pathBytes) > math.MaxInt32 || len(queryBytes) > math.MaxInt32 {
-		return RouteResult{}, fmt.Errorf("%w: path/query length exceeds i32", ErrInputTooLarge)
+		return RouteResult{}, fmt.Errorf("%w: path/query size exceeds i32", ErrInputTooLarge)
 	}
-	pathLen := int32(len(pathBytes))
-	queryLen := int32(len(queryBytes))
+	pathSize := int32(len(pathBytes))
+	querySize := int32(len(queryBytes))
 
 	inputPtr, err := callI32NoArgs(ctx, mod, ExportInputPtr)
 	if err != nil {
@@ -103,12 +103,12 @@ func (r *Router) Route(ctx context.Context, path, query string) (RouteResult, er
 		return RouteResult{}, fmt.Errorf("%w: input_cap=%d", ErrOutOfBounds, inputCap)
 	}
 
-	inputLen := len(pathBytes) + len(queryBytes)
-	if inputLen > int(inputCap) {
-		return RouteResult{}, fmt.Errorf("%w: input=%d cap=%d", ErrInputTooLarge, inputLen, inputCap)
+	inputSize := len(pathBytes) + len(queryBytes)
+	if inputSize > int(inputCap) {
+		return RouteResult{}, fmt.Errorf("%w: input=%d cap=%d", ErrInputTooLarge, inputSize, inputCap)
 	}
 
-	input := make([]byte, 0, inputLen)
+	input := make([]byte, 0, inputSize)
 	input = append(input, pathBytes...)
 	input = append(input, queryBytes...)
 
@@ -119,7 +119,7 @@ func (r *Router) Route(ctx context.Context, path, query string) (RouteResult, er
 		return RouteResult{}, fmt.Errorf("%w: input write failed", ErrOutOfBounds)
 	}
 
-	status, err := callRoute(ctx, mod, pathLen, queryLen)
+	status, err := callRoute(ctx, mod, pathSize, querySize)
 	if err != nil {
 		return RouteResult{}, err
 	}
@@ -132,11 +132,11 @@ func (r *Router) Route(ctx context.Context, path, query string) (RouteResult, er
 		return RouteResult{}, err
 	}
 
-	etag, err := readString(mem, view.ETagPtr, view.ETagLen)
+	etag, err := readString(mem, view.ETagPtr, view.ETagSize)
 	if err != nil {
 		return RouteResult{}, err
 	}
-	contentType, err := readString(mem, view.ContentTypePtr, view.ContentTypeLen)
+	contentType, err := readString(mem, view.ContentTypePtr, view.ContentTypeSize)
 	if err != nil {
 		return RouteResult{}, err
 	}
@@ -148,7 +148,7 @@ func (r *Router) Route(ctx context.Context, path, query string) (RouteResult, er
 	if err != nil {
 		return RouteResult{}, err
 	}
-	location, err := readString(mem, view.LocationPtr, view.LocationLen)
+	location, err := readString(mem, view.LocationPtr, view.LocationSize)
 	if err != nil {
 		return RouteResult{}, err
 	}
@@ -186,12 +186,12 @@ func newModuleConfig() wazero.ModuleConfig {
 	return wazero.NewModuleConfig().WithName("").WithStartFunctions()
 }
 
-func callRoute(ctx context.Context, mod api.Module, pathLen, queryLen int32) (int32, error) {
+func callRoute(ctx context.Context, mod api.Module, pathSize, querySize int32) (int32, error) {
 	fn := mod.ExportedFunction(ExportRoute)
 	if fn == nil {
 		return 0, missingExportError(ExportRoute)
 	}
-	result, err := fn.Call(ctx, api.EncodeI32(pathLen), api.EncodeI32(queryLen))
+	result, err := fn.Call(ctx, api.EncodeI32(pathSize), api.EncodeI32(querySize))
 	if err != nil {
 		return 0, fmt.Errorf("%w: route call failed", ErrRouterInternal)
 	}
@@ -225,7 +225,7 @@ func readRouteResultView(ctx context.Context, mod api.Module, status int32) (rou
 	if err != nil {
 		return routeResultViewV0{}, err
 	}
-	etagLen, err := callI32NoArgs(ctx, mod, ExportETagLen)
+	etagSize, err := callI32NoArgs(ctx, mod, ExportETagSize)
 	if err != nil {
 		return routeResultViewV0{}, err
 	}
@@ -233,7 +233,7 @@ func readRouteResultView(ctx context.Context, mod api.Module, status int32) (rou
 	if err != nil {
 		return routeResultViewV0{}, err
 	}
-	contentTypeLen, err := callI32NoArgs(ctx, mod, ExportContentTypeLen)
+	contentTypeSize, err := callI32NoArgs(ctx, mod, ExportContentTypeSize)
 	if err != nil {
 		return routeResultViewV0{}, err
 	}
@@ -257,7 +257,7 @@ func readRouteResultView(ctx context.Context, mod api.Module, status int32) (rou
 	if err != nil {
 		return routeResultViewV0{}, err
 	}
-	locationLen, err := callI32NoArgs(ctx, mod, ExportLocationLen)
+	locationSize, err := callI32NoArgs(ctx, mod, ExportLocationSize)
 	if err != nil {
 		return routeResultViewV0{}, err
 	}
@@ -265,25 +265,25 @@ func readRouteResultView(ctx context.Context, mod api.Module, status int32) (rou
 	return routeResultViewV0{
 		Status:             status,
 		ETagPtr:            etagPtr,
-		ETagLen:            etagLen,
+		ETagSize:           etagSize,
 		ContentTypePtr:     contentTypePtr,
-		ContentTypeLen:     contentTypeLen,
+		ContentTypeSize:    contentTypeSize,
 		ContentSHA256Ptr:   contentSHA256Ptr,
 		ContentSHA256Count: contentSHA256Count,
 		RecipeSHA256Ptr:    recipeSHA256Ptr,
 		RecipeSHA256Count:  recipeSHA256Count,
 		LocationPtr:        locationPtr,
-		LocationLen:        locationLen,
+		LocationSize:       locationSize,
 	}, nil
 }
 
-func readString(mem api.Memory, ptr, length int32) (string, error) {
-	if length == 0 {
+func readString(mem api.Memory, ptr, size int32) (string, error) {
+	if size == 0 {
 		return "", nil
 	}
-	data, ok := mem.Read(uint32(ptr), uint32(length))
+	data, ok := mem.Read(uint32(ptr), uint32(size))
 	if !ok {
-		return "", fmt.Errorf("%w: could not read string ptr=%d len=%d", ErrOutOfBounds, ptr, length)
+		return "", fmt.Errorf("%w: could not read string ptr=%d size=%d", ErrOutOfBounds, ptr, size)
 	}
 	clone := append([]byte(nil), data...)
 	return string(clone), nil
@@ -344,15 +344,15 @@ func requiredFunctionSignaturesV0() map[string]functionSignature {
 		ExportInputPtr:           noArgsOneI32,
 		ExportInputCap:           noArgsOneI32,
 		ExportETagPtr:            noArgsOneI32,
-		ExportETagLen:            noArgsOneI32,
+		ExportETagSize:           noArgsOneI32,
 		ExportContentTypePtr:     noArgsOneI32,
-		ExportContentTypeLen:     noArgsOneI32,
+		ExportContentTypeSize:    noArgsOneI32,
 		ExportContentSHA256Ptr:   noArgsOneI32,
 		ExportContentSHA256Count: noArgsOneI32,
 		ExportRecipeSHA256Ptr:    noArgsOneI32,
 		ExportRecipeSHA256Count:  noArgsOneI32,
 		ExportLocationPtr:        noArgsOneI32,
-		ExportLocationLen:        noArgsOneI32,
+		ExportLocationSize:       noArgsOneI32,
 		ExportRoute: {
 			params:  []api.ValueType{i32, i32},
 			results: []api.ValueType{i32},

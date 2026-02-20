@@ -36,7 +36,7 @@ fn getOutput() []u8 {
 export fn run(input_size: u32) u32 {
     const input = getInput(input_size);
     const output = getOutput();
-    const input_len: usize = @intCast(input_size);
+    const input_bytes_size: usize = @intCast(input_size);
 
     // Example: prepend "Hello, " to input
     const prefix = "Hello, ";
@@ -44,8 +44,8 @@ export fn run(input_size: u32) u32 {
 
     if (input_size > 0) {
         // Copy input after prefix
-        @memcpy(output[prefix.len..][0..input_len], input);
-        return @intCast(prefix.len + input_len);
+        @memcpy(output[prefix.len..][0..input_bytes_size], input);
+        return @intCast(prefix.len + input_bytes_size);
     } else {
         // Default to "World" if no input
         const default_name = "World";

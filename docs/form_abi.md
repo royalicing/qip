@@ -14,15 +14,15 @@ Scope:
 - `memory`
 - `input_ptr() -> i32`
 - `input_utf8_cap() -> i32`
-- `run(input_len: i32) -> i32`
+- `run(input_size: i32) -> i32`
 - `output_ptr() -> i32`
 - `output_utf8_cap() -> i32`
 - `input_key_ptr() -> i32`
-- `input_key_len() -> i32`
+- `input_key_size() -> i32`
 - `input_label_ptr() -> i32`
-- `input_label_len() -> i32`
+- `input_label_size() -> i32`
 - `error_message_ptr() -> i32`
-- `error_message_len() -> i32`
+- `error_message_size() -> i32`
 
 ## Input Buffer
 
@@ -32,7 +32,7 @@ At `input_ptr`:
 
 Host must ensure:
 
-- `input_len <= input_utf8_cap()`
+- `input_size <= input_utf8_cap()`
 - writes stay in wasm memory bounds
 
 ## Prompt/Completion Semantics
@@ -44,7 +44,7 @@ For the current prompt, module provides:
 
 Form is complete when:
 
-- `input_key_len() == 0`
+- `input_key_size() == 0`
 
 When complete, host should treat the form as finished and read final output from `output_ptr`.
 
@@ -53,28 +53,28 @@ When complete, host should treat the form as finished and read final output from
 Host flow:
 
 1. Read current metadata (`input_key`, `input_label`, `error_message`).
-2. If `input_key_len() == 0`, form is complete.
+2. If `input_key_size() == 0`, form is complete.
 3. Otherwise, collect one input value.
 4. Write value bytes to `input_ptr`.
-5. Call `run(input_len)`.
+5. Call `run(input_size)`.
 
 Module behavior:
 
 - On validation failure:
   - keep internal state unchanged
-  - set `error_message_len > 0`
+  - set `error_message_size > 0`
 - On success:
   - advance internal state (if any)
   - clear `error_message` (recommended)
 
-`run` return value is UTF-8 output length in `output_ptr`.
+`run` return value is UTF-8 output size in `output_ptr`.
 Final result is read when form is complete.
 
 ## Invariants
 
 Host should enforce:
 
-- all pointer+len reads are within wasm memory bounds
-- all lengths are non-negative
+- all pointer+size reads are within wasm memory bounds
+- all sizes are non-negative
 - all metadata strings are valid UTF-8
-- output length from `run` is non-negative and does not exceed `output_utf8_cap`
+- output size from `run` is non-negative and does not exceed `output_utf8_cap`

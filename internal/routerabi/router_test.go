@@ -54,7 +54,7 @@ func TestRouteOutOfBoundsPtrLen(t *testing.T) {
 		inputCap: 64,
 		status:   200,
 		etagPtr:  65535,
-		etagLen:  2,
+		etagSize: 2,
 	}))
 
 	r, err := Load(context.Background(), wasm)
@@ -76,9 +76,9 @@ func TestRouteOutOfBoundsPtrLen(t *testing.T) {
 
 func TestRouteInvalidRedirect(t *testing.T) {
 	wasm := compileWAT(t, validRouterWAT(validRouterWATOptions{
-		inputCap:    64,
-		status:      302,
-		locationLen: 0,
+		inputCap:     64,
+		status:       302,
+		locationSize: 0,
 	}))
 
 	r, err := Load(context.Background(), wasm)
@@ -112,14 +112,14 @@ func TestRouteDecodesDigestArrays(t *testing.T) {
 		inputCap:           64,
 		status:             200,
 		etagPtr:            1024,
-		etagLen:            3,
+		etagSize:           3,
 		contentTypePtr:     1040,
-		contentTypeLen:     10,
+		contentTypeSize:    10,
 		contentSHA256Ptr:   1100,
 		contentSHA256Count: 2,
 		recipeSHA256Ptr:    1200,
 		recipeSHA256Count:  1,
-		locationLen:        0,
+		locationSize:       0,
 		dataSegments: []string{
 			`(data (i32.const 1024) "xyz")`,
 			`(data (i32.const 1040) "text/plain")`,
@@ -179,15 +179,15 @@ type validRouterWATOptions struct {
 	inputCap           int
 	status             int
 	etagPtr            int
-	etagLen            int
+	etagSize           int
 	contentTypePtr     int
-	contentTypeLen     int
+	contentTypeSize    int
 	contentSHA256Ptr   int
 	contentSHA256Count int
 	recipeSHA256Ptr    int
 	recipeSHA256Count  int
 	locationPtr        int
-	locationLen        int
+	locationSize       int
 	dataSegments       []string
 }
 
@@ -196,15 +196,15 @@ func validRouterWATOptionsDefault() validRouterWATOptions {
 		inputCap:           64,
 		status:             200,
 		etagPtr:            0,
-		etagLen:            0,
+		etagSize:           0,
 		contentTypePtr:     0,
-		contentTypeLen:     0,
+		contentTypeSize:    0,
 		contentSHA256Ptr:   0,
 		contentSHA256Count: 0,
 		recipeSHA256Ptr:    0,
 		recipeSHA256Count:  0,
 		locationPtr:        0,
-		locationLen:        1,
+		locationSize:       1,
 	}
 }
 
@@ -217,15 +217,15 @@ func validRouterWAT(in validRouterWATOptions) string {
 		base.status = in.status
 	}
 	base.etagPtr = in.etagPtr
-	base.etagLen = in.etagLen
+	base.etagSize = in.etagSize
 	base.contentTypePtr = in.contentTypePtr
-	base.contentTypeLen = in.contentTypeLen
+	base.contentTypeSize = in.contentTypeSize
 	base.contentSHA256Ptr = in.contentSHA256Ptr
 	base.contentSHA256Count = in.contentSHA256Count
 	base.recipeSHA256Ptr = in.recipeSHA256Ptr
 	base.recipeSHA256Count = in.recipeSHA256Count
 	base.locationPtr = in.locationPtr
-	base.locationLen = in.locationLen
+	base.locationSize = in.locationSize
 	base.dataSegments = in.dataSegments
 
 	return fmt.Sprintf(`(module
@@ -234,29 +234,29 @@ func validRouterWAT(in validRouterWATOptions) string {
   (func (export "input_cap") (result i32) (i32.const %d))
   (func (export "route") (param i32 i32) (result i32) (i32.const %d))
   (func (export "etag_ptr") (result i32) (i32.const %d))
-  (func (export "etag_len") (result i32) (i32.const %d))
+  (func (export "etag_size") (result i32) (i32.const %d))
   (func (export "content_type_ptr") (result i32) (i32.const %d))
-  (func (export "content_type_len") (result i32) (i32.const %d))
+  (func (export "content_type_size") (result i32) (i32.const %d))
   (func (export "content_sha256_ptr") (result i32) (i32.const %d))
   (func (export "content_sha256_count") (result i32) (i32.const %d))
   (func (export "recipe_sha256_ptr") (result i32) (i32.const %d))
   (func (export "recipe_sha256_count") (result i32) (i32.const %d))
   (func (export "location_ptr") (result i32) (i32.const %d))
-  (func (export "location_len") (result i32) (i32.const %d))
+  (func (export "location_size") (result i32) (i32.const %d))
   %s
 )`,
 		base.inputCap,
 		base.status,
 		base.etagPtr,
-		base.etagLen,
+		base.etagSize,
 		base.contentTypePtr,
-		base.contentTypeLen,
+		base.contentTypeSize,
 		base.contentSHA256Ptr,
 		base.contentSHA256Count,
 		base.recipeSHA256Ptr,
 		base.recipeSHA256Count,
 		base.locationPtr,
-		base.locationLen,
+		base.locationSize,
 		strings.Join(base.dataSegments, "\n  "),
 	)
 }

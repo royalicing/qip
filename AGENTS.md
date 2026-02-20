@@ -9,7 +9,7 @@
 
 ## Text/Binary
 
-- Entry point: modules export `run(input_len)` and read input from `input_ptr`.
+- Entry point: modules export `run(input_size)` and read input from `input_ptr`.
 - Capacity comes from `input_utf8_cap` or `input_bytes_cap` (global or function).
 - Outputs are read from `output_ptr` with one of `output_utf8_cap`, `output_bytes_cap`, or `output_i32_cap`.
 

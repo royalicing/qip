@@ -21,21 +21,21 @@ const LABEL_WEBSITE = "Website URL";
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var error_buf: [256]u8 = undefined;
-var error_len: u32 = 0;
+var error_size: u32 = 0;
 
 var step: u32 = 0;
 var business_name_buf: [FIELD_CAP]u8 = undefined;
-var business_name_len: u32 = 0;
+var business_name_size: u32 = 0;
 var contact_name_buf: [FIELD_CAP]u8 = undefined;
-var contact_name_len: u32 = 0;
+var contact_name_size: u32 = 0;
 var job_title_buf: [FIELD_CAP]u8 = undefined;
-var job_title_len: u32 = 0;
+var job_title_size: u32 = 0;
 var email_buf: [FIELD_CAP]u8 = undefined;
-var email_len: u32 = 0;
+var email_size: u32 = 0;
 var phone_buf: [FIELD_CAP]u8 = undefined;
-var phone_len: u32 = 0;
+var phone_size: u32 = 0;
 var website_buf: [FIELD_CAP]u8 = undefined;
-var website_len: u32 = 0;
+var website_size: u32 = 0;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -65,7 +65,7 @@ export fn input_key_ptr() u32 {
     };
 }
 
-export fn input_key_len() u32 {
+export fn input_key_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(KEY_BUSINESS_NAME.len)),
         1 => @as(u32, @intCast(KEY_CONTACT_NAME.len)),
@@ -89,7 +89,7 @@ export fn input_label_ptr() u32 {
     };
 }
 
-export fn input_label_len() u32 {
+export fn input_label_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(LABEL_BUSINESS_NAME.len)),
         1 => @as(u32, @intCast(LABEL_CONTACT_NAME.len)),
@@ -105,8 +105,8 @@ export fn error_message_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&error_buf)));
 }
 
-export fn error_message_len() u32 {
-    return error_len;
+export fn error_message_size() u32 {
+    return error_size;
 }
 
 const Writer = struct {
@@ -125,13 +125,13 @@ const Writer = struct {
 };
 
 fn resetError() void {
-    error_len = 0;
+    error_size = 0;
 }
 
 fn setError(msg: []const u8) void {
     const n = @min(msg.len, error_buf.len);
     if (n > 0) @memcpy(error_buf[0..n], msg[0..n]);
-    error_len = @as(u32, @intCast(n));
+    error_size = @as(u32, @intCast(n));
 }
 
 fn isSpace(ch: u8) bool {
@@ -192,8 +192,8 @@ fn looksLikeEmail(value: []const u8) bool {
 
 fn storeEmail(input: []const u8) bool {
     const value = trimASCII(input);
-    if (!storeRequired(value, email_buf[0..], &email_len, "Email address is required.", "Email address is too long.", "Email address must be a single line.")) return false;
-    const email = email_buf[0..@as(usize, @intCast(email_len))];
+    if (!storeRequired(value, email_buf[0..], &email_size, "Email address is required.", "Email address is too long.", "Email address must be a single line.")) return false;
+    const email = email_buf[0..@as(usize, @intCast(email_size))];
     if (!looksLikeEmail(email)) {
         setError("Email address is invalid.");
         return false;
@@ -203,8 +203,8 @@ fn storeEmail(input: []const u8) bool {
 
 fn storeWebsite(input: []const u8) bool {
     const value = trimASCII(input);
-    if (!storeRequired(value, website_buf[0..], &website_len, "Website URL is required.", "Website URL is too long.", "Website URL must be a single line.")) return false;
-    const url = website_buf[0..@as(usize, @intCast(website_len))];
+    if (!storeRequired(value, website_buf[0..], &website_size, "Website URL is required.", "Website URL is too long.", "Website URL must be a single line.")) return false;
+    const url = website_buf[0..@as(usize, @intCast(website_size))];
     if (!(std.mem.startsWith(u8, url, "http://") or std.mem.startsWith(u8, url, "https://"))) {
         setError("Website URL must start with http:// or https://");
         return false;
@@ -229,12 +229,12 @@ fn writeEscapedVCardValue(w: *Writer, s: []const u8) void {
 }
 
 fn buildVCard() u32 {
-    const business_name = business_name_buf[0..@as(usize, @intCast(business_name_len))];
-    const contact_name = contact_name_buf[0..@as(usize, @intCast(contact_name_len))];
-    const job_title = job_title_buf[0..@as(usize, @intCast(job_title_len))];
-    const email = email_buf[0..@as(usize, @intCast(email_len))];
-    const phone = phone_buf[0..@as(usize, @intCast(phone_len))];
-    const website = website_buf[0..@as(usize, @intCast(website_len))];
+    const business_name = business_name_buf[0..@as(usize, @intCast(business_name_size))];
+    const contact_name = contact_name_buf[0..@as(usize, @intCast(contact_name_size))];
+    const job_title = job_title_buf[0..@as(usize, @intCast(job_title_size))];
+    const email = email_buf[0..@as(usize, @intCast(email_size))];
+    const phone = phone_buf[0..@as(usize, @intCast(phone_size))];
+    const website = website_buf[0..@as(usize, @intCast(website_size))];
 
     var w = Writer{};
     w.writeSlice("BEGIN:VCARD\r\n");
@@ -272,17 +272,17 @@ export fn run(input_size: u32) u32 {
     resetError();
 
     if (step == 0) {
-        if (!storeRequired(input, business_name_buf[0..], &business_name_len, "Business name is required.", "Business name is too long.", "Business name must be a single line.")) return 0;
+        if (!storeRequired(input, business_name_buf[0..], &business_name_size, "Business name is required.", "Business name is too long.", "Business name must be a single line.")) return 0;
         step = 1;
         return 0;
     }
     if (step == 1) {
-        if (!storeRequired(input, contact_name_buf[0..], &contact_name_len, "Contact full name is required.", "Contact full name is too long.", "Contact full name must be a single line.")) return 0;
+        if (!storeRequired(input, contact_name_buf[0..], &contact_name_size, "Contact full name is required.", "Contact full name is too long.", "Contact full name must be a single line.")) return 0;
         step = 2;
         return 0;
     }
     if (step == 2) {
-        if (!storeRequired(input, job_title_buf[0..], &job_title_len, "Job title is required.", "Job title is too long.", "Job title must be a single line.")) return 0;
+        if (!storeRequired(input, job_title_buf[0..], &job_title_size, "Job title is required.", "Job title is too long.", "Job title must be a single line.")) return 0;
         step = 3;
         return 0;
     }
@@ -292,7 +292,7 @@ export fn run(input_size: u32) u32 {
         return 0;
     }
     if (step == 4) {
-        if (!storeRequired(input, phone_buf[0..], &phone_len, "Phone number is required.", "Phone number is too long.", "Phone number must be a single line.")) return 0;
+        if (!storeRequired(input, phone_buf[0..], &phone_size, "Phone number is required.", "Phone number is too long.", "Phone number must be a single line.")) return 0;
         step = 5;
         return 0;
     }
@@ -307,13 +307,13 @@ export fn run(input_size: u32) u32 {
 
 fn resetState() void {
     step = 0;
-    business_name_len = 0;
-    contact_name_len = 0;
-    job_title_len = 0;
-    email_len = 0;
-    phone_len = 0;
-    website_len = 0;
-    error_len = 0;
+    business_name_size = 0;
+    contact_name_size = 0;
+    job_title_size = 0;
+    email_size = 0;
+    phone_size = 0;
+    website_size = 0;
+    error_size = 0;
 }
 
 fn feed(input: []const u8) u32 {
@@ -324,20 +324,20 @@ fn feed(input: []const u8) u32 {
 test "successful flow outputs business vcard" {
     resetState();
     try std.testing.expectEqual(@as(u32, 0), feed("Acme Co"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_CONTACT_NAME.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_CONTACT_NAME.len)), input_key_size());
     try std.testing.expectEqual(@as(u32, 0), feed("Ada Lovelace"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_JOB_TITLE.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_JOB_TITLE.len)), input_key_size());
     try std.testing.expectEqual(@as(u32, 0), feed("Founder"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
     try std.testing.expectEqual(@as(u32, 0), feed("ada@acme.example"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_PHONE.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_PHONE.len)), input_key_size());
     try std.testing.expectEqual(@as(u32, 0), feed("+1-212-555-0100"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_WEBSITE.len)), input_key_len());
-    const out_len = feed("https://acme.example");
-    try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 0), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_WEBSITE.len)), input_key_size());
+    const out_size = feed("https://acme.example");
+    try std.testing.expect(out_size > 0);
+    try std.testing.expectEqual(@as(u32, 0), input_key_size());
 
-    const out = output_buf[0..@as(usize, @intCast(out_len))];
+    const out = output_buf[0..@as(usize, @intCast(out_size))];
     try std.testing.expect(std.mem.indexOf(u8, out, "BEGIN:VCARD\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "FN:Ada Lovelace\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "ORG:Acme Co\r\n") != null);
@@ -350,8 +350,8 @@ test "invalid email keeps step and sets error" {
     _ = feed("Ada Lovelace");
     _ = feed("Founder");
     try std.testing.expectEqual(@as(u32, 0), feed("ada-at-acme.example"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }
 
 test "invalid website keeps step and sets error" {
@@ -362,6 +362,6 @@ test "invalid website keeps step and sets error" {
     _ = feed("ada@acme.example");
     _ = feed("+1-212-555-0100");
     try std.testing.expectEqual(@as(u32, 0), feed("acme.example"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_WEBSITE.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_WEBSITE.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }

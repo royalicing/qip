@@ -13,13 +13,13 @@ const LABEL_EMAIL = "Email address";
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var error_buf: [256]u8 = undefined;
-var error_len: u32 = 0;
+var error_size: u32 = 0;
 
 var step: u32 = 0;
 var first_name_buf: [NAME_CAP]u8 = undefined;
-var first_name_len: u32 = 0;
+var first_name_size: u32 = 0;
 var email_buf: [EMAIL_CAP]u8 = undefined;
-var email_len: u32 = 0;
+var email_size: u32 = 0;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -45,7 +45,7 @@ export fn input_key_ptr() u32 {
     };
 }
 
-export fn input_key_len() u32 {
+export fn input_key_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(KEY_FIRST_NAME.len)),
         1 => @as(u32, @intCast(KEY_EMAIL.len)),
@@ -61,7 +61,7 @@ export fn input_label_ptr() u32 {
     };
 }
 
-export fn input_label_len() u32 {
+export fn input_label_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(LABEL_FIRST_NAME.len)),
         1 => @as(u32, @intCast(LABEL_EMAIL.len)),
@@ -73,8 +73,8 @@ export fn error_message_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&error_buf)));
 }
 
-export fn error_message_len() u32 {
-    return error_len;
+export fn error_message_size() u32 {
+    return error_size;
 }
 
 const Writer = struct {
@@ -93,13 +93,13 @@ const Writer = struct {
 };
 
 fn resetError() void {
-    error_len = 0;
+    error_size = 0;
 }
 
 fn setError(msg: []const u8) void {
     const n = @min(msg.len, error_buf.len);
     if (n > 0) @memcpy(error_buf[0..n], msg[0..n]);
-    error_len = @as(u32, @intCast(n));
+    error_size = @as(u32, @intCast(n));
 }
 
 fn trimmedASCII(input: []const u8) []const u8 {
@@ -125,7 +125,7 @@ fn storeFirstName(input: []const u8) bool {
         return false;
     }
     @memcpy(first_name_buf[0..name.len], name);
-    first_name_len = @as(u32, @intCast(name.len));
+    first_name_size = @as(u32, @intCast(name.len));
     return true;
 }
 
@@ -144,7 +144,7 @@ fn storeEmail(input: []const u8) bool {
         return false;
     }
     @memcpy(email_buf[0..email.len], email);
-    email_len = @as(u32, @intCast(email.len));
+    email_size = @as(u32, @intCast(email.len));
     return true;
 }
 
@@ -169,8 +169,8 @@ fn isLikelyEmail(email: []const u8) bool {
 
 fn buildMessage() u32 {
     var w = Writer{};
-    const name = first_name_buf[0..@as(usize, @intCast(first_name_len))];
-    const email = email_buf[0..@as(usize, @intCast(email_len))];
+    const name = first_name_buf[0..@as(usize, @intCast(first_name_size))];
+    const email = email_buf[0..@as(usize, @intCast(email_size))];
 
     w.writeSlice("From: no-reply@example.com\n");
     w.writeSlice("To: \"");
@@ -222,9 +222,9 @@ export fn run(input_size: u32) u32 {
 
 fn resetState() void {
     step = 0;
-    first_name_len = 0;
-    email_len = 0;
-    error_len = 0;
+    first_name_size = 0;
+    email_size = 0;
+    error_size = 0;
 }
 
 test "success flow returns message with headers" {
@@ -233,15 +233,15 @@ test "success flow returns message with headers" {
     const n1 = "Ada";
     @memcpy(input_buf[0..n1.len], n1);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(n1.len))));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
 
     const n2 = "ada@example.com";
     @memcpy(input_buf[0..n2.len], n2);
-    const out_len = run(@as(u32, @intCast(n2.len)));
-    try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 0), input_key_len());
+    const out_size = run(@as(u32, @intCast(n2.len)));
+    try std.testing.expect(out_size > 0);
+    try std.testing.expectEqual(@as(u32, 0), input_key_size());
 
-    const out = output_buf[0..@as(usize, @intCast(out_len))];
+    const out = output_buf[0..@as(usize, @intCast(out_size))];
     try std.testing.expect(std.mem.indexOf(u8, out, "From: no-reply@example.com") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "To: \"Ada\" <ada@example.com>") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Subject: Welcome, Ada") != null);
@@ -252,8 +252,8 @@ test "invalid first name keeps current step and sets error" {
     const input = "   ";
     @memcpy(input_buf[0..input.len], input);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(input.len))));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_FIRST_NAME.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_FIRST_NAME.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }
 
 test "invalid email keeps step and sets error" {
@@ -262,11 +262,11 @@ test "invalid email keeps step and sets error" {
     const n1 = "Ada";
     @memcpy(input_buf[0..n1.len], n1);
     _ = run(@as(u32, @intCast(n1.len)));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
 
     const n2 = "ada-at-example.com";
     @memcpy(input_buf[0..n2.len], n2);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(n2.len))));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }

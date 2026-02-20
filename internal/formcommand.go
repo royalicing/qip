@@ -21,34 +21,34 @@ import (
 const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 
 const (
-	exportMemory          = "memory"
-	exportInputPtr        = "input_ptr"
-	exportInputUTF8Cap    = "input_utf8_cap"
-	exportRun             = "run"
-	exportOutputPtr       = "output_ptr"
-	exportOutputUTF8Cap   = "output_utf8_cap"
-	exportInputKeyPtr     = "input_key_ptr"
-	exportInputKeyLen     = "input_key_len"
-	exportInputLabelPtr   = "input_label_ptr"
-	exportInputLabelLen   = "input_label_len"
-	exportErrorMessagePtr = "error_message_ptr"
-	exportErrorMessageLen = "error_message_len"
+	exportMemory           = "memory"
+	exportInputPtr         = "input_ptr"
+	exportInputUTF8Cap     = "input_utf8_cap"
+	exportRun              = "run"
+	exportOutputPtr        = "output_ptr"
+	exportOutputUTF8Cap    = "output_utf8_cap"
+	exportInputKeyPtr      = "input_key_ptr"
+	exportInputKeySize     = "input_key_size"
+	exportInputLabelPtr    = "input_label_ptr"
+	exportInputLabelSize   = "input_label_size"
+	exportErrorMessagePtr  = "error_message_ptr"
+	exportErrorMessageSize = "error_message_size"
 )
 
 type formModule struct {
-	mod             api.Module
-	mem             api.Memory
-	fnInputPtr      api.Function
-	fnInputUTF8Cap  api.Function
-	fnRun           api.Function
-	fnOutputPtr     api.Function
-	fnOutputUTF8Cap api.Function
-	fnInputKeyPtr   api.Function
-	fnInputKeyLen   api.Function
-	fnInputLabelPtr api.Function
-	fnInputLabelLen api.Function
-	fnErrorPtr      api.Function
-	fnErrorLen      api.Function
+	mod              api.Module
+	mem              api.Memory
+	fnInputPtr       api.Function
+	fnInputUTF8Cap   api.Function
+	fnRun            api.Function
+	fnOutputPtr      api.Function
+	fnOutputUTF8Cap  api.Function
+	fnInputKeyPtr    api.Function
+	fnInputKeySize   api.Function
+	fnInputLabelPtr  api.Function
+	fnInputLabelSize api.Function
+	fnErrorPtr       api.Function
+	fnErrorSize      api.Function
 }
 
 func RunFormCommand(args []string) error {
@@ -137,11 +137,11 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 		{name: exportOutputPtr},
 		{name: exportOutputUTF8Cap},
 		{name: exportInputKeyPtr},
-		{name: exportInputKeyLen},
+		{name: exportInputKeySize},
 		{name: exportInputLabelPtr},
-		{name: exportInputLabelLen},
+		{name: exportInputLabelSize},
 		{name: exportErrorMessagePtr},
-		{name: exportErrorMessageLen},
+		{name: exportErrorMessageSize},
 	}
 
 	out := formModule{mod: mod, mem: mem}
@@ -163,16 +163,16 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 			out.fnOutputUTF8Cap = fn
 		case exportInputKeyPtr:
 			out.fnInputKeyPtr = fn
-		case exportInputKeyLen:
-			out.fnInputKeyLen = fn
+		case exportInputKeySize:
+			out.fnInputKeySize = fn
 		case exportInputLabelPtr:
 			out.fnInputLabelPtr = fn
-		case exportInputLabelLen:
-			out.fnInputLabelLen = fn
+		case exportInputLabelSize:
+			out.fnInputLabelSize = fn
 		case exportErrorMessagePtr:
 			out.fnErrorPtr = fn
-		case exportErrorMessageLen:
-			out.fnErrorLen = fn
+		case exportErrorMessageSize:
+			out.fnErrorSize = fn
 		}
 	}
 	return out, nil
@@ -180,11 +180,11 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 
 func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, stdout io.Writer) error {
 	reader := bufio.NewReader(stdin)
-	var lastOutputLen int32
+	var lastOutputSize int32
 	hasRun := false
 
 	for {
-		errMsg, err := readExportedString(ctx, fm.mem, fm.fnErrorPtr, fm.fnErrorLen, exportErrorMessagePtr, exportErrorMessageLen)
+		errMsg, err := readExportedString(ctx, fm.mem, fm.fnErrorPtr, fm.fnErrorSize, exportErrorMessagePtr, exportErrorMessageSize)
 		if err != nil {
 			return err
 		}
@@ -194,20 +194,20 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 			}
 		}
 
-		key, err := readExportedString(ctx, fm.mem, fm.fnInputKeyPtr, fm.fnInputKeyLen, exportInputKeyPtr, exportInputKeyLen)
+		key, err := readExportedString(ctx, fm.mem, fm.fnInputKeyPtr, fm.fnInputKeySize, exportInputKeyPtr, exportInputKeySize)
 		if err != nil {
 			return err
 		}
 		key = strings.TrimSpace(key)
 		if key == "" {
 			if !hasRun {
-				lastOutputLen, err = callRunLen(ctx, fm.fnRun, 0)
+				lastOutputSize, err = callRunSize(ctx, fm.fnRun, 0)
 				if err != nil {
 					return err
 				}
 				hasRun = true
 			}
-			outBytes, err := readOutputBytes(ctx, fm, lastOutputLen)
+			outBytes, err := readOutputBytes(ctx, fm, lastOutputSize)
 			if err != nil {
 				return err
 			}
@@ -223,7 +223,7 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 			}
 			return nil
 		}
-		label, err := readExportedString(ctx, fm.mem, fm.fnInputLabelPtr, fm.fnInputLabelLen, exportInputLabelPtr, exportInputLabelLen)
+		label, err := readExportedString(ctx, fm.mem, fm.fnInputLabelPtr, fm.fnInputLabelSize, exportInputLabelPtr, exportInputLabelSize)
 		if err != nil {
 			return err
 		}
@@ -264,7 +264,7 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 			return errors.New("failed to write form input to wasm memory")
 		}
 
-		lastOutputLen, err = callRunLen(ctx, fm.fnRun, int32(len(valueBytes)))
+		lastOutputSize, err = callRunSize(ctx, fm.fnRun, int32(len(valueBytes)))
 		if err != nil {
 			return err
 		}
@@ -272,11 +272,11 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 	}
 }
 
-func readOutputBytes(ctx context.Context, fm formModule, outLen int32) ([]byte, error) {
-	if outLen < 0 {
-		return nil, fmt.Errorf("run returned negative output length: %d", outLen)
+func readOutputBytes(ctx context.Context, fm formModule, outputSize int32) ([]byte, error) {
+	if outputSize < 0 {
+		return nil, fmt.Errorf("run returned negative output size: %d", outputSize)
 	}
-	if outLen == 0 {
+	if outputSize == 0 {
 		return nil, nil
 	}
 
@@ -291,10 +291,10 @@ func readOutputBytes(ctx context.Context, fm formModule, outLen int32) ([]byte, 
 	if outPtr < 0 || outCap < 0 {
 		return nil, fmt.Errorf("module returned invalid output memory values: ptr=%d cap=%d", outPtr, outCap)
 	}
-	if outLen > outCap {
-		return nil, fmt.Errorf("run output length exceeds output_utf8_cap (%d > %d)", outLen, outCap)
+	if outputSize > outCap {
+		return nil, fmt.Errorf("run output size exceeds output_utf8_cap (%d > %d)", outputSize, outCap)
 	}
-	b, ok := fm.mem.Read(uint32(outPtr), uint32(outLen))
+	b, ok := fm.mem.Read(uint32(outPtr), uint32(outputSize))
 	if !ok {
 		return nil, errors.New("output bytes exceed wasm memory bounds")
 	}
@@ -306,33 +306,33 @@ func readOutputBytes(ctx context.Context, fm formModule, outLen int32) ([]byte, 
 	return out, nil
 }
 
-func readExportedString(ctx context.Context, mem api.Memory, ptrFn api.Function, lenFn api.Function, ptrName string, lenName string) (string, error) {
+func readExportedString(ctx context.Context, mem api.Memory, ptrFn api.Function, sizeFn api.Function, ptrName string, sizeName string) (string, error) {
 	ptr, err := callNoArgI32(ctx, ptrFn, ptrName)
 	if err != nil {
 		return "", err
 	}
-	n, err := callNoArgI32(ctx, lenFn, lenName)
+	n, err := callNoArgI32(ctx, sizeFn, sizeName)
 	if err != nil {
 		return "", err
 	}
 	if ptr < 0 || n < 0 {
-		return "", fmt.Errorf("module returned invalid pointer/length for %s/%s: ptr=%d len=%d", ptrName, lenName, ptr, n)
+		return "", fmt.Errorf("module returned invalid pointer/size for %s/%s: ptr=%d size=%d", ptrName, sizeName, ptr, n)
 	}
 	if n == 0 {
 		return "", nil
 	}
 	b, ok := mem.Read(uint32(ptr), uint32(n))
 	if !ok {
-		return "", fmt.Errorf("%s/%s exceed wasm memory bounds", ptrName, lenName)
+		return "", fmt.Errorf("%s/%s exceed wasm memory bounds", ptrName, sizeName)
 	}
 	if !utf8.Valid(b) {
-		return "", fmt.Errorf("%s/%s must be valid UTF-8", ptrName, lenName)
+		return "", fmt.Errorf("%s/%s must be valid UTF-8", ptrName, sizeName)
 	}
 	return string(b), nil
 }
 
-func callRunLen(ctx context.Context, fn api.Function, inputLen int32) (int32, error) {
-	res, err := fn.Call(ctx, uint64(uint32(inputLen)))
+func callRunSize(ctx context.Context, fn api.Function, inputSize int32) (int32, error) {
+	res, err := fn.Call(ctx, uint64(uint32(inputSize)))
 	if err != nil {
 		return 0, fmt.Errorf("run() failed: %w", err)
 	}

@@ -29,7 +29,7 @@ Optional output exports:
 
 Required function:
 
-- `run(input_len) -> output_len`
+- `run(input_size) -> output_size`
 
 If `output_ptr` + output cap are not exported, `qip` falls back to printing `Ran: <run_return_value>`.
 
@@ -56,7 +56,7 @@ Capacity units:
 ## Memory Layout Recommendations
 
 - Keep input and output buffers disjoint.
-- Clamp `input_len` in your module to avoid out-of-bounds when host and module assumptions drift.
+- Clamp `input_size` in your module to avoid out-of-bounds when host and module assumptions drift.
 - Reserve explicit scratch space if needed.
 - Return `0` on invalid/empty output when that fits your module semantics.
 

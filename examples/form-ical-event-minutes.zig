@@ -18,11 +18,11 @@ const LABEL_DURATION_MINUTES = "Duration in minutes";
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var error_buf: [256]u8 = undefined;
-var error_len: u32 = 0;
+var error_size: u32 = 0;
 
 var step: u32 = 0;
 var title_buf: [TITLE_CAP]u8 = undefined;
-var title_len: u32 = 0;
+var title_size: u32 = 0;
 var event_date: Date = .{ .year = 1970, .month = 1, .day = 1 };
 var start_hour: u8 = 0;
 var start_minute: u8 = 0;
@@ -66,7 +66,7 @@ export fn input_key_ptr() u32 {
     };
 }
 
-export fn input_key_len() u32 {
+export fn input_key_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(KEY_TITLE.len)),
         1 => @as(u32, @intCast(KEY_DATE.len)),
@@ -86,7 +86,7 @@ export fn input_label_ptr() u32 {
     };
 }
 
-export fn input_label_len() u32 {
+export fn input_label_size() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(LABEL_TITLE.len)),
         1 => @as(u32, @intCast(LABEL_DATE.len)),
@@ -100,8 +100,8 @@ export fn error_message_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&error_buf)));
 }
 
-export fn error_message_len() u32 {
-    return error_len;
+export fn error_message_size() u32 {
+    return error_size;
 }
 
 const Writer = struct {
@@ -120,13 +120,13 @@ const Writer = struct {
 };
 
 fn resetError() void {
-    error_len = 0;
+    error_size = 0;
 }
 
 fn setError(msg: []const u8) void {
     const n = @min(msg.len, error_buf.len);
     if (n > 0) @memcpy(error_buf[0..n], msg[0..n]);
-    error_len = @as(u32, @intCast(n));
+    error_size = @as(u32, @intCast(n));
 }
 
 fn isSpace(ch: u8) bool {
@@ -243,7 +243,7 @@ fn storeTitle(input: []const u8) bool {
         }
     }
     @memcpy(title_buf[0..t.len], t);
-    title_len = @as(u32, @intCast(t.len));
+    title_size = @as(u32, @intCast(t.len));
     return true;
 }
 
@@ -307,7 +307,7 @@ fn buildICS() u32 {
     writeTimeCompact(&start_time_compact, start.hour, start.minute);
     writeTimeCompact(&end_time_compact, end.hour, end.minute);
 
-    const title = title_buf[0..@as(usize, @intCast(title_len))];
+    const title = title_buf[0..@as(usize, @intCast(title_size))];
 
     var w = Writer{};
     w.writeSlice("BEGIN:VCALENDAR\r\n");
@@ -376,8 +376,8 @@ export fn run(input_size: u32) u32 {
 
 fn resetState() void {
     step = 0;
-    title_len = 0;
-    error_len = 0;
+    title_size = 0;
+    error_size = 0;
     event_date = .{ .year = 1970, .month = 1, .day = 1 };
     start_hour = 0;
     start_minute = 0;
@@ -392,16 +392,16 @@ fn feed(input: []const u8) u32 {
 test "successful flow outputs timed event with duration" {
     resetState();
     try std.testing.expectEqual(@as(u32, 0), feed("Team Sync"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
     try std.testing.expectEqual(@as(u32, 0), feed("2026-03-14"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_START_TIME.len)), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_START_TIME.len)), input_key_size());
     try std.testing.expectEqual(@as(u32, 0), feed("09:30"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_DURATION_MINUTES.len)), input_key_len());
-    const out_len = feed("90");
-    try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 0), input_key_len());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DURATION_MINUTES.len)), input_key_size());
+    const out_size = feed("90");
+    try std.testing.expect(out_size > 0);
+    try std.testing.expectEqual(@as(u32, 0), input_key_size());
 
-    const out = output_buf[0..@as(usize, @intCast(out_len))];
+    const out = output_buf[0..@as(usize, @intCast(out_size))];
     try std.testing.expect(std.mem.indexOf(u8, out, "SUMMARY:Team Sync\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "DTSTART:20260314T093000\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "DTEND:20260314T110000\r\n") != null);
@@ -412,8 +412,8 @@ test "duration can roll to next day" {
     _ = feed("Overnight");
     _ = feed("2026-03-14");
     _ = feed("23:30");
-    const out_len = feed("120");
-    const out = output_buf[0..@as(usize, @intCast(out_len))];
+    const out_size = feed("120");
+    const out = output_buf[0..@as(usize, @intCast(out_size))];
     try std.testing.expect(std.mem.indexOf(u8, out, "DTEND:20260315T013000\r\n") != null);
 }
 
@@ -423,6 +423,6 @@ test "invalid duration keeps step and sets error" {
     _ = feed("2026-03-14");
     _ = feed("10:00");
     try std.testing.expectEqual(@as(u32, 0), feed("0"));
-    try std.testing.expectEqual(@as(u32, @intCast(KEY_DURATION_MINUTES.len)), input_key_len());
-    try std.testing.expect(error_message_len() > 0);
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DURATION_MINUTES.len)), input_key_size());
+    try std.testing.expect(error_message_size() > 0);
 }

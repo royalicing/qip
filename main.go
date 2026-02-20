@@ -93,7 +93,7 @@ const usageHelp = "Usage: qip help [command]"
 var qipFormTagPattern = regexp.MustCompile(`(?is)<qip-form\b[^>]*>`)
 var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+))")
 
-const helpRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_len), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > out.ico"
+const helpRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run examples/svg-rasterize.wasm examples/bmp-double.wasm examples/bmp-to-ico.wasm > out.ico"
 
 func main() {
 	args := os.Args[1:]
@@ -753,7 +753,7 @@ func describeContentMismatch(expected, actual contentData) string {
 		)
 	}
 	return fmt.Sprintf(
-		"output length differs (expected len=%d sha256=%x, actual len=%d sha256=%x)",
+		"output size differs (expected size=%d sha256=%x, actual size=%d sha256=%x)",
 		len(expected.bytes),
 		expSum,
 		len(actual.bytes),
@@ -2408,11 +2408,11 @@ const qipFormRequiredExports = [
   "output_ptr",
   "output_utf8_cap",
   "input_key_ptr",
-  "input_key_len",
+  "input_key_size",
   "input_label_ptr",
-  "input_label_len",
+  "input_label_size",
   "error_message_ptr",
-  "error_message_len",
+  "error_message_size",
 ];
 
 function qipFormDecodeBase64(input) {
@@ -2435,7 +2435,7 @@ function qipFormCallI32(exportsObj, fnName, args) {
 
 function qipFormReadSlice(exportsObj, ptr, len, label) {
   if (ptr < 0 || len < 0) {
-    throw new Error(label + " returned negative pointer/length");
+    throw new Error(label + " returned negative pointer/size");
   }
   const mem = new Uint8Array(exportsObj.memory.buffer);
   const start = ptr >>> 0;
@@ -2459,7 +2459,7 @@ function qipFormReadExportedString(exportsObj, ptrExport, lenExport) {
 
 function qipFormReadOutput(exportsObj, outLen) {
   if (outLen < 0) {
-    throw new Error("run returned negative output length: " + String(outLen));
+    throw new Error("run returned negative output size: " + String(outLen));
   }
   if (outLen === 0) {
     return "";
@@ -2470,7 +2470,7 @@ function qipFormReadOutput(exportsObj, outLen) {
     throw new Error("module returned invalid output pointer/capacity");
   }
   if (outLen > outCap) {
-    throw new Error("run output length exceeds output_utf8_cap");
+    throw new Error("run output size exceeds output_utf8_cap");
   }
   const bytes = qipFormReadSlice(exportsObj, outPtr, outLen, "output_ptr/output_utf8_cap");
   return qipFormTextDecoder.decode(bytes);
@@ -2548,7 +2548,7 @@ class QIPFormElement extends HTMLElement {
       throw new Error("form module is not initialized");
     }
 
-    const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_len").trim();
+    const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_size").trim();
     if (inputKey === "") {
       if (!this._hasRun) {
         this._lastOutputLen = qipFormCallI32(exportsObj, "run", [0]);
@@ -2561,8 +2561,8 @@ class QIPFormElement extends HTMLElement {
       return;
     }
 
-    const errorMessage = qipFormReadExportedString(exportsObj, "error_message_ptr", "error_message_len");
-    const inputLabel = qipFormReadExportedString(exportsObj, "input_label_ptr", "input_label_len");
+    const errorMessage = qipFormReadExportedString(exportsObj, "error_message_ptr", "error_message_size");
+    const inputLabel = qipFormReadExportedString(exportsObj, "input_label_ptr", "input_label_size");
     const prompt = inputLabel.trim() || inputKey;
 
     const container = document.createElement("form");

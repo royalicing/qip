@@ -12,7 +12,7 @@
         "status": 200,
         "content_sha256_count": 1,
         "recipe_sha256_count": 0,
-        "location_len": 0
+        "location_size": 0
       }
     },
     {
@@ -22,7 +22,7 @@
       "expected": {
         "kind": "redirect",
         "status": 302,
-        "location_len_gt": 0
+        "location_size_gt": 0
       }
     },
     {
