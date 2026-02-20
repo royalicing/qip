@@ -15,7 +15,13 @@ var output_buf: [OUTPUT_CAP]u8 = undefined;
 var error_buf: [256]u8 = undefined;
 var error_size: u32 = 0;
 
-var step: u32 = 0;
+const Step = enum(u2) {
+    first_name = 0,
+    email = 1,
+    done = 2,
+};
+
+var step: Step = .first_name;
 var first_name_buf: [NAME_CAP]u8 = undefined;
 var first_name_size: u32 = 0;
 var email_buf: [EMAIL_CAP]u8 = undefined;
@@ -39,33 +45,33 @@ export fn output_utf8_cap() u32 {
 
 export fn input_key_ptr() u32 {
     return switch (step) {
-        0 => @as(u32, @intCast(@intFromPtr(KEY_FIRST_NAME.ptr))),
-        1 => @as(u32, @intCast(@intFromPtr(KEY_EMAIL.ptr))),
-        else => 0,
+        .first_name => @as(u32, @intCast(@intFromPtr(KEY_FIRST_NAME.ptr))),
+        .email => @as(u32, @intCast(@intFromPtr(KEY_EMAIL.ptr))),
+        .done => 0,
     };
 }
 
 export fn input_key_size() u32 {
     return switch (step) {
-        0 => @as(u32, @intCast(KEY_FIRST_NAME.len)),
-        1 => @as(u32, @intCast(KEY_EMAIL.len)),
-        else => 0,
+        .first_name => @as(u32, @intCast(KEY_FIRST_NAME.len)),
+        .email => @as(u32, @intCast(KEY_EMAIL.len)),
+        .done => 0,
     };
 }
 
 export fn input_label_ptr() u32 {
     return switch (step) {
-        0 => @as(u32, @intCast(@intFromPtr(LABEL_FIRST_NAME.ptr))),
-        1 => @as(u32, @intCast(@intFromPtr(LABEL_EMAIL.ptr))),
-        else => 0,
+        .first_name => @as(u32, @intCast(@intFromPtr(LABEL_FIRST_NAME.ptr))),
+        .email => @as(u32, @intCast(@intFromPtr(LABEL_EMAIL.ptr))),
+        .done => 0,
     };
 }
 
 export fn input_label_size() u32 {
     return switch (step) {
-        0 => @as(u32, @intCast(LABEL_FIRST_NAME.len)),
-        1 => @as(u32, @intCast(LABEL_EMAIL.len)),
-        else => 0,
+        .first_name => @as(u32, @intCast(LABEL_FIRST_NAME.len)),
+        .email => @as(u32, @intCast(LABEL_EMAIL.len)),
+        .done => 0,
     };
 }
 
@@ -206,22 +212,23 @@ export fn run(input_size: u32) u32 {
     const input = input_buf[0..@as(usize, @intCast(bounded_input_size))];
     resetError();
 
-    if (step == 0) {
-        if (!storeFirstName(input)) return 0;
-        step = 1;
-        return 0;
-    }
-    if (step == 1) {
-        if (!storeEmail(input)) return 0;
-        step = 2;
-        return buildMessage();
-    }
-
-    return buildMessage();
+    return switch (step) {
+        .first_name => blk: {
+            if (!storeFirstName(input)) break :blk 0;
+            step = .email;
+            break :blk 0;
+        },
+        .email => blk: {
+            if (!storeEmail(input)) break :blk 0;
+            step = .done;
+            break :blk buildMessage();
+        },
+        .done => buildMessage(),
+    };
 }
 
 fn resetState() void {
-    step = 0;
+    step = .first_name;
     first_name_size = 0;
     email_size = 0;
     error_size = 0;
