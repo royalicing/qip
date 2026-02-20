@@ -151,3 +151,6 @@ test-zig: $(ZIG_TEST_FILES)
 		echo "zig test $$f"; \
 		$(ZIG_ENV) zig test $$f; \
 	done
+
+defluff:
+	find . -name '.DS_Store' -type f -delete
