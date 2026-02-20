@@ -1,10 +1,10 @@
-# Form ABI v0
+# Form ABI
 
 This document defines a minimal interactive form ABI for modules that can run in both CLI and web hosts.
 
 Scope:
 
-- Single input per step
+- Single input per prompt
 - No persistence
 - No JSON metadata export
 - Shared labels/keys between interfaces
@@ -17,8 +17,6 @@ Scope:
 - `run(input_len: i32) -> i32`
 - `output_ptr() -> i32`
 - `output_utf8_cap() -> i32`
-- `input_step() -> i32`
-- `input_max_step() -> i32`
 - `input_key_ptr() -> i32`
 - `input_key_len() -> i32`
 - `input_label_ptr() -> i32`
@@ -30,41 +28,43 @@ Scope:
 
 At `input_ptr`:
 
-- UTF-8 bytes for the current step value only.
+- UTF-8 bytes for the current input value only.
 
 Host must ensure:
 
 - `input_len <= input_utf8_cap()`
 - writes stay in wasm memory bounds
 
-## Step Semantics
+## Prompt/Completion Semantics
 
-- `input_step()` is the current zero-based step index.
-- `input_max_step()` is the maximum zero-based step index.
-- Form is complete when:
-  - `input_step() > input_max_step()`
-
-For the current step, module provides:
+For the current prompt, module provides:
 
 - `input_key` (stable field key)
 - `input_label` (human-facing label)
+
+Form is complete when:
+
+- `input_key_len() == 0`
+
+When complete, host should treat the form as finished and read final output from `output_ptr`.
 
 ## Run Semantics
 
 Host flow:
 
-1. Read current step metadata (`input_step`, `input_max_step`, key/label, error).
-2. Collect one input value.
-3. Write value bytes to `input_ptr`.
-4. Call `run(input_len)`.
+1. Read current metadata (`input_key`, `input_label`, `error_message`).
+2. If `input_key_len() == 0`, form is complete.
+3. Otherwise, collect one input value.
+4. Write value bytes to `input_ptr`.
+5. Call `run(input_len)`.
 
 Module behavior:
 
 - On validation failure:
-  - keep `input_step` unchanged
+  - keep internal state unchanged
   - set `error_message_len > 0`
 - On success:
-  - advance step (or move to completion state)
+  - advance internal state (if any)
   - clear `error_message` (recommended)
 
 `run` return value is UTF-8 output length in `output_ptr`.

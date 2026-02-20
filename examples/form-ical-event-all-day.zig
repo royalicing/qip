@@ -35,14 +35,6 @@ export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
 
-export fn input_step() u32 {
-    return step;
-}
-
-export fn input_max_step() u32 {
-    return 1;
-}
-
 export fn input_key_ptr() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(@intFromPtr(KEY_TITLE.ptr))),
@@ -287,13 +279,13 @@ test "successful flow outputs simple ical event" {
     const t = "Team Sync";
     @memcpy(input_buf[0..t.len], t);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(t.len))));
-    try std.testing.expectEqual(@as(u32, 1), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
 
     const d = "2026-03-14";
     @memcpy(input_buf[0..d.len], d);
     const out_len = run(@as(u32, @intCast(d.len)));
     try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 2), input_step());
+    try std.testing.expectEqual(@as(u32, 0), input_key_len());
 
     const out = output_buf[0..@as(usize, @intCast(out_len))];
     try std.testing.expect(std.mem.indexOf(u8, out, "BEGIN:VCALENDAR\r\n") != null);
@@ -308,7 +300,7 @@ test "invalid title keeps step and sets error" {
     const t = "   ";
     @memcpy(input_buf[0..t.len], t);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(t.len))));
-    try std.testing.expectEqual(@as(u32, 0), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_TITLE.len)), input_key_len());
     try std.testing.expect(error_message_len() > 0);
 }
 
@@ -318,11 +310,11 @@ test "invalid date keeps step and sets error" {
     const t = "Demo";
     @memcpy(input_buf[0..t.len], t);
     _ = run(@as(u32, @intCast(t.len)));
-    try std.testing.expectEqual(@as(u32, 1), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
 
     const d = "2026-02-30";
     @memcpy(input_buf[0..d.len], d);
     try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(d.len))));
-    try std.testing.expectEqual(@as(u32, 1), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
     try std.testing.expect(error_message_len() > 0);
 }

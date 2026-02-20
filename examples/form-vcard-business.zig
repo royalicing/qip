@@ -37,8 +37,6 @@ var phone_len: u32 = 0;
 var website_buf: [FIELD_CAP]u8 = undefined;
 var website_len: u32 = 0;
 
-const field_count: u32 = 6;
-
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
@@ -53,14 +51,6 @@ export fn output_ptr() u32 {
 
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
-}
-
-export fn input_step() u32 {
-    return step;
-}
-
-export fn input_max_step() u32 {
-    return field_count - 1;
 }
 
 export fn input_key_ptr() u32 {
@@ -334,13 +324,18 @@ fn feed(input: []const u8) u32 {
 test "successful flow outputs business vcard" {
     resetState();
     try std.testing.expectEqual(@as(u32, 0), feed("Acme Co"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_CONTACT_NAME.len)), input_key_len());
     try std.testing.expectEqual(@as(u32, 0), feed("Ada Lovelace"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_JOB_TITLE.len)), input_key_len());
     try std.testing.expectEqual(@as(u32, 0), feed("Founder"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
     try std.testing.expectEqual(@as(u32, 0), feed("ada@acme.example"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_PHONE.len)), input_key_len());
     try std.testing.expectEqual(@as(u32, 0), feed("+1-212-555-0100"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_WEBSITE.len)), input_key_len());
     const out_len = feed("https://acme.example");
     try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 6), input_step());
+    try std.testing.expectEqual(@as(u32, 0), input_key_len());
 
     const out = output_buf[0..@as(usize, @intCast(out_len))];
     try std.testing.expect(std.mem.indexOf(u8, out, "BEGIN:VCARD\r\n") != null);
@@ -355,7 +350,7 @@ test "invalid email keeps step and sets error" {
     _ = feed("Ada Lovelace");
     _ = feed("Founder");
     try std.testing.expectEqual(@as(u32, 0), feed("ada-at-acme.example"));
-    try std.testing.expectEqual(@as(u32, 3), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_len());
     try std.testing.expect(error_message_len() > 0);
 }
 
@@ -367,6 +362,6 @@ test "invalid website keeps step and sets error" {
     _ = feed("ada@acme.example");
     _ = feed("+1-212-555-0100");
     try std.testing.expectEqual(@as(u32, 0), feed("acme.example"));
-    try std.testing.expectEqual(@as(u32, 5), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_WEBSITE.len)), input_key_len());
     try std.testing.expect(error_message_len() > 0);
 }

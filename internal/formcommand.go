@@ -27,8 +27,6 @@ const (
 	exportRun             = "run"
 	exportOutputPtr       = "output_ptr"
 	exportOutputUTF8Cap   = "output_utf8_cap"
-	exportInputStep       = "input_step"
-	exportInputMaxStep    = "input_max_step"
 	exportInputKeyPtr     = "input_key_ptr"
 	exportInputKeyLen     = "input_key_len"
 	exportInputLabelPtr   = "input_label_ptr"
@@ -45,8 +43,6 @@ type formModule struct {
 	fnRun           api.Function
 	fnOutputPtr     api.Function
 	fnOutputUTF8Cap api.Function
-	fnInputStep     api.Function
-	fnInputMaxStep  api.Function
 	fnInputKeyPtr   api.Function
 	fnInputKeyLen   api.Function
 	fnInputLabelPtr api.Function
@@ -140,8 +136,6 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 		{name: exportRun},
 		{name: exportOutputPtr},
 		{name: exportOutputUTF8Cap},
-		{name: exportInputStep},
-		{name: exportInputMaxStep},
 		{name: exportInputKeyPtr},
 		{name: exportInputKeyLen},
 		{name: exportInputLabelPtr},
@@ -167,10 +161,6 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 			out.fnOutputPtr = fn
 		case exportOutputUTF8Cap:
 			out.fnOutputUTF8Cap = fn
-		case exportInputStep:
-			out.fnInputStep = fn
-		case exportInputMaxStep:
-			out.fnInputMaxStep = fn
 		case exportInputKeyPtr:
 			out.fnInputKeyPtr = fn
 		case exportInputKeyLen:
@@ -194,19 +184,22 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 	hasRun := false
 
 	for {
-		step, err := callNoArgI32(ctx, fm.fnInputStep, exportInputStep)
+		errMsg, err := readExportedString(ctx, fm.mem, fm.fnErrorPtr, fm.fnErrorLen, exportErrorMessagePtr, exportErrorMessageLen)
 		if err != nil {
 			return err
 		}
-		maxStep, err := callNoArgI32(ctx, fm.fnInputMaxStep, exportInputMaxStep)
-		if err != nil {
-			return err
-		}
-		if step < 0 || maxStep < 0 {
-			return fmt.Errorf("module returned invalid step values: step=%d max=%d", step, maxStep)
+		if errMsg != "" {
+			if _, err := fmt.Fprintf(stdout, "Error: %s\n", errMsg); err != nil {
+				return err
+			}
 		}
 
-		if step > maxStep {
+		key, err := readExportedString(ctx, fm.mem, fm.fnInputKeyPtr, fm.fnInputKeyLen, exportInputKeyPtr, exportInputKeyLen)
+		if err != nil {
+			return err
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
 			if !hasRun {
 				lastOutputLen, err = callRunLen(ctx, fm.fnRun, 0)
 				if err != nil {
@@ -230,33 +223,15 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 			}
 			return nil
 		}
-
-		errMsg, err := readExportedString(ctx, fm.mem, fm.fnErrorPtr, fm.fnErrorLen, exportErrorMessagePtr, exportErrorMessageLen)
-		if err != nil {
-			return err
-		}
-		if errMsg != "" {
-			if _, err := fmt.Fprintf(stdout, "Error: %s\n", errMsg); err != nil {
-				return err
-			}
-		}
-
-		key, err := readExportedString(ctx, fm.mem, fm.fnInputKeyPtr, fm.fnInputKeyLen, exportInputKeyPtr, exportInputKeyLen)
-		if err != nil {
-			return err
-		}
 		label, err := readExportedString(ctx, fm.mem, fm.fnInputLabelPtr, fm.fnInputLabelLen, exportInputLabelPtr, exportInputLabelLen)
 		if err != nil {
 			return err
 		}
 		prompt := strings.TrimSpace(label)
 		if prompt == "" {
-			prompt = strings.TrimSpace(key)
+			prompt = key
 		}
-		if prompt == "" {
-			prompt = fmt.Sprintf("Step %d", step+1)
-		}
-		if _, err := fmt.Fprintf(stdout, "[%d/%d] %s: ", step+1, maxStep+1, prompt); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s: ", prompt); err != nil {
 			return err
 		}
 

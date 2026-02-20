@@ -56,14 +56,6 @@ export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
 
-export fn input_step() u32 {
-    return step;
-}
-
-export fn input_max_step() u32 {
-    return 3;
-}
-
 export fn input_key_ptr() u32 {
     return switch (step) {
         0 => @as(u32, @intCast(@intFromPtr(KEY_TITLE.ptr))),
@@ -400,11 +392,14 @@ fn feed(input: []const u8) u32 {
 test "successful flow outputs timed event with duration" {
     resetState();
     try std.testing.expectEqual(@as(u32, 0), feed("Team Sync"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_len());
     try std.testing.expectEqual(@as(u32, 0), feed("2026-03-14"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_START_TIME.len)), input_key_len());
     try std.testing.expectEqual(@as(u32, 0), feed("09:30"));
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DURATION_MINUTES.len)), input_key_len());
     const out_len = feed("90");
     try std.testing.expect(out_len > 0);
-    try std.testing.expectEqual(@as(u32, 4), input_step());
+    try std.testing.expectEqual(@as(u32, 0), input_key_len());
 
     const out = output_buf[0..@as(usize, @intCast(out_len))];
     try std.testing.expect(std.mem.indexOf(u8, out, "SUMMARY:Team Sync\r\n") != null);
@@ -428,6 +423,6 @@ test "invalid duration keeps step and sets error" {
     _ = feed("2026-03-14");
     _ = feed("10:00");
     try std.testing.expectEqual(@as(u32, 0), feed("0"));
-    try std.testing.expectEqual(@as(u32, 3), input_step());
+    try std.testing.expectEqual(@as(u32, @intCast(KEY_DURATION_MINUTES.len)), input_key_len());
     try std.testing.expect(error_message_len() > 0);
 }
