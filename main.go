@@ -79,7 +79,7 @@ type options struct {
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server for a content directory with optional recipes\n  form  Run an interactive wasm form module in the terminal\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
-const usageImage = "Usage: qip image -i <input image path> -o <output image path> [-v] <wasm module URL or file>"
+const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file>"
 const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [-p <port>] [-v|--verbose]"
 const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 const usageHelp = "Usage: qip help [command]"
@@ -1227,6 +1227,7 @@ func imageCmd(args []string) {
 	opts := options{}
 	var inputImagePath string
 	var outputImagePath string
+	timeoutMS := 2000
 	fs := flag.NewFlagSet("image", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var imageVerbose bool
@@ -1234,6 +1235,7 @@ func imageCmd(args []string) {
 	fs.BoolVar(&imageVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&inputImagePath, "i", "", "input image path")
 	fs.StringVar(&outputImagePath, "o", "", "output image path")
+	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "module execution timeout in milliseconds")
 	if err := fs.Parse(args); err != nil {
 		gameOver("%s %v", usageImage, err)
 	}
@@ -1241,6 +1243,9 @@ func imageCmd(args []string) {
 	modules := fs.Args()
 	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
 		gameOver(usageImage)
+	}
+	if timeoutMS <= 0 {
+		gameOver("Invalid timeout-ms: %d", timeoutMS)
 	}
 
 	moduleBodies := make([][]byte, len(modules))
@@ -1253,12 +1258,21 @@ func imageCmd(args []string) {
 	}
 
 	ctx := context.Background()
-	ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, 100*time.Millisecond)
+	ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
 	defer cancel()
 
-	inputImageBytes, err := os.ReadFile(inputImagePath)
-	if err != nil {
-		gameOver("Error reading image file: %v", err)
+	var inputImageBytes []byte
+	var err error
+	if inputImagePath == "-" {
+		inputImageBytes, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			gameOver("Error reading image stdin: %v", err)
+		}
+	} else {
+		inputImageBytes, err = os.ReadFile(inputImagePath)
+		if err != nil {
+			gameOver("Error reading image file: %v", err)
+		}
 	}
 	decodeImage := func(r io.Reader) (image.Image, error) {
 		img, _, err := image.Decode(r)
