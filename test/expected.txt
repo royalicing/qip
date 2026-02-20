@@ -61,9 +61,27 @@ module: markdown-basic.wasm (table)
 </table>
 
 module: markdown-basic.wasm | html-page-wrap.wasm
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Title</title><style>body {
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Title</title><style>:root {
+  --text: #0f1115;
+  --bg: #e6e6e6;
+  --link: #0051dc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --text: #e6e6e6;
+    --link: #8ab4ff;
+  }
+}
+
+body {
+  color: var(--text);
+  background: var(--bg);
   font-family: system-ui, sans-serif;
   line-height: 1.5;
+}
+a {
+  color: var(--link);
 }
 main {
   max-width: 44em;
@@ -83,15 +101,6 @@ img {
 hr {
   border: none;
   border-top: 1px solid currentColor;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #0f1115;
-    color: #e6e6e6;
-  }
-  a {
-    color: #8ab4ff;
-  }
 }</style></head><body><main><h1>Title</h1>
 <p>Hello <strong>World</strong></p>
 </main></body></html>

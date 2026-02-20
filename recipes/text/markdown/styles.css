@@ -1,6 +1,24 @@
+:root {
+  --text: #0f1115;
+  --bg: #e6e6e6;
+  --link: #0051dc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --text: #e6e6e6;
+    --link: #8ab4ff;
+  }
+}
+
 body {
+  color: var(--text);
+  background: var(--bg);
   font-family: system-ui, sans-serif;
   line-height: 1.5;
+}
+a {
+  color: var(--link);
 }
 main {
   max-width: 44em;
@@ -20,13 +38,4 @@ img {
 hr {
   border: none;
   border-top: 1px solid currentColor;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #0f1115;
-    color: #e6e6e6;
-  }
-  a {
-    color: #8ab4ff;
-  }
 }
