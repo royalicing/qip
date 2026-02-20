@@ -114,7 +114,10 @@ kill -HUP <qip-dev-pid>
 You can process images through a chain of rgba shaders. It breaks the work into 64x64 tiles.
 
 ```bash
-qip image -i examples/images/SAAM-2015.54.2_1.jpg -o tmp/k.png examples/rgba/black-and-white.wasm examples/rgba/invert.wasm examples/rgba/vignette.wasm
+qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/bw-invert-vignette.png examples/rgba/black-and-white.wasm examples/rgba/invert.wasm examples/rgba/vignette.wasm
+
+# Per-module uniforms via query args (quote '?' in shells like zsh)
+qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png examples/rgba/color-halftone.wasm '?max_radius=2.0' examples/rgba/brightness.wasm '?brightness=0.2'
 ```
 
 ## TODO

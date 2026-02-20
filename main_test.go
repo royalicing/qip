@@ -207,6 +207,47 @@ func TestLoadRecipeChainsRejectsDuplicatePrefix(t *testing.T) {
 	}
 }
 
+func TestParseImageModuleSpecs(t *testing.T) {
+	t.Run("module with query", func(t *testing.T) {
+		specs, err := parseImageModuleSpecs([]string{
+			"examples/rgba/color-halftone.wasm",
+			"?max_radius=2.0",
+			"examples/rgba/brightness.wasm",
+			"?brightness=0.2",
+		})
+		if err != nil {
+			t.Fatalf("parseImageModuleSpecs error: %v", err)
+		}
+		if len(specs) != 2 {
+			t.Fatalf("spec count=%d, want 2", len(specs))
+		}
+		if specs[0].path != "examples/rgba/color-halftone.wasm" {
+			t.Fatalf("spec[0].path=%q", specs[0].path)
+		}
+		if got := specs[0].uniforms["max_radius"]; got != "2.0" {
+			t.Fatalf("spec[0] max_radius=%q, want 2.0", got)
+		}
+		if specs[1].path != "examples/rgba/brightness.wasm" {
+			t.Fatalf("spec[1].path=%q", specs[1].path)
+		}
+		if got := specs[1].uniforms["brightness"]; got != "0.2" {
+			t.Fatalf("spec[1] brightness=%q, want 0.2", got)
+		}
+	})
+
+	t.Run("query before module is error", func(t *testing.T) {
+		if _, err := parseImageModuleSpecs([]string{"?max_radius=2.0"}); err == nil {
+			t.Fatal("expected error for query before module")
+		}
+	})
+
+	t.Run("empty query is error", func(t *testing.T) {
+		if _, err := parseImageModuleSpecs([]string{"examples/rgba/brightness.wasm", "?"}); err == nil {
+			t.Fatal("expected error for empty query")
+		}
+	})
+}
+
 func TestLoadFormModules(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {

@@ -23,6 +23,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -67,6 +68,11 @@ type tileStage struct {
 	tileSpan    int
 }
 
+type imageModuleSpec struct {
+	path     string
+	uniforms map[string]string
+}
+
 type contentData struct {
 	bytes    []byte
 	encoding dataEncoding
@@ -79,7 +85,7 @@ type options struct {
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run   Run a chain of wasm modules on input\n  bench Compare one or more wasm modules for output parity and performance\n  image Run wasm filters on an input image\n  dev   Start a dev server for a content directory with optional recipes\n  form  Run an interactive wasm form module in the terminal\n  help  Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] <wasm module URL or file>..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
-const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file>"
+const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file> [?key=value ...] ..."
 const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [-p <port>] [-v|--verbose]"
 const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 const usageHelp = "Usage: qip help [command]"
@@ -681,6 +687,44 @@ func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, 
 	fmt.Printf("\n")
 }
 
+func parseImageModuleSpecs(args []string) ([]imageModuleSpec, error) {
+	specs := make([]imageModuleSpec, 0, len(args))
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "?") {
+			if len(specs) == 0 {
+				return nil, fmt.Errorf("image uniform query %q must follow a wasm module path", arg)
+			}
+			if len(arg) == 1 {
+				return nil, errors.New("image uniform query must not be empty")
+			}
+			values, err := url.ParseQuery(arg[1:])
+			if err != nil {
+				return nil, fmt.Errorf("invalid image uniform query %q: %w", arg, err)
+			}
+			if len(values) == 0 {
+				return nil, fmt.Errorf("image uniform query %q must contain key=value pairs", arg)
+			}
+			last := &specs[len(specs)-1]
+			for key, vals := range values {
+				if key == "" {
+					return nil, fmt.Errorf("invalid image uniform query %q: empty key", arg)
+				}
+				if len(vals) == 0 {
+					return nil, fmt.Errorf("invalid image uniform query %q: missing value for %q", arg, key)
+				}
+				last.uniforms[key] = vals[len(vals)-1]
+			}
+			continue
+		}
+
+		specs = append(specs, imageModuleSpec{
+			path:     arg,
+			uniforms: make(map[string]string),
+		})
+	}
+	return specs, nil
+}
+
 func formatCapacityBytes(size uint64) string {
 	if size == 0 {
 		return "n/a"
@@ -1099,6 +1143,70 @@ func runTileStagesCompiled(ctx context.Context, runtime wazero.Runtime, compiled
 	return outputRGBA, instDurations, stageDurations, nil
 }
 
+func applyImageUniforms(ctx context.Context, mod api.Module, uniforms map[string]string) error {
+	if len(uniforms) == 0 {
+		return nil
+	}
+	defs := mod.ExportedFunctionDefinitions()
+	keys := make([]string, 0, len(uniforms))
+	for key := range uniforms {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		fnName := "uniform_set_" + key
+		fn := mod.ExportedFunction(fnName)
+		if fn == nil {
+			return fmt.Errorf("Wasm module does not export %s for query key %q", fnName, key)
+		}
+		def, ok := defs[fnName]
+		if !ok {
+			return fmt.Errorf("Wasm module is missing function definition for %s", fnName)
+		}
+		paramTypes := def.ParamTypes()
+		if len(paramTypes) != 1 {
+			return fmt.Errorf("%s must accept exactly one argument", fnName)
+		}
+		value := uniforms[key]
+
+		var args [1]uint64
+		switch paramTypes[0] {
+		case api.ValueTypeF32:
+			parsed, err := strconv.ParseFloat(value, 32)
+			if err != nil {
+				return fmt.Errorf("invalid value %q for %s (expected f32)", value, fnName)
+			}
+			args[0] = api.EncodeF32(float32(parsed))
+		case api.ValueTypeF64:
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return fmt.Errorf("invalid value %q for %s (expected f64)", value, fnName)
+			}
+			args[0] = api.EncodeF64(parsed)
+		case api.ValueTypeI32:
+			parsed, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return fmt.Errorf("invalid value %q for %s (expected i32)", value, fnName)
+			}
+			args[0] = uint64(uint32(int32(parsed)))
+		case api.ValueTypeI64:
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid value %q for %s (expected i64)", value, fnName)
+			}
+			args[0] = uint64(parsed)
+		default:
+			return fmt.Errorf("%s has unsupported parameter type", fnName)
+		}
+
+		if _, err := fn.Call(ctx, args[0]); err != nil {
+			return fmt.Errorf("Error running %s(%s): %w", fnName, value, wasmruntime.HumanizeExecutionError(ctx, err))
+		}
+	}
+	return nil
+}
+
 func decodeBMP(input []byte) (*image.RGBA, error) {
 	if len(input) < 54 {
 		return nil, errors.New("BMP input too small")
@@ -1240,17 +1348,20 @@ func imageCmd(args []string) {
 		gameOver("%s %v", usageImage, err)
 	}
 	opts.verbose = opts.verbose || imageVerbose
-	modules := fs.Args()
-	if len(modules) == 0 || inputImagePath == "" || outputImagePath == "" {
+	moduleSpecs, parseErr := parseImageModuleSpecs(fs.Args())
+	if parseErr != nil {
+		gameOver("Invalid image module args: %v", parseErr)
+	}
+	if len(moduleSpecs) == 0 || inputImagePath == "" || outputImagePath == "" {
 		gameOver(usageImage)
 	}
 	if timeoutMS <= 0 {
 		gameOver("Invalid timeout-ms: %d", timeoutMS)
 	}
 
-	moduleBodies := make([][]byte, len(modules))
-	for i, modulePath := range modules {
-		body, err := readModulePath(modulePath, opts)
+	moduleBodies := make([][]byte, len(moduleSpecs))
+	for i, spec := range moduleSpecs {
+		body, err := readModulePath(spec.path, opts)
 		if err != nil {
 			gameOver("%v", err)
 		}
@@ -1307,6 +1418,9 @@ func imageCmd(args []string) {
 		mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
 		if err != nil {
 			gameOver("Wasm module could not be compiled")
+		}
+		if err := applyImageUniforms(ctx, mod, moduleSpecs[i].uniforms); err != nil {
+			gameOver("%v", err)
 		}
 		stage, err := loadTileStage(ctx, mod)
 		if err != nil {
