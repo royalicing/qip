@@ -1,6 +1,6 @@
 # `qip`
 
-Pipelines of safe determinism in a probabilistic generative world.
+Pockets of speed safely sewn together.
 
 `qip` lets you compose small modules for text and images. Modules do one thing well and can be piped together to make powerful replayable tools.
 
@@ -125,6 +125,7 @@ qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png examples/rgba/col
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Add `qip router build` for building a web app.
+- [ ] Add `qip serve` command that runs the server in `prod` mode by default.
 
 ## Documentation
 

@@ -12,13 +12,13 @@ I like to think of `qip` as “React components but for everything (and that run
 
 Software today is like Matryoshka dolls, frameworks that depend on libraries that depend on libraries that depend on OS libs and so on. This can be incredibly productive for building, but has lead to increasingly complex and bloated end-user apps.
 
-This has expanded the surface areas for security attacks, due to the large number of moving parts and countless dependencies prone to supply-chain attacks. It also means that software is less predictable and harder to debug. Any line of a dependency could be reading SSH keys & secrets, mining bitcoin, remotely executing code. This gets worse in an AI world, especially if we are no longer reviewing code.
+This has expanded the surface areas for security attacks, due to the large number of moving parts and countless dependencies prone to supply-chain attacks. It also means that software is less predictable and harder to debug. Any line of a dependency could be reading SSH keys & secrets, mining bitcoin, remotely executing code. This gets worse in an AI world, especially if we are no longer closely reviewing code.
 
 ## Two key technologies combined
 
 There are two recent technologies that change this: WebAssembly and agentic coding.
 
-With WebAssembly we get cross-platform executables. We can really write once, run anywhere. We can create stable, self-contained binaries that don’t depend on anything external. We can sandbox them so they don’t have any access to the outside world: no file system, no network, not even the current time. This makes them deterministic, a property that makes software more predictable, reliable, and easy to test.
+With WebAssembly we get light cross-platform executables. We can really write once, run anywhere. We can create stable, self-contained binaries that don’t depend on anything external. We can sandbox them so they don’t have any access to the outside world: no file system, no network, not even the current time. This makes them deterministic, a property that makes software more predictable, reliable, and easy to test.
 
 ## AI needs hard boundaries
 
@@ -28,7 +28,9 @@ With agentic coding we get the ability to quickly mass produce software. But mos
 
 ## Old guardrails
 
-Paradigms like functional or object-oriented or garbage collection become less relevant in this new world. These were patterns that allowed humans to make software from modular parts. To a LLM, imperative is just as easy as any other paradigm to author. Static allocation is no harder than `malloc`/`free`. Memory is only copied between modules so within it can mutate memory as it wishes. If we match code written to the underlying computing model of the von-Neumann-architecture we can get predictably faster performance.
+Paradigms like functional or object-oriented or garbage collection become less relevant in this new world. These were patterns that allowed teams of humans to consistently make sense of the modular parts they wove into software. To a LLM, imperative is just as easy as any other paradigm to author. Static or bump allocation is no harder than `malloc`/`free`.
+
+Memory is only copied between modules so within it can mutate memory as much as it likes, which lets you (or your agent) find the most optimal algorithm. If we align code written to the underlying computing model of the von-Neumann-architecture we can get predictably faster performance. We get pockets of speed safely sewn together.
 
 ## Benefits
 
