@@ -209,10 +209,6 @@ func run(args []string) {
 		gameOver(usageRun)
 	}
 
-	ctx := context.Background()
-	ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, 100*time.Millisecond)
-	defer cancel()
-
 	var input []byte
 	if inputPath == "-" {
 		var err error
@@ -259,7 +255,11 @@ func run(args []string) {
 	}
 	defer chain.Close(context.Background())
 
-	result, err := chain.run(ctx, input, 0)
+	execCtx := context.Background()
+	execCtx, cancel := wasmruntime.WithExecutionTimeout(execCtx, 100*time.Millisecond)
+	defer cancel()
+
+	result, err := chain.run(execCtx, input, 0)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -803,11 +803,17 @@ func loadTileStage(ctx context.Context, mod api.Module) (tileStage, error) {
 	uniformFunc := mod.ExportedFunction("uniform_set_width_and_height")
 	haloFunc := mod.ExportedFunction("calculate_halo_px")
 	mem := mod.Memory()
-	inputPtrValue, ok := getExportedValue(ctx, mod, "input_ptr")
+	inputPtrValue, ok, err := getExportedValue(ctx, mod, "input_ptr")
+	if err != nil {
+		return tileStage{}, wasmruntime.HumanizeExecutionError(ctx, err)
+	}
 	if !ok {
 		return tileStage{}, errors.New("Wasm module must export input_ptr as global or function")
 	}
-	inputCap, ok := getExportedValue(ctx, mod, "input_bytes_cap")
+	inputCap, ok, err := getExportedValue(ctx, mod, "input_bytes_cap")
+	if err != nil {
+		return tileStage{}, wasmruntime.HumanizeExecutionError(ctx, err)
+	}
 	if !ok {
 		return tileStage{}, errors.New("Wasm module must export input_bytes_cap as global or function")
 	}
@@ -1343,7 +1349,7 @@ func imageCmd(args []string) {
 	opts := options{}
 	var inputImagePath string
 	var outputImagePath string
-	timeoutMS := 2000
+	timeoutMS := 4000
 	fs := flag.NewFlagSet("image", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var imageVerbose bool
@@ -1376,9 +1382,7 @@ func imageCmd(args []string) {
 		moduleBodies[i] = body
 	}
 
-	ctx := context.Background()
-	ctx, cancel := wasmruntime.WithExecutionTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
-	defer cancel()
+	baseCtx := context.Background()
 
 	var inputImageBytes []byte
 	var err error
@@ -1418,26 +1422,29 @@ func imageCmd(args []string) {
 		}
 	}()
 
-	r := wasmruntime.New(ctx)
-	defer r.Close(ctx)
+	execCtx, cancel := wasmruntime.WithExecutionTimeout(baseCtx, time.Duration(timeoutMS)*time.Millisecond)
+	defer cancel()
+
+	r := wasmruntime.New(execCtx)
+	defer r.Close(baseCtx)
 
 	stages := make([]tileStage, len(moduleBodies))
 	for i, body := range moduleBodies {
-		mod, err := r.InstantiateWithConfig(ctx, body, wazero.NewModuleConfig())
+		mod, err := r.InstantiateWithConfig(execCtx, body, wazero.NewModuleConfig())
 		if err != nil {
 			gameOver("Wasm module could not be compiled")
 		}
-		if err := applyImageUniforms(ctx, mod, moduleSpecs[i].uniforms); err != nil {
+		if err := applyImageUniforms(execCtx, mod, moduleSpecs[i].uniforms); err != nil {
 			gameOver("%v", err)
 		}
-		stage, err := loadTileStage(ctx, mod)
+		stage, err := loadTileStage(execCtx, mod)
 		if err != nil {
 			gameOver("%v", err)
 		}
 		stages[i] = stage
 	}
-	defer closeTileStages(ctx, stages)
-	outputRGBA, _, err := runTileStages(ctx, stages, inputRGBA)
+	defer closeTileStages(baseCtx, stages)
+	outputRGBA, _, err := runTileStages(execCtx, stages, inputRGBA)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -1453,22 +1460,27 @@ func imageCmd(args []string) {
 	}
 }
 
-// getExportedValue tries to get a value from either a global or a function
-func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64, bool) {
+// getExportedValue tries to get a value from either a global or a function.
+// The bool return indicates whether the export exists.
+func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64, bool, error) {
 	// Try global first
 	if global := mod.ExportedGlobal(name); global != nil {
-		return global.Get(), true
+		return global.Get(), true, nil
 	}
 
 	// Try function if global doesn't exist
 	if fn := mod.ExportedFunction(name); fn != nil {
 		result, err := fn.Call(ctx)
-		if err == nil && len(result) > 0 {
-			return result[0], true
+		if err != nil {
+			return 0, true, fmt.Errorf("%s() call failed: %w", name, err)
 		}
+		if len(result) != 1 {
+			return 0, true, fmt.Errorf("%s() returned %d values, want 1", name, len(result))
+		}
+		return result[0], true, nil
 	}
 
-	return 0, false
+	return 0, false, nil
 }
 
 type moduleExecutionResult struct {
@@ -1506,16 +1518,27 @@ func executeModuleWithInput(ctx context.Context, runtime wazero.Runtime, compile
 
 	var input contentData
 	// Get input_ptr and input_cap (required)
-	inputPtr, ok := getExportedValue(ctx, mod, "input_ptr")
+	inputPtr, ok, err := getExportedValue(ctx, mod, "input_ptr")
+	if err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	}
 	if !ok {
 		returnErr = errors.New("Wasm module must export input_ptr as global or function")
 		return
 	}
 
-	inputCap, ok := getExportedValue(ctx, mod, "input_utf8_cap")
+	inputCap, ok, err := getExportedValue(ctx, mod, "input_utf8_cap")
+	if err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	}
 	if ok {
 		input.encoding = dataEncodingUTF8
-	} else if cap, ok := getExportedValue(ctx, mod, "input_bytes_cap"); ok {
+	} else if cap, ok, err := getExportedValue(ctx, mod, "input_bytes_cap"); err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	} else if ok {
 		inputCap = cap
 		input.encoding = dataEncodingRaw
 	} else {
@@ -1525,20 +1548,32 @@ func executeModuleWithInput(ctx context.Context, runtime wazero.Runtime, compile
 	exec.inputCapBytes = inputCap
 
 	var outputPtr, outputCap uint32
-	if ptr, ok := getExportedValue(ctx, mod, "output_ptr"); ok {
+	if ptr, ok, err := getExportedValue(ctx, mod, "output_ptr"); err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	} else if ok {
 		outputPtr = uint32(ptr)
 
-		if cap, ok := getExportedValue(ctx, mod, "output_utf8_cap"); ok {
+		if cap, ok, err := getExportedValue(ctx, mod, "output_utf8_cap"); err != nil {
+			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+			return
+		} else if ok {
 			outputCap = uint32(cap)
 			exec.output.encoding = dataEncodingUTF8
-		} else if cap, ok := getExportedValue(ctx, mod, "output_i32_cap"); ok {
+		} else if cap, ok, err := getExportedValue(ctx, mod, "output_i32_cap"); err != nil {
+			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+			return
+		} else if ok {
 			outputCap = uint32(cap)
 			exec.output.encoding = dataEncodingArrayI32
-		} else if cap, ok := getExportedValue(ctx, mod, "output_bytes_cap"); ok {
+		} else if cap, ok, err := getExportedValue(ctx, mod, "output_bytes_cap"); err != nil {
+			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+			return
+		} else if ok {
 			outputCap = uint32(cap)
 			exec.output.encoding = dataEncodingRaw
 		} else {
-			returnErr = errors.New("Wasm module must export output_utf8_cap or output_i32_cap or output_bytes_cap function")
+			returnErr = errors.New("Wasm module must export output_utf8_cap or output_i32_cap or output_bytes_cap as global or function")
 			return
 		}
 	}

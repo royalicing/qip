@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -126,6 +127,58 @@ func TestNormalizeDevArgs(t *testing.T) {
 			t.Fatalf("args=%v, want %v", got, in)
 		}
 	})
+}
+
+func TestRunDelayedStdinDoesNotFailExportResolution(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperRunModuleCLI", "--", "examples/html-aria-extractor.wasm")
+	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper: %v", err)
+	}
+
+	// Delay long enough to fail old behavior where wasm timeout started before stdin read.
+	time.Sleep(500 * time.Millisecond)
+	if _, err := stdin.Write([]byte(`<a href="/x">X</a>`)); err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("write stdin: %v", err)
+	}
+	_ = stdin.Close()
+
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("helper failed: %v\nstderr: %s\nstdout: %s", err, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "link: X") {
+		t.Fatalf("unexpected output: %q", stdout.String())
+	}
+}
+
+func TestHelperRunModuleCLI(t *testing.T) {
+	if os.Getenv("QIP_HELPER_RUN_MODULE_CLI") != "1" {
+		t.Skip("helper process")
+	}
+	args := os.Args
+	sep := -1
+	for i := range args {
+		if args[i] == "--" {
+			sep = i
+			break
+		}
+	}
+	if sep == -1 || sep+1 >= len(args) {
+		os.Exit(2)
+	}
+	run(args[sep+1:])
+	os.Exit(0)
 }
 
 func TestParseRuntimeMode(t *testing.T) {
