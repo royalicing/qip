@@ -11,3 +11,233 @@ module: md5.wasm
 900150983cd24fb0d6963f7d28e17f72
 module: css-class-validator.wasm
 btn-primary
+module: e164.wasm
++14155552671
+module: zlib-compress.wasm | base64-encode.wasm
+eAEBCgD1/3FpcCArIHdhc20SeQNu
+module: zlib-compress.wasm | zlib-decompress.wasm
+qip + wasm
+module: zlib-compress-fixed-huffman.wasm | base64-encode.wasm
+eAErzCxQ0FYoTyzOBQASeQNu
+module: zlib-compress-fixed-huffman.wasm | zlib-decompress.wasm
+qip + wasm
+module: zlib-compress-dynamic-huffman.wasm | base64-encode.wasm
+eAEFwLENAAAIArBX2LmKkYEE4+D7dlwQp80DEnkDbg==
+module: zlib-compress-dynamic-huffman.wasm | zlib-decompress.wasm
+qip + wasm
+module: hello.wasm
+Hello, World
+module: hello-c.wasm
+Hello, World
+module: hello-zig.wasm
+Hello, World
+module: hex-to-rgb.wasm
+255,136,0
+module: html-id-validator.wasm
+main-content
+module: html-input-name-validator.wasm
+email
+module: html-aria-extractor.wasm
+link: Go
+button: Push
+heading: Title
+radio: Yes
+checkbox: Ok
+
+module: html-tag-validator.wasm
+builtin
+module: luhn.wasm
+49927398716
+module: markdown-basic.wasm
+<h1>Title</h1>
+<p>Hello <strong>World</strong></p>
+
+module: markdown-basic.wasm (table)
+<table>
+<thead>
+<tr><th>A</th><th>B</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><strong>y</strong></td></tr>
+</tbody>
+</table>
+
+module: markdown-basic.wasm | html-page-wrap.wasm
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Title</title><style>:root {
+  font-size: 100%;
+  line-height: 1.5;
+
+  --dark: 0;
+  --invert: 0;
+
+  --text-light: #0f1115;
+  --text-dark: #e6e6e6;
+  --bg-light: #e6e6e6;
+  --bg-dark: #0f1115;
+  --link-light: #0051dc;
+  --link-dark: #8ab4ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dark: 1;
+  }
+}
+
+:root,
+header,
+footer,
+section {
+  --light-dark-ratio: calc(
+    var(--dark) * (1 - var(--invert)) + (1 - var(--dark)) * var(--invert)
+  );
+
+  --text: color-mix(
+    in srgb,
+    var(--text-light) calc((1 - var(--light-dark-ratio)) * 100%),
+    var(--text-dark) calc(var(--light-dark-ratio) * 100%)
+  );
+  --bg: color-mix(
+    in srgb,
+    var(--bg-light) calc((1 - var(--light-dark-ratio)) * 100%),
+    var(--bg-dark) calc(var(--light-dark-ratio) * 100%)
+  );
+  --link: color-mix(
+    in srgb,
+    var(--link-light) calc((1 - var(--light-dark-ratio)) * 100%),
+    var(--link-dark) calc(var(--light-dark-ratio) * 100%)
+  );
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: 1rlh;
+}
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--bg);
+  font-family: system-ui, sans-serif;
+}
+a {
+  color: var(--link);
+}
+
+header[role="banner"],
+footer[role="contentinfo"] {
+  --invert: 1;
+  background: color-mix(var(--bg) 95%, white);
+
+  nav {
+    padding: 1lh 0;
+  }
+
+  ul {
+    list-style: none;
+    display: flex;
+    gap: 2em;
+    justify-content: center;
+  }
+
+  a {
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+main {
+  width: 100%;
+  max-width: 44em;
+  margin: 1lh auto;
+  padding: 0 1em;
+
+  h1,
+  h2,
+  h3,
+  h4,
+  p,
+  ul,
+  ol,
+  pre {
+    margin-bottom: 1rlh;
+  }
+  h1 {
+    font-size: 2rem;
+    line-height: 2rlh;
+  }
+  h2 {
+    font-size: 1.25rem;
+  }
+}
+code,
+pre {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  overflow: auto;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+hr {
+  border: none;
+  border-top: 1px solid currentColor;
+}</style><link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+<header role="banner">
+  <nav aria-label="Header links">
+    <ul>
+      <li><a href="/">qip</a></li>
+      <li><a href="/docs">docs</a></li>
+      <li><a href="/how-it-works">how it works</a></li>
+      <li><a href="https://github.com/royalicing/qip">github</a></li>
+    </ul>
+  </nav>
+</header><main><h1>Title</h1>
+<p>Hello <strong>World</strong></p>
+</main><footer role="contentinfo">
+  <nav aria-label="Footer links">
+    <ul>
+      <li><a href="/">qip</a></li>
+      <li><a href="/docs">docs</a></li>
+      <li><a href="/how-it-works">how it works</a></li>
+      <li><a href="https://github.com/royalicing/qip">github</a></li>
+    </ul>
+  </nav>
+</footer>
+
+module: rgb-to-hex.wasm
+#ff00aa
+module: rgb-to-hex.wasm (rgb())
+#654ff0
+module: tld-validator.wasm
+
+module: trim.wasm
+hi
+module: utf8-must-be-valid.wasm
+hello
+module: wasm-to-js.wasm
+export async function run(input) {
+  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMCAQAFAwEAAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTAYGbWVtb3J5AgAJaW5wdXRfcHRyAwAOaW5wdXRfdXRmOF9jYXADAQpvdXRwdXRfcHRyAwIPb3V0cHV0X3V0ZjhfY2FwAwMDcnVuAAAKZwFlAQJ/IwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiAAQQBLBEBBACEBQQchAgJAA0AgASAATw0BIwIgAmojACABai0AADoAACABQQFqIQEgAkEBaiECDAALCwsgAgs='), c => c.charCodeAt(0));
+  const module = await WebAssembly.compile(wasmBytes);
+  const instance = await WebAssembly.instantiate(module);
+  const exports = instance.exports;
+  const memory = exports.memory;
+  const inputPtr = exports.input_ptr.value;
+  const outputPtr = exports.output_ptr.value;
+  const encoder = new TextEncoder();
+  const inputBytes = encoder.encode(input);
+  new Uint8Array(memory.buffer, inputPtr, inputBytes.length).set(inputBytes);
+  const outputLen = exports.run(inputBytes.length);
+  if (outputLen === 0) return '';
+  const decoder = new TextDecoder();
+  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
+}
+
