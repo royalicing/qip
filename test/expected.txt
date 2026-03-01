@@ -7,6 +7,8 @@ AAABAAEAAQEAAAEAGAAwAAAAFgAAACgAAAABAAAAAgAAAAEAGAAAAAAACAAAAAAAAAAAAAAAAAAAAAAA
 
 module: crc.wasm
 352441c2
+module: md5.wasm
+900150983cd24fb0d6963f7d28e17f72
 module: css-class-validator.wasm
 btn-primary
 module: e164.wasm
