@@ -221,6 +221,8 @@ module: trim.wasm
 hi
 module: utf8-must-be-valid.wasm
 hello
+module: youtube-video-id.wasm
+dQw4w9WgXcQ
 module: wasm-to-js.wasm
 export async function run(input) {
   const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMCAQAFAwEAAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTAYGbWVtb3J5AgAJaW5wdXRfcHRyAwAOaW5wdXRfdXRmOF9jYXADAQpvdXRwdXRfcHRyAwIPb3V0cHV0X3V0ZjhfY2FwAwMDcnVuAAAKZwFlAQJ/IwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiAAQQBLBEBBACEBQQchAgJAA0AgASAATw0BIwIgAmojACABai0AADoAACABQQFqIQEgAkEBaiECDAALCwsgAgs='), c => c.charCodeAt(0));
@@ -238,4 +240,3 @@ export async function run(input) {
   const decoder = new TextDecoder();
   return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
 }
-

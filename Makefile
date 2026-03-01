@@ -149,6 +149,8 @@ test-snapshot: qip examples
 	@printf %s "  hi  " | ./qip run examples/trim.wasm >> test/latest.txt
 	@printf "%s\n" "module: utf8-must-be-valid.wasm" >> test/latest.txt
 	@printf %s "hello" | ./qip run examples/utf8-must-be-valid.wasm >> test/latest.txt
+	@printf "%s\n" "module: youtube-video-id.wasm" >> test/latest.txt
+	@printf %s "https://youtu.be/dQw4w9WgXcQ?t=42" | ./qip run examples/youtube-video-id.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
 	@cat examples/hello.wasm | ./qip run examples/wasm-to-js.wasm >> test/latest.txt
 
