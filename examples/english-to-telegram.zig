@@ -36,38 +36,38 @@ fn pushSlice(out: []u8, idx: *usize, s: []const u8) bool {
     return true;
 }
 
-fn emitToken(out: []u8, idx: *usize, need_space: *bool, token: []const u8) bool {
-    if (need_space.*) {
+fn emitToken(out: []u8, idx: *usize, needSpace: *bool, token: []const u8) bool {
+    if (needSpace.*) {
         if (!pushByte(out, idx, ' ')) return false;
     }
     if (!pushSlice(out, idx, token)) return false;
-    need_space.* = true;
+    needSpace.* = true;
     return true;
 }
 
 fn telegramify(input: []const u8, out: []u8) ?usize {
     var i: usize = 0;
     var idx: usize = 0;
-    var need_space = false;
+    var needSpace = false;
 
     while (i < input.len) {
         const ch = input[i];
 
         if (std.ascii.isAlphanumeric(ch)) {
-            if (need_space) {
+            if (needSpace) {
                 if (!pushByte(out, &idx, ' ')) return null;
             }
             while (i < input.len and std.ascii.isAlphanumeric(input[i])) : (i += 1) {
                 if (!pushByte(out, &idx, std.ascii.toUpper(input[i]))) return null;
             }
-            need_space = true;
+            needSpace = true;
             continue;
         }
 
         if (ch == ',') {
-            if (!emitToken(out, &idx, &need_space, "COMMA")) return null;
+            if (!emitToken(out, &idx, &needSpace, "COMMA")) return null;
         } else if (ch == '.' or ch == '!' or ch == '?' or ch == ';' or ch == ':') {
-            if (!emitToken(out, &idx, &need_space, "STOP")) return null;
+            if (!emitToken(out, &idx, &needSpace, "STOP")) return null;
         }
 
         i += 1;
@@ -82,7 +82,7 @@ export fn run(input_size_in: u32) u32 {
     return @as(u32, @intCast(written));
 }
 
-fn runString(input: []const u8, out: []u8) !usize {
+fn convertToTelegramForTest(input: []const u8, out: []u8) !usize {
     @memcpy(input_buf[0..input.len], input);
     const written = run(@as(u32, @intCast(input.len)));
     if (written == 0 and input.len != 0) return error.OutputTooSmall;
@@ -92,12 +92,23 @@ fn runString(input: []const u8, out: []u8) !usize {
 
 test "converts punctuation to telegram tokens" {
     var out: [256]u8 = undefined;
-    const written = try runString("Meet me at noon, please.", out[0..]);
+    const written = try convertToTelegramForTest("Meet me at noon, please.", out[0..]);
     try std.testing.expectEqualStrings("MEET ME AT NOON COMMA PLEASE STOP", out[0..written]);
 }
 
-test "normalizes separators and uppercase" {
+test "normalizes whitespace between words and uppercases" {
     var out: [256]u8 = undefined;
-    const written = try runString("ready\nset\tgo!", out[0..]);
+    const written = try convertToTelegramForTest("ready\nset\tgo!", out[0..]);
     try std.testing.expectEqualStrings("READY SET GO STOP", out[0..written]);
+}
+
+test "empty input returns empty output" {
+    var out: [16]u8 = undefined;
+    const written = try convertToTelegramForTest("", out[0..]);
+    try std.testing.expectEqual(@as(usize, 0), written);
+}
+
+test "test helper reports output too small" {
+    var out: [8]u8 = undefined;
+    try std.testing.expectError(error.OutputTooSmall, convertToTelegramForTest("alpha beta gamma", out[0..]));
 }
