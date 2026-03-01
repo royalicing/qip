@@ -96,6 +96,8 @@ test-snapshot: qip examples
 	@printf "\n" >> test/latest.txt
 	@printf "%s\n" "module: crc.wasm" >> test/latest.txt
 	@printf %s "abc" | ./qip run examples/crc.wasm >> test/latest.txt
+	@printf "%s\n" "module: md5.wasm" >> test/latest.txt
+	@printf %s "abc" | ./qip run examples/md5.wasm >> test/latest.txt
 	@printf "%s\n" "module: css-class-validator.wasm" >> test/latest.txt
 	@printf %s "btn-primary" | ./qip run examples/css-class-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: e164.wasm" >> test/latest.txt
