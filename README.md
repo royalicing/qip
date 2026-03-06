@@ -215,6 +215,7 @@ printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?w
 - [Module Patterns (including error semantics)](docs/module-patterns.md)
 - [Module Compliance](docs/comply.md)
 - [Security Model](docs/security-model.md)
+- [Replay Debugging (rr-style)](docs/replay-debugging.md)
 
 ---
 
