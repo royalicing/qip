@@ -1,4 +1,4 @@
-.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static site-og-images install
+.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static install
 
 default: qip compliance modules recipes
 
@@ -181,27 +181,37 @@ test-go:
 site/favicon.ico: qip-logo.svg
 	$(QIP_BIN) run -i qip-logo.svg -- modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm > $@
 
-site-og-images: modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm modules/image/svg+xml/svg-rasterize.wasm
-	@rm -rf site/_og
-	@mkdir -p site/_og
-	@find site docs -type f \( -name '*.md' -o -name '*.markdown' \) | sort | while IFS= read -r src; do \
-		rel_no_ext="$${src%.*}"; \
-		case "$$rel_no_ext" in \
-			site/*) rel="$${rel_no_ext#site/}" ;; \
-			docs/*) rel="docs/$${rel_no_ext#docs/}" ;; \
-			*) continue ;; \
-		esac; \
-		rel="$${rel%/index}"; \
-		if [ -z "$$rel" ]; then rel="index"; fi; \
-		out="site/_og/$$rel.png"; \
-		mkdir -p "$$(dirname "$$out")"; \
-		$(QIP_BIN) run -i "$$src" -o "$$out" -- modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' modules/image/svg+xml/svg-rasterize.wasm '?background_color_rgba=0xeecc33ff'; \
-	done
+OG_MD_SOURCES := $(shell find site docs -type f -name '*.md' | sort)
+OG_IMAGE_MODULES := modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm modules/image/svg+xml/svg-rasterize.wasm
+
+OG_PNG_TARGETS := $(sort $(patsubst site/_og/%/index.png,site/_og/%.png,$(patsubst docs/%.md,site/_og/docs/%.png,$(patsubst site/%.md,site/_og/%.png,$(OG_MD_SOURCES)))))
+
+site/_og: $(OG_PNG_TARGETS)
+
+define OG_RENDER_PNG_RECIPE
+	@mkdir -p $(dir $@)
+	$(QIP_BIN) run -i "$<" -o "$@" -- modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' modules/image/svg+xml/svg-rasterize.wasm '?background_color_rgba=0xeecc33ff'
+endef
+
+site/_og/%.png: site/%.md $(OG_IMAGE_MODULES)
+	$(OG_RENDER_PNG_RECIPE)
+
+site/_og/%.png: site/%/index.md $(OG_IMAGE_MODULES)
+	$(OG_RENDER_PNG_RECIPE)
+
+site/_og/docs/%.png: docs/%.md $(OG_IMAGE_MODULES)
+	$(OG_RENDER_PNG_RECIPE)
+
+site/_og/docs/%.png: docs/%/index.md $(OG_IMAGE_MODULES)
+	$(OG_RENDER_PNG_RECIPE)
+
+site/_og/docs.png: docs/index.md $(OG_IMAGE_MODULES)
+	$(OG_RENDER_PNG_RECIPE)
 
 install:
 	go install github.com/royalicing/qip@latest
 
-site-static: site-og-images recipes/application/warc/10-add-open-graph-image-meta.wasm
+site-static: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm
 	$(QIP_BIN) route warc ./site --recipes recipes --forms modules/form --modules modules --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 defluff:
