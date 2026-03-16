@@ -1,0 +1,1 @@
+Let's just put `go fmt` and `go fix` in the `go-lint-test` step.

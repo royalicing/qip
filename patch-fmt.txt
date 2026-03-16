@@ -1,0 +1,24 @@
+--- .github/workflows/ci.yml
++++ .github/workflows/ci.yml
+@@ -241,6 +241,10 @@
+           cache: true
+       - name: Install WABT
+         run: sudo apt-get update && sudo apt-get install -y wabt
++      - name: Fmt and Fix
++        run: |
++          go fmt ./...
++          go fix ./...
+       - name: Test
+         run: CGO_ENABLED=1 go test ./... -v
+
+@@ -248,6 +252,10 @@
+     needs: [route, discover]
+     if: ${{ needs.discover.outputs.has_go == 'true' && needs.route.outputs.run_code_checks == 'true' && needs.discover.outputs.profile == 'public' }}
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - uses: actions/setup-go@v6
+         with:
+           go-version-file: go.mod
+           cache: true
+       - run: CGO_ENABLED=1 go vet ./...

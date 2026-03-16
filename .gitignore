@@ -39,3 +39,6 @@ __pycache__
 qip
 site-static.tar
 site-static/
+/modules/utf8/dejavu_sans_mono_56_latin1_paths.wasm.o
+/modules/utf8/dejavu_sans_mono_bold_56_latin1_paths.wasm
+/modules/utf8/dejavu_sans_mono_bold_56_latin1_paths.wasm.o

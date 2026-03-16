@@ -76,7 +76,9 @@ func (r *Router) Route(ctx context.Context, path, query string) (RouteResult, er
 	if err != nil {
 		return RouteResult{}, fmt.Errorf("%w: instantiate failed", ErrRouterInternal)
 	}
-	defer mod.Close(ctx)
+	defer func() {
+		_ = mod.Close(ctx)
+	}()
 
 	mem := mod.ExportedMemory(ExportMemory)
 	if mem == nil {
@@ -385,16 +387,17 @@ func formatTypes(types []api.ValueType) string {
 		if i > 0 {
 			out.WriteString(",")
 		}
-		if t == api.ValueTypeI32 {
+		switch t {
+		case api.ValueTypeI32:
 			out.WriteString("i32")
-		} else if t == api.ValueTypeI64 {
+		case api.ValueTypeI64:
 			out.WriteString("i64")
-		} else if t == api.ValueTypeF32 {
+		case api.ValueTypeF32:
 			out.WriteString("f32")
-		} else if t == api.ValueTypeF64 {
+		case api.ValueTypeF64:
 			out.WriteString("f64")
-		} else {
-			out.WriteString(fmt.Sprintf("0x%x", byte(t)))
+		default:
+			fmt.Fprintf(&out, "0x%x", byte(t))
 		}
 	}
 	return out.String()

@@ -13,16 +13,16 @@ import (
 
 func DecodeBMPToRGBA(input []byte) (*image.RGBA, error) {
 	if len(input) < 54 {
-		return nil, errors.New("BMP input too small")
+		return nil, errors.New("bmp input too small")
 	}
 	if input[0] != 'B' || input[1] != 'M' {
-		return nil, errors.New("Input is not a BMP file")
+		return nil, errors.New("input is not a bmp file")
 	}
 
 	dataOffset := int(binary.LittleEndian.Uint32(input[10:14]))
 	dibSize := int(binary.LittleEndian.Uint32(input[14:18]))
 	if dibSize < 40 {
-		return nil, errors.New("Unsupported BMP DIB header")
+		return nil, errors.New("unsupported bmp dib header")
 	}
 	width := int32(binary.LittleEndian.Uint32(input[18:22]))
 	height := int32(binary.LittleEndian.Uint32(input[22:26]))
@@ -31,16 +31,16 @@ func DecodeBMPToRGBA(input []byte) (*image.RGBA, error) {
 	compression := binary.LittleEndian.Uint32(input[30:34])
 
 	if width <= 0 || height == 0 {
-		return nil, errors.New("Unsupported BMP dimensions")
+		return nil, errors.New("unsupported bmp dimensions")
 	}
 	if planes != 1 {
-		return nil, errors.New("Unsupported BMP planes")
+		return nil, errors.New("unsupported bmp planes")
 	}
 	if compression != 0 {
-		return nil, errors.New("Unsupported BMP compression")
+		return nil, errors.New("unsupported bmp compression")
 	}
 	if bpp != 24 && bpp != 32 {
-		return nil, errors.New("Unsupported BMP bit depth")
+		return nil, errors.New("unsupported bmp bit depth")
 	}
 
 	topDown := false
@@ -51,7 +51,7 @@ func DecodeBMPToRGBA(input []byte) (*image.RGBA, error) {
 	}
 	absWidth := int(width)
 	if absWidth <= 0 || absHeight <= 0 {
-		return nil, errors.New("Unsupported BMP dimensions")
+		return nil, errors.New("unsupported bmp dimensions")
 	}
 
 	bytesPerPixel := int(bpp / 8)
@@ -63,10 +63,10 @@ func DecodeBMPToRGBA(input []byte) (*image.RGBA, error) {
 	}
 
 	if dataOffset < 0 || dataOffset > len(input) {
-		return nil, errors.New("Invalid BMP data offset")
+		return nil, errors.New("invalid bmp data offset")
 	}
 	if dataOffset+rowStride*absHeight > len(input) {
-		return nil, errors.New("BMP pixel data out of range")
+		return nil, errors.New("bmp pixel data out of range")
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, absWidth, absHeight))
@@ -101,7 +101,7 @@ func EncodeRGBAToBMP(img *image.RGBA) ([]byte, error) {
 	width := bounds.Dx()
 	height := bounds.Dy()
 	if width <= 0 || height <= 0 {
-		return nil, errors.New("Invalid BMP image size")
+		return nil, errors.New("invalid bmp image size")
 	}
 
 	rowStride := width * 4
@@ -209,16 +209,6 @@ type contentTypeWrapper interface {
 	unwrapContent() Content
 }
 
-type rawBytesWithContentType struct {
-	RawBytesContent
-	contentType string
-}
-
-func (c *rawBytesWithContentType) ContentType() string { return c.contentType }
-func (c *rawBytesWithContentType) unwrapContent() Content {
-	return c.RawBytesContent
-}
-
 type stringWithContentType struct {
 	StringContent
 	contentType string
@@ -312,8 +302,6 @@ func WithContentType(content Content, contentType string) Content {
 		return &stringWithContentType{StringContent: c, contentType: contentType}
 	case I32ArrayContent:
 		return &i32ArrayWithContentType{I32ArrayContent: c, contentType: contentType}
-	case RawBytesContent:
-		return &rawBytesWithContentType{RawBytesContent: c, contentType: contentType}
 	default:
 		return &contentWithContentType{Content: c, contentType: contentType}
 	}

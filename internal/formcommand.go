@@ -63,7 +63,7 @@ func RunFormCommand(args []string) error {
 
 	rest := fs.Args()
 	if len(rest) != 1 {
-		return errors.New(usageForm)
+		return errors.New("usage: " + usageForm)
 	}
 	modulePath := rest[0]
 
@@ -74,19 +74,25 @@ func RunFormCommand(args []string) error {
 
 	ctx := context.Background()
 	runtime := wasmruntime.New(ctx)
-	defer runtime.Close(ctx)
+	defer func() {
+		_ = runtime.Close(ctx)
+	}()
 
 	compiled, err := runtime.CompileModule(ctx, body)
 	if err != nil {
-		return errors.New("Wasm module could not be compiled")
+		return errors.New("wasm module could not be compiled")
 	}
-	defer compiled.Close(ctx)
+	defer func() {
+		_ = compiled.Close(ctx)
+	}()
 
 	mod, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName("qip-form"))
 	if err != nil {
-		return errors.New("Wasm module could not be instantiated")
+		return errors.New("wasm module could not be instantiated")
 	}
-	defer mod.Close(ctx)
+	defer func() {
+		_ = mod.Close(ctx)
+	}()
 
 	fm, err := resolveFormModule(mod)
 	if err != nil {
@@ -105,18 +111,18 @@ func readFormModulePath(path string, verbose bool) ([]byte, error) {
 	if strings.HasPrefix(path, "https://") {
 		resp, err := http.Get(path)
 		if err != nil {
-			return nil, fmt.Errorf("Error fetching URL: %v", err)
+			return nil, fmt.Errorf("error fetching URL: %w", err)
 		}
-		defer resp.Body.Close()
+		defer LogClose(resp.Body)
 		body, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("Error reading response: %v", err)
+			return nil, fmt.Errorf("error reading response: %w", err)
 		}
 	} else {
 		var err error
 		body, err = os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("Error reading file: %v", err)
+			return nil, fmt.Errorf("error reading file: %v", err)
 		}
 	}
 	if verbose {
@@ -129,7 +135,7 @@ func readFormModulePath(path string, verbose bool) ([]byte, error) {
 func resolveFormModule(mod api.Module) (formModule, error) {
 	mem := mod.ExportedMemory(exportMemory)
 	if mem == nil {
-		return formModule{}, fmt.Errorf("Wasm module must export %s", exportMemory)
+		return formModule{}, fmt.Errorf("wasm module must export %s", exportMemory)
 	}
 	required := []struct {
 		name string
@@ -152,7 +158,7 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 	for i := range required {
 		fn := mod.ExportedFunction(required[i].name)
 		if fn == nil {
-			return formModule{}, fmt.Errorf("Wasm module must export %s", required[i].name)
+			return formModule{}, fmt.Errorf("wasm module must export %s", required[i].name)
 		}
 		switch required[i].name {
 		case exportInputPtr:
@@ -209,14 +215,13 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 				if err != nil {
 					return err
 				}
-				hasRun = true
 			}
 			outBytes, err := readOutputBytes(ctx, fm, lastOutputSize)
 			if err != nil {
 				return err
 			}
 			if len(outBytes) > 0 {
-				if _, err := io.WriteString(stdout, string(outBytes)); err != nil {
+				if _, err := stdout.Write(outBytes); err != nil {
 					return err
 				}
 				if len(outBytes) > 0 && outBytes[len(outBytes)-1] != '\n' {

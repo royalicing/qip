@@ -1,6 +1,12 @@
 package qinternal
 
-import "strings"
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
 
 // NormalizeFlagArgs lets users place flags before or after positional args.
 // It preserves "--" so standard flag terminator semantics remain intact.
@@ -39,4 +45,20 @@ func NormalizeFlagArgs(args []string, flagsWithValue map[string]struct{}) []stri
 	}
 	normalized = append(normalized, positionals...)
 	return normalized
+}
+
+type closerContext interface {
+	Close(context.Context) error
+}
+
+func LogCloseContext(ctx context.Context, c closerContext) {
+	if err := c.Close(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "error closing: %v\n", err)
+	}
+}
+
+func LogClose(c io.Closer) {
+	if err := c.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "error closing: %v\n", err)
+	}
 }

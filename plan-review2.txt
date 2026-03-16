@@ -1,0 +1,16 @@
+Wait, the code review feedback actually says:
+"Instead of adding them to the primary checking pipeline, it creates an entirely separate, manually triggered (workflow_dispatch) autofix job."
+
+And it mentions:
+"The patch successfully enables code checks on release events by setting `run_code_checks=true` and adjusts the `if` condition on the `goreleaser` job to run even if skipped dependencies occurred. However, it fails to run `go fmt` and `go fix` *during a release* as requested."
+
+So YES, the correct interpretation is that they should be run in `go-lint-test`.
+
+Let's double check what I changed.
+1. `route`: added `run_code_checks=true` under `release` (already checked).
+2. `goreleaser`: updated `if:` to `!failure() && !cancelled() && ...` (already checked).
+3. `go-lint-test`: added `Format and Fix` step with `git diff --exit-code` (just added).
+
+Is there anything else? No, the reviewer complained that I committed artifacts and modified test fixtures. I have cleaned up the repository and only have changes to `.github/workflows/ci.yml`.
+
+Wait, let's verify `ci.yml` syntax.

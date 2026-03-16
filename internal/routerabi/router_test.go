@@ -293,7 +293,7 @@ func compileWAT(t *testing.T, wat string) []byte {
 func watBytesLiteral(b []byte) string {
 	var sb strings.Builder
 	for _, v := range b {
-		sb.WriteString(fmt.Sprintf("\\%02x", v))
+		fmt.Fprintf(&sb, "\\%02x", v)
 	}
 	return sb.String()
 }

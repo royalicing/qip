@@ -1,0 +1,359 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*', 'v*.*.*', 'v*.*.*-rc*', 'v*.*.*-beta*', 'test-*']
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+    branches: [main, master]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        default: validate
+        options: [validate, lint-fix, build, release-snapshot, release, monthly-maintenance]
+      release_mode:
+        type: choice
+        default: snapshot
+        options: [snapshot, release]
+      release_increment:
+        type: choice
+        default: patch
+        options: [major, minor, patch, none]
+      prerelease_channel:
+        type: choice
+        default: none
+        options: [none, uat, test, rc, beta, alpha]
+      prerelease_number:
+        type: string
+        default: ''
+      increment_mode:
+        type: choice
+        default: release
+        options: [major, minor, patch, release, test]
+      release_version_override:
+        type: string
+        default: ''
+  schedule:
+    - cron: '17 3 1 * *'
+    - cron: '41 2 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' && !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+  packages: write
+  security-events: write
+
+jobs:
+  route:
+    name: Route event
+    runs-on: ubuntu-latest
+    outputs:
+      run_code_checks: ${{ steps.route.outputs.run_code_checks }}
+      run_pr_meta_checks: ${{ steps.route.outputs.run_pr_meta_checks }}
+      run_cleanup: ${{ steps.route.outputs.run_cleanup }}
+      run_release: ${{ steps.route.outputs.run_release }}
+      is_monthly: ${{ steps.route.outputs.is_monthly }}
+    steps:
+      - id: route
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_code_checks=false
+          run_pr_meta_checks=false
+          run_cleanup=false
+          run_release=false
+          is_monthly=false
+
+          case "${{ github.event_name }}" in
+            push)
+              run_code_checks=true
+              if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+                run_release=true
+              fi
+              ;;
+            pull_request)
+              if [[ "${{ github.event.action }}" == "closed" ]]; then
+                run_cleanup=true
+              else
+                run_pr_meta_checks=true
+              fi
+              ;;
+            release)
+              run_code_checks=true
+              ;;
+            workflow_dispatch)
+              run_code_checks=true
+              if [[ "${{ inputs.mode }}" == "release" || "${{ inputs.mode }}" == "release-snapshot" ]]; then
+                run_release=true
+              fi
+              if [[ "${{ inputs.mode }}" == "monthly-maintenance" ]]; then
+                is_monthly=true
+              fi
+              ;;
+            schedule)
+              run_code_checks=true
+              if [[ "${{ github.event.schedule }}" == "17 3 1 * *" ]]; then
+                is_monthly=true
+              fi
+              ;;
+          esac
+
+          echo "run_code_checks=$run_code_checks" >> "$GITHUB_OUTPUT"
+          echo "run_pr_meta_checks=$run_pr_meta_checks" >> "$GITHUB_OUTPUT"
+          echo "run_cleanup=$run_cleanup" >> "$GITHUB_OUTPUT"
+          echo "run_release=$run_release" >> "$GITHUB_OUTPUT"
+          echo "is_monthly=$is_monthly" >> "$GITHUB_OUTPUT"
+
+  prepare-release-tag:
+    name: Prepare release tag
+    needs: [route]
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'release' || inputs.mode == 'release-snapshot') }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+      next_version: ${{ steps.tag.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute tag via git-tag-inc
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_flag=""
+          case "${{ inputs.release_increment }}" in
+            major) base_flag="--major" ;;
+            minor) base_flag="--minor" ;;
+            patch) base_flag="--patch" ;;
+            none)  base_flag="" ;;
+          esac
+
+          pre_flag=""
+          if [[ "${{ inputs.prerelease_channel }}" != "none" ]]; then
+            if [[ -n "${{ inputs.prerelease_number }}" ]]; then
+              pre_flag="--prerelease ${{ inputs.prerelease_channel }}.${{ inputs.prerelease_number }}"
+            else
+              pre_flag="--prerelease ${{ inputs.prerelease_channel }}"
+            fi
+          fi
+
+          next_tag=$(git-tag-inc $base_flag $pre_flag || echo "v1.0.0")
+          echo "release_tag=$next_tag" >> "$GITHUB_OUTPUT"
+
+          clean_tag="${next_tag#v}"
+          clean_tag="${clean_tag%%-*}"
+          IFS='.' read -r maj min pat <<< "$clean_tag"
+          maj=${maj:-0}; min=${min:-0}; pat=${pat:-0}
+          echo "next_version=${maj}.${min}.$((pat + 1))-SNAPSHOT" >> "$GITHUB_OUTPUT"
+
+      - name: Push tag
+        env:
+          TAG: ${{ steps.tag.outputs.release_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG" || true
+          git push origin "$TAG" || true
+
+  discover:
+    name: Discover capabilities and cost profile
+    needs: route
+    runs-on: ubuntu-latest
+    outputs:
+      profile: ${{ steps.profile.outputs.profile }}
+      has_go: ${{ steps.detect.outputs.has_go }}
+      has_node: ${{ steps.detect.outputs.has_node }}
+      has_dart: ${{ steps.detect.outputs.has_dart }}
+      has_flutter: ${{ steps.detect.outputs.has_flutter }}
+      has_qt_cpp: ${{ steps.detect.outputs.has_qt_cpp }}
+      has_make_c: ${{ steps.detect.outputs.has_make_c }}
+      has_docker: ${{ steps.detect.outputs.has_docker }}
+      has_goreleaser: ${{ steps.detect.outputs.has_goreleaser }}
+      has_packaging: ${{ steps.detect.outputs.has_packaging }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f go.mod ]] && echo "has_go=true" >> "$GITHUB_OUTPUT" || echo "has_go=false" >> "$GITHUB_OUTPUT"
+          [[ -f package.json ]] && echo "has_node=true" >> "$GITHUB_OUTPUT" || echo "has_node=false" >> "$GITHUB_OUTPUT"
+          [[ -f pubspec.yaml ]] && echo "has_dart=true" >> "$GITHUB_OUTPUT" || echo "has_dart=false" >> "$GITHUB_OUTPUT"
+          ([[ -f pubspec.yaml ]] && rg -n "^\s*flutter:" pubspec.yaml >/dev/null 2>&1) && echo "has_flutter=true" >> "$GITHUB_OUTPUT" || echo "has_flutter=false" >> "$GITHUB_OUTPUT"
+          ([[ -f CMakeLists.txt ]] || rg -n "find_package\((Qt|Qt6|Qt5)" -S . >/dev/null 2>&1) && echo "has_qt_cpp=true" >> "$GITHUB_OUTPUT" || echo "has_qt_cpp=false" >> "$GITHUB_OUTPUT"
+          ([[ -f Makefile ]] || [[ -f makefile ]]) && echo "has_make_c=true" >> "$GITHUB_OUTPUT" || echo "has_make_c=false" >> "$GITHUB_OUTPUT"
+          ([[ -f Dockerfile ]] || [[ -f Dockerfile.goreleaser ]] || [[ -f docker/Dockerfile ]]) && echo "has_docker=true" >> "$GITHUB_OUTPUT" || echo "has_docker=false" >> "$GITHUB_OUTPUT"
+          ([[ -f .goreleaser.yml ]] || [[ -f .goreleaser.yaml ]]) && echo "has_goreleaser=true" >> "$GITHUB_OUTPUT" || echo "has_goreleaser=false" >> "$GITHUB_OUTPUT"
+          ([[ -d packaging ]] || [[ -d pkg ]] || [[ -f debian/control ]] || [[ -f .github/packaging/source-rpm.spec ]]) && echo "has_packaging=true" >> "$GITHUB_OUTPUT" || echo "has_packaging=false" >> "$GITHUB_OUTPUT"
+
+      - id: profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event.repository.private }}" == "true" ]]; then
+            echo "profile=private" >> "$GITHUB_OUTPUT"
+          else
+            echo "profile=public" >> "$GITHUB_OUTPUT"
+          fi
+
+  go-test:
+    name: Go test (${{ matrix.os }})
+    needs: [route, discover]
+    if: ${{ needs.discover.outputs.has_go == 'true' && needs.route.outputs.run_code_checks == 'true' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ['ubuntu-latest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install WABT
+        run: sudo apt-get update && sudo apt-get install -y wabt
+      - name: Test
+        run: CGO_ENABLED=1 go test ./... -v
+
+  go-vet:
+    name: Go vet
+    needs: [route, discover]
+    if: ${{ needs.discover.outputs.has_go == 'true' && needs.route.outputs.run_code_checks == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: CGO_ENABLED=1 go vet ./...
+
+  format:
+    name: Format
+    needs: [route, discover]
+    if: ${{ needs.discover.outputs.has_go == 'true' && needs.route.outputs.run_code_checks == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go (if needed)
+        if: ${{ needs.discover.outputs.has_go == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run autofix formatters
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ needs.discover.outputs.has_go }}" == "true" ]]; then
+            go fix ./... || true
+            go fmt ./... || true
+          fi
+
+      - name: Create PR if changes exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes; exiting."
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.mode }}" == "lint-fix" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            PARENT_PR="${{ github.event.pull_request.number || 'none' }}"
+            BRANCH="ci/autofix/${{ github.run_id }}-parent-${PARENT_PR}"
+
+            git checkout -b "$BRANCH"
+            git add -A
+            git commit -m "ci: automated formatting fixes"
+            git push origin "$BRANCH"
+
+            gh pr create \
+              --title "ci: automated formatting fixes" \
+              --body "Automated formatting pass. Parent-PR: ${PARENT_PR}" \
+              --base main \
+              --head "$BRANCH" \
+              --label "ci-autofix"
+          else
+            echo "Formatting changes required. Please run 'go fmt ./...' and 'go fix ./...'."
+            git diff
+            exit 1
+          fi
+
+  cleanup-autofix-prs:
+    name: Cleanup autofix PRs on parent close
+    needs: [route]
+    if: ${{ needs.route.outputs.run_cleanup == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PARENT_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh pr list --state open --search "label:ci-autofix in:title" --json number,headRefName,body | \
+            jq -r '.[] | select(.body | contains("Parent-PR: '"$PARENT_PR"'")) | [.number, .headRefName] | @tsv' | \
+            while IFS=$'\t' read -r pr branch; do
+              gh pr close "$pr" --comment "Closing auto-fix PR because parent PR #$PARENT_PR was closed."
+              git push origin --delete "$branch" || true
+            done
+  go-lint:
+    name: Go lint
+    needs: [route, discover]
+    if: ${{ needs.discover.outputs.has_go == 'true' && needs.route.outputs.run_code_checks == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+  goreleaser:
+    name: GoReleaser
+    needs: [route, discover, go-test, go-lint, format, prepare-release-tag]
+    if: ${{ !failure() && !cancelled() && needs.discover.outputs.has_go == 'true' && needs.discover.outputs.has_goreleaser == 'true' && needs.route.outputs.run_release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: >-
+            release --clean
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.release_mode != 'release') && '--snapshot' || '' }}
+            ${{ needs.prepare-release-tag.outputs.release_tag != '' && format('--tag {0}', needs.prepare-release-tag.outputs.release_tag) || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}

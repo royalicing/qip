@@ -604,7 +604,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 	if !strings.Contains(gotErr, "examples/infinite-loop.wasm:") {
 		t.Fatalf("stderr=%q, want module path prefix", gotErr)
 	}
-	if !strings.Contains(gotErr, "Wasm module exceeded the execution time limit") {
+	if !strings.Contains(gotErr, "wasm module exceeded the execution time limit") {
 		t.Fatalf("stderr=%q, want execution timeout message", gotErr)
 	}
 }
@@ -909,10 +909,14 @@ func compileWasmModuleForTest(t *testing.T, ctx context.Context, runtime wazero.
 func TestContentTypeCheckingModesForRunModule(t *testing.T) {
 	ctx := context.Background()
 	runtime := wasmruntime.New(ctx)
-	defer runtime.Close(ctx)
+	defer func() {
+		_ = runtime.Close(ctx)
+	}()
 
 	compiled := compileWasmModuleForTest(t, ctx, runtime, "examples/html-aria-extractor.wasm")
-	defer compiled.Close(ctx)
+	defer func() {
+		_ = compiled.Close(ctx)
+	}()
 
 	input := []byte(`<a href="/x">X</a>`)
 	moduleName := "test-html-aria"
@@ -954,10 +958,14 @@ func TestContentTypeCheckingModesForRunModule(t *testing.T) {
 func TestTrustFirstStageContentTypePropagation(t *testing.T) {
 	ctx := context.Background()
 	runtime := wasmruntime.New(ctx)
-	defer runtime.Close(ctx)
+	defer func() {
+		_ = runtime.Close(ctx)
+	}()
 
 	compiled := compileWasmModuleForTest(t, ctx, runtime, "examples/html-link-extractor.wasm")
-	defer compiled.Close(ctx)
+	defer func() {
+		_ = compiled.Close(ctx)
+	}()
 
 	exec, err := executeModuleWithInput(
 		ctx,

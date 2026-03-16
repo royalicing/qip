@@ -170,7 +170,9 @@ func ServeInProcessHTTP(handler http.Handler, method string, requestPath string,
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	resp := recorder.Result()
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
