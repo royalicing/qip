@@ -20,6 +20,31 @@ Planned host integrations include Swift, React, and Elixir, making reusable logi
 go install github.com/royalicing/qip@latest
 ```
 
+### Collaborator tools (build/test modules)
+
+If you are contributing modules or running the full `Makefile`, install these tools:
+
+- Go (required for `qip` CLI): https://go.dev/doc/install
+- Zig (used for `.zig` and `.c` -> `.wasm` builds): https://ziglang.org/download/
+- `wat2wasm` from WABT (used for `.wat` -> `.wasm` builds): https://github.com/WebAssembly/wabt
+
+Quick installs:
+
+```bash
+# macOS (Homebrew)
+brew install go zig wabt
+
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y golang-go wabt
+```
+
+After installing dependencies, build in parallel:
+
+```bash
+make -j modules recipes
+```
+
 You can clone this repo to use the modules that are provided in `./modules`.
 For compatibility, `./examples` keeps symlinks to the same module files.
 
