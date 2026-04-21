@@ -114,9 +114,10 @@ type options struct {
 	viewSource             bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of wasm modules on input\n  bench    Compare one or more wasm modules for output parity and performance\n  image    Run wasm filters on an input image\n  comply   Validate module ABI and run compliance check modules\n  dev      Start a dev server for a content directory with optional recipes\n  route    Resolve routed paths and export route artifacts\n  form     Run an interactive wasm form module in the terminal\n  help     Show command help"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of wasm modules on input\n  bench    Compare one or more wasm modules for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate module ABI and run compliance check modules\n  dev      Start a dev server for a content directory with optional recipes\n  route    Resolve routed paths and export route artifacts\n  form     Run an interactive wasm form module in the terminal\n  help     Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
+const usageScore = "Usage: qip score <module1.wasm> [module2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]"
 const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
@@ -225,6 +226,8 @@ func main() {
 		runCmd(args[1:])
 	} else if args[0] == "bench" {
 		benchCmd(args[1:])
+	} else if args[0] == "score" {
+		scoreCmd(args[1:])
 	} else if args[0] == "image" {
 		imageCmd(args[1:])
 	} else if args[0] == "comply" {
@@ -252,6 +255,8 @@ func helpCmd(args []string) {
 		fmt.Println(helpRun)
 	case "bench":
 		fmt.Println(usageBench)
+	case "score":
+		fmt.Println(usageScore)
 	case "image":
 		fmt.Println(usageImage)
 	case "comply":
@@ -283,6 +288,16 @@ func formCmd(args []string) {
 
 func complyCmd(args []string) {
 	if err := qinternal.RunComplyCommand(args); err != nil {
+		gameOver("%v", err)
+	}
+}
+
+func scoreCmd(args []string) {
+	if err := qcmd.RunScore(args, qcmd.ScoreConfig{
+		UsageScore: usageScore,
+		Stdout:     os.Stdout,
+		ReadFile:   os.ReadFile,
+	}); err != nil {
 		gameOver("%v", err)
 	}
 }

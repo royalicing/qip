@@ -1,4 +1,4 @@
-.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static install
+.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static install score
 
 default: qip compliance modules recipes
 
@@ -210,6 +210,14 @@ site/_og/docs.png: docs/index.md $(OG_IMAGE_MODULES)
 
 install:
 	go install github.com/royalicing/qip@latest
+
+score: qip
+	@files="$$(find modules -type f -name '*.wasm' | LC_ALL=C sort)"; \
+	if [ -z "$$files" ]; then \
+		echo "No .wasm files found under modules/"; \
+		exit 1; \
+	fi; \
+	$(QIP_BIN) score $$files
 
 site-static: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm
 	$(QIP_BIN) route warc ./site --recipes recipes --forms modules/form --modules modules --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
