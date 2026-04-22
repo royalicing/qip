@@ -30,6 +30,45 @@ No wildcard fallback is defined in v0.
   - `20-warc-to-sitemap.wasm`
   - `30-warc-add-open-graph-image-meta.wasm`
 
+## Execution Context
+
+WARC recipes can run in two useful scopes. We prefer picking scope intentionally because it changes cost and feedback speed.
+
+- Subset/path scope (faster iteration):
+  - `qip dev` applies WARC recipe behavior on the currently resolved response.
+  - `qip route get` / `qip route head` let you inspect one routed path.
+- Whole-site scope (final archive behavior):
+  - `qip route warc <content_dir> ...` enumerates the full routed site, builds one WARC, then applies `recipes/application/warc/*`.
+
+Claim: use subset scope while developing recipe logic, and whole-site scope before publishing.
+Reason: it shortens edit-test cycles without skipping the final archive semantics.
+Example:
+
+```sh
+# Fast single-path iteration:
+qip route get ./site /docs/router --recipes ./recipes
+
+# Final whole-site run:
+qip route warc ./site --recipes ./recipes --modules ./modules
+```
+
+## Host And URLs
+
+`qip route warc` controls canonical route host via `--host <host>`. We prefer setting this explicitly for production builds so recipe logic that reads target URLs sees stable, deploy-intended origins.
+
+Example:
+
+```sh
+qip route warc ./site --recipes ./recipes --host https://qip.dev
+```
+
+## Adding Routes
+
+WARC recipes can synthesize or rewrite archive records, which means they can add output routes (for example `/sitemap.xml`) when they emit additional WARC records.
+
+- In this repo, route assets like `/favicon.ico` and `/robots.txt` are present in the content/static output.
+- WARC modules such as `modules/application/warc/warc-to-sitemap.wasm` show the pattern for deriving site-wide artifacts from the archive.
+
 ## Ordering
 
 - Recipe execution order is determined by a required two-digit prefix.
