@@ -1,31 +1,8 @@
-package cmd
+package wasminspect
 
-import (
-	"bytes"
-	"os"
-	"path/filepath"
-	"reflect"
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestNormalizeScoreArgs(t *testing.T) {
-	in := []string{"module.wasm"}
-	got := normalizeScoreArgs(in)
-	want := []string{"module.wasm"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("args=%v, want %v", got, want)
-	}
-
-	inWithDashDash := []string{"module.wasm", "--", "--not-a-flag"}
-	gotWithDashDash := normalizeScoreArgs(inWithDashDash)
-	wantWithDashDash := []string{"--", "module.wasm", "--not-a-flag"}
-	if !reflect.DeepEqual(gotWithDashDash, wantWithDashDash) {
-		t.Fatalf("args=%v, want %v", gotWithDashDash, wantWithDashDash)
-	}
-}
-
-func TestAnalyzeWASMModuleCounts(t *testing.T) {
+func TestAnalyzeModuleCountsAndNoCycle(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		FunctionBodies: [][]byte{
@@ -44,124 +21,104 @@ func TestAnalyzeWASMModuleCounts(t *testing.T) {
 				0x11, 0x00, 0x00, // call_indirect type 0 table 0
 				0x0b, // end function
 			},
-			{
-				0x0b, // end function
-			},
+			{0x0b}, // end function
 		},
 		WithTable: true,
 	})
 
-	analysis, err := analyzeWASMModule(module)
+	analysis, err := AnalyzeModule(module)
 	if err != nil {
-		t.Fatalf("analyzeWASMModule: %v", err)
+		t.Fatalf("AnalyzeModule: %v", err)
 	}
 	if analysis.ImportedFuncCount != 1 {
 		t.Fatalf("importedFuncCount=%d, want 1", analysis.ImportedFuncCount)
 	}
-	metrics := analysis.Metrics
-
-	if metrics.BranchDecision != 2 {
-		t.Fatalf("branch decisions=%d, want 2", metrics.BranchDecision)
+	if analysis.Metrics.BranchDecision != 2 {
+		t.Fatalf("branch decisions=%d, want 2", analysis.Metrics.BranchDecision)
 	}
-	if metrics.BrTableCount != 1 || metrics.BrTableTargets != 2 {
-		t.Fatalf("br_table count/targets=%d/%d, want 1/2", metrics.BrTableCount, metrics.BrTableTargets)
+	if analysis.Metrics.BrTableCount != 1 || analysis.Metrics.BrTableTargets != 2 {
+		t.Fatalf("br_table count/targets=%d/%d, want 1/2", analysis.Metrics.BrTableCount, analysis.Metrics.BrTableTargets)
 	}
-	if metrics.CallImport != 1 || metrics.CallLocal != 1 || metrics.CallIndirect != 1 {
-		t.Fatalf("calls import/local/indirect=%d/%d/%d, want 1/1/1", metrics.CallImport, metrics.CallLocal, metrics.CallIndirect)
+	if analysis.Metrics.CallImport != 1 || analysis.Metrics.CallLocal != 1 || analysis.Metrics.CallIndirect != 1 {
+		t.Fatalf("calls import/local/indirect=%d/%d/%d, want 1/1/1", analysis.Metrics.CallImport, analysis.Metrics.CallLocal, analysis.Metrics.CallIndirect)
 	}
-	if metrics.LoopBackedge != 1 {
-		t.Fatalf("loop_backedge=%d, want 1", metrics.LoopBackedge)
+	if analysis.Metrics.LoopBackedge != 1 {
+		t.Fatalf("loop_backedge=%d, want 1", analysis.Metrics.LoopBackedge)
 	}
-	if metrics.InstructionTotal != 14 {
-		t.Fatalf("instruction total=%d, want 14", metrics.InstructionTotal)
+	if analysis.Metrics.InstructionTotal != 14 {
+		t.Fatalf("instruction total=%d, want 14", analysis.Metrics.InstructionTotal)
 	}
 
-	hasCycle, cycle := detectCallCycle(analysis.CallEdges)
+	hasCycle, _ := DetectCallCycle(analysis.CallEdges)
 	if hasCycle {
-		t.Fatalf("unexpected recursion cycle: %v", cycle)
+		t.Fatalf("unexpected recursion cycle")
 	}
 }
 
-func TestAnalyzeWASMModuleDetectsRecursion(t *testing.T) {
+func TestDetectCallCycle(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
-		ImportFuncCount: 0,
 		FunctionBodies: [][]byte{
 			{0x10, 0x01, 0x0b}, // func 0 calls func 1
 			{0x10, 0x00, 0x0b}, // func 1 calls func 0
 		},
 	})
-
-	analysis, err := analyzeWASMModule(module)
+	analysis, err := AnalyzeModule(module)
 	if err != nil {
-		t.Fatalf("analyzeWASMModule: %v", err)
+		t.Fatalf("AnalyzeModule: %v", err)
 	}
-	hasCycle, cycle := detectCallCycle(analysis.CallEdges)
+	hasCycle, cycle := DetectCallCycle(analysis.CallEdges)
 	if !hasCycle {
-		t.Fatal("expected recursion cycle")
+		t.Fatalf("expected recursion cycle")
 	}
 	if len(cycle) != 2 {
 		t.Fatalf("cycle=%v, want 2 nodes", cycle)
 	}
 }
 
-func TestRunScoreWritesASCIIAndDetails(t *testing.T) {
+func TestEvaluateQIPContractChecksFailDynamicFunction(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
-		FunctionBodies:  [][]byte{{0x10, 0x00, 0x0b}}, // import call
+		FunctionBodies:  [][]byte{{0x10, 0x00, 0x0b}}, // call import
+		Exports: []testExport{
+			{Name: "input_ptr", Kind: 0x00, Index: 1},
+		},
 	})
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mod.wasm")
-	if err := os.WriteFile(path, module, 0o644); err != nil {
-		t.Fatalf("write module: %v", err)
-	}
-
-	var out bytes.Buffer
-	err := RunScore([]string{path}, ScoreConfig{
-		UsageScore: "usage score",
-		Stdout:     &out,
-	})
+	analysis, err := AnalyzeModule(module)
 	if err != nil {
-		t.Fatalf("RunScore: %v", err)
+		t.Fatalf("AnalyzeModule: %v", err)
 	}
-
-	got := out.String()
-	if !strings.Contains(got, "MODULE") || !strings.Contains(got, "INTERPRETED") || !strings.Contains(got, "INSTANTIATE") {
-		t.Fatalf("missing summary header: %q", got)
+	checks, fail := EvaluateQIPContractChecks(analysis)
+	if !fail {
+		t.Fatalf("expected contract failure")
 	}
-	if !strings.Contains(got, "branch_decisions (br_if + if):") {
-		t.Fatalf("missing details breakdown: %q", got)
+	if len(checks) != 1 {
+		t.Fatalf("checks=%d, want 1", len(checks))
 	}
-	if !strings.Contains(got, "instantiation_contributors:") {
-		t.Fatalf("missing instantiation contributors: %q", got)
-	}
-	if strings.Contains(got, "range: [") {
-		t.Fatalf("unexpected range output: %q", got)
+	if checks[0].Pass || checks[0].Export != "input_ptr" || checks[0].Kind != "func" {
+		t.Fatalf("unexpected check result: %+v", checks[0])
 	}
 }
 
-func TestRunScoreFailsOnRecursion(t *testing.T) {
+func TestEvaluateQIPContractChecksPassConstantGlobal(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
-		FunctionBodies: [][]byte{
-			{0x10, 0x01, 0x0b},
-			{0x10, 0x00, 0x0b},
+		Globals: []testGlobal{
+			{ValueType: 0x7f, InitExpr: []byte{0x41, 0x80, 0x80, 0x40}}, // i32.const 1048576
 		},
+		Exports: []testExport{{Name: "input_ptr", Kind: 0x03, Index: 0}},
 	})
-	dir := t.TempDir()
-	path := filepath.Join(dir, "rec.wasm")
-	if err := os.WriteFile(path, module, 0o644); err != nil {
-		t.Fatalf("write module: %v", err)
+	analysis, err := AnalyzeModule(module)
+	if err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
 	}
-
-	var out bytes.Buffer
-	err := RunScore([]string{path}, ScoreConfig{
-		UsageScore: "usage score",
-		Stdout:     &out,
-	})
-	if err == nil || !strings.Contains(err.Error(), "recursion cycle") {
-		t.Fatalf("expected recursion error, got %v", err)
+	checks, fail := EvaluateQIPContractChecks(analysis)
+	if fail {
+		t.Fatalf("unexpected contract failure: %+v", checks)
 	}
-	if !strings.Contains(out.String(), "FAIL(recursion)") {
-		t.Fatalf("expected FAIL(recursion) output, got %q", out.String())
+	if len(checks) != 1 {
+		t.Fatalf("checks=%d, want 1", len(checks))
+	}
+	if !checks[0].Pass || checks[0].Kind != "global" {
+		t.Fatalf("unexpected check result: %+v", checks[0])
 	}
 }
 

@@ -149,7 +149,12 @@ What qip comply does:
          input_ptr (global i32 or function () -> i32)
          input_bytes_cap (global i32 or function () -> i32)
 
-  2) Executes each --with compliance module:
+  2) Static qip contract checks (always, when qip exports are present):
+     - qip contract functions (for example input_ptr/output_ptr/caps) must be
+       vanilla instruction sequences with no calls, loops, or dynamic control flow
+     - qip contract globals must be constant init expressions (no global.get dependency)
+
+  3) Executes each --with compliance module:
      - qip instantiates impl as module name "impl"
      - all compliance modules run in parallel
      - all must pass

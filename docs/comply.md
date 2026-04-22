@@ -30,7 +30,13 @@ qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-u
 - detects module kind as `run`, `tile`, or `run+tile`
 - validates required ABI shape for the detected kind
 
-2. Optional behavior checks (`--with`):
+2. Static qip contract checks (always, when qip exports are present):
+
+- checks exported qip contract functions such as `input_ptr`, `output_ptr`, and capacity exports
+- function exports must be vanilla sequences: no calls, no loops, no dynamic control flow
+- checks exported qip contract globals are constant init expressions with no `global.get` dependency
+
+3. Optional behavior checks (`--with`):
 
 - each check module is executed against the implementation module
 - checks run in parallel

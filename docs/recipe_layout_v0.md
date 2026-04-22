@@ -9,12 +9,26 @@ This document defines how recipe modules are discovered from disk.
   - `recipes/text/markdown/`
   - `recipes/text/html/`
   - `recipes/image/png/`
+  - `recipes/application/warc/`
 
 Given MIME `type/subtype`, recipe directory is:
 
 - `recipes/<type>/<subtype>/`
 
 No wildcard fallback is defined in v0.
+
+## WARC Recipes
+
+`application/warc` recipes are first-class in v0. We prefer them for site-wide archive transforms because they run at the archive layer instead of one page at a time.
+
+- Directory: `recipes/application/warc/`
+- Typical use:
+  - link integrity checks on the full routed archive
+  - archive rewrites before export (for example tar/static packaging pipelines)
+- Example filenames:
+  - `10-warc-check-broken-links.wasm`
+  - `20-warc-to-sitemap.wasm`
+  - `30-warc-add-open-graph-image-meta.wasm`
 
 ## Ordering
 

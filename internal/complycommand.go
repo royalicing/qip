@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/royalicing/qip/internal/wasminspect"
 	"github.com/royalicing/qip/internal/wasmruntime"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -118,6 +119,31 @@ func RunComplyCommand(args []string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "comply: module fulfills %s contract\n", base.kind)
+
+	analysis, err := wasminspect.AnalyzeModule(implWasm)
+	if err != nil {
+		return fmt.Errorf("comply: static analysis failed: %w", err)
+	}
+	contractChecks, contractFail := wasminspect.EvaluateQIPContractChecks(analysis)
+	if len(contractChecks) == 0 {
+		fmt.Fprintln(os.Stderr, "comply: static contract checks skipped (no qip contract exports found)")
+	} else {
+		status := "PASS"
+		if contractFail {
+			status = "FAIL"
+		}
+		fmt.Fprintf(os.Stderr, "comply: static contract checks %s (%d checked)\n", status, len(contractChecks))
+		for _, check := range contractChecks {
+			if check.Pass {
+				fmt.Fprintf(os.Stderr, "  - %s (%s): PASS\n", check.Export, check.Kind)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "  - %s (%s): FAIL (%s)\n", check.Export, check.Kind, check.Reason)
+		}
+		if contractFail {
+			return errors.New("comply: static qip contract checks failed")
+		}
+	}
 
 	if len(withCompliances) == 0 {
 		return nil
