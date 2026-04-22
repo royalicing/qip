@@ -51,13 +51,14 @@ func TestAnalyzeWASMModuleCounts(t *testing.T) {
 		WithTable: true,
 	})
 
-	metrics, edges, importedFuncCount, err := analyzeWASMModule(module)
+	analysis, err := analyzeWASMModule(module)
 	if err != nil {
 		t.Fatalf("analyzeWASMModule: %v", err)
 	}
-	if importedFuncCount != 1 {
-		t.Fatalf("importedFuncCount=%d, want 1", importedFuncCount)
+	if analysis.ImportedFuncCount != 1 {
+		t.Fatalf("importedFuncCount=%d, want 1", analysis.ImportedFuncCount)
 	}
+	metrics := analysis.Metrics
 
 	if metrics.BranchDecision != 2 {
 		t.Fatalf("branch decisions=%d, want 2", metrics.BranchDecision)
@@ -75,7 +76,7 @@ func TestAnalyzeWASMModuleCounts(t *testing.T) {
 		t.Fatalf("instruction total=%d, want 14", metrics.InstructionTotal)
 	}
 
-	hasCycle, cycle := detectCallCycle(edges)
+	hasCycle, cycle := detectCallCycle(analysis.CallEdges)
 	if hasCycle {
 		t.Fatalf("unexpected recursion cycle: %v", cycle)
 	}
@@ -90,11 +91,11 @@ func TestAnalyzeWASMModuleDetectsRecursion(t *testing.T) {
 		},
 	})
 
-	_, edges, _, err := analyzeWASMModule(module)
+	analysis, err := analyzeWASMModule(module)
 	if err != nil {
 		t.Fatalf("analyzeWASMModule: %v", err)
 	}
-	hasCycle, cycle := detectCallCycle(edges)
+	hasCycle, cycle := detectCallCycle(analysis.CallEdges)
 	if !hasCycle {
 		t.Fatal("expected recursion cycle")
 	}
@@ -124,14 +125,17 @@ func TestRunScoreWritesASCIIAndDetails(t *testing.T) {
 	}
 
 	got := out.String()
-	if !strings.Contains(got, "MODULE") {
+	if !strings.Contains(got, "MODULE") || !strings.Contains(got, "INTERPRETED") || !strings.Contains(got, "INSTANTIATE") {
 		t.Fatalf("missing summary header: %q", got)
 	}
 	if !strings.Contains(got, "branch_decisions (br_if + if):") {
 		t.Fatalf("missing details breakdown: %q", got)
 	}
-	if !strings.Contains(got, "range: [") {
-		t.Fatalf("missing score range: %q", got)
+	if !strings.Contains(got, "instantiation_contributors:") {
+		t.Fatalf("missing instantiation contributors: %q", got)
+	}
+	if strings.Contains(got, "range: [") {
+		t.Fatalf("unexpected range output: %q", got)
 	}
 }
 
@@ -153,7 +157,7 @@ func TestRunScoreFailsOnRecursion(t *testing.T) {
 		UsageScore: "usage score",
 		Stdout:     &out,
 	})
-	if err == nil || !strings.Contains(err.Error(), "recursion cycle") {
+	if err == nil || !strings.Contains(err.Error(), "failed safety checks") {
 		t.Fatalf("expected recursion error, got %v", err)
 	}
 	if !strings.Contains(out.String(), "FAIL(recursion)") {
@@ -161,10 +165,92 @@ func TestRunScoreFailsOnRecursion(t *testing.T) {
 	}
 }
 
+func TestRunScoreFailsOnContractDynamicFunction(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		ImportFuncCount: 1,
+		FunctionBodies:  [][]byte{{0x10, 0x00, 0x0b}}, // call import
+		Exports: []testExport{
+			{Name: "input_ptr", Kind: 0x00, Index: 1}, // defined function global idx
+		},
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "contract-fail.wasm")
+	if err := os.WriteFile(path, module, 0o644); err != nil {
+		t.Fatalf("write module: %v", err)
+	}
+
+	var out bytes.Buffer
+	err := RunScore([]string{path}, ScoreConfig{
+		UsageScore: "usage score",
+		Stdout:     &out,
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed safety checks") {
+		t.Fatalf("expected contract failure, got %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "FAIL(contract)") {
+		t.Fatalf("expected FAIL(contract), got %q", got)
+	}
+	if !strings.Contains(got, "input_ptr (func): FAIL") {
+		t.Fatalf("missing contract failure details: %q", got)
+	}
+}
+
+func TestRunScorePassesOnContractConstantGlobal(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		Globals: []testGlobal{
+			{
+				ValueType: 0x7f,                           // i32
+				InitExpr:  []byte{0x41, 0x80, 0x80, 0x40}, // i32.const 1048576
+			},
+		},
+		Exports: []testExport{
+			{Name: "input_ptr", Kind: 0x03, Index: 0},
+		},
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "contract-pass.wasm")
+	if err := os.WriteFile(path, module, 0o644); err != nil {
+		t.Fatalf("write module: %v", err)
+	}
+
+	var out bytes.Buffer
+	err := RunScore([]string{path}, ScoreConfig{
+		UsageScore: "usage score",
+		Stdout:     &out,
+	})
+	if err != nil {
+		t.Fatalf("RunScore: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "contract_checks: PASS") {
+		t.Fatalf("expected contract_checks PASS, got %q", got)
+	}
+	if !strings.Contains(got, "input_ptr (global): PASS") {
+		t.Fatalf("expected input_ptr pass details, got %q", got)
+	}
+}
+
 type testModuleConfig struct {
-	ImportFuncCount int
-	FunctionBodies  [][]byte
-	WithTable       bool
+	ImportFuncCount   int
+	ImportGlobalCount int
+	FunctionBodies    [][]byte
+	WithTable         bool
+	Globals           []testGlobal
+	Exports           []testExport
+	StartFunc         *uint32
+}
+
+type testGlobal struct {
+	ValueType byte
+	Mutable   bool
+	InitExpr  []byte // without trailing end (0x0b)
+}
+
+type testExport struct {
+	Name  string
+	Kind  byte
+	Index uint32
 }
 
 func buildTestModule(cfg testModuleConfig) []byte {
@@ -172,13 +258,22 @@ func buildTestModule(cfg testModuleConfig) []byte {
 	typeSecPayload := append(encodeU32(1), typeEntry...)
 	typeSec := makeSection(1, typeSecPayload)
 
-	importEntries := make([][]byte, 0, cfg.ImportFuncCount)
+	importEntries := make([][]byte, 0, cfg.ImportFuncCount+cfg.ImportGlobalCount)
 	for i := 0; i < cfg.ImportFuncCount; i++ {
 		entry := []byte{}
 		entry = append(entry, encodeName("env")...)
 		entry = append(entry, encodeName("imp"+strconvI(i))...)
 		entry = append(entry, 0x00)            // import kind func
 		entry = append(entry, encodeU32(0)...) // typeidx 0
+		importEntries = append(importEntries, entry)
+	}
+	for i := 0; i < cfg.ImportGlobalCount; i++ {
+		entry := []byte{}
+		entry = append(entry, encodeName("env")...)
+		entry = append(entry, encodeName("gimp"+strconvI(i))...)
+		entry = append(entry, 0x03) // import kind global
+		entry = append(entry, 0x7f) // i32
+		entry = append(entry, 0x00) // immutable
 		importEntries = append(importEntries, entry)
 	}
 	importSec := []byte{}
@@ -204,6 +299,40 @@ func buildTestModule(cfg testModuleConfig) []byte {
 		tableSec = makeSection(4, payload)
 	}
 
+	globalSec := []byte{}
+	if len(cfg.Globals) > 0 {
+		payload := []byte{}
+		payload = append(payload, encodeU32(uint32(len(cfg.Globals)))...)
+		for _, g := range cfg.Globals {
+			payload = append(payload, g.ValueType)
+			if g.Mutable {
+				payload = append(payload, 0x01)
+			} else {
+				payload = append(payload, 0x00)
+			}
+			payload = append(payload, g.InitExpr...)
+			payload = append(payload, 0x0b) // end const expr
+		}
+		globalSec = makeSection(6, payload)
+	}
+
+	exportSec := []byte{}
+	if len(cfg.Exports) > 0 {
+		payload := []byte{}
+		payload = append(payload, encodeU32(uint32(len(cfg.Exports)))...)
+		for _, e := range cfg.Exports {
+			payload = append(payload, encodeName(e.Name)...)
+			payload = append(payload, e.Kind)
+			payload = append(payload, encodeU32(e.Index)...)
+		}
+		exportSec = makeSection(7, payload)
+	}
+
+	startSec := []byte{}
+	if cfg.StartFunc != nil {
+		startSec = makeSection(8, encodeU32(*cfg.StartFunc))
+	}
+
 	codePayload := []byte{}
 	codePayload = append(codePayload, encodeU32(uint32(len(cfg.FunctionBodies)))...)
 	for _, ops := range cfg.FunctionBodies {
@@ -219,6 +348,9 @@ func buildTestModule(cfg testModuleConfig) []byte {
 	module = append(module, importSec...)
 	module = append(module, functionSec...)
 	module = append(module, tableSec...)
+	module = append(module, globalSec...)
+	module = append(module, exportSec...)
+	module = append(module, startSec...)
 	module = append(module, codeSec...)
 	return module
 }
