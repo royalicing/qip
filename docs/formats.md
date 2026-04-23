@@ -29,7 +29,7 @@ Current formats directly supported by a qip command or supported by this repo’
 
 Examples:
 
-- `qip route warc ...` emits `application/warc`
+- `qip router warc ...` emits `application/warc`
 - `modules/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
 - `modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
 

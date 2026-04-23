@@ -114,18 +114,18 @@ type options struct {
 	viewSource             bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of wasm modules on input\n  bench    Compare one or more wasm modules for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate module ABI and run compliance check modules\n  dev      Start a dev server for a content directory with optional recipes\n  route    Resolve routed paths and export route artifacts\n  form     Run an interactive wasm form module in the terminal\n  help     Show command help"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of wasm modules on input\n  bench    Compare one or more wasm modules for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate module ABI and run compliance check modules\n  dev      Start a dev server for a content directory with optional recipes\n  router   Resolve routed paths and export route artifacts\n  form     Run an interactive wasm form module in the terminal\n  help     Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
 const usageScore = "Usage: qip score <module1.wasm> [module2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]"
 const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
-const usageRoute = "Usage: qip route <subcommand> [args]\n\nSubcommands:\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site and write a minimal WARC file"
-const usageRouteGet = "Usage: qip route get <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteHead = "Usage: qip route head <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteList = "Usage: qip route list <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteWarc = "Usage: qip route warc <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]"
+const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site and write a minimal WARC file"
+const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteHead = "Usage: qip router head <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteList = "Usage: qip router list <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteWarc = "Usage: qip router warc <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]"
 const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
 const usageHelp = "Usage: qip help [command]"
 
@@ -239,8 +239,8 @@ func main() {
 		complyCmd(args[1:])
 	} else if args[0] == "dev" {
 		devCmd(args[1:])
-	} else if args[0] == "route" {
-		routeCmd(args[1:])
+	} else if args[0] == "router" {
+		routerCmd(args[1:])
 	} else if args[0] == "form" {
 		formCmd(args[1:])
 	} else {
@@ -268,7 +268,7 @@ func helpCmd(args []string) {
 		fmt.Println(helpComply)
 	case "dev":
 		fmt.Println(usageDev)
-	case "route":
+	case "router":
 		fmt.Println(usageRoute)
 		fmt.Println()
 		fmt.Println(usageRouteGet)
@@ -2336,7 +2336,7 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	var modulesRoot string
 	var modeRaw string
 
-	fs := flag.NewFlagSet("route "+strings.ToLower(method), flag.ContinueOnError)
+	fs := flag.NewFlagSet("router "+strings.ToLower(method), flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var routeVerbose bool
 	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
@@ -2475,7 +2475,7 @@ func routeListCmd(args []string) {
 	var modulesRoot string
 	var modeRaw string
 
-	fs := flag.NewFlagSet("route list", flag.ContinueOnError)
+	fs := flag.NewFlagSet("router list", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var routeVerbose bool
 	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
@@ -2642,16 +2642,16 @@ func mediaTypeOnly(value string) string {
 	return value
 }
 
-func routeCmd(args []string) {
+func routerCmd(args []string) {
 	if len(args) == 0 {
 		gameOver(usageRoute)
 	}
 	switch args[0] {
 	case "get":
-		routePathCmd(args[1:], http.MethodGet, usageRouteGet, "route get")
+		routePathCmd(args[1:], http.MethodGet, usageRouteGet, "router get")
 		return
 	case "head":
-		routePathCmd(args[1:], http.MethodHead, usageRouteHead, "route head")
+		routePathCmd(args[1:], http.MethodHead, usageRouteHead, "router head")
 		return
 	case "list":
 		routeListCmd(args[1:])
@@ -2733,7 +2733,7 @@ func routeCmd(args []string) {
 			return nil, err
 		}
 		var stateMu sync.RWMutex
-		handler := newDevRequestHandler("route", &stateMu, &state, nil, routeOptions, handlerTimeouts)
+		handler := newDevRequestHandler("router", &stateMu, &state, nil, routeOptions, handlerTimeouts)
 		runtime = &routeRuntime{
 			state:        state,
 			handler:      handler,

@@ -36,9 +36,9 @@ WARC recipes can run in two useful scopes. We prefer picking scope intentionally
 
 - Subset/path scope (faster iteration):
   - `qip dev` applies WARC recipe behavior on the currently resolved response.
-  - `qip route get` / `qip route head` let you inspect one routed path.
+  - `qip router get` / `qip router head` let you inspect one routed path.
 - Whole-site scope (final archive behavior):
-  - `qip route warc <content_dir> ...` enumerates the full routed site, builds one WARC, then applies `recipes/application/warc/*`.
+  - `qip router warc <content_dir> ...` enumerates the full routed site, builds one WARC, then applies `recipes/application/warc/*`.
 
 Claim: use subset scope while developing recipe logic, and whole-site scope before publishing.
 Reason: it shortens edit-test cycles without skipping the final archive semantics.
@@ -46,20 +46,20 @@ Example:
 
 ```sh
 # Fast single-path iteration:
-qip route get ./site /docs/router --recipes ./recipes
+qip router get ./site /docs/router --recipes ./recipes
 
 # Final whole-site run:
-qip route warc ./site --recipes ./recipes --modules ./modules
+qip router warc ./site --recipes ./recipes --modules ./modules
 ```
 
 ## Host And URLs
 
-`qip route warc` controls canonical route host via `--host <host>`. We prefer setting this explicitly for production builds so recipe logic that reads target URLs sees stable, deploy-intended origins.
+`qip router warc` controls canonical route host via `--host <host>`. We prefer setting this explicitly for production builds so recipe logic that reads target URLs sees stable, deploy-intended origins.
 
 Example:
 
 ```sh
-qip route warc ./site --recipes ./recipes --host https://qip.dev
+qip router warc ./site --recipes ./recipes --host https://qip.dev
 ```
 
 ## Adding Routes

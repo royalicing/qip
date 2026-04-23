@@ -151,7 +151,7 @@ highlight-night-owl.css
 styles.css
 
 # Build site as Web Archive then convert that to static HTML with no trailing slashes
-$ qip route warc ./site --recipes recipes \
+$ qip router warc ./site --recipes recipes \
 | qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
 > site-static.tar
 $ mkdir -p site-static && tar -xvf site-static.tar -C site-static

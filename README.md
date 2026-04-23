@@ -189,15 +189,15 @@ qip dev ./docs --recipes ./recipes -p 4000
 Resolve a single path through the same router pipeline:
 
 ```bash
-qip route get ./docs /about --recipes ./recipes --modules ./modules
-qip route head ./docs /about --recipes ./recipes --modules ./modules
-qip route list ./docs --recipes ./recipes --modules ./modules
+qip router get ./docs /about --recipes ./recipes --modules ./modules
+qip router head ./docs /about --recipes ./recipes --modules ./modules
+qip router list ./docs --recipes ./recipes --modules ./modules
 ```
 
 Build static output from the routed site (no intermediate `.warc` file on disk):
 
 ```bash
-qip route warc ./docs --recipes ./recipes --modules ./modules \
+qip router warc ./docs --recipes ./recipes --modules ./modules \
   | qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
   > site.tar
 
@@ -224,7 +224,7 @@ printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?w
 
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
-- [ ] Rename `qip route` to `qip router` — this means that the branding is easier with a consistent name "Qip Router" and command.
+- [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
 - [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
 - [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).
 - [ ] Add `qip serve` command that runs the server in `prod` mode by default, and includes a module upload endpoint.

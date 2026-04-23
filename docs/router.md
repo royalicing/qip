@@ -1,6 +1,6 @@
 # Router
 
-This page is for site authors using `qip route` and `qip dev`.
+This page is for site authors using `qip router` and `qip dev`.
 
 It explains:
 
@@ -65,19 +65,19 @@ Per request:
 
 Result: preview in dev matches route-archive behavior for WARC-level transforms.
 
-### `qip route get <content_dir> <path> ...`
+### `qip router get <content_dir> <path> ...`
 
 Runs the same page pipeline as dev for one path and prints the response body.
 
-### `qip route head <content_dir> <path> ...`
+### `qip router head <content_dir> <path> ...`
 
 Runs the same route pipeline but returns headers only.
 
-### `qip route list <content_dir> ...`
+### `qip router list <content_dir> ...`
 
 Lists all routed paths and content types.
 
-### `qip route warc <content_dir> ...`
+### `qip router warc <content_dir> ...`
 
 1. Enumerate all routed paths.
 2. Resolve each path to a response.
@@ -103,13 +103,13 @@ There are two independent recipe layers:
 
 Static export usually looks like:
 
-1. `qip route warc ./site --recipes recipes --forms modules/form --modules modules`
+1. `qip router warc ./site --recipes recipes --forms modules/form --modules modules`
 2. pipe WARC into archive-processing modules (for checks or export)
 
 Example pipeline:
 
 ```sh
-qip route warc ./site --recipes recipes --forms modules/form --modules modules \
+qip router warc ./site --recipes recipes --forms modules/form --modules modules \
   | qip run modules/application/warc/warc-check-broken-links.wasm \
            modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm
 ```
