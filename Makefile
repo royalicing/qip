@@ -220,7 +220,7 @@ score: qip
 	$(QIP_BIN) score $$files
 
 site-static: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm
-	$(QIP_BIN) route warc ./site --recipes recipes --forms modules/form --modules modules --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
+	$(QIP_BIN) router warc ./site --recipes recipes --forms modules/form --modules modules --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 defluff:
 	find . -name '.DS_Store' -type f -delete
