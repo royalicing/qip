@@ -1,4 +1,4 @@
-# Recipe Layout v0
+# Recipes
 
 This document defines how recipe modules are discovered from disk.
 
