@@ -1,4 +1,4 @@
-# Content Layout v0
+# Content
 
 This document defines the on-disk content layout consumed by routing/build workflows.
 
