@@ -15,11 +15,9 @@ Given MIME `type/subtype`, recipe directory is:
 
 - `recipes/<type>/<subtype>/`
 
-No wildcard fallback is defined in v0.
-
 ## WARC Recipes
 
-`application/warc` recipes are first-class in v0. We prefer them for site-wide archive transforms because they run at the archive layer instead of one page at a time.
+`application/warc` recipes run at the whole-site layer instead of one page at a time. You can use them for site-wide transforms, such as adding trailing-slash redirects, verifying there are no broken links, or using the path to modify body content.
 
 - Directory: `recipes/application/warc/`
 - Typical use:
