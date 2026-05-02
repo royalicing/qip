@@ -15,10 +15,10 @@ Typical setup:
 ```txt
 site/                         # content root
   index.md
-  how-it-works.md
 
 docs/                         # optional additional content root
   index.md
+  how-it-works.md
   module-contract.md
 
 recipes/                      # optional recipe root
@@ -50,6 +50,30 @@ Common behavior:
 
 - pretty URLs are where markdown recipes usually run (for HTML output)
 - source URLs intentionally remain raw source (for example raw markdown)
+
+## Redirect Files (`.uri` / `.uris`)
+
+We prefer file-based redirects because they are explicit, versioned, and easy to review.
+
+If a content file ends with `.uri` or `.uris`, qip serves that route as `302 Found` using the first redirect target from a `text/uri-list` payload.
+
+- comments (lines starting with `#`) are ignored
+- blank lines are ignored
+- first non-comment line wins
+- target can be an absolute URL or a path
+
+Example:
+
+```txt
+# site/how-it-works.uri
+/docs/how-it-works
+```
+
+This gives you:
+
+- source path: `/how-it-works.uri`
+- pretty path: `/how-it-works`
+- response: `302` with `Location: /docs/how-it-works`
 
 ## What Runs When
 

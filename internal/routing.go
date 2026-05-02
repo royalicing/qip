@@ -430,7 +430,7 @@ func contentRequestPaths(relPath string, options RouteOptions) []string {
 	appendUnique("/" + relPath)
 	ext := path.Ext(relPath)
 	lowerExt := strings.ToLower(ext)
-	if lowerExt == ".html" || lowerExt == ".md" || lowerExt == ".markdown" {
+	if lowerExt == ".html" || lowerExt == ".md" || lowerExt == ".markdown" || lowerExt == ".uri" || lowerExt == ".uris" {
 		base := path.Base(relPath)
 		if strings.EqualFold(base, "index"+ext) {
 			dir := path.Dir(relPath)
@@ -457,6 +457,8 @@ func detectSourceMIME(relPath string) string {
 	switch ext {
 	case ".md", ".markdown":
 		return "text/markdown"
+	case ".uri", ".uris":
+		return "text/uri-list"
 	}
 
 	mimeType := mime.TypeByExtension(ext)

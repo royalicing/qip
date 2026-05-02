@@ -1,26 +1,45 @@
-<title>qip: vibe fast zig/c as composable wasm</title>
+<title>qip: fast zig/c as composable wasm</title>
 
 # `qip`
 
-## _vibe fast zig/c as composable wasm_
+## _vibe once, run anywhere_
 
-`qip` lets you compose vibe-coded WebAssembly modules that process text/image/data in a secure pipeline.
+`qip` is a tiny, portable runtime that runs WebAssembly modules in a secure pipeline.
 
-These modules cannot access fs/network/env. They focus on one job: parser, validator, image shader, converter, renderer. Every module’s input & output is explicit making everything deterministic. You then compose them into ever greater units using the cli, custom elements, or built-in web router.
-
-Think of them as “React components for anything that run anywhere.” Everything on this site has been made using qip and its router.
-
-## Install
+### Install
 
 ```bash
 go install github.com/royalicing/qip@latest
 ```
 
+What qip does:
+
+- Run small focused modules on text, bytes, and images.
+- Compose those modules into deterministic pipelines.
+- Reuse the same modules in CLI, browser, server, and mobile.
+- Provide a stable contract that is simpler than WASI.
+- Web file router with everything as replaceable plugins.
+
+What qip does not do:
+
+- It does not have package manager with nested dependencies.
+- It does not give modules fs/network/env access.
+
+If you know popular tools, think:
+
+- **Unix pipes**: data flows stage-by-stage.
+- **React components**: qip modules are swappable units with clean contracts.
+- **GitHub Actions**: qip recipes have explicitly order steps.
+
+Think of them as “React components for more than just rendering HTML that run anywhere.” Everything on this site has been made using qip.
+
+Read the full walkthrough in [`/docs/how-it-works`](/docs/how-it-works).
+
 ## Examples
 
 <form aria-labelledby="form-wc-heading">
     <h3 id="form-wc-heading">Word count (wc.wasm running in browser)</h3>
-    <blockquote><p>Prompt: Write a wc.zig module like /usr/bin/wc</p></blockquote>
+    <blockquote><p>Coding agent prompt: Write a wc.zig module like /usr/bin/wc</p></blockquote>
     <qip-preview>
         <source src="/modules/utf8/wc.wasm" type="application/wasm" />
         <textarea name="input" rows="2" cols="40">There are eight words here. Try typing more… </textarea>

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,6 +77,7 @@ func TestContentRequestPaths(t *testing.T) {
 	mustWrite("index.html")
 	mustWrite("docs/index.html")
 	mustWrite("guide/start.md")
+	mustWrite("how-it-works.uri")
 	mustWrite("images/logo.png")
 
 	routes, err := qinternal.BuildContentRoutes(root, qinternal.DefaultRouteOptions())
@@ -84,14 +86,16 @@ func TestContentRequestPaths(t *testing.T) {
 	}
 
 	checks := map[string]string{
-		"/index.html":      "index.html",
-		"/":                "index.html",
-		"/docs/index.html": "docs/index.html",
-		"/docs":            "docs/index.html",
-		"/docs/":           "docs/index.html",
-		"/guide/start.md":  "guide/start.md",
-		"/guide/start":     "guide/start.md",
-		"/images/logo.png": "images/logo.png",
+		"/index.html":       "index.html",
+		"/":                 "index.html",
+		"/docs/index.html":  "docs/index.html",
+		"/docs":             "docs/index.html",
+		"/docs/":            "docs/index.html",
+		"/guide/start.md":   "guide/start.md",
+		"/guide/start":      "guide/start.md",
+		"/how-it-works.uri": "how-it-works.uri",
+		"/how-it-works":     "how-it-works.uri",
+		"/images/logo.png":  "images/logo.png",
 	}
 	for requestPath, wantRel := range checks {
 		route, ok := routes[requestPath]
@@ -102,6 +106,11 @@ func TestContentRequestPaths(t *testing.T) {
 		if route.FilePath != wantFull {
 			t.Fatalf("route %s file=%s, want %s", requestPath, route.FilePath, wantFull)
 		}
+	}
+	if route, ok := routes["/how-it-works"]; !ok {
+		t.Fatalf("missing route for /how-it-works")
+	} else if route.SourceMIME != "text/uri-list" {
+		t.Fatalf("route /how-it-works source mime=%q, want %q", route.SourceMIME, "text/uri-list")
 	}
 }
 
@@ -404,6 +413,91 @@ func TestBuildRouteListEntries(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries=%v, want %v", got, want)
+	}
+}
+
+func TestBuildRouteListEntriesIncludesURIListRedirect(t *testing.T) {
+	state := &devRuntimeState{
+		contentRoutes: map[string]qinternal.ContentRoute{
+			"/how-it-works":     {FilePath: "site/how-it-works.uri", SourceMIME: "text/uri-list"},
+			"/how-it-works.uri": {FilePath: "site/how-it-works.uri", SourceMIME: "text/uri-list"},
+		},
+		routeOptions: qinternal.DefaultRouteOptions(),
+	}
+
+	got := buildRouteListEntries(state)
+	want := []routeListEntry{
+		{Method: "GET", Path: "/how-it-works", ContentType: "text/uri-list"},
+		{Method: "HEAD", Path: "/how-it-works", ContentType: "text/uri-list"},
+		{Method: "GET", Path: "/how-it-works.uri", ContentType: "text/uri-list"},
+		{Method: "HEAD", Path: "/how-it-works.uri", ContentType: "text/uri-list"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entries=%v, want %v", got, want)
+	}
+}
+
+func TestFirstURIListTarget(t *testing.T) {
+	t.Run("first non-comment line", func(t *testing.T) {
+		body := []byte("# old route\n\n/docs/how-it-works\nhttps://example.com/ignored\n")
+		got, ok := firstURIListTarget(body)
+		if !ok {
+			t.Fatal("expected redirect target")
+		}
+		if got != "/docs/how-it-works" {
+			t.Fatalf("target=%q, want %q", got, "/docs/how-it-works")
+		}
+	})
+
+	t.Run("supports crlf and bom", func(t *testing.T) {
+		body := []byte("\xEF\xBB\xBF#comment\r\n  /docs/how-it-works  \r\n")
+		got, ok := firstURIListTarget(body)
+		if !ok {
+			t.Fatal("expected redirect target")
+		}
+		if got != "/docs/how-it-works" {
+			t.Fatalf("target=%q, want %q", got, "/docs/how-it-works")
+		}
+	})
+
+	t.Run("missing target", func(t *testing.T) {
+		if _, ok := firstURIListTarget([]byte("#comment\n \n")); ok {
+			t.Fatal("expected no redirect target")
+		}
+	})
+}
+
+func TestDevHandlerServesURIListRedirect(t *testing.T) {
+	contentRoot := t.TempDir()
+	redirectPath := filepath.Join(contentRoot, "how-it-works.uri")
+	if err := os.WriteFile(redirectPath, []byte("# move\n/docs/how-it-works\n"), 0o644); err != nil {
+		t.Fatalf("write redirect file: %v", err)
+	}
+
+	state := &devRuntimeState{
+		contentRoutes: map[string]qinternal.ContentRoute{
+			"/how-it-works":     {FilePath: redirectPath, SourceMIME: "text/uri-list"},
+			"/how-it-works.uri": {FilePath: redirectPath, SourceMIME: "text/uri-list"},
+		},
+		routeOptions:  qinternal.DefaultRouteOptions(),
+		recipeChains:  map[string]*qinternal.Pipeline{},
+		recipeDigests: map[string][][32]byte{},
+	}
+	var stateMu sync.RWMutex
+	handler := newDevRequestHandler("test", &stateMu, &state, nil, qinternal.DefaultRouteOptions(), routeHandlerTimeouts{})
+
+	resp, err := qinternal.ServeInProcessHTTP(handler, http.MethodGet, "/how-it-works", nil)
+	if err != nil {
+		t.Fatalf("ServeInProcessHTTP: %v", err)
+	}
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusFound)
+	}
+	if got := resp.Header.Get("Location"); got != "/docs/how-it-works" {
+		t.Fatalf("Location=%q, want %q", got, "/docs/how-it-works")
+	}
+	if got := resp.Header.Get("ETag"); got != "" {
+		t.Fatalf("ETag=%q, want empty", got)
 	}
 }
 

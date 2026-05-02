@@ -2642,6 +2642,22 @@ func mediaTypeOnly(value string) string {
 	return value
 }
 
+func firstURIListTarget(body []byte) (string, bool) {
+	seenFirstLine := false
+	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
+		line := strings.TrimSpace(strings.TrimSuffix(string(rawLine), "\r"))
+		if !seenFirstLine {
+			seenFirstLine = true
+			line = strings.TrimPrefix(line, "\uFEFF")
+		}
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		return line, true
+	}
+	return "", false
+}
+
 func routerCmd(args []string) {
 	if len(args) == 0 {
 		gameOver(usageRoute)
@@ -2853,45 +2869,63 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 				return qinternal.RoutedResponse{}, err
 			}
 			sourceDigest := sha256.Sum256(inputBytes)
+			isRedirectRoute := route.SourceMIME == "text/uri-list"
 
-			var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
+			var (
+				response    qinternal.InProcessHTTPResponse
+				contentType string
+				formDigests = make([][32]byte, 0)
+			)
 			hasRecipes := shouldApplyRecipesForRequestPath(r.URL.Path, route, current.recipeChains)
-			if hasRecipes {
-				pipeline := current.recipeChains[route.SourceMIME]
-				ctx := context.Background()
-				ctx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
-				defer cancel()
-				result, err = pipeline.Process(ctx, result, reqID)
+			if isRedirectRoute {
+				location, ok := firstURIListTarget(inputBytes)
+				if !ok {
+					stateMu.RUnlock()
+					return qinternal.RoutedResponse{}, fmt.Errorf("%s: text/uri-list missing redirect target", route.FilePath)
+				}
+				response = qinternal.InProcessHTTPResponse{
+					StatusCode: http.StatusFound,
+					Header:     http.Header{"Location": []string{location}},
+				}
+				hasRecipes = false
+			} else {
+				var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
+				if hasRecipes {
+					pipeline := current.recipeChains[route.SourceMIME]
+					ctx := context.Background()
+					ctx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
+					defer cancel()
+					result, err = pipeline.Process(ctx, result, reqID)
+					if err != nil {
+						stateMu.RUnlock()
+						return qinternal.RoutedResponse{}, err
+					}
+				}
+
+				result, body, err := ensureRawContent(result)
 				if err != nil {
 					stateMu.RUnlock()
 					return qinternal.RoutedResponse{}, err
 				}
-			}
 
-			result, body, err := ensureRawContent(result)
-			if err != nil {
-				stateMu.RUnlock()
-				return qinternal.RoutedResponse{}, err
-			}
-
-			contentType := devResponseContentType(route.SourceMIME, hasRecipes, result, body)
-			formDigests := make([][32]byte, 0)
-			if strings.HasPrefix(contentType, "text/html") {
-				body, formDigests, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
-				if err != nil {
-					stateMu.RUnlock()
-					return qinternal.RoutedResponse{
-						ModuleDurations:        []time.Duration{},
-						InstantiationDurations: []time.Duration{},
-					}, err
+				contentType = devResponseContentType(route.SourceMIME, hasRecipes, result, body)
+				if strings.HasPrefix(contentType, "text/html") {
+					body, formDigests, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
+					if err != nil {
+						stateMu.RUnlock()
+						return qinternal.RoutedResponse{
+							ModuleDurations:        []time.Duration{},
+							InstantiationDurations: []time.Duration{},
+						}, err
+					}
+					body = injectQIPPreviewRuntime(body)
 				}
-				body = injectQIPPreviewRuntime(body)
-			}
 
-			response := qinternal.InProcessHTTPResponse{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{contentType}},
-				Body:       body,
+				response = qinternal.InProcessHTTPResponse{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{contentType}},
+					Body:       body,
+				}
 			}
 			applicationWARCPipeline := current.recipeChains[applicationWARCRecipeMIME]
 			if applicationWARCPipeline != nil {
@@ -2909,7 +2943,7 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 			if headers == nil {
 				headers = make(http.Header)
 			}
-			if headers.Get("Content-Type") == "" {
+			if !isRedirectRoute && headers.Get("Content-Type") == "" {
 				headers.Set("Content-Type", contentType)
 			}
 			headers.Del("Content-Length")
@@ -2920,17 +2954,19 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 			if applicationRecipeDigests := current.recipeDigests[applicationWARCRecipeMIME]; len(applicationRecipeDigests) > 0 {
 				recipeDigests = append(recipeDigests, applicationRecipeDigests...)
 			}
-			etag := buildDevETag(sourceDigest, recipeDigests, formDigests)
-			if etag != "" {
-				headers.Set("ETag", etag)
-				if r.Header.Get("If-None-Match") == etag {
-					stateMu.RUnlock()
-					return qinternal.RoutedResponse{
-						StatusCode:             http.StatusNotModified,
-						Header:                 headers,
-						ModuleDurations:        []time.Duration{},
-						InstantiationDurations: []time.Duration{},
-					}, nil
+			if !isRedirectRoute {
+				etag := buildDevETag(sourceDigest, recipeDigests, formDigests)
+				if etag != "" {
+					headers.Set("ETag", etag)
+					if r.Header.Get("If-None-Match") == etag {
+						stateMu.RUnlock()
+						return qinternal.RoutedResponse{
+							StatusCode:             http.StatusNotModified,
+							Header:                 headers,
+							ModuleDurations:        []time.Duration{},
+							InstantiationDurations: []time.Duration{},
+						}, nil
+					}
 				}
 			}
 			stateMu.RUnlock()
