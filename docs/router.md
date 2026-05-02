@@ -36,8 +36,8 @@ modules/form/                 # optional form module root
 
 Related references:
 
-- [Content Layout v0](/docs/content_layout_v0)
-- [Recipe Layout v0](/docs/recipe_layout_v0)
+- [Content Layout](/docs/content)
+- [Recipe Layout](/docs/recipes)
 
 ## Route Behavior
 

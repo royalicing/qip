@@ -31,4 +31,4 @@ Examples:
 
 - This contract does not define routing policy.
 - Routing/build policy is handled by host logic and runtime router modules.
-- Recipe discovery/order is defined in `docs/recipe_layout_v0.md`.
+- Recipe discovery/order is defined in `docs/recipes.md`.
