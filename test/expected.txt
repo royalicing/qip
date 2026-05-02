@@ -68,7 +68,6 @@ module: markdown-basic.wasm | html-page-wrap.wasm
     <ul>
       <li><a href="/">qip</a></li>
       <li><a href="/docs">docs</a></li>
-      <li><a href="/docs/how-it-works">how it works</a></li>
       <li><a href="https://github.com/royalicing/qip">github</a></li>
     </ul>
   </nav>
@@ -79,7 +78,6 @@ module: markdown-basic.wasm | html-page-wrap.wasm
     <ul>
       <li><a href="/">qip</a></li>
       <li><a href="/docs">docs</a></li>
-      <li><a href="/docs/how-it-works">how it works</a></li>
       <li><a href="/view-source">view source</a></li>
       <li><a href="https://github.com/royalicing/qip">github</a></li>
     </ul>
@@ -117,4 +115,3 @@ export async function run(input) {
   const decoder = new TextDecoder();
   return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
 }
-
