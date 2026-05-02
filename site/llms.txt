@@ -1,0 +1,25 @@
+# qip
+
+> qip is a small, deterministic host for composing WebAssembly modules over text, bytes, and images across CLI, browser, and web routing workflows.
+
+qip favors explicit contracts and simple pipelines. Modules are sandboxed (no filesystem, no network, no environment access), and hosts compose them into predictable stage-by-stage processing.
+
+## Core Docs
+
+- [How qip works](/docs/how-it-works.md): End-to-end runtime model for modules, routing, and recipes.
+- [Module contract](/docs/module-contract.md): Required exports, memory pointers, capacities, and host interaction rules.
+- [Module patterns](/docs/module-patterns.md): Practical implementation patterns for qip modules.
+- [Comply](/docs/comply.md): Compliance checks and ABI verification guidance.
+- [Security model](/docs/security-model.md): Sandboxing boundaries and trust assumptions.
+
+## Router & Site Building
+
+- [Router](/docs/router.md): `qip router` and `qip dev` behavior, route resolution, and WARC flow.
+- [Recipes](/docs/recipes.md): Recipe discovery/order and content-vs-WARC processing layers.
+- [Content layout](/docs/content.md): Content root layout and path rules.
+- [Formats and encodings](/docs/formats.md): Preferred content formats used throughout qip.
+
+## Project Entry Points
+
+- [Homepage source](/index.md): Project overview and examples.
+- [Docs index source](/docs/index.md): Top-level docs map.
