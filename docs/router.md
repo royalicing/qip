@@ -39,6 +39,28 @@ Related references:
 - [Content Layout](/docs/content)
 - [Recipe Layout](/docs/recipes)
 
+## Content Roots: Local or GitHub
+
+`<content_dir>` can be either:
+
+- local directory path (existing behavior), for example `./site`
+- GitHub repo locator, for example `github:cool-calm/collected-press/site`
+
+For GitHub roots, qip uses a two-step flow:
+
+1. Fetch repo HEAD SHA (git `info/refs` style endpoint).
+2. Fetch file bytes from GitHub raw CDN pinned to that SHA.
+
+That means each runtime load is immutable once resolved: all content in that run comes from one commit SHA.
+
+Examples:
+
+```sh
+qip dev github:cool-calm/collected-press/site --recipes ./recipes --modules ./modules
+qip router get github:cool-calm/collected-press/site /docs/how-it-works --recipes ./recipes
+qip router warc github:cool-calm/collected-press/site --recipes ./recipes > site.warc
+```
+
 ## Route Behavior
 
 Given a content file like `site/docs/module-contract.md`, qip routes:

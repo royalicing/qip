@@ -30,6 +30,11 @@ type ContentRoute struct {
 	SourceMIME string
 }
 
+type ContentRouteEntry struct {
+	RelPath  string
+	FilePath string
+}
+
 type TrailingSlashMode string
 
 const (
@@ -239,10 +244,7 @@ func normalizeRouteOptions(options RouteOptions) RouteOptions {
 
 func BuildContentRoutes(contentRoot string, options RouteOptions) (map[string]ContentRoute, error) {
 	options = normalizeRouteOptions(options)
-	files := make([]struct {
-		rel  string
-		full string
-	}, 0, 32)
+	files := make([]ContentRouteEntry, 0, 32)
 	rootInfo, err := os.Stat(contentRoot)
 	if err != nil {
 		return nil, err
@@ -289,10 +291,7 @@ func BuildContentRoutes(contentRoot string, options RouteOptions) (map[string]Co
 			fullPath := filepath.Join(readDir, name)
 			mode := entry.Type()
 			if mode.IsRegular() {
-				files = append(files, struct {
-					rel  string
-					full string
-				}{rel: relPath, full: fullPath})
+				files = append(files, ContentRouteEntry{RelPath: relPath, FilePath: fullPath})
 				continue
 			}
 			if mode.IsDir() {
@@ -310,10 +309,7 @@ func BuildContentRoutes(contentRoot string, options RouteOptions) (map[string]Co
 				return err
 			}
 			if targetInfo.Mode().IsRegular() {
-				files = append(files, struct {
-					rel  string
-					full string
-				}{rel: relPath, full: fullPath})
+				files = append(files, ContentRouteEntry{RelPath: relPath, FilePath: fullPath})
 				continue
 			}
 			if targetInfo.IsDir() {
@@ -332,16 +328,31 @@ func BuildContentRoutes(contentRoot string, options RouteOptions) (map[string]Co
 		return nil, err
 	}
 
+	return BuildContentRoutesFromEntries(files, options)
+}
+
+func BuildContentRoutesFromEntries(entries []ContentRouteEntry, options RouteOptions) (map[string]ContentRoute, error) {
+	options = normalizeRouteOptions(options)
+	files := make([]ContentRouteEntry, 0, len(entries))
+	for _, entry := range entries {
+		if err := validateContentRelPath(entry.RelPath); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(entry.FilePath) == "" {
+			return nil, fmt.Errorf("content path %q is missing file path", entry.RelPath)
+		}
+		files = append(files, entry)
+	}
 	sort.Slice(files, func(i, j int) bool {
-		return files[i].rel < files[j].rel
+		return files[i].RelPath < files[j].RelPath
 	})
 
 	routes := make(map[string]ContentRoute, len(files))
 	for _, entry := range files {
-		aliases := contentRequestPaths(entry.rel, options)
+		aliases := contentRequestPaths(entry.RelPath, options)
 		route := ContentRoute{
-			FilePath:   entry.full,
-			SourceMIME: detectSourceMIME(entry.rel),
+			FilePath:   entry.FilePath,
+			SourceMIME: detectSourceMIME(entry.RelPath),
 		}
 		for _, requestPath := range aliases {
 			if prev, exists := routes[requestPath]; exists && prev.FilePath != route.FilePath {
@@ -350,7 +361,6 @@ func BuildContentRoutes(contentRoot string, options RouteOptions) (map[string]Co
 			routes[requestPath] = route
 		}
 	}
-
 	return routes, nil
 }
 

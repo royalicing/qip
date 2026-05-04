@@ -2101,6 +2101,7 @@ type moduleAsset struct {
 
 type devRuntimeState struct {
 	contentRoutes      map[string]qinternal.ContentRoute
+	contentRead        contentReadFunc
 	routeOptions       qinternal.RouteOptions
 	recipeChains       map[string]*qinternal.Pipeline
 	recipeOutput       map[string]string
@@ -2155,12 +2156,8 @@ func devCmd(args []string) {
 		gameOver("Invalid port: %d", port)
 	}
 
-	contentInfo, err := os.Stat(contentRoot)
-	if err != nil {
-		gameOver("Invalid content directory: %v", err)
-	}
-	if !contentInfo.IsDir() {
-		gameOver("Invalid content directory: %q is not a directory", contentRoot)
+	if err := validateContentRootArg(contentRoot); err != nil {
+		gameOver("%v", err)
 	}
 
 	if recipesRoot != "" {
@@ -2367,12 +2364,8 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		requestPath = "/"
 	}
 
-	contentInfo, err := os.Stat(contentRoot)
-	if err != nil {
-		gameOver("Invalid content directory: %v", err)
-	}
-	if !contentInfo.IsDir() {
-		gameOver("Invalid content directory: %q is not a directory", contentRoot)
+	if err := validateContentRootArg(contentRoot); err != nil {
+		gameOver("%v", err)
 	}
 
 	if recipesRoot != "" {
@@ -2502,12 +2495,8 @@ func routeListCmd(args []string) {
 	}
 	contentRoot := rest[0]
 
-	contentInfo, err := os.Stat(contentRoot)
-	if err != nil {
-		gameOver("Invalid content directory: %v", err)
-	}
-	if !contentInfo.IsDir() {
-		gameOver("Invalid content directory: %q is not a directory", contentRoot)
+	if err := validateContentRootArg(contentRoot); err != nil {
+		gameOver("%v", err)
 	}
 
 	if recipesRoot != "" {
@@ -2706,12 +2695,8 @@ func routerCmd(args []string) {
 			contentTypeChecking: ContentTypeCheckingStrong,
 		}
 
-		contentInfo, err := os.Stat(request.ContentRoot)
-		if err != nil {
-			return nil, fmt.Errorf("Invalid content directory: %v", err)
-		}
-		if !contentInfo.IsDir() {
-			return nil, fmt.Errorf("Invalid content directory: %q is not a directory", request.ContentRoot)
+		if err := validateContentRootArg(request.ContentRoot); err != nil {
+			return nil, err
 		}
 
 		if request.RecipesRoot != "" {
@@ -2863,7 +2848,13 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 				}, nil
 			}
 
-			inputBytes, err := os.ReadFile(route.FilePath)
+			contentRead := current.contentRead
+			if contentRead == nil {
+				contentRead = func(_ context.Context, route qinternal.ContentRoute) ([]byte, error) {
+					return os.ReadFile(route.FilePath)
+				}
+			}
+			inputBytes, err := contentRead(r.Context(), route)
 			if err != nil {
 				stateMu.RUnlock()
 				return qinternal.RoutedResponse{}, err
@@ -3025,7 +3016,7 @@ func resolveModuleAssetResponse(requestPath string, state *devRuntimeState) (qin
 }
 
 func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot string, formsRoot string, modulesRoot string, opts options, routeOptions qinternal.RouteOptions) (*devRuntimeState, error) {
-	contentRoutes, err := qinternal.BuildContentRoutes(contentRoot, routeOptions)
+	contentRoutes, contentRead, err := loadContentRoutesAndReader(ctx, contentRoot, routeOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -3076,6 +3067,7 @@ func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot st
 	}
 	return &devRuntimeState{
 		contentRoutes:      contentRoutes,
+		contentRead:        contentRead,
 		routeOptions:       routeOptions,
 		recipeChains:       recipeChains,
 		recipeOutput:       recipeOutput,
