@@ -1,6 +1,6 @@
 # JavaScript Runner: Annotated Source
 
-This runner keeps the qip contract tiny in pure JavaScript: write bytes to `input_ptr`, call `run(input_size)`, read bytes from `output_ptr`.
+The qip contract in tiny, pure JavaScript. Write bytes to `input_ptr`, call `run(input_size)`, read bytes from `output_ptr`.
 
 - Raw source: [`/qip-runner.js`](/qip-runner.js)
 - API:
@@ -8,63 +8,46 @@ This runner keeps the qip contract tiny in pure JavaScript: write bytes to `inpu
   - `const recipe = new QIP.Recipe(inputMimeType, modules); await recipe.run(input)`
 
 <style>
+main { max-width: none; }
+
 .annotated-source {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-}
-.annotated-source td {
-  vertical-align: top;
-  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  padding: 0.75rem;
-}
-.annotated-source td:first-child {
-  width: 32%;
-}
-.annotated-source td:last-child {
-  width: 68%;
-}
-.annotated-source pre {
-  margin: 0;
-  white-space: pre;
-  overflow-x: auto;
+  
+  td {
+    vertical-align: top;
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    padding: 0.75rem;
+  }
+  td:first-child {
+    width: 32%;
+  }
+  td:last-child {
+    width: 68%;
+  }
+  pre {
+    margin: 0;
+    white-space: pre;
+    overflow-x: auto;
+  }
 }
 </style>
 
 <table class="annotated-source">
   <tr>
     <td>
-      <strong>UMD wrapper + public names</strong><br>
-      The file works in browser and Node. It exports `QIP` globally and `module.exports` for CommonJS.
-    </td>
-    <td>
-<pre><code>(function (root, factory) {
-  const api = factory();
-  if (typeof module === "object" && module.exports) {
-    module.exports = api;
-  }
-  if (typeof root === "object" && root) {
-    root.QIP = api;
-  }
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  "use strict";
-</code></pre>
-    </td>
-  </tr>
-
-  <tr>
-    <td>
       <strong>Core utilities</strong><br>
       Numeric conversion, MIME normalization, and export value reading all fail fast with explicit errors.
     </td>
     <td>
-<pre><code>const textEncoder = new TextEncoder();
+<pre><code class="language-js">const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 function toI32(value, label) {
   const n = typeof value === "bigint" ? Number(value) : value;
   if (typeof n !== "number" || !Number.isFinite(n)) {
-    throw new Error(label + " returned non-finite numeric value");
+    throw Error(label + " returned non-finite numeric value");
   }
   return n | 0;
 }
@@ -82,7 +65,7 @@ function valueFromExport(exportsObj, name, required) {
   if (typeof value === "function") return toI32(value(), name);
   if (value instanceof WebAssembly.Global) return toI32(value.value, name);
   if (typeof value === "number" || typeof value === "bigint") return toI32(value, name);
-  if (required) throw new Error("module missing export " + name);
+  if (required) throw Error("module missing export " + name);
   return null;
 }
 </code></pre>
@@ -95,32 +78,32 @@ function valueFromExport(exportsObj, name, required) {
       Every memory read/write performs pointer and bounds checks.
     </td>
     <td>
-<pre><code>function readSlice(memory, ptr, len, label) {
+<pre><code class="language-js">function readSlice(memory, ptr, len, label) {
   if (!(memory instanceof WebAssembly.Memory)) {
-    throw new Error("module export memory must be WebAssembly.Memory");
+    throw Error("module export memory must be WebAssembly.Memory");
   }
   if (ptr < 0 || len < 0) {
-    throw new Error(label + " returned negative pointer/size");
+    throw Error(label + " returned negative pointer/size");
   }
   const start = ptr >>> 0;
   const size = len >>> 0;
   const end = start + size;
   const mem = new Uint8Array(memory.buffer);
   if (end < start || end > mem.length) {
-    throw new Error(label + " exceeds wasm memory bounds");
+    throw Error(label + " exceeds wasm memory bounds");
   }
   return mem.slice(start, end);
 }
 
 function writeSlice(memory, ptr, bytes, label) {
   if (!(memory instanceof WebAssembly.Memory)) {
-    throw new Error("module export memory must be WebAssembly.Memory");
+    throw Error("module export memory must be WebAssembly.Memory");
   }
   const start = ptr >>> 0;
   const end = start + bytes.length;
   const mem = new Uint8Array(memory.buffer);
   if (ptr < 0 || end < start || end > mem.length) {
-    throw new Error(label + " exceeds wasm memory bounds");
+    throw Error(label + " exceeds wasm memory bounds");
   }
   mem.set(bytes, start);
 }
@@ -134,7 +117,7 @@ function writeSlice(memory, ptr, bytes, label) {
       `wasmModule` can be an instance, compiled module, URL string, `Response`, `Uint8Array`, `ArrayBuffer`, or typed view.
     </td>
     <td>
-<pre><code>async function instantiateWasm(wasmModule) {
+<pre><code class="language-js">async function instantiateWasm(wasmModule) {
   if (wasmModule instanceof WebAssembly.Instance) return wasmModule;
 
   if (wasmModule instanceof WebAssembly.Module) {
@@ -145,7 +128,7 @@ function writeSlice(memory, ptr, bytes, label) {
   if (typeof wasmModule === "string") {
     const response = await fetch(wasmModule);
     if (!response.ok) {
-      throw new Error("failed to fetch wasm module: " + response.status + " " + response.statusText);
+      throw Error("failed to fetch wasm module: " + response.status + " " + response.statusText);
     }
     const bytes = await response.arrayBuffer();
     const out = await WebAssembly.instantiate(bytes, {});
@@ -170,14 +153,14 @@ function writeSlice(memory, ptr, bytes, label) {
       The runner supports qip’s dual style exports: function or global for pointers/caps.
     </td>
     <td>
-<pre><code>function parseInputSignature(exportsObj) {
+<pre><code class="language-js">function parseInputSignature(exportsObj) {
   const inputPtr = valueFromExport(exportsObj, "input_ptr", true);
   const utf8Cap = valueFromExport(exportsObj, "input_utf8_cap", false);
   const bytesCap = valueFromExport(exportsObj, "input_bytes_cap", false);
 
   if (utf8Cap !== null) return { ptr: inputPtr, cap: utf8Cap, kind: "utf8" };
   if (bytesCap !== null) return { ptr: inputPtr, cap: bytesCap, kind: "bytes" };
-  throw new Error("module must export input_utf8_cap or input_bytes_cap");
+  throw Error("module must export input_utf8_cap or input_bytes_cap");
 }
 
 function parseOutputSignature(exportsObj) {
@@ -204,12 +187,12 @@ function parseOutputSignature(exportsObj) {
       This is the qip loop: validate types, write input bytes, call `run`, read output.
     </td>
     <td>
-<pre><code>async function runDetailed(wasmModule, input, inputContentType) {
+<pre><code class="language-js">async function runDetailed(wasmModule, input, inputContentType) {
   const instance = await instantiateWasm(wasmModule);
   const exportsObj = instance.exports;
   const runExport = exportsObj.run;
   if (typeof runExport !== "function") {
-    throw new Error("module missing export run");
+    throw Error("module missing export: run");
   }
 
   const inputSignature = parseInputSignature(exportsObj);
@@ -217,26 +200,27 @@ function parseOutputSignature(exportsObj) {
 
   const normalized = toInputBytes(input);
   if (normalized.bytes.length > inputSignature.cap) {
-    throw new Error("input is too large for module");
+    throw Error("input is too large for module");
   }
 
   writeSlice(exportsObj.memory, inputSignature.ptr, normalized.bytes, "input_ptr");
   const outputLen = toI32(runExport(normalized.bytes.length), "run");
 
+  // TODO: remove this
   if (outputSignature.kind === "scalar") {
-    return { value: outputLen, kind: "scalar" };
+    return outputLen;
   }
 
   const byteLen = outputLen * outputSignature.itemSize;
   const outputBytes = readSlice(exportsObj.memory, outputSignature.ptr, byteLen, "output_ptr");
 
   if (outputSignature.kind === "utf8") {
-    return { value: textDecoder.decode(outputBytes), bytes: outputBytes, kind: "utf8" };
+    return textDecoder.decode(outputBytes);
   }
   if (outputSignature.kind === "bytes") {
-    return { value: outputBytes, bytes: outputBytes, kind: "bytes" };
+    return outputBytes;
   }
-  return { value: new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen), kind: "i32" };
+  return new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen);
 }
 </code></pre>
     </td>
@@ -248,7 +232,7 @@ function parseOutputSignature(exportsObj) {
       This returns only the stage output value: `string`, `Uint8Array`, `Int32Array`, or scalar `number`.
     </td>
     <td>
-<pre><code>async function run(wasmModule, input) {
+<pre><code class="language-js">export async function run(wasmModule, input) {
   const result = await runDetailed(wasmModule, input, "");
   return result.value;
 }
@@ -262,10 +246,10 @@ function parseOutputSignature(exportsObj) {
       `Recipe` composes multiple run modules in stage order and tracks final MIME/kind metadata.
     </td>
     <td>
-<pre><code>class Recipe {
+<pre><code class="language-js">export class Recipe {
   constructor(inputMimeType, arrayOfWasmModules) {
     if (!Array.isArray(arrayOfWasmModules) || arrayOfWasmModules.length === 0) {
-      throw new Error("Recipe requires a non-empty array of wasm modules");
+      throw Error("Recipe requires a non-empty array of wasm modules");
     }
     this.inputMimeType = normalizeMimeType(inputMimeType);
     this.modules = arrayOfWasmModules.slice();
@@ -280,7 +264,7 @@ function parseOutputSignature(exportsObj) {
       const isLast = i === this.modules.length - 1;
       const result = await runDetailed(this.modules[i], current, currentMimeType);
       if (!isLast && (result.kind === "scalar" || result.kind === "i32")) {
-        throw new Error("only utf8/bytes can be piped to another stage");
+        throw Error("only utf8/bytes can be piped to another stage");
       }
       current = result.value;
       if (result.outputContentType !== "") currentMimeType = result.outputContentType;
@@ -290,21 +274,6 @@ function parseOutputSignature(exportsObj) {
     return current;
   }
 }
-</code></pre>
-    </td>
-  </tr>
-
-  <tr>
-    <td>
-      <strong>Export surface</strong><br>
-      The runtime intentionally exports only two API points.
-    </td>
-    <td>
-<pre><code>return {
-  run,
-  Recipe,
-};
-});
 </code></pre>
     </td>
   </tr>
