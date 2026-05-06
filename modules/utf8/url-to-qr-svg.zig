@@ -4,12 +4,12 @@ const INPUT_CAP: usize = 1024;
 const OUTPUT_CAP: usize = 512 * 1024;
 const OUTPUT_CONTENT_TYPE = "image/svg+xml";
 
-const VERSION: usize = 1;
+const VERSION: usize = 5;
 const SIZE: usize = VERSION * 4 + 17;
-const DATA_CODEWORDS: usize = 19;
-const ECC_CODEWORDS: usize = 7;
+const DATA_CODEWORDS: usize = 108;
+const ECC_CODEWORDS: usize = 26;
 const TOTAL_CODEWORDS: usize = DATA_CODEWORDS + ECC_CODEWORDS;
-const MAX_URL_BYTES: usize = 17;
+const MAX_URL_BYTES: usize = 100;
 
 const QUIET_ZONE_MODULES: usize = 4;
 const MODULE_SIZE_PX: usize = 8;
@@ -132,7 +132,7 @@ fn buildDataCodewords(url: []const u8, data: *[DATA_CODEWORDS]u8) !void {
 }
 
 fn appendErrorCodewords(data: [DATA_CODEWORDS]u8, codewords: *[TOTAL_CODEWORDS]u8) void {
-    const gen = [_]u8{ 87, 229, 146, 149, 238, 102, 21 };
+    const gen = [_]u8{ 246, 51, 183, 4, 136, 98, 199, 152, 77, 56, 206, 24, 145, 40, 209, 117, 233, 42, 135, 68, 70, 144, 146, 77, 43, 94 };
     var ecc: [ECC_CODEWORDS]u8 = [_]u8{0} ** ECC_CODEWORDS;
 
     for (data) |d| {
@@ -190,6 +190,19 @@ fn reserveFormatAreas(mods: *[SIZE][SIZE]bool, is_function: *[SIZE][SIZE]bool) v
     while (i < 7) : (i += 1) setFunction(mods, is_function, SIZE - 1 - i, 8, false);
 }
 
+fn drawAlignmentPattern(mods: *[SIZE][SIZE]bool, is_function: *[SIZE][SIZE]bool, center_r: usize, center_c: usize) void {
+    var dy: i32 = -2;
+    while (dy <= 2) : (dy += 1) {
+        var dx: i32 = -2;
+        while (dx <= 2) : (dx += 1) {
+            const r = @as(usize, @intCast(@as(i32, @intCast(center_r)) + dy));
+            const c = @as(usize, @intCast(@as(i32, @intCast(center_c)) + dx));
+            const dist = @max(@abs(dy), @abs(dx));
+            setFunction(mods, is_function, r, c, dist != 1);
+        }
+    }
+}
+
 fn drawFunctionPatterns(mods: *[SIZE][SIZE]bool, is_function: *[SIZE][SIZE]bool) void {
     drawFinder(mods, is_function, 0, 0);
     drawFinder(mods, is_function, 0, SIZE - 7);
@@ -203,6 +216,7 @@ fn drawFunctionPatterns(mods: *[SIZE][SIZE]bool, is_function: *[SIZE][SIZE]bool)
     }
 
     setFunction(mods, is_function, SIZE - 8, 8, true);
+    drawAlignmentPattern(mods, is_function, 30, 30);
     reserveFormatAreas(mods, is_function);
 }
 
@@ -376,6 +390,12 @@ test "generates svg qr for short URL" {
     try std.testing.expect(std.mem.indexOf(u8, out, "<rect x=\"") != null);
 }
 
-test "rejects long url beyond version-1 byte capacity" {
-    try std.testing.expectError(error.InputTooLong, generateSvg("https://a.co/12345", output_buf[0..]));
+test "accepts url of exactly 100 bytes" {
+    const out_len = try generateSvg("https://example.com/path/to/a-resource-that-is-exactly-one-hundred-characters-long-with-paddingggg!!", output_buf[0..]);
+    try std.testing.expect(out_len > 0);
+    try std.testing.expect(std.mem.startsWith(u8, output_buf[0..@as(usize, @intCast(out_len))], "<svg "));
+}
+
+test "rejects url beyond version-5 byte capacity" {
+    try std.testing.expectError(error.InputTooLong, generateSvg("https://example.com/path/to/a/resource/that/is/really/quite/long/and/exceeds/the/one/hundred/bytes/limit/clearly", output_buf[0..]));
 }
