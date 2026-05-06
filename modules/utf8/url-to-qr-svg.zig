@@ -88,7 +88,8 @@ fn gfMul(a_in: u8, b_in: u8) u8 {
 
 fn pushBits(bitbuf: []u8, bit_len: *usize, value: u32, count: usize) !void {
     if (count == 0) return;
-    if (bit_len.* + count > bitbuf.len) return error.DataOverflow;
+    const end = bit_len.* + count;
+    if (end > bitbuf.len) return error.DataOverflow;
     var i: usize = 0;
     while (i < count) : (i += 1) {
         const shift = count - 1 - i;
@@ -376,5 +377,5 @@ test "generates svg qr for short URL" {
 }
 
 test "rejects long url beyond version-1 byte capacity" {
-    try std.testing.expectError(error.InputTooLong, generateSvg("https://example.com/too/long", output_buf[0..]));
+    try std.testing.expectError(error.InputTooLong, generateSvg("https://a.co/12345", output_buf[0..]));
 }
