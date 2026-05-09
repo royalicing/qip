@@ -8,7 +8,7 @@ h1 { text-align: center; }
 
 ## _write (or vibe) code that runs quickly & securely everywhere_
 
-A tiny runtime that runs composable WebAssembly modules securely in the browser, server, and native.
+A small runtime that runs composable WebAssembly modules securely in the browser, server, and native.
 
 ```bash
 go install github.com/royalicing/qip@latest

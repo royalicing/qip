@@ -1,18 +1,14 @@
 # `qip`
 
-Pockets of speed safely sewn together.
+A small runtime to run composable WebAssembly modules securely in the browser, server, and native.
 
-`qip` is a tool for running composable modules within a strict sandbox. Modules work with text, data, and images and can be composed together into powerful pipelines. They run in the browser, on the server, natively on mobile and desktop.
+You provide modules compiled to WebAssembly that work with text, data, and images and compose them together into powerful pipelines. You can run them the browser, on the server, or natively on mobile and desktop.
 
-- **Quarantined**: modules run in a secure sandbox, with explicit input and output.
-- **Immutable**: modules are self-contained compiled .wasm units and usually avoid constant dependency updates.
-- **Portable**: WebAssembly pipelines run identically across platforms.
+- Quarantined: modules are provided a single buffer as input and are sandboxed with zero access to the host (no fs/network/env).
+- Immutable: modules are self-contained, once you have a working module it will keep working forever.
+- Portable: modules can be composed into pipelines that run identically across platforms.
 
-These attributes make agentic coding the perfect fit for creating modules. Coding agents are now good enough that you can vibe C or Zig modules that run super fast, while WebAssembly ensures strong isolation from the rest of the system.
-
-Planned host integrations include Swift, React, and Elixir, making reusable logic that is write once, run anywhere.
-
-![qip logo](qip-logo.svg)
+These make qip modules deterministic: the same input with the same WebAssembly module will produce the same output. You are encouraged to write small, focused modules that do one job. These constraints also make a good pairing with untrusted AI coding tools: write single-file C or Zig that is easy to review and compiles to decently fast `.wasm`.
 
 ## Install
 
@@ -20,62 +16,34 @@ Planned host integrations include Swift, React, and Elixir, making reusable logi
 go install github.com/royalicing/qip@latest
 ```
 
-### Collaborator tools (build/test modules)
+## Module contract
 
-If you are contributing modules or running the full `Makefile`, install these tools:
+qip does not use WASI or WIT, standards that have ballooned in complexity due to scope creep. To get stuff done in today’s browsers we use a much smaller contract between hosts and modules:
 
-- Go (required for `qip` CLI): https://go.dev/doc/install
-- Zig (used for `.zig` and `.c` -> `.wasm` builds): https://ziglang.org/download/
-- `wat2wasm` from WABT (used for `.wat` -> `.wasm` builds): https://github.com/WebAssembly/wabt
+- `input_ptr` / `input_utf8_cap`: where `qip` writes input bytes.
+- `output_ptr` / `output_utf8_cap`: where your module writes its output bytes.
+- `run(input_size)`: function to process input and return output length in bytes.
 
-Quick installs:
+This contract (capacity, output, and optional content type metadata) is documented in:
 
-```bash
-# macOS (Homebrew)
-brew install go zig wabt
-
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install -y golang-go wabt
-```
-
-After installing dependencies, build in parallel:
-
-```bash
-make -j modules recipes
-```
-
-You can clone this repo to use the modules that are provided in `./modules`.
-For compatibility, `./examples` keeps symlinks to the same module files.
-
-Current module layout groups by content type (and by non-MIME domains where useful):
-
-```text
-modules/
-  utf8/
-  text/html/
-  text/markdown/
-  text/css/
-  text/javascript/
-  text/x-c/
-  image/svg+xml/
-  bytes/
-  rgba/
-  form/
-```
+- [`docs/module-contract.md`](./docs/module-contract.md#webassembly-module-contract)
 
 ## Usage
 
-You can pipe the results of other tools to stdin or pass files in via `-i`. You can then chain multiple wasm modules together.
+You can pipe the results of other cli tools to stdin or pass files in via `-i`. You can also chain multiple qip wasm modules together.
 
 ```bash
 # Normalize phone number
 echo "+1 (212) 555-0100" | qip run modules/utf8/e164.wasm
 # +12125550100
 
-# Convert WebAssembly purple from rgb to hex
+# Convert purple from rgb to hex
 echo "rgb(101, 79, 240)" | qip run modules/utf8/rgb-to-hex.wasm
 # #654ff0
+
+# Expand emoji shortcodes
+echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run modules/utf8/shortcode-to-emoji.wasm
+# Run 🚀 WebAssembly pipelines identically on any computer ✨
 
 # Create zlib bytes (dynamic Huffman, shown as base64)
 echo "qip + wasm" | qip run modules/bytes/zlib-compress-dynamic-huffman.wasm modules/bytes/base64-encode.wasm
@@ -85,173 +53,27 @@ echo "qip + wasm" | qip run modules/bytes/zlib-compress-dynamic-huffman.wasm mod
 echo "qip + wasm" | qip run modules/bytes/zlib-compress-dynamic-huffman.wasm modules/bytes/zlib-decompress.wasm
 # qip + wasm
 
-# Expand emoji shortcodes
-echo "Run :rocket: WebAssembly pipelines identically on any computer :sparkles:" | qip run modules/utf8/shortcode-to-emoji.wasm
-# Run 🚀 WebAssembly pipelines identically on any computer ✨
-
 #  Load Hacker News, extractor all links with text
 curl -s https://news.ycombinator.com | qip run modules/text/html/html-link-extractor.wasm | grep "^https:"
 
-# Render .svg to .ico
+# Rasterize logo SVG to ICO
 qip run -i qip-logo.svg modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm > qip-logo.ico
 
-# Render Switzerland flag svg to .ico
+# Render Switzerland flag SVG to ICO
 echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
 
-# Test execution timeout safeguards with a module that never returns
+# Execution timeouts after 100 milliseconds
 echo "x" | qip run modules/utf8/infinite-loop.wasm
-# Wasm module exceeded the execution time limit (100ms)
+# Error: Wasm module exceeded the execution time limit (100ms)
 ```
-
-### Benchmark and compare modules
-
-### Compare Compression Ratios
-
-Use the comparison harness to measure ratio and speed across `qip`, Python, Go, Bun, and available PATH tools.
-
-```bash
-# Compare on existing files
-./tools/compare-deflate.py --runs 5 --warmup 1 README.md main.go
-
-# Compare on synthetic data
-head -c 262144 /dev/zero > /tmp/qip-bench-zeros-256k.bin
-head -c 262144 /dev/urandom > /tmp/qip-bench-random-256k.bin
-./tools/compare-deflate.py --runs 5 --warmup 1 /tmp/qip-bench-zeros-256k.bin /tmp/qip-bench-random-256k.bin
-```
-
-Benchmark the performance of one or more modules. If you compare multiple modules then it’ll check each output is exactly the same. This is great for porting say from C to Zig or asking your AI agent to implement optimizations and verifying that it works exactly the same as before.
-
-```bash
-# Benchmark module for two seconds
-echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm
-# bench: outputs match
-
-# Benchmark two modules against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm
-# bench: outputs match
-
-# Benchmark three modules against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm modules/utf8/hello-zig.wasm
-# bench: outputs match
-```
-
-### Dev server
-
-```bash
-# Serve a docs directory as a website.
-# If recipes/text/markdown/*.wasm exists, markdown files are transformed before serving.
-qip dev ./docs --recipes ./recipes -p 4000
-
-# Enable client-side <qip-form> tags.
-# <qip-form name="form-email-message"></qip-form> resolves to ./modules/form/form-email-message.wasm.
-qip dev ./docs --recipes ./recipes --forms ./modules/form -p 4000
-
-# Serve browser-loadable wasm modules under /modules/*
-qip dev ./docs --recipes ./recipes --modules ./modules -p 4000
-
-# Pages containing <qip-preview> automatically get a client runtime that executes
-# <source type="application/wasm"> modules in order and renders into [name="output"].
-
-# Serve static assets with no recipe transforms
-qip dev ./public -p 4001
-
-# Reload routes, recipes, forms, and modules without stopping the server
-kill -HUP <qip-dev-pid>
-```
-
-### Router
-
-The router flow is content-first:
-
-1. Put content in a directory (Markdown, HTML, images, CSS, etc.).
-2. Optionally add recipe modules (for example `recipes/text/markdown/*.wasm`) to transform source files before serving.
-3. Preview locally with `qip dev`.
-4. Export the fully routed site and convert it to static files.
-
-Example content:
-
-```text
-docs/
-  index.md
-  about.md
-  images/logo.png
-recipes/
-  text/markdown/10-markdown-basic.wasm
-  text/markdown/20-html-page-wrap.wasm
-```
-
-Preview in dev mode:
-
-```bash
-qip dev ./docs --recipes ./recipes -p 4000
-```
-
-Resolve a single path through the same router pipeline:
-
-```bash
-qip router get ./docs /about --recipes ./recipes --modules ./modules
-qip router head ./docs /about --recipes ./recipes --modules ./modules
-qip router list ./docs --recipes ./recipes --modules ./modules
-```
-
-Build static output from the routed site (no intermediate `.warc` file on disk):
-
-```bash
-qip router warc ./docs --recipes ./recipes --modules ./modules \
-  | qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
-  > site.tar
-
-tar -tf site.tar
-```
-
-With the `warc-to-static-tar-no-trailing-slash` module, route paths like `/about` become `about.html` in the tar archive.
-
-### Image
-
-You can process images through a chain of rgba shaders. It breaks the work into 64x64 tiles.
-
-```bash
-qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/bw-invert-vignette.png modules/rgba/black-and-white.wasm modules/rgba/invert.wasm modules/rgba/vignette.wasm
-
-# Per-module uniforms via query args (quote the full query arg; `&` is special in shells)
-qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'
-
-# Multiple uniforms for one module in a single query arg
-printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48' > out.svg
-```
-
-## TODO
-
-- [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
-- [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
-- [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
-- [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
-- [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).
-- [ ] Add `qip serve` command that runs the server in `prod` mode by default, and includes a module upload endpoint.
-- [ ] Add `random_ptr` and `random_size` to modules that the host can detect and fill in with random data. It can choose to seed with determinism or use a cryptographic source of randomness — it’s up to the host.
-- [ ] Add `--postcondition` or `--outmust` flag to `qip run` that verifies the final output conforms to a particular module e.g. `--postcondition valid-xml-1.0.wasm`.
-- [ ] Add first-stage content-type guards: either lightweight ingress sniffing (check initial bytes against expected type) or validator modules (for example `validate-html.wasm`) that accept untrusted input and re-emit it with asserted MIME type on success.
-- [ ] Add `qip photocopy` command that observes an existing tool’s input/output behavior and generates a behaviorally similar QIP module implementation in wasm, then validates it with duel/fuzz tests and reports divergences.
-- [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/module-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
-
-## Documentation
-
-- [Module Contract](docs/module-contract.md)
-- [Module Patterns (including error semantics)](docs/module-patterns.md)
-- [Module Compliance](docs/comply.md)
-- [Security Model](docs/security-model.md)
-
----
 
 ## Guide to making modules
 
-There are a few recommended ways to write a qip module: Zig, C, or even raw WebAssembly text format.
+There are a few recommended languages for writing qip modules: Zig, C, or raw WebAssembly text format.
 
 ### Zig
 
-Here is a concrete, useful module you can build in a few minutes: an E.164 canonicalizer.
-
-Goal: turn noisy phone input into `+` followed by digits.
+Here we’ll write a qip module for an E.164 canonicalizer that takes a phone number and converts it into a canonical international form.
 
 - `+1 (212) 555-0100` -> `+12125550100`
 - `  1212-555-0100  ` -> `+12125550100`
@@ -259,12 +81,16 @@ Goal: turn noisy phone input into `+` followed by digits.
 #### 1. Create `e164.zig`
 
 ```zig
+// The input is maximum 64KiB
 const INPUT_CAP: usize = 64 * 1024;
+// The output is maximum 64KiB
 const OUTPUT_CAP: usize = 64 * 1024;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
+// Export functions so qip runner can read these values.
+// WebAssembly supports multiple return values but Zig and C unfortunately don’t.
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
@@ -290,20 +116,23 @@ export fn run(input_size_in: u32) u32 {
 
     // Emit '+' then append only digits.
     output_buf[0] = '+';
-    var out: usize = 1;
+    var output_size: usize = 1;
 
     var i: usize = 0;
     while (i < input_size) : (i += 1) {
         const c = input_buf[i];
+        
         if (!isDigit(c)) continue;
-
-        if (out >= OUTPUT_CAP) return 0;
-        output_buf[out] = c;
-        out += 1;
+        
+        if (output_size >= OUTPUT_CAP) @panic("output buffer overflow");
+        
+        output_buf[output_size] = c;
+        output_size += 1;
     }
 
-    // Invalid when no digits were present.
-    if (out == 1) return 0;
+    // If just '+' then return empty string.
+    if (output_size == 1) return 0;
+    
     return @as(u32, @intCast(out));
 }
 ```
@@ -332,12 +161,6 @@ echo "+1 (212) 555-0100" | qip run e164.wasm
 echo "  1212-555-0100  " | qip run e164.wasm
 # +12125550100
 ```
-
-#### 4. Understand the contract
-
-- `input_ptr` / `input_utf8_cap`: where `qip` writes input bytes.
-- `output_ptr` / `output_utf8_cap`: where your module writes output bytes.
-- `run(input_size)`: process input and return output length in bytes.
 
 ### C
 
@@ -434,18 +257,9 @@ printf "\t  line one  \n" | qip run trim.wasm
 # line one
 ```
 
-#### 4. Understand the contract
-
-- `input_ptr` / `input_utf8_cap`: where `qip` writes input bytes.
-- `output_ptr` / `output_utf8_cap`: where your module writes output bytes.
-- `run(input_size)`: process input and return output length in bytes.
-- In this module, `run` trims leading/trailing whitespace and returns the length of the trimmed slice.
-
 ### Raw WebAssembly
 
-You can write WebAssembly by hand, or AI coding tools work great too.
-
-The contract looks like:
+You can also write raw WebAssembly text format which compiles directly to `.wasm`. Here is a hello world example:
 
 ```wasm
 (module $YourTextModule
@@ -474,14 +288,188 @@ The contract looks like:
 )
 ```
 
-## WebAssembly module contract
+## Router
 
-The run-module contract (caps, output semantics, and optional content type metadata) is documented in:
+You can create static websites with `qip`:
 
-- [`docs/module-contract.md`](./docs/module-contract.md#webassembly-module-contract)
+1. Put website source content in a directory (Markdown, HTML, images, CSS, etc.).
+2. Add recipe qip modules (for example `recipes/text/markdown/*.wasm`) to transform source files by MIME type.
+3. Preview locally with `qip dev`.
+4. Export the fully routed site and convert it to static files with `qip router warc`.
 
-## Building the site
+Example content:
+
+```text
+docs/
+  index.md
+  about.md
+  images/logo.png
+recipes/
+  text/markdown/10-markdown-basic.wasm
+  text/markdown/20-html-page-wrap.wasm
+```
+
+Preview in dev mode:
 
 ```bash
-go install github.com/royalicing/qip@latest && make site-static
+qip dev ./docs --recipes ./recipes -p 4000
+open http://localhost:4000
 ```
+
+Resolve a single path through the same router pipeline:
+
+```bash
+# GET /about
+qip router get ./docs /about --recipes ./recipes
+# HEAD /about
+qip router head ./docs /about --recipes ./recipes
+# List all routes
+qip router list ./docs --recipes ./recipes
+```
+
+Build static tar from the site:
+
+```bash
+qip router warc ./docs --recipes ./recipes \
+  | qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
+  > site.tar
+
+tar -tf site.tar
+```
+
+With the `warc-to-static-tar-no-trailing-slash` module, route paths like `/about` become `about.html` in the tar archive.
+
+### Dev server
+
+```bash
+# Serve a docs directory as a website.
+# If recipes/text/markdown/*.wasm exists, markdown files are transformed before serving.
+qip dev ./docs --recipes ./recipes -p 4000
+
+# Enable client-side <qip-form> tags.
+# <qip-form name="form-email-message"></qip-form> resolves to ./modules/form/form-email-message.wasm.
+qip dev ./docs --recipes ./recipes --forms ./modules/form -p 4000
+
+# Serve browser-loadable wasm modules under /modules/*
+qip dev ./docs --recipes ./recipes --modules ./modules -p 4000
+
+# Pages containing <qip-preview> automatically get a client runtime that executes
+# <source type="application/wasm"> modules in order and renders into [name="output"].
+
+# Serve static assets with no recipe transforms
+qip dev ./public -p 4001
+
+# Reload routes, recipes, forms, and modules without stopping the server
+kill -HUP <qip-dev-pid>
+```
+
+## WIP: Image
+
+You can process images through a chain of rgba shaders. It breaks the work into 64x64 tiles.
+
+```bash
+qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/bw-invert-vignette.png modules/rgba/black-and-white.wasm modules/rgba/invert.wasm modules/rgba/vignette.wasm
+
+# Per-module uniforms via query args (quote the full query arg; `&` is special in shells)
+qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'
+
+# Multiple uniforms for one module in a single query arg
+printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48' > out.svg
+```
+
+## Documentation
+
+- [Module Contract](docs/module-contract.md)
+- [Module Patterns (including error semantics)](docs/module-patterns.md)
+- [Module Compliance](docs/comply.md)
+- [Security Model](docs/security-model.md)
+
+----
+
+## Required build tools
+
+If you are contributing modules or running the full `Makefile`, install these tools:
+
+- Go (required for `qip` CLI): https://go.dev/doc/install
+- Zig (used for `.zig` and `.c` -> `.wasm` builds): https://ziglang.org/download/
+- `wat2wasm` from WABT (used for `.wat` -> `.wasm` builds): https://github.com/WebAssembly/wabt
+
+Quick installs:
+
+```bash
+# macOS (Homebrew)
+brew install go zig wabt
+
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y golang-go wabt
+```
+
+After installing dependencies, build in parallel:
+
+```bash
+make -j modules recipes
+```
+
+You can clone this repo to use the modules that are provided in `./modules`.
+
+Current module layout groups by content type (or by encoding such as utf-8):
+
+```text
+modules/
+  bytes/
+  image/svg+xml/
+  text/css/
+  text/html/
+  text/javascript/
+  text/markdown/
+  text/x-c/
+  rgba/
+  utf8/
+```
+
+## Notes: Compare Compression Ratios
+
+Use the comparison harness to measure ratio and speed across `qip`, Python, Go, Bun, and available PATH tools.
+
+```bash
+# Compare on existing files
+./tools/compare-deflate.py --runs 5 --warmup 1 README.md main.go
+
+# Compare on synthetic data
+head -c 262144 /dev/zero > /tmp/qip-bench-zeros-256k.bin
+head -c 262144 /dev/urandom > /tmp/qip-bench-random-256k.bin
+./tools/compare-deflate.py --runs 5 --warmup 1 /tmp/qip-bench-zeros-256k.bin /tmp/qip-bench-random-256k.bin
+```
+
+Benchmark the performance of one or more modules. If you compare multiple modules then it’ll check each output is exactly the same. This is great for porting say from C to Zig or asking your AI agent to implement optimizations and verifying that it works exactly the same as before.
+
+```bash
+# Benchmark module for two seconds
+echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm
+# bench: outputs match
+
+# Benchmark two modules against each other and verify identical output
+echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm
+# bench: outputs match
+
+# Benchmark three modules against each other and verify identical output
+echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm modules/utf8/hello-zig.wasm
+# bench: outputs match
+```
+
+## TODO
+
+- [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
+- [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
+- [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
+- [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
+- [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).
+- [ ] Add `qip serve` command that runs the server in `prod` mode by default, and includes a module upload endpoint.
+- [ ] Add `random_ptr` and `random_size` to modules that the host can detect and fill in with random data. It can choose to seed with determinism or use a cryptographic source of randomness — it’s up to the host.
+- [ ] Add `--postcondition` or `--outmust` flag to `qip run` that verifies the final output conforms to a particular module e.g. `--postcondition valid-xml-1.0.wasm`.
+- [ ] Add first-stage content-type guards: either lightweight ingress sniffing (check initial bytes against expected type) or validator modules (for example `validate-html.wasm`) that accept untrusted input and re-emit it with asserted MIME type on success.
+- [ ] Add `qip photocopy` command that observes an existing tool’s input/output behavior and generates a behaviorally similar QIP module implementation in wasm, then validates it with duel/fuzz tests and reports divergences.
+- [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/module-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
+
+![qip logo](qip-logo.svg)
