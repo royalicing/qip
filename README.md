@@ -8,7 +8,7 @@ You provide modules compiled to WebAssembly that work with text, data, and image
 - Immutable: modules are self-contained, once you have a working module it will keep working forever.
 - Portable: modules can be composed into pipelines that run identically across platforms.
 
-These make qip modules deterministic: the same input with the same WebAssembly module will produce the same output. You are encouraged to write small, focused modules that do one job. These constraints also make a good pairing with untrusted AI coding tools: write single-file C or Zig that is easy to review and compiles to decently fast `.wasm`.
+These attributes make qip modules deterministic: the same input with the same WebAssembly module will produce the same output. You are encouraged to write small, focused modules that do one job. These constraints also make a good pairing with untrusted AI coding tools: write single-file C or Zig that is easy to review and compiles to decently fast `.wasm`.
 
 ## Install
 
