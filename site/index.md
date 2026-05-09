@@ -6,9 +6,7 @@ h1 { text-align: center; }
 
 # `qip`
 
-## _write (or vibe) code that runs quickly & securely everywhere_
-
-A small runtime that runs composable WebAssembly modules securely in the browser, server, and native.
+## _Run composable WebAssembly modules securely in the browser, server, and native_ ##
 
 ```bash
 go install github.com/royalicing/qip@latest
@@ -254,6 +252,4 @@ $ mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 ---
 
-## Vibe once, run everywhere
-
-TODO: explain why we’d want to invest into a particular implementation and run that everywhere.
+## Vibe once, run securely everywhere
