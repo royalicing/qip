@@ -6,7 +6,7 @@ h1 { text-align: center; }
 
 # `qip`
 
-## _Run composable WebAssembly modules securely in the browser, server, and native_ ##
+## _Run composable WebAssembly modules securely in the browser, server, cli & native_
 
 ```bash
 go install github.com/royalicing/qip@latest
