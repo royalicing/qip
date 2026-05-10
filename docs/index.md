@@ -5,6 +5,8 @@
 - [Router](/docs/router)
 - [How qip Works](/docs/how-it-works)
 - [JavaScript Runner (Annotated Source)](/docs/javascript-runner)
+- [Interactive ABI](/docs/interactive)
+- [Interactive Events](/docs/events)
 - [Formats and Encodings](/docs/formats)
 - [Security Model](/docs/security-model)
 - [Content Layout](/docs/content)

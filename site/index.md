@@ -4,9 +4,11 @@
 h1 { text-align: center; }
 </style>
 
-# `qip`
+# Securely Render Anything Anywhere
 
-## _Run composable WebAssembly modules securely in the browser, server, cli & native_
+QIP modules are WebAssembly components for files, graphics, and interactive UI. They compose like Unix pipes, speak MIME types, and run sandboxed in the browser, server, cli & native.
+
+Because WebAssembly is specifically designed to be self-contained & sandboxed you can using AI coding agents without worry. QIP modules have no access to your file system, network, or secrets. Plus you can vibe C or Zig to create really fast code.
 
 ```bash
 go install github.com/royalicing/qip@latest
@@ -252,4 +254,6 @@ $ mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 ---
 
-## Vibe once, run securely everywhere
+## vibe once, run securely everywhere
+
+## render everything anywhere securely

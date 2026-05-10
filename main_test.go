@@ -952,6 +952,35 @@ func TestRunOutputFlagImageReencodeByExtension(t *testing.T) {
 	}
 }
 
+func TestRunInteractiveModuleOutputsFirstFrameBMP(t *testing.T) {
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=TestHelperRunModuleCLI",
+		"--",
+		"modules/interactive/tile-world-12x12.wasm",
+	)
+	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("expected BMP bytes on stdout")
+	}
+
+	w, h, err := qinternal.GetBMPDimensions(stdout.Bytes())
+	if err != nil {
+		t.Fatalf("stdout was not BMP: %v", err)
+	}
+	if w != 288 || h != 288 {
+		t.Fatalf("bmp dimensions=%dx%d, want 288x288", w, h)
+	}
+}
+
 func TestRunOutputFlagImageReencodeRejectsNonImageOutput(t *testing.T) {
 	inputPath := filepath.Join(t.TempDir(), "in.txt")
 	if err := os.WriteFile(inputPath, []byte("hello"), 0o644); err != nil {
@@ -1578,6 +1607,50 @@ func TestInjectQIPPreviewRuntimeNoTag(t *testing.T) {
 	out := injectQIPPreviewRuntime(htmlBody)
 	if !bytes.Equal(out, htmlBody) {
 		t.Fatalf("expected html body to remain unchanged when no qip-preview tags are present")
+	}
+}
+
+func TestInjectQIPPlayRuntime(t *testing.T) {
+	htmlBody := []byte(`<html><body><h1>Play</h1><qip-play><source src="/modules/interactive/tile-world-12x12.wasm" type="application/wasm"></source></qip-play></body></html>`)
+	out := injectQIPPlayRuntime(htmlBody)
+	if !bytes.Contains(out, []byte(`<script type="module">`)) {
+		t.Fatalf("expected inline module script injection")
+	}
+	if !bytes.Contains(out, []byte(`customElements.define("qip-play"`)) {
+		t.Fatalf("expected qip-play custom element runtime")
+	}
+	scriptIdx := strings.Index(string(out), `<script type="module">`)
+	bodyCloseIdx := strings.Index(strings.ToLower(string(out)), `</body>`)
+	if scriptIdx == -1 || bodyCloseIdx == -1 || scriptIdx > bodyCloseIdx {
+		t.Fatalf("expected script to be injected before </body>")
+	}
+}
+
+func TestInjectQIPPlayRuntimeNoTag(t *testing.T) {
+	htmlBody := []byte(`<html><body><h1>Page</h1><p>No play.</p></body></html>`)
+	out := injectQIPPlayRuntime(htmlBody)
+	if !bytes.Equal(out, htmlBody) {
+		t.Fatalf("expected html body to remain unchanged when no qip-play tags are present")
+	}
+}
+
+func TestTryRunInteractiveModuleFirstFrame(t *testing.T) {
+	handled, bmp, err := tryRunInteractiveModuleFirstFrame(context.Background(), moduleSpec{
+		path:     "modules/interactive/tile-world-12x12.wasm",
+		uniforms: map[string]string{},
+	}, options{}, 2000)
+	if err != nil {
+		t.Fatalf("tryRunInteractiveModuleFirstFrame: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected interactive module to be handled")
+	}
+	w, h, err := qinternal.GetBMPDimensions(bmp)
+	if err != nil {
+		t.Fatalf("output was not BMP: %v", err)
+	}
+	if w != 288 || h != 288 {
+		t.Fatalf("bmp dimensions=%dx%d, want 288x288", w, h)
 	}
 }
 

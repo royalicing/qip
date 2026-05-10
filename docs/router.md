@@ -105,7 +105,7 @@ Per request:
 
 1. Resolve request path to a content file or module asset.
 2. For content pages, run matching content recipes (for example `recipes/text/markdown/*`).
-3. If response is HTML, inject runtime support for `<qip-form>` and `<qip-preview>`.
+3. If response is HTML, inject runtime support for `<qip-form>`, `<qip-preview>`, and `<qip-play>`.
 4. If `recipes/application/warc/*` exists, apply that WARC recipe layer to this page response too.
 5. Serve the final response.
 

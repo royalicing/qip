@@ -132,6 +132,7 @@ const usageHelp = "Usage: qip help [command]"
 var qipFormTagPattern = regexp.MustCompile(`(?is)<qip-form\b[^>]*>`)
 var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+))")
 var qipPreviewTagPattern = regexp.MustCompile(`(?is)<qip-preview\b[^>]*>`)
+var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
 const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a module path to set that module's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]
@@ -401,6 +402,20 @@ func runCmd(args []string) {
 	if opts.verbose {
 		inputDigest := sha256.Sum256(input)
 		vlogf(opts, "input sha256: %x", inputDigest)
+	}
+
+	if len(moduleSpecs) == 1 {
+		handled, bmpBytes, err := tryRunInteractiveModuleFirstFrame(context.Background(), moduleSpecs[0], opts, timeoutMS)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		if handled {
+			result := qinternal.NewRawBytesContentWithType(bmpBytes, "image/bmp")
+			if err := writeRunOutput(result, bmpBytes, outputPath, opts); err != nil {
+				gameOver("%v", err)
+			}
+			return
+		}
 	}
 
 	start := time.Now()
@@ -1865,6 +1880,131 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 	return exec.output, exec.instantiation, nil
 }
 
+func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec, opts options, timeoutMS int) (bool, []byte, error) {
+	body, err := readModulePath(spec.path, opts)
+	if err != nil {
+		return false, nil, err
+	}
+
+	execCtx := baseCtx
+	cancel := func() {}
+	if timeoutMS > 0 {
+		execCtx, cancel = wasmruntime.WithExecutionTimeout(baseCtx, time.Duration(timeoutMS)*time.Millisecond)
+	}
+	defer cancel()
+
+	runtime := wasmruntime.New(execCtx)
+	defer runtime.Close(baseCtx)
+
+	compiled, err := runtime.CompileModule(execCtx, body)
+	if err != nil {
+		return false, nil, errors.New("Wasm module could not be compiled")
+	}
+	defer compiled.Close(baseCtx)
+
+	mod, err := runtime.InstantiateModule(execCtx, compiled, wazero.NewModuleConfig().WithName("run-interactive-0"))
+	if err != nil {
+		return false, nil, errors.New("Wasm module could not be instantiated")
+	}
+	defer mod.Close(baseCtx)
+
+	// Keep run-module behavior unchanged when a module exports run(...).
+	if mod.ExportedFunction("run") != nil {
+		return false, nil, nil
+	}
+
+	requiredFuncs := []string{
+		"key_event",
+		"pointer_event",
+		"tick",
+		"render_output",
+		"render_width_px",
+		"render_height_px",
+	}
+	for _, name := range requiredFuncs {
+		if mod.ExportedFunction(name) == nil {
+			return false, nil, nil
+		}
+	}
+	if mod.Memory() == nil {
+		return false, nil, nil
+	}
+
+	outputPtrValue, ok, err := getExportedValue(execCtx, mod, "output_ptr")
+	if err != nil {
+		return false, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
+	}
+	if !ok {
+		return false, nil, nil
+	}
+	outputCapValue, ok, err := getExportedValue(execCtx, mod, "output_bytes_cap")
+	if err != nil {
+		return false, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
+	}
+	if !ok {
+		return false, nil, nil
+	}
+
+	if err := applyModuleUniforms(execCtx, mod, spec.uniforms); err != nil {
+		return false, nil, err
+	}
+
+	renderWidthVal, _, err := getExportedValue(execCtx, mod, "render_width_px")
+	if err != nil {
+		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
+	}
+	renderHeightVal, _, err := getExportedValue(execCtx, mod, "render_height_px")
+	if err != nil {
+		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
+	}
+	renderWidth := int(int32(renderWidthVal))
+	renderHeight := int(int32(renderHeightVal))
+	if renderWidth <= 0 || renderHeight <= 0 {
+		return true, nil, fmt.Errorf("%s: interactive module reported invalid render size %dx%d", spec.path, renderWidth, renderHeight)
+	}
+
+	tickFunc := mod.ExportedFunction("tick")
+	// Interactive snapshot contract: first tick is always tick(0),
+	// and modules should interpret later host ticks as elapsed ms from start.
+	if _, err := tickFunc.Call(execCtx, 0); err != nil {
+		return true, nil, fmt.Errorf("%s: tick(0) failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
+	}
+	renderOutputFunc := mod.ExportedFunction("render_output")
+	renderResult, err := renderOutputFunc.Call(execCtx)
+	if err != nil {
+		return true, nil, fmt.Errorf("%s: render_output() failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
+	}
+	if len(renderResult) != 1 {
+		return true, nil, fmt.Errorf("%s: render_output() returned %d values, want 1", spec.path, len(renderResult))
+	}
+
+	outputLen := int(int32(renderResult[0]))
+	expectedLen := renderWidth * renderHeight * 4
+	if outputLen != expectedLen {
+		return true, nil, fmt.Errorf("%s: render_output() returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.path, outputLen, expectedLen)
+	}
+
+	outputCap := int(outputCapValue)
+	if outputLen > outputCap {
+		return true, nil, fmt.Errorf("%s: render_output() exceeds output_bytes_cap (%d > %d)", spec.path, outputLen, outputCap)
+	}
+
+	outputPtr := uint32(outputPtrValue)
+	outputRaw, ok := mod.Memory().Read(outputPtr, uint32(outputLen))
+	if !ok {
+		return true, nil, fmt.Errorf("%s: could not read output frame", spec.path)
+	}
+	rgbaBytes := append([]byte(nil), outputRaw...)
+
+	frame := image.NewRGBA(image.Rect(0, 0, renderWidth, renderHeight))
+	copy(frame.Pix, rgbaBytes)
+	bmp, err := encodeBMP(frame)
+	if err != nil {
+		return true, nil, fmt.Errorf("%s: could not encode first interactive frame as BMP: %w", spec.path, err)
+	}
+	return true, bmp, nil
+}
+
 func executeModuleWithInput(
 	ctx context.Context,
 	runtime wazero.Runtime,
@@ -2910,6 +3050,7 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 						}, err
 					}
 					body = injectQIPPreviewRuntime(body)
+					body = injectQIPPlayRuntime(body)
 				}
 
 				response = qinternal.InProcessHTTPResponse{
@@ -3888,11 +4029,26 @@ func injectQIPPreviewRuntime(body []byte) []byte {
 	return injectInlineModuleScript(body, []byte(b.String()))
 }
 
+func injectQIPPlayRuntime(body []byte) []byte {
+	if !qipPlayTagPattern.Match(body) {
+		return body
+	}
+	var b strings.Builder
+	b.Grow(len(qipPlayClientRuntimeModuleJS) + 64)
+	b.WriteString("<script type=\"module\">\n")
+	b.WriteString(qipPlayClientRuntimeModuleJS)
+	b.WriteString("\n</script>")
+	return injectInlineModuleScript(body, []byte(b.String()))
+}
+
 //go:embed embedded/qip-form-client-runtime.js
 var qipFormClientRuntimeModuleJS string
 
 //go:embed embedded/qip-preview-client-runtime.js
 var qipPreviewClientRuntimeModuleJS string
+
+//go:embed embedded/qip-play-client-runtime.js
+var qipPlayClientRuntimeModuleJS string
 
 func devResponseContentType(sourceMIME string, recipesApplied bool, output qinternal.Content, body []byte) string {
 	if recipesApplied && sourceMIME == "text/markdown" {
