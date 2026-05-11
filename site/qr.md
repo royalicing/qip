@@ -1,24 +1,19 @@
-<title>URL to QR SVG</title>
+<title>URL to QR code SVG</title>
 
-# URL to QR SVG
-
-Type or paste a URL and the preview updates immediately.
+# QR code generator
 
 <form aria-labelledby="form-qr-url-heading">
-    <h3 id="form-qr-url-heading">Live preview (url-to-qr-svg.wasm in browser)</h3>
+    <h2 id="form-qr-url-heading">URL to QR Code SVG</h2>
     <qip-preview>
         <source src="/modules/text/uri-list/url-to-qr-svg.wasm" type="application/wasm" />
-        <label>
-            URL
-            <input
-                type="url"
-                name="input"
-                value="https://example.com/docs/how-it-works"
-                placeholder="https://example.com"
-                spellcheck="false"
-                style="width: min(48rem, 95vw);"
-            />
-        </label>
+        <input
+            type="url"
+            name="input"
+            value="https://example.com"
+            placeholder="Type or paste a URL"
+            spellcheck="false"
+            style="min-width: 100%; border-radius: 0; border: none; padding: 0.5em 1em;"
+        />
         <output name="output"></output>
     </qip-preview>
 </form>
@@ -26,7 +21,9 @@ Type or paste a URL and the preview updates immediately.
 ## CLI equivalent
 
 ```bash
-echo "https://example.com/docs/how-it-works" \
+go install github.com/royalicing/qip@latest
+
+echo "https://example.com" \
 | qip run modules/text/uri-list/url-to-qr-svg.wasm \
 > qr.svg
 ```
