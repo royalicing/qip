@@ -113,6 +113,8 @@ Read the full walkthrough in [`/docs/how-it-works`](/docs/how-it-works).
 
 ## Examples
 
+See also: [`/qr-url-to-svg`](/qr-url-to-svg) for a live URL-to-QR SVG example.
+
 <form aria-labelledby="form-wc-heading">
     <h3 id="form-wc-heading">Word count (wc.wasm running in browser)</h3>
     <blockquote><p>Coding agent prompt: Write a wc.zig module like /usr/bin/wc</p></blockquote>
