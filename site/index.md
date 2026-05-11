@@ -4,11 +4,13 @@
 h1 { text-align: center; }
 </style>
 
-# Securely Render Anything Anywhere
+# AI coding, components, security: choose three
 
 QIP modules are WebAssembly components for files, graphics, and interactive UI. They compose like Unix pipes, speak MIME types, and run sandboxed in the browser, server, cli & native.
 
 Because WebAssembly is specifically designed to be self-contained & sandboxed you can using AI coding agents without worry. QIP modules have no access to your file system, network, or secrets. Plus you can vibe C or Zig to create really fast code.
+
+## Getting started
 
 ```bash
 go install github.com/royalicing/qip@latest
@@ -24,7 +26,7 @@ qip dev ./site --recipes ./recipes
 
 ## The problem with software today
 
-Much software today is built like Matryoshka dolls, using frameworks that depend on libraries that depend on more libraries that depend on OS libs. This can feel incredibly productive at first, but has lead to increasingly complex apps that need constant updates from devs and feel bloated to users.
+Much software today is built like Matryoshka dolls, using frameworks that depend on libraries that depend on platforms that depend on operating systems. This can feel incredibly productive at first, but has lead to increasingly complex apps that need constant updates from devs and feel bloated to users.
 
 The large number of layers and moving parts has expanded the surface areas for security attacks. A developer can no longer fit the actually-running code in their head, and AI agents needs more context and tools to verify what they have generated. This increases iteration time and surface for exploits. A culture of countless dependencies has made us prone to supply-chain attacks. Any line of a package or AI-generated code could be reading SSH keys, mining bitcoin, remotely executing code, or infiltrating private data.
 
@@ -117,6 +119,7 @@ See also: [`/qr-url-to-svg`](/qr-url-to-svg) for a live URL-to-QR SVG example.
 
 <form aria-labelledby="form-wc-heading">
     <h3 id="form-wc-heading">Word count (wc.wasm running in browser)</h3>
+    <p><code>text/plain → text/plain</code></p>
     <blockquote><p>Coding agent prompt: Write a wc.zig module like /usr/bin/wc</p></blockquote>
     <qip-preview>
         <source src="/modules/utf8/wc.wasm" type="application/wasm" />
@@ -134,8 +137,40 @@ echo -n "There are eight words here. Try typing more… " | qip run modules/utf8
 
 ---
 
+<form aria-labelledby="form-qr-url-heading">
+    <h3 id="form-qr-url-heading">URL to QR SVG (js)</h3>
+    <p><code style="font-style: italic">text/uri-list → image/svg+xml</code></p>
+    <br />
+    <qip-preview>
+        <source src="/modules/text/uri-list/url-to-qr-svg.wasm" type="application/wasm" />
+        <label>
+            <b>Enter URL</b>
+            <input
+                type="url"
+                name="input"
+                value="https://example.com/docs/how-it-works"
+                placeholder="https://example.com"
+                spellcheck="false"
+                style="min-width: 100%; border-radius: 0; border: none; padding: 0.5em 1em;"
+            />
+        </label>
+        <output name="output"></output>
+    </qip-preview>
+</form>
+
+### URL to QR SVG (cli)
+
+```bash
+echo "https://example.com/docs/how-it-works" \
+| qip run modules/text/uri-list/url-to-qr-svg.wasm \
+> qr.svg
+```
+
+---
+
 <form aria-labelledby="form-markdown-heading">
     <h3 id="form-markdown-heading">Recolor svg icon as orange and convert to favicon (js)</h3>
+    <p><code>image/svg+xml → image/svg+xml → image/bmp → image/x-icon</code></p>
     <qip-preview>
         <source src="/modules/image/svg+xml/svg-recolor-current-color.wasm" type="application/wasm" data-uniform-color_rgba />
         <source src="/modules/image/svg+xml/svg-rasterize.wasm" type="application/wasm" />
@@ -166,6 +201,7 @@ modules/image/bmp/bmp-to-ico.wasm \
 
 <form aria-labelledby="form-markdown-heading">
     <h3 id="form-markdown-heading">Markdown to HTML (js)</h3>
+    <p><code>text/markdown → text/html</code></p>
     <qip-preview>
         <source src="/modules/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
         <textarea name="input" rows="7" cols="40"># Write some CommonMark *Markdown*
