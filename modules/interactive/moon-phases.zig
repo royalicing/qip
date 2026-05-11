@@ -40,13 +40,19 @@ const Crater = struct {
     x: f64,
     y: f64,
     r: f64,
+    bowl: f64,
+    rim: f64,
 };
 
 const NAMED_CRATERS = [_]Crater{
-    .{ .x = -0.11, .y = 0.44, .r = 0.11 }, // Tycho
-    .{ .x = -0.10, .y = 0.03, .r = 0.10 }, // Copernicus
-    .{ .x = -0.47, .y = 0.36, .r = 0.14 }, // Clavius
-    .{ .x = -0.52, .y = 0.17, .r = 0.08 }, // Aristarchus
+    // Tycho: 43.31S, 11.36W
+    .{ .x = -0.143, .y = -0.686, .r = 0.090, .bowl = 0.08, .rim = 0.09 },
+    // Copernicus: 9.62N, 20.08W
+    .{ .x = -0.338, .y = 0.167, .r = 0.072, .bowl = 0.07, .rim = 0.07 },
+    // Clavius: 58.4S, 14.4W
+    .{ .x = -0.132, .y = -0.851, .r = 0.105, .bowl = 0.07, .rim = 0.06 },
+    // Aristarchus: 23.7N, 47.4W
+    .{ .x = -0.676, .y = 0.402, .r = 0.050, .bowl = 0.08, .rim = 0.11 },
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
