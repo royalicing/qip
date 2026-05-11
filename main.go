@@ -2143,7 +2143,7 @@ func executeModuleWithInput(
 
 	var inputSize = uint64(len(inputBytes))
 	if inputSize > inputCap {
-		returnErr = errors.New("Input is too large")
+		returnErr = fmt.Errorf("Input is too large (%d bytes > %d bytes input capacity)", inputSize, inputCap)
 		return
 	}
 
