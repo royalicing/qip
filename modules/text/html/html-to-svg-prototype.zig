@@ -1648,4 +1648,5 @@ test "fixture snapshot dashboard layout with warning" {
     try std.testing.expect(std.mem.indexOf(u8, out, "Users 128") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Build 42") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Healthy") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "font-size=\"14.00\" font-weight=\"400\" font-family=\"Inter, system-ui, -apple-system, Segoe UI, sans-serif\" fill=\"rgba(31,41,55,1.000)\">Conflicting Text Sizes</text>") != null);
 }
