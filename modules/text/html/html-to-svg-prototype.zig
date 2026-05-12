@@ -1640,7 +1640,7 @@ test "fixture snapshot navbar layout" {
     try std.testing.expect(std.mem.indexOf(u8, out, "GitHub") != null);
 }
 
-test "fixture snapshot dashboard layout with warning" {
+test "fixture dashboard resolves conflicting text-sm and text-3xl deterministically" {
     const html = @embedFile("../../../test/fixtures/html-to-svg/dashboard.html");
     const out = runFixture(html);
     try std.testing.expect(std.mem.indexOf(u8, out, "qip-tailwind-warnings=1") != null);
