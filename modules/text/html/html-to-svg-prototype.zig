@@ -1650,3 +1650,10 @@ test "fixture dashboard resolves conflicting text-sm and text-3xl deterministica
     try std.testing.expect(std.mem.indexOf(u8, out, "Healthy") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "font-size=\"14.00\" font-weight=\"400\" font-family=\"Inter, system-ui, -apple-system, Segoe UI, sans-serif\" fill=\"rgba(31,41,55,1.000)\">Conflicting Text Sizes</text>") != null);
 }
+
+test "tailwind class precedence uses last supported utility" {
+    const html = "<p class='text-sm text-lg'>Class precedence</p>";
+    const out = runFixture(html);
+    try std.testing.expect(std.mem.indexOf(u8, out, "qip-tailwind-warnings=0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "font-size=\"18.00\" font-weight=\"400\" font-family=\"Inter, system-ui, -apple-system, Segoe UI, sans-serif\" fill=\"rgba(31,41,55,1.000)\">Class precedence</text>") != null);
+}
