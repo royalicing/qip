@@ -97,7 +97,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
     if (!initialized) resetGame();
@@ -135,7 +135,7 @@ export fn key_event(x11_key: i32, flags: i32) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32, _: i32) i32 {
     return 0;
 }
 

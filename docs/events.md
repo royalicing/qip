@@ -7,7 +7,7 @@ The ABI follows a small subset inspired by the Remote Framebuffer Protocol ([RFC
 - keyboard uses X11 keysyms (same model as RFB `KeyEvent`)
 - pointer uses an RFB-style button bitmask plus pixel coordinates
 
-## Keyboard: `key_event(x11_key, flags)`
+## Keyboard: `key_event(x11_key, flags, now_ms)`
 
 - `x11_key` is an X11 keysym integer.
 - `flags` is a bitfield:
@@ -17,6 +17,7 @@ The ABI follows a small subset inspired by the Remote Framebuffer Protocol ([RFC
   - bit `3`: ctrl
   - bit `4`: alt
   - bit `5`: meta
+- `now_ms` is monotonic elapsed milliseconds in the same host timeline as `tick(now_ms)`.
 
 Common keysyms:
 
@@ -32,18 +33,17 @@ Common keysyms:
 
 For printable keys, pass Unicode/ASCII code points as keysyms (for example `A` is `0x41`, `a` is `0x61`).
 
-## Pointer: `pointer_event(button_mask, x_px, y_px)`
+## Pointer: `pointer_event(button_mask, x_px, y_px, now_ms)`
 
 - `button_mask` is a bitfield.
 - `x_px`, `y_px` are integer pixel coordinates in render space.
+- `now_ms` is monotonic elapsed milliseconds in the same host timeline as `tick(now_ms)`.
 
 Supported button bits:
 
 - bit `0` (`1`): primary / button 1
 - bit `1` (`2`): middle / button 2
 - bit `2` (`4`): secondary / button 3
-- bit `3` (`8`): back / button 4
-- bit `4` (`16`): forward / button 5
 
 This maps cleanly from DOM pointer `buttons` and keeps compatibility with RFB-style pointer state updates.
 

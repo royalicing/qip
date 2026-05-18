@@ -11,8 +11,8 @@ Required exports:
 - `memory`
 - `output_ptr() -> i32`
 - `output_bytes_cap() -> i32`
-- `key_event(x11_key: i32, flags: i32) -> i32`
-- `pointer_event(button_mask: i32, x_px: i32, y_px: i32) -> i32`
+- `key_event(x11_key: i32, flags: i32, now_ms: i32) -> i32`
+- `pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i32) -> i32`
 - `tick(now_ms: i32) -> i32`
 - `render_output() -> i32`
 
@@ -39,12 +39,14 @@ Little-endian note:
   - `bit 3`: ctrl
   - `bit 4`: alt
   - `bit 5`: meta
+- `now_ms` is monotonic elapsed milliseconds from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
 
 `pointer_event(...)`:
 
-- `button_mask` follows RFB-style pointer button mask semantics.
+- `button_mask` uses only the low 3 bits: primary=`1`, middle=`2`, secondary=`4`.
 - `x_px` and `y_px` are integer pixel coordinates in current render space.
+- `now_ms` is monotonic elapsed milliseconds from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
 
 ### Tick + Render Flow

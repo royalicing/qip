@@ -10,6 +10,8 @@ function qipPlayPerfNow() {
 
 const QIP_PLAY_KEY_REPEAT_DELAY_MS = 250;
 const QIP_PLAY_KEY_REPEAT_INTERVAL_MS = 33;
+const QIP_PLAY_FIXED_TICK_MS_DEFAULT = 16;
+const QIP_PLAY_MAX_TICKS_PER_FRAME = 8;
 
 function qipPlayToI32(value, label) {
   if (typeof value === "number") {
@@ -92,8 +94,6 @@ function qipPlayMapDOMButtonsToMask(buttons) {
   if (buttons & 1) mask |= 1; // primary -> button 1
   if (buttons & 4) mask |= 2; // auxiliary -> button 2 (middle)
   if (buttons & 2) mask |= 4; // secondary -> button 3 (right)
-  if (buttons & 8) mask |= 8; // back
-  if (buttons & 16) mask |= 16; // forward
   return mask;
 }
 
@@ -171,8 +171,14 @@ class QIPPlayElement extends HTMLElement {
     this._inputElement = null;
     this._activeKeyRepeats = new Map();
     this._pendingKeyEvents = [];
-    this._tickEpochMS = 0;
-    this._hasTickEpoch = false;
+    this._pendingPointerEvents = [];
+    this._fixedTickMS = QIP_PLAY_FIXED_TICK_MS_DEFAULT;
+    this._maxTicksPerFrame = QIP_PLAY_MAX_TICKS_PER_FRAME;
+    this._lastFrameMS = 0;
+    this._tickAccumulatorMS = 0;
+    this._simElapsedMS = 0;
+    this._keepAnimating = false;
+    this._timeOriginMS = 0;
   }
 
   async connectedCallback() {
@@ -182,11 +188,18 @@ class QIPPlayElement extends HTMLElement {
     this._started = true;
     try {
       await this._init();
-      this._tickEpochMS = qipPlayPerfNow();
-      this._hasTickEpoch = true;
       const firstTick = this._runTick(0);
+      this._keepAnimating = firstTick.changed !== 0;
+      this._timeOriginMS = qipPlayPerfNow();
+      this._lastFrameMS = this._timeOriginMS;
+      this._tickAccumulatorMS = 0;
+      this._simElapsedMS = 0;
       this._renderFrame("initial");
-      if (firstTick.changed !== 0) {
+      if (
+        this._keepAnimating ||
+        this._pendingKeyEvents.length > 0 ||
+        this._pendingPointerEvents.length > 0
+      ) {
         this._resumeLoop();
       }
     } catch (err) {
@@ -203,7 +216,11 @@ class QIPPlayElement extends HTMLElement {
       clearTimeout(this._timeoutID);
       this._timeoutID = 0;
     }
-    this._hasTickEpoch = false;
+    this._lastFrameMS = 0;
+    this._tickAccumulatorMS = 0;
+    this._simElapsedMS = 0;
+    this._keepAnimating = false;
+    this._timeOriginMS = 0;
     this._detachInputBinding();
     this._clearKeyRepeats();
     this._detachInputHandlers();
@@ -283,6 +300,7 @@ class QIPPlayElement extends HTMLElement {
     }
     this._expectedOutputBytes = expected;
     this._logTimings = this.hasAttribute("log");
+    this._fixedTickMS = this._readFixedTickMS();
 
     this._setupInputBinding(inputElement);
 
@@ -336,6 +354,20 @@ class QIPPlayElement extends HTMLElement {
       inputElement.addEventListener("change", this._boundInputChange);
     }
     this._writeInputText(String(inputElement.value ?? ""));
+  }
+
+  _readFixedTickMS() {
+    const raw = this.getAttribute("tick-ms");
+    if (raw == null || raw.trim() === "") {
+      return QIP_PLAY_FIXED_TICK_MS_DEFAULT;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(
+        "<qip-play> tick-ms must be a positive number of milliseconds",
+      );
+    }
+    return Math.max(1, Math.floor(parsed));
   }
 
   _detachInputBinding() {
@@ -472,7 +504,8 @@ class QIPPlayElement extends HTMLElement {
     }
 
     const flags = qipPlayBuildKeyFlags(event, isDown);
-    this._queueKeyEvent(keysym | 0, flags | 0);
+    const eventNowMS = this._eventNowMS();
+    this._queueKeyEvent(keysym | 0, flags | 0, eventNowMS | 0);
     if (isDown) {
       this._startKeyRepeat(keyID, keysym, event);
     } else {
@@ -499,7 +532,13 @@ class QIPPlayElement extends HTMLElement {
       this._renderHeight,
     );
     const buttonMask = qipPlayMapDOMButtonsToMask(event.buttons | 0);
-    this._exports.pointer_event(buttonMask | 0, coords.x | 0, coords.y | 0);
+    const eventNowMS = this._eventNowMS();
+    this._queuePointerEvent(
+      buttonMask | 0,
+      coords.x | 0,
+      coords.y | 0,
+      eventNowMS | 0,
+    );
     this._resumeLoop();
   }
 
@@ -517,6 +556,7 @@ class QIPPlayElement extends HTMLElement {
       keysym: keysym | 0,
       flags: repeatFlags | 0,
       pending: false,
+      pendingTimeMS: 0,
     };
 
     const runRepeat = () => {
@@ -524,6 +564,7 @@ class QIPPlayElement extends HTMLElement {
         return;
       }
       repeatState.pending = true;
+      repeatState.pendingTimeMS = this._eventNowMS();
       this._resumeLoop();
       repeatState.timeoutID = setTimeout(
         runRepeat,
@@ -551,27 +592,65 @@ class QIPPlayElement extends HTMLElement {
       this._stopKeyRepeat(keyID);
     }
     this._pendingKeyEvents.length = 0;
+    this._pendingPointerEvents.length = 0;
   }
 
-  _queueKeyEvent(keysym, flags) {
+  _queueKeyEvent(keysym, flags, timeMS) {
     this._pendingKeyEvents.push({
       keysym: keysym | 0,
       flags: flags | 0,
+      timeMS: timeMS | 0,
     });
   }
 
-  _flushPendingKeyEvents() {
+  _queuePointerEvent(buttonMask, x, y, timeMS) {
+    this._pendingPointerEvents.push({
+      buttonMask: buttonMask | 0,
+      x: x | 0,
+      y: y | 0,
+      timeMS: timeMS | 0,
+    });
+  }
+
+  _eventNowMS() {
+    const now = qipPlayPerfNow();
+    if (this._timeOriginMS === 0) {
+      this._timeOriginMS = now;
+    }
+    const elapsed = now - this._timeOriginMS;
+    if (!Number.isFinite(elapsed) || elapsed <= 0) {
+      return 0;
+    }
+    return Math.floor(elapsed);
+  }
+
+  _flushPendingKeyEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.key_event !== "function") {
       this._pendingKeyEvents.length = 0;
       return;
     }
-    for (const evt of this._pendingKeyEvents) {
-      this._exports.key_event(evt.keysym, evt.flags);
+    while (this._pendingKeyEvents.length > 0) {
+      const evt = this._pendingKeyEvents[0];
+      if (evt.timeMS > tickNowMS) break;
+      this._pendingKeyEvents.shift();
+      this._exports.key_event(evt.keysym, evt.flags, evt.timeMS);
     }
-    this._pendingKeyEvents.length = 0;
   }
 
-  _flushRepeatKeyEvents() {
+  _flushPendingPointerEvents(tickNowMS) {
+    if (!this._exports || typeof this._exports.pointer_event !== "function") {
+      this._pendingPointerEvents.length = 0;
+      return;
+    }
+    while (this._pendingPointerEvents.length > 0) {
+      const evt = this._pendingPointerEvents[0];
+      if (evt.timeMS > tickNowMS) break;
+      this._pendingPointerEvents.shift();
+      this._exports.pointer_event(evt.buttonMask, evt.x, evt.y, evt.timeMS);
+    }
+  }
+
+  _flushRepeatKeyEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.key_event !== "function") {
       return;
     }
@@ -579,8 +658,15 @@ class QIPPlayElement extends HTMLElement {
       if (!repeatState.pending) {
         continue;
       }
+      if (repeatState.pendingTimeMS > tickNowMS) {
+        continue;
+      }
       repeatState.pending = false;
-      this._exports.key_event(repeatState.keysym, repeatState.flags);
+      this._exports.key_event(
+        repeatState.keysym,
+        repeatState.flags,
+        repeatState.pendingTimeMS,
+      );
     }
   }
 
@@ -589,10 +675,10 @@ class QIPPlayElement extends HTMLElement {
       return;
     }
     if (!this._boundFrame) {
-      this._boundFrame = () => {
+      this._boundFrame = (nowMS) => {
         this._rafID = 0;
         this._timeoutID = 0;
-        const keepRunning = this._frame();
+        const keepRunning = this._frame(nowMS);
         if (keepRunning) {
           this._resumeLoop();
         }
@@ -604,66 +690,109 @@ class QIPPlayElement extends HTMLElement {
       return;
     }
 
-    this._timeoutID = setTimeout(this._boundFrame, 16);
+    this._timeoutID = setTimeout(() => this._boundFrame(qipPlayPerfNow()), 16);
   }
 
-  _frame() {
+  _frame(nowMS) {
     if (!this._exports || typeof this._exports.tick !== "function") {
       return false;
     }
 
-    const tickNowMS = this._tickNowMS();
-    const tickResult = this._runTick(tickNowMS);
-    const changed = tickResult.changed;
-    const tickMS = tickResult.tickMS;
+    const frameNowMS = Number.isFinite(nowMS) ? nowMS : qipPlayPerfNow();
+    if (this._lastFrameMS === 0) {
+      this._lastFrameMS = frameNowMS;
+    }
+
+    let dtMS = frameNowMS - this._lastFrameMS;
+    this._lastFrameMS = frameNowMS;
+    if (!Number.isFinite(dtMS) || dtMS < 0) {
+      dtMS = 0;
+    }
+    if (dtMS > 1000) {
+      dtMS = 1000;
+    }
+    this._tickAccumulatorMS += dtMS;
+
+    let tickCount = 0;
+    let changed = 0;
+    let tickMS = 0;
+    while (
+      this._tickAccumulatorMS >= this._fixedTickMS &&
+      tickCount < this._maxTicksPerFrame
+    ) {
+      this._simElapsedMS += this._fixedTickMS;
+      const tickResult = this._runTick(this._simElapsedMS | 0);
+      if (tickResult.changed !== 0) {
+        changed = 1;
+      }
+      tickMS += tickResult.tickMS;
+      this._tickAccumulatorMS -= this._fixedTickMS;
+      tickCount += 1;
+    }
+    if (
+      tickCount >= this._maxTicksPerFrame &&
+      this._tickAccumulatorMS >= this._fixedTickMS
+    ) {
+      // Prevent runaway catch-up when a tab stalls for a long period.
+      this._tickAccumulatorMS = this._fixedTickMS - 1;
+    }
+    if (tickCount > 0) {
+      this._keepAnimating = changed !== 0;
+    }
+
     let renderMS = null;
-    if (changed !== 0) {
+    if (tickCount > 0 || this._keepAnimating) {
       renderMS = this._renderFrame();
     }
     if (this._logTimings) {
       if (renderMS === null) {
         console.log(
-          "[qip-play] tick_ms=%s changed=%d render_ms=-",
+          "[qip-play] tick_ms=%s changed=%d ticks=%d render_ms=-",
           tickMS.toFixed(3),
           changed | 0,
+          tickCount | 0,
         );
       } else {
         console.log(
-          "[qip-play] tick_ms=%s changed=%d render_ms=%s frame_ms=%s",
+          "[qip-play] tick_ms=%s changed=%d ticks=%d render_ms=%s frame_ms=%s",
           tickMS.toFixed(3),
           changed | 0,
+          tickCount | 0,
           renderMS.toFixed(3),
           (tickMS + renderMS).toFixed(3),
         );
       }
     }
-    return changed !== 0;
-  }
-
-  _tickNowMS() {
-    const now = qipPlayPerfNow();
-    if (!this._hasTickEpoch) {
-      this._tickEpochMS = now;
-      this._hasTickEpoch = true;
-      return 0;
-    }
-    const elapsed = now - this._tickEpochMS;
-    if (!Number.isFinite(elapsed) || elapsed <= 0) {
-      return 0;
-    }
-    return Math.floor(elapsed);
+    const hasPendingRepeat = this._hasPendingRepeatKeyEvents();
+    return (
+      this._keepAnimating ||
+      this._pendingKeyEvents.length > 0 ||
+      this._pendingPointerEvents.length > 0 ||
+      hasPendingRepeat ||
+      this._tickAccumulatorMS >= this._fixedTickMS
+    );
   }
 
   _runTick(tickNowMS) {
     const tickStart = this._logTimings ? qipPlayPerfNow() : 0;
-    this._flushPendingKeyEvents();
-    this._flushRepeatKeyEvents();
+    this._flushPendingKeyEvents(tickNowMS);
+    this._flushPendingPointerEvents(tickNowMS);
+    this._flushRepeatKeyEvents(tickNowMS);
     const changed = qipPlayToI32(
       this._exports.tick(tickNowMS | 0),
       "tick",
     );
     const tickMS = this._logTimings ? qipPlayPerfNow() - tickStart : 0;
     return { changed, tickMS };
+  }
+
+  _hasPendingRepeatKeyEvents() {
+    for (const repeatState of this._activeKeyRepeats.values()) {
+      if (repeatState.pending) {
+        return true;
+      }
+    }
+    return false;
   }
 
   _renderFrame(reason) {
