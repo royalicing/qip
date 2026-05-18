@@ -60,10 +60,8 @@ const tileSize = 64
 const applicationWARCRecipeMIME = "application/warc"
 
 const (
-	defaultRouteContentRecipeTimeout   = 100 * time.Millisecond
-	defaultRouteApplicationWARCTimeout = 100 * time.Millisecond
-	defaultRouteWARCTransformTimeout   = 5 * time.Second
-	defaultRouteWARCRecipeTimeout      = 250 * time.Millisecond
+	defaultRouteRecipeTimeout        = 500 * time.Millisecond
+	defaultRouteWARCTransformTimeout = 5 * time.Second
 )
 
 type routeHandlerTimeouts struct {
@@ -2419,8 +2417,8 @@ func devCmd(args []string) {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteContentRecipeTimeout,
-		applicationWARC: defaultRouteApplicationWARCTimeout,
+		contentRecipe:   defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteRecipeTimeout,
 	}
 	handler := newDevRequestHandler("dev", &stateMu, &state, reloadRecipesIfChanged, routeOptions, handlerTimeouts)
 
@@ -2555,8 +2553,8 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	}()
 
 	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteContentRecipeTimeout,
-		applicationWARC: defaultRouteApplicationWARCTimeout,
+		contentRecipe:   defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteRecipeTimeout,
 	}
 	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, routeOptions, handlerTimeouts)
 	response, err := qinternal.ServeInProcessHTTP(handler, method, requestPath, nil)
@@ -2813,8 +2811,8 @@ func routerCmd(args []string) {
 		routeOptions qinternal.RouteOptions
 	}
 	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteWARCRecipeTimeout,
-		applicationWARC: defaultRouteWARCRecipeTimeout,
+		contentRecipe:   defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteRecipeTimeout,
 	}
 	warcTransformTimeout := defaultRouteWARCTransformTimeout
 	var runtimeMu sync.Mutex
