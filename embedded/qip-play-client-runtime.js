@@ -448,6 +448,13 @@ class QIPPlayElement extends HTMLElement {
     if (!this._exports || typeof this._exports.key_event !== "function") {
       return;
     }
+
+    // Preserve browser/app shortcuts like Cmd+R on macOS by not capturing
+    // Meta-modified keystrokes for qip-play modules.
+    if (event.metaKey) {
+      return;
+    }
+
     const keysym = qipPlayMapKeyboardEventToKeysym(event);
     if (keysym === null) {
       return;
