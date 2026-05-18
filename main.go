@@ -63,6 +63,7 @@ const (
 	defaultRouteContentRecipeTimeout   = 100 * time.Millisecond
 	defaultRouteApplicationWARCTimeout = 100 * time.Millisecond
 	defaultRouteWARCTransformTimeout   = 5 * time.Second
+	defaultRouteWARCRecipeTimeout      = 250 * time.Millisecond
 )
 
 type routeHandlerTimeouts struct {
@@ -2812,8 +2813,8 @@ func routerCmd(args []string) {
 		routeOptions qinternal.RouteOptions
 	}
 	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteContentRecipeTimeout,
-		applicationWARC: defaultRouteApplicationWARCTimeout,
+		contentRecipe:   defaultRouteWARCRecipeTimeout,
+		applicationWARC: defaultRouteWARCRecipeTimeout,
 	}
 	warcTransformTimeout := defaultRouteWARCTransformTimeout
 	var runtimeMu sync.Mutex

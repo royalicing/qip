@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const INPUT_CAP: usize = 64 * 1024 * 1024;
+const INPUT_CAP: usize = 128 * 1024 * 1024;
 const INPUT_CONTENT_TYPE = "application/warc";
 const OUTPUT_CONTENT_TYPE = "application/warc";
 
