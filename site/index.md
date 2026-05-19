@@ -1,4 +1,4 @@
-<title>qip: fast zig/c as composable wasm</title>
+<title>QIP: render everything predictably anywhere</title>
 
 <style>
 h1 { text-align: center; }
@@ -6,25 +6,19 @@ h1 { text-align: center; }
 
 # Components, Security, AI Coding — Choose 3
 
-## Components
+## Render everything anywhere
 
 **QIP components** let you render text, images, bytes, and interactive UI. They compose like Unix pipes, speak MIME types, and run sandboxed via WebAssembly in the browser, server, cli & native.
 
-## Security
+## Predictably secure
 
-Because WebAssembly is specifically designed to be self-contained & fully isolated you can using AI coding agents without worry: QIP components have no access to your file system, network, or secrets.
+Because WebAssembly modules are specifically designed to be self-contained & fully isolated (with no access to your file system, network, or secrets) you can run untrusted QIP components as confidently as using a web browser. They are entirely deterministic making them predictable to combine and test.
 
-## AI Coding
+## Code efficiently with AI
 
-You can vibe C or Zig to create really fast components. You get security and speed.
+The QIP component contract is simple yet allows a wide range of flexibility inside. You can vibe C or Zig to create fast components that lightly use the CPU and memory. You can break problems into small, reusable components and keep strong boundaries between them. You get both speed and security.
 
----
-
-- **Quick:** these components are designed to be fast to run and fast to write. You can often one-shot many solutions.
-- **Isolated:** everything runs in its own separate sandbox via WebAssembly. A component cannot read from any other or from the host.
-- **Portable:** the contract for QIP components has been designed to run anywhere: browser, server, cli & native.
-
-## Getting started
+## Install the CLI
 
 ```bash
 go install github.com/royalicing/qip@latest
@@ -37,6 +31,12 @@ qip comply vibe-coded-commonmark.wasm --with commonmark-spec.wasm
 
 qip dev ./site --recipes ./recipes
 ```
+
+---
+
+- **Quick:** these components are designed to be fast to run and fast to write. You can often one-shot many solutions.
+- **Isolated:** everything runs in its own separate sandbox via WebAssembly. A component cannot read from any other or from the host.
+- **Portable:** the contract for QIP components has been designed to run anywhere: browser, server, cli & native.
 
 ---
 
@@ -98,15 +98,16 @@ Good tools should be:
 - work on the web, on native, and as a cli
 - runnable by both agents and users
 
-## Tech choices
+## Why not WASI?
 
-`qip` favors explicit simple contracts and plain directory layouts over magic.
-
-The `qip` cli is built in Go using its venerable standard library for file system access, HTTP server, and common format decoding/encoding. The [wazero](https://wazero.io) library is used to run WebAssembly modules in a secure sandbox. WebAssembly modules can be authored in C, Zig, WAT, or any language that targets wasm32.
+QIP favors explicit simple contracts and plain directory layouts over magic.
 
 It decidedly does not use WASI, a standard due to scope creep has ballooned in complexity. To get stuff done and to support browsers we use a much smaller contract between hosts and modules.
 
-## What qip does:
+The `qip` cli is built in Go using its venerable standard library for file system access, HTTP server, and common format decoding/encoding. The [wazero](https://wazero.io) library is used to run WebAssembly modules in a secure sandbox. WebAssembly modules can be authored in C, Zig, WAT, or any language that targets wasm32.
+
+
+## What QIP does:
 
 - Run tiny, focused modules to process or create text, bytes, and images.
 - Compose those modules into deterministic pipelines.
@@ -114,7 +115,7 @@ It decidedly does not use WASI, a standard due to scope creep has ballooned in c
 - Provide a stable contract that is simpler than WASI.
 - Web file router with everything as replaceable wasm plugins.
 
-What qip does not do:
+What QIP does not do:
 
 - It does not have package manager with nested dependencies.
 - It does not give modules fs/network/env access.
@@ -131,7 +132,7 @@ Read the full walkthrough in [`/docs/how-it-works`](/docs/how-it-works).
 
 ## Examples
 
-See also: [`/qr`](/qr) for a live url-to-qr-code example.
+See also: [`/qr`](/qr) for a live URL-to-QR-code example.
 See also: [`/play-sudoku`](/play-sudoku) for a live interactive Sudoku module and [`/play-liars-dice`](/play-liars-dice) for a 3-player Liar's Dice game.
 
 <form aria-labelledby="form-wc-heading">
