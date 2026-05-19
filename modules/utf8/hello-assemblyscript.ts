@@ -24,7 +24,7 @@ export function output_utf8_cap(): i32 {
   return OUTPUT_CAP;
 }
 
-export function run(input_size: i32): i32 {
+export function render(input_size: i32): i32 {
   // Copy "Hello, " prefix into output
   for (let i: i32 = 0; i < PREFIX.length; i++) {
     store<u8>(OUTPUT_PTR + i, <u8>PREFIX[i]);

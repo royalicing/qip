@@ -696,8 +696,8 @@ static void finalize_anchor(TextState *st, int emit, int name_mode,
     append_byte(st, '\n');
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     uint32_t pos = 0;
     int inside_a = 0;
     int emit = 0;

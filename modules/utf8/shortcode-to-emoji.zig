@@ -901,7 +901,7 @@ fn isShortcodeChar(ch: u8) bool {
     return std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '+' or ch == '-';
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const input = input_buf[0..@as(usize, @intCast(input_size))];
     var w = Writer.init(output_buf[0..]);
     var i: usize = 0;
@@ -952,7 +952,7 @@ test "custom emoji remains" {
 
 fn runString(input: []const u8, out: []u8) usize {
     @memcpy(input_buf[0..input.len], input);
-    const written = run(@as(u32, @intCast(input.len)));
+    const written = render(@as(u32, @intCast(input.len)));
     @memcpy(out[0..written], output_buf[0..written]);
     return @as(usize, @intCast(written));
 }

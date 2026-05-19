@@ -252,7 +252,7 @@ fn countRows(input: []const u8, layout: Layout) u32 {
     return rows;
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const size: usize = @min(@as(usize, input_size), INPUT_CAP);
     const input = input_buf[0..size];
     const layout = computeLayout();

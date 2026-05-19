@@ -6,9 +6,9 @@ This guide documents the contract `qip` expects for modules, and how it passes i
 
 - A `.wasm` module file can be tiny, while instances’ initial linear memory can be much larger.
 - WebAssembly memory is broken into multiple pages, where each page is `64 KiB` each.
-- `qip` writes input into module memory, calls `run`, then reads output from module memory.
+- `qip` writes input into module memory, calls `render`, then reads output from module memory.
 
-## Run Mode Contract
+## Render Mode Contract
 
 In `qip run`, modules can export pointer/cap values as either:
 
@@ -29,7 +29,7 @@ Optional output exports:
 
 Required function:
 
-- `run(input_size) -> output_size`
+- `render(input_size) -> output_size`
 
 If `output_ptr` + output cap are not exported, `qip` falls back to printing `Ran: <run_return_value>`.
 
@@ -47,7 +47,7 @@ Uniform export contract:
 
 Host behavior:
 
-- Uniforms are applied after module instantiation and before `run(...)` (or before tile execution in image mode).
+- Uniforms are applied after module instantiation and before `render(...)` (or before tile execution in image mode).
 - If a query key is provided but the module does not export `uniform_set_<key>`, execution fails.
 - If parsing fails for the expected numeric type, execution fails.
 - Integer uniforms (`i32`, `i64`) parse decimal as signed values by default.
@@ -98,9 +98,9 @@ Use `input_utf8_cap` for UTF-8 text input and `input_bytes_cap` for binary input
 
 Use `output_utf8_cap` for UTF-8 text output, `output_bytes_cap` for binary output, and `output_i32_cap` for `i32[]` output.
 
-If output exports are omitted, the return value of `run` is used as the result.
+If output exports are omitted, the return value of `render` is used as the result.
 
-If output exports are present, the return value of `run` is used as the output size.
+If output exports are present, the return value of `render` is used as the output size.
 
 ### Optional Content Type Metadata
 
@@ -125,7 +125,7 @@ Rules:
 
 ### Content Type Composition Semantics
 
-These are the composition rules for run-module pipelines:
+These are the composition rules for render-module pipelines:
 
 - The pipeline starts with an optional initial content type from the caller/host context.
 - For direct user ingress in `qip run`, when initial content type is absent, the first module is allowed by user intent (stdin/`-i` is trusted as the expected type).
@@ -149,7 +149,7 @@ Input:
 
 Output:
 
-- `run` return value is interpreted as element count.
+- `render` return value is interpreted as element count.
 - For UTF-8 or raw bytes output, element size is `1` byte.
 - For `output_i32_cap`, element size is `4` bytes aka `32` bits.
 - `qip` checks returned count does not exceed exported output cap.

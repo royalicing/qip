@@ -22,7 +22,7 @@ export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
 
     var in: std.Io.Reader = .fixed(input_buf[0..input_size]);
@@ -66,7 +66,7 @@ test "decompresses valid zlib bytes" {
     };
 
     @memcpy(input_buf[0..compressed.len], &compressed);
-    const written = run(@intCast(compressed.len));
+    const written = render(@intCast(compressed.len));
 
     try std.testing.expectEqual(@as(u32, 12), written);
     try std.testing.expectEqualStrings("Hello world\n", output_buf[0..written]);
@@ -86,11 +86,11 @@ test "rejects trailing bytes" {
     };
 
     @memcpy(input_buf[0..compressed_with_trailing.len], &compressed_with_trailing);
-    try std.testing.expectEqual(@as(u32, 0), run(@intCast(compressed_with_trailing.len)));
+    try std.testing.expectEqual(@as(u32, 0), render(@intCast(compressed_with_trailing.len)));
 }
 
 test "rejects invalid header" {
     const bad = [_]u8{ 0x78, 0x00, 0x00 };
     @memcpy(input_buf[0..bad.len], &bad);
-    try std.testing.expectEqual(@as(u32, 0), run(@intCast(bad.len)));
+    try std.testing.expectEqual(@as(u32, 0), render(@intCast(bad.len)));
 }

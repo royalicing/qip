@@ -107,7 +107,7 @@
   )
 
   ;; Returns: length of valid TLD, or 0 if invalid
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $i i32)

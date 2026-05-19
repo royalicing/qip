@@ -64,24 +64,24 @@ module: markdown-basic.wasm | html-page-wrap.wasm
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Title</title><style></style><link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
 <header role="banner">
-  <nav aria-label="Header links">
-    <ul>
-      <li><a href="/">qip</a></li>
-      <li><a href="/docs">docs</a></li>
-      <li><a href="https://github.com/royalicing/qip">github</a></li>
-    </ul>
-  </nav>
+    <nav aria-label="Header links">
+        <ul>
+            <li><a href="/">QIP</a></li>
+            <li><a href="/docs">Docs</a></li>
+            <li><a href="https://github.com/royalicing/qip">GitHub</a></li>
+        </ul>
+    </nav>
 </header><main><h1>Title</h1>
 <p>Hello <strong>World</strong></p>
 </main><footer role="contentinfo">
-  <nav aria-label="Footer links">
-    <ul>
-      <li><a href="/">qip</a></li>
-      <li><a href="/docs">docs</a></li>
-      <li><a href="/view-source">view source</a></li>
-      <li><a href="https://github.com/royalicing/qip">github</a></li>
-    </ul>
-  </nav>
+    <nav aria-label="Footer links">
+        <ul>
+            <li><a href="/">qip</a></li>
+            <li><a href="/docs">docs</a></li>
+            <li><a href="/view-source">view source</a></li>
+            <li><a href="https://github.com/royalicing/qip">github</a></li>
+        </ul>
+    </nav>
 </footer>
 
 module: rgb-to-hex.wasm
@@ -99,8 +99,8 @@ hi
 module: utf8-must-be-valid.wasm
 hello
 module: wasm-to-js.wasm
-export async function run(input) {
-  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMCAQAFAwEAAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTAYGbWVtb3J5AgAJaW5wdXRfcHRyAwAOaW5wdXRfdXRmOF9jYXADAQpvdXRwdXRfcHRyAwIPb3V0cHV0X3V0ZjhfY2FwAwMDcnVuAAAKZwFlAQJ/IwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiAAQQBLBEBBACEBQQchAgJAA0AgASAATw0BIwIgAmojACABai0AADoAACABQQFqIQEgAkEBaiECDAALCwsgAgs='), c => c.charCodeAt(0));
+export async function render(input) {
+  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMCAQAFAwEAAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTwYGbWVtb3J5AgAJaW5wdXRfcHRyAwAOaW5wdXRfdXRmOF9jYXADAQpvdXRwdXRfcHRyAwIPb3V0cHV0X3V0ZjhfY2FwAwMGcmVuZGVyAAAKZwFlAQJ/IwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiAAQQBLBEBBACEBQQchAgJAA0AgASAATw0BIwIgAmojACABai0AADoAACABQQFqIQEgAkEBaiECDAALCwsgAgs='), c => c.charCodeAt(0));
   const module = await WebAssembly.compile(wasmBytes);
   const instance = await WebAssembly.instantiate(module);
   const exports = instance.exports;
@@ -110,8 +110,9 @@ export async function run(input) {
   const encoder = new TextEncoder();
   const inputBytes = encoder.encode(input);
   new Uint8Array(memory.buffer, inputPtr, inputBytes.length).set(inputBytes);
-  const outputLen = exports.run(inputBytes.length);
+  const outputLen = exports.render(inputBytes.length);
   if (outputLen === 0) return '';
   const decoder = new TextDecoder();
   return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
 }
+

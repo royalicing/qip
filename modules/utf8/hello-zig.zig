@@ -33,7 +33,7 @@ fn getOutput() []u8 {
 }
 
 // Main entry point
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const input = getInput(input_size);
     const output = getOutput();
     const input_bytes_size: usize = @intCast(input_size);

@@ -24,7 +24,7 @@ fn isDigit(c: u8) bool {
     return c >= '0' and c <= '9';
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
 
     // Emit '+' then append only digits.

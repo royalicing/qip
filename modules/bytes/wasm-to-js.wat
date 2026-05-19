@@ -76,7 +76,7 @@
   )
 
   ;; JavaScript template parts
-  (data (i32.const 0x2000) "export async function run(input) {\n")
+  (data (i32.const 0x2000) "export async function render(input) {\n")
   (data (i32.const 0x2100) "  const wasmBytes = Uint8Array.from(atob('")
   (data (i32.const 0x2200) "'), c => c.charCodeAt(0));\n")
   (data (i32.const 0x2300) "  const module = await WebAssembly.compile(wasmBytes);\n")
@@ -88,13 +88,13 @@
   (data (i32.const 0x2900) "  const encoder = new TextEncoder();\n")
   (data (i32.const 0x2A00) "  const inputBytes = encoder.encode(input);\n")
   (data (i32.const 0x2B00) "  new Uint8Array(memory.buffer, inputPtr, inputBytes.length).set(inputBytes);\n")
-  (data (i32.const 0x2C00) "  const outputLen = exports.run(inputBytes.length);\n")
+  (data (i32.const 0x2C00) "  const outputLen = exports.render(inputBytes.length);\n")
   (data (i32.const 0x2D00) "  if (outputLen === 0) return '';\n")
   (data (i32.const 0x2E00) "  const decoder = new TextDecoder();\n")
   (data (i32.const 0x2F00) "  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));\n")
   (data (i32.const 0x3000) "}\n")
 
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $out_pos i32)
     (local $in_pos i32)
     (local $b1 i32)
@@ -103,7 +103,7 @@
     (local $remaining i32)
 
     ;; Write JavaScript header
-    (local.set $out_pos (call $write_string (i32.const 0x2000) (i32.const 35) (local.get $out_pos)))
+    (local.set $out_pos (call $write_string (i32.const 0x2000) (i32.const 38) (local.get $out_pos)))
     (local.set $out_pos (call $write_string (i32.const 0x2100) (i32.const 42) (local.get $out_pos)))
 
     ;; Base64 encode the WASM bytes
@@ -163,7 +163,7 @@
     (local.set $out_pos (call $write_string (i32.const 0x2900) (i32.const 37) (local.get $out_pos)))
     (local.set $out_pos (call $write_string (i32.const 0x2A00) (i32.const 44) (local.get $out_pos)))
     (local.set $out_pos (call $write_string (i32.const 0x2B00) (i32.const 78) (local.get $out_pos)))
-    (local.set $out_pos (call $write_string (i32.const 0x2C00) (i32.const 52) (local.get $out_pos)))
+    (local.set $out_pos (call $write_string (i32.const 0x2C00) (i32.const 55) (local.get $out_pos)))
     (local.set $out_pos (call $write_string (i32.const 0x2D00) (i32.const 34) (local.get $out_pos)))
     (local.set $out_pos (call $write_string (i32.const 0x2E00) (i32.const 37) (local.get $out_pos)))
     (local.set $out_pos (call $write_string (i32.const 0x2F00) (i32.const 78) (local.get $out_pos)))

@@ -18,7 +18,7 @@ A text/binary module exports a small ABI:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
-- `run(input_size)`
+- `render(input_size)`
 - `output_ptr`
 - `output_utf8_cap` or `output_bytes_cap` (or `output_i32_cap`)
 
@@ -31,7 +31,7 @@ This keeps modules interchangeable and predictable.
 When you run:
 
 ```bash
-qip run module-a.wasm module-b.wasm
+qip render module-a.wasm module-b.wasm
 ```
 
 `qip`:

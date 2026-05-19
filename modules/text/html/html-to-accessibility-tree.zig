@@ -468,7 +468,7 @@ const Writer = struct {
     }
 };
 
-fn render(nodes: []const Node, count: usize) u32 {
+fn renderNodes(nodes: []const Node, count: usize) u32 {
     var w = Writer{};
     var i: usize = 0;
     while (i < count) : (i += 1) {
@@ -489,7 +489,7 @@ fn render(nodes: []const Node, count: usize) u32 {
     return @as(u32, @intCast(w.idx));
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const n = @as(usize, @intCast(input_size));
     if (n > INPUT_CAP) return 0;
 
@@ -701,5 +701,5 @@ export fn run(input_size: u32) u32 {
         i = j;
     }
 
-    return render(nodes_buf[0..], node_count);
+    return renderNodes(nodes_buf[0..], node_count);
 }

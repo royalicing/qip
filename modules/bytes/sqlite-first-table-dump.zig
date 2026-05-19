@@ -805,7 +805,7 @@ fn initState(input: []const u8) ?ParserState {
     };
 }
 
-export fn run(input_size_u32: u32) u32 {
+export fn render(input_size_u32: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_u32)), INPUT_CAP);
     const input = input_buf[0..input_size];
 
@@ -844,7 +844,7 @@ test "dumps first table schema and rows from sqlite fixture" {
     try std.testing.expect(sqlite_bytes.len <= INPUT_CAP);
     @memcpy(input_buf[0..sqlite_bytes.len], sqlite_bytes);
 
-    const out_size = run(@as(u32, @intCast(sqlite_bytes.len)));
+    const out_size = render(@as(u32, @intCast(sqlite_bytes.len)));
     try std.testing.expect(out_size > 0);
     const out = output_buf[0..@as(usize, @intCast(out_size))];
 

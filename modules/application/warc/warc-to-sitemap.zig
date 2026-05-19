@@ -276,7 +276,7 @@ fn writeXMLEscaped(out: *Output, value: []const u8) void {
     }
 }
 
-export fn run(input_size_u32: u32) u32 {
+export fn render(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 
@@ -368,7 +368,7 @@ test "run emits sitemap entries for successful html responses" {
     );
 
     @memcpy(input_buf[0..n], build_buf[0..n]);
-    const out_len = run(@as(u32, @intCast(n)));
+    const out_len = render(@as(u32, @intCast(n)));
     const got = output_buf[0..out_len];
 
     const expected =

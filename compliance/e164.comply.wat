@@ -3,7 +3,7 @@
   (import "impl" "input_ptr" (func $input_ptr (result i32)))
   (import "impl" "input_utf8_cap" (func $input_utf8_cap (result i32)))
   (import "impl" "output_ptr" (func $output_ptr (result i32)))
-  (import "impl" "run" (func $run (param i32) (result i32)))
+  (import "impl" "render" (func $run (param i32) (result i32)))
 
   (data $case1_in "+1 (415) 555-2671")
   (data $case1_out "+14155552671")

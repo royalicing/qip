@@ -365,8 +365,8 @@ static void draw_char(uint32_t width, uint32_t height, uint32_t *row, uint32_t *
     }
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }

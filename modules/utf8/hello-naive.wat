@@ -9,10 +9,10 @@
   (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
   (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
 
-  ;; Required export: run(input_size) -> output_size
+  ;; Required export: render(input_size) -> output_size
   ;; Input is at input_ptr, output goes to output_ptr
   ;; Return 0 for no output, or the length of output written
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $i i32)
     (local $out_pos i32)
 

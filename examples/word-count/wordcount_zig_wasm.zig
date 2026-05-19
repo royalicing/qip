@@ -25,7 +25,7 @@ export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
 
-export fn run(input_size_u32: u32) u32 {
+export fn render(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 

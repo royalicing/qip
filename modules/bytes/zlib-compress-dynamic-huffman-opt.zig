@@ -624,7 +624,7 @@ fn emitTokenBuffer(
     return true;
 }
 /// Writes zlib stream with one final dynamic-Huffman DEFLATE block.
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     const input = input_buf[0..input_size];
 
@@ -720,7 +720,7 @@ test "round trips short text" {
     const plain = "dynamic huffman in qip";
     @memcpy(input_buf[0..plain.len], plain);
 
-    const written = run(@intCast(plain.len));
+    const written = render(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     // Verify dynamic block type: lower 3 bits should be BFINAL=1,BTYPE=10 => 0b101.
@@ -732,7 +732,7 @@ test "round trips short text" {
 }
 
 test "round trips empty input" {
-    const written = run(0);
+    const written = render(0);
     try std.testing.expect(written > 0);
 
     var out: [1]u8 = undefined;
@@ -747,7 +747,7 @@ test "round trips repetitive data" {
     }
     @memcpy(input_buf[0..plain.len], &plain);
 
-    const written = run(@intCast(plain.len));
+    const written = render(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     var out: [65536]u8 = undefined;

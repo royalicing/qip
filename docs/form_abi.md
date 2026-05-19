@@ -14,7 +14,7 @@ Scope:
 - `memory`
 - `input_ptr() -> i32`
 - `input_utf8_cap() -> i32`
-- `run(input_size: i32) -> i32`
+- `render(input_size: i32) -> i32`
 - `output_ptr() -> i32`
 - `output_utf8_cap() -> i32`
 - `input_key_ptr() -> i32`
@@ -48,7 +48,7 @@ Form is complete when:
 
 When complete, host should treat the form as finished and read final output from `output_ptr`.
 
-## Run Semantics
+## Render Semantics
 
 Host flow:
 
@@ -56,7 +56,7 @@ Host flow:
 2. If `input_key_size() == 0`, form is complete.
 3. Otherwise, collect one input value.
 4. Write value bytes to `input_ptr`.
-5. Call `run(input_size)`.
+5. Call `render(input_size)`.
 
 Module behavior:
 
@@ -67,7 +67,7 @@ Module behavior:
   - advance internal state (if any)
   - clear `error_message` (recommended)
 
-`run` return value is UTF-8 output size in `output_ptr`.
+`render` return value is UTF-8 output size in `output_ptr`.
 Final result is read when form is complete.
 
 ## Invariants
@@ -77,4 +77,4 @@ Host should enforce:
 - all pointer+size reads are within wasm memory bounds
 - all sizes are non-negative
 - all metadata strings are valid UTF-8
-- output size from `run` is non-negative and does not exceed `output_utf8_cap`
+- output size from `render` is non-negative and does not exceed `output_utf8_cap`

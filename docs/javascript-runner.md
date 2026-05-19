@@ -1,11 +1,11 @@
 # JavaScript Runner: Annotated Source
 
-The qip contract in tiny, pure JavaScript. Write bytes to `input_ptr`, call `run(input_size)`, read bytes from `output_ptr`.
+The qip contract in tiny, pure JavaScript. Write bytes to `input_ptr`, call `render(input_size)`, read bytes from `output_ptr`.
 
 - Raw source: [`/qip-runner.js`](/qip-runner.js)
 - API:
-  - `await QIP.run(wasmModule, input)`
-  - `const recipe = new QIP.Recipe(inputMimeType, modules); await recipe.run(input)`
+  - `await QIP.render(wasmModule, input)`
+  - `const recipe = new QIP.Recipe(inputMimeType, modules); await recipe.render(input)`
 
 <style>
 main { max-width: none; }
@@ -183,16 +183,16 @@ function parseOutputSignature(exportsObj) {
 
   <tr>
     <td>
-      <strong>Stage execution (`runDetailed`)</strong><br>
-      This is the qip loop: validate types, write input bytes, call `run`, read output.
+      <strong>Stage execution (`renderDetailed`)</strong><br>
+      This is the qip loop: validate types, write input bytes, call `render`, read output.
     </td>
     <td>
-<pre><code class="language-js">async function runDetailed(wasmModule, input, inputContentType) {
+<pre><code class="language-js">async function renderDetailed(wasmModule, input, inputContentType) {
   const instance = await instantiateWasm(wasmModule);
   const exportsObj = instance.exports;
-  const runExport = exportsObj.run;
-  if (typeof runExport !== "function") {
-    throw Error("module missing export: run");
+  const renderExport = exportsObj.render;
+  if (typeof renderExport !== "function") {
+    throw Error("module missing export: render");
   }
 
   const inputSignature = parseInputSignature(exportsObj);
@@ -204,7 +204,7 @@ function parseOutputSignature(exportsObj) {
   }
 
   writeSlice(exportsObj.memory, inputSignature.ptr, normalized.bytes, "input_ptr");
-  const outputLen = toI32(runExport(normalized.bytes.length), "run");
+  const outputLen = toI32(renderExport(normalized.bytes.length), "render");
 
   // TODO: remove this
   if (outputSignature.kind === "scalar") {
@@ -228,12 +228,12 @@ function parseOutputSignature(exportsObj) {
 
   <tr>
     <td>
-      <strong>Public `run`</strong><br>
+      <strong>Public `render`</strong><br>
       This returns only the stage output value: `string`, `Uint8Array`, `Int32Array`, or scalar `number`.
     </td>
     <td>
-<pre><code class="language-js">export async function run(wasmModule, input) {
-  const result = await runDetailed(wasmModule, input, "");
+<pre><code class="language-js">export async function render(wasmModule, input) {
+  const result = await renderDetailed(wasmModule, input, "");
   return result.value;
 }
 </code></pre>
@@ -243,7 +243,7 @@ function parseOutputSignature(exportsObj) {
   <tr>
     <td>
       <strong>`Recipe` pipeline</strong><br>
-      `Recipe` composes multiple run modules in stage order and tracks final MIME/kind metadata.
+      `Recipe` composes multiple render modules in stage order and tracks final MIME/kind metadata.
     </td>
     <td>
 <pre><code class="language-js">export class Recipe {
@@ -253,16 +253,16 @@ function parseOutputSignature(exportsObj) {
     }
     this.inputMimeType = normalizeMimeType(inputMimeType);
     this.modules = arrayOfWasmModules.slice();
-    this.lastRun = null;
+    this.lastRender = null;
   }
 
-  async run(input) {
+  async render(input) {
     let current = input;
     let currentMimeType = this.inputMimeType;
 
     for (let i = 0; i < this.modules.length; i += 1) {
       const isLast = i === this.modules.length - 1;
-      const result = await runDetailed(this.modules[i], current, currentMimeType);
+      const result = await renderDetailed(this.modules[i], current, currentMimeType);
       if (!isLast && (result.kind === "scalar" || result.kind === "i32")) {
         throw Error("only utf8/bytes can be piped to another stage");
       }
@@ -270,7 +270,7 @@ function parseOutputSignature(exportsObj) {
       if (result.outputContentType !== "") currentMimeType = result.outputContentType;
     }
 
-    this.lastRun = { outputMimeType: currentMimeType };
+    this.lastRender = { outputMimeType: currentMimeType };
     return current;
   }
 }
@@ -284,29 +284,29 @@ function parseOutputSignature(exportsObj) {
 ```html
 <script src="/qip-runner.js"></script>
 <script type="module">
-  const out = await QIP.run('/modules/utf8/hello.wasm', 'World');
+  const out = await QIP.render('/modules/utf8/hello.wasm', 'World');
   console.log(out); // Hello, World
 
   const recipe = new QIP.Recipe('text/markdown', [
     '/modules/text/markdown/commonmark.0.31.2.wasm',
     '/modules/text/html/html-page-wrap.wasm',
   ]);
-  const html = await recipe.run('# qip');
-  console.log(recipe.lastRun.outputMimeType, html.slice(0, 32));
+  const html = await recipe.render('# qip');
+  console.log(recipe.lastRender.outputMimeType, html.slice(0, 32));
 </script>
 ```
 
 ```js
 const fs = require('node:fs');
-const { run, Recipe } = require('./site/qip-runner.js');
+const { render, Recipe } = require('./site/qip-runner.js');
 
 async function main() {
-  const hello = await run(new Uint8Array(fs.readFileSync('modules/utf8/hello.wasm')), 'World');
+  const hello = await render(new Uint8Array(fs.readFileSync('modules/utf8/hello.wasm')), 'World');
   const recipe = new Recipe('', [
     new Uint8Array(fs.readFileSync('modules/utf8/trim.wasm')),
     new Uint8Array(fs.readFileSync('modules/utf8/hello.wasm')),
   ]);
-  const out = await recipe.run('  qip  ');
+  const out = await recipe.render('  qip  ');
   console.log(hello, out);
 }
 

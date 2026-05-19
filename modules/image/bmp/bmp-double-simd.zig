@@ -101,7 +101,7 @@ fn storeU64LE(off: u32, value: u64) void {
     storeU32LE(off + 4, hi);
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     var input_size = input_size_in;
     if (input_size > INPUT_CAP) {
         input_size = @intCast(INPUT_CAP);

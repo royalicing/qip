@@ -27,7 +27,7 @@ qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-u
 1. Base validation (always):
 
 - requires `memory` export
-- detects module kind as `run`, `tile`, or `run+tile`
+- detects module kind as `render`, `tile`, or `render+tile`
 - validates required ABI shape for the detected kind
 
 2. Static qip contract checks (always, when qip exports are present):
@@ -44,9 +44,9 @@ qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-u
 
 ## Base Contract Rules
 
-`run` module requires:
+`render` module requires:
 
-- `run(i32) -> i32`
+- `render(i32) -> i32`
 - `input_ptr` as exported global or function returning `i32`
 - `input_utf8_cap` or `input_bytes_cap` as exported global or function returning `i32`
 
@@ -84,8 +84,8 @@ Status convention:
 
 - only runs if exported
 - runs against a separate fresh `impl` instance
-- host provides `qip.run_must_trap(i32) -> i32`
-- use `run_must_trap` when trap is expected
+- host provides `qip.render_must_trap(i32) -> i32`
+- use `render_must_trap` when trap is expected
 - if `negative()` returns `<= 0`, `qip` reports `negative() expected trap`
 
 ## Failure Detail Exports (Optional)
@@ -114,11 +114,11 @@ Legacy output detail fallback:
 ```wat
 (module
   (import "impl" "memory" (memory 1))
-  (import "impl" "run" (func $run (param i32) (result i32)))
+  (import "impl" "render" (func $render (param i32) (result i32)))
 
   (func (export "positive") (result i32)
     ;; Replace with real checks.
-    (drop (call $run (i32.const 0)))
+    (drop (call $render (i32.const 0)))
     (i32.const 1))
 )
 ```
@@ -128,13 +128,13 @@ Legacy output detail fallback:
 ```wat
 (module
   (import "impl" "memory" (memory 1))
-  (import "qip" "run_must_trap" (func $run_must_trap (param i32) (result i32)))
+  (import "qip" "render_must_trap" (func $render_must_trap (param i32) (result i32)))
 
   (func (export "positive") (result i32)
     (i32.const 1))
 
   (func (export "negative") (result i32)
-    (if (i32.ne (call $run_must_trap (i32.const 0)) (i32.const 1))
+    (if (i32.ne (call $render_must_trap (i32.const 0)) (i32.const 1))
       (then (return (i32.const -1))))
     (i32.const 1))
 )

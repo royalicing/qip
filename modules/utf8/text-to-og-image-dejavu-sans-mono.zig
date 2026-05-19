@@ -237,7 +237,7 @@ fn drawGlyph(base_x: u32, base_y: u32, glyph_index: usize, r: u8, g: u8, b: u8, 
     }
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const use_size: usize = @min(@as(usize, input_size), INPUT_CAP);
     const input = input_buf[0..use_size];
 

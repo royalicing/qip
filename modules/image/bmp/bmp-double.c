@@ -76,8 +76,8 @@ static void write_u32_le(uint32_t off, uint32_t value) {
     output_buffer[off + 3] = (unsigned char)((value >> 24) & 0xFF);
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size < 54) {
         return 0;
     }

@@ -1550,7 +1550,7 @@ fn writeU32LE(buf: []u8, off: u32, value: u32) void {
     buf[off + 3] = @intCast((value >> 24) & 0xFF);
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const size = if (input_size > INPUT_CAP) INPUT_CAP else input_size;
     const input = input_buf[0..size];
 
@@ -1614,7 +1614,7 @@ export fn run(input_size: u32) u32 {
 pub fn renderForTest(input: []const u8) []const u8 {
     const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
     @memcpy(input_buf[0..size], input[0..size]);
-    const out_len = run(@as(u32, @intCast(size)));
+    const out_len = render(@as(u32, @intCast(size)));
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 
@@ -1624,7 +1624,7 @@ pub fn renderForTestWithBackground(input: []const u8, bg_rgba: u32) []const u8 {
     defer background_color_rgba = prev;
     const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
     @memcpy(input_buf[0..size], input[0..size]);
-    const out_len = run(@as(u32, @intCast(size)));
+    const out_len = render(@as(u32, @intCast(size)));
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 

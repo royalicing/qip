@@ -1,6 +1,6 @@
 (module
   (import "impl" "memory" (memory 1))
-  (import "impl" "run" (func $run (param i32) (result i32)))
+  (import "impl" "render" (func $run (param i32) (result i32)))
 
   ;; Returns >0 on pass, <=0 on failure.
   ;; Check: empty input must not trap and must return zero output size.

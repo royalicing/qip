@@ -452,7 +452,7 @@ fn lzwEncodeIndices(indices: []const u8, min_code_size: u8, out: []u8) OptimizeE
     var bitcount: u8 = 0;
 
     const writeCode = struct {
-        fn run(code: u16, code_bits: u8, out_buf: []u8, out_pos: *usize, bit_buffer: *u32, bit_count: *u8) OptimizeError!void {
+        fn render(code: u16, code_bits: u8, out_buf: []u8, out_pos: *usize, bit_buffer: *u32, bit_count: *u8) OptimizeError!void {
             bit_buffer.* |= (@as(u32, code) << @as(u5, @intCast(bit_count.*)));
             bit_count.* += code_bits;
             while (bit_count.* >= 8) {
@@ -463,7 +463,7 @@ fn lzwEncodeIndices(indices: []const u8, min_code_size: u8, out: []u8) OptimizeE
                 bit_count.* -= 8;
             }
         }
-    }.run;
+    }.render;
 
     try writeCode(clear, code_size, out, &out_len, &bitbuf, &bitcount);
     var first_after_clear = true;
@@ -1085,7 +1085,7 @@ fn optimizeGif(input: []const u8, output: []u8, lossy: u32, palette_limit: u32) 
     }
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     const out_len = optimizeGif(input_buf[0..input_size], output_buf[0..], lossy_amount, max_colors) catch return 0;
     return @as(u32, @intCast(out_len));

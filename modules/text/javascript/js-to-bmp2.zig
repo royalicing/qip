@@ -328,7 +328,7 @@ fn drawChar(width: u32, height: u32, row: *u32, col: *u32, rows: u32, glyph: u8,
     }
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     var input_size = input_size_in;
     if (input_size > INPUT_CAP) input_size = @intCast(INPUT_CAP);
 

@@ -808,7 +808,7 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
     return w.idx;
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const input = input_buf[0..@as(usize, @intCast(input_size))];
     const output = output_buf[0..];
     const written = renderMarkdown(input, output);

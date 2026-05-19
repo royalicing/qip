@@ -165,8 +165,8 @@ static int write_escaped_attr(uint32_t *out_idx, const unsigned char *s, uint32_
     return 1;
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }

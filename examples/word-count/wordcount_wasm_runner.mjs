@@ -102,11 +102,11 @@ async function main() {
   ensureRange("input", inputPtr, input.length, memBytes.length);
   memBytes.set(input, inputPtr);
 
-  const run = exportsObj.run;
-  if (typeof run !== "function") {
-    throw new Error("missing export: run");
+  const render = exportsObj.render;
+  if (typeof render !== "function") {
+    throw new Error("missing export: render");
   }
-  const outputSize = Number(run(input.length));
+  const outputSize = Number(render(input.length));
   if (!Number.isFinite(outputSize) || outputSize < 0) {
     throw new Error(`invalid output size: ${outputSize}`);
   }

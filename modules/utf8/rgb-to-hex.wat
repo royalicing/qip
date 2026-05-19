@@ -169,7 +169,7 @@
       (call $to_hex_digit (local.get $low)))
   )
 
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $pos i32)

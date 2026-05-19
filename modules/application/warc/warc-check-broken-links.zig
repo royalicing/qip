@@ -722,7 +722,7 @@ fn validateInternalLinks(input: []const u8) ValidationSummary {
     };
 }
 
-export fn run(input_size_u32: u32) u32 {
+export fn render(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 
@@ -788,7 +788,7 @@ test "all internal links resolve" {
     );
 
     @memcpy(input_buf[0..n], build_buf[0..n]);
-    const out_len = run(@as(u32, @intCast(n)));
+    const out_len = render(@as(u32, @intCast(n)));
     try std.testing.expectEqual(@as(u32, @intCast(n)), out_len);
     try std.testing.expectEqualSlices(u8, build_buf[0..n], input_buf[0..@as(usize, @intCast(out_len))]);
 }

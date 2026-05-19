@@ -3463,7 +3463,7 @@ fn renderMarkdown(input: []const u8, out: []u8) u32 {
     return w.len();
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     var input_size = input_size_in;
     if (input_size > INPUT_CAP) input_size = INPUT_CAP;
 

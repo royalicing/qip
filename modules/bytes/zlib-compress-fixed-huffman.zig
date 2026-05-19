@@ -281,7 +281,7 @@ fn emitMatch(writer: *BitWriter, length: usize, distance: usize) bool {
 }
 
 /// Writes zlib (RFC1950) with DEFLATE fixed-Huffman block(s) (RFC1951).
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     const input = input_buf[0..input_size];
 
@@ -343,7 +343,7 @@ fn decompressZlib(compressed: []const u8, out: []u8) !usize {
 }
 
 test "round trips empty input" {
-    const written = run(0);
+    const written = render(0);
     try std.testing.expect(written > 0);
 
     var out: [1]u8 = undefined;
@@ -355,7 +355,7 @@ test "round trips short text" {
     const plain = "qip + wasm";
     @memcpy(input_buf[0..plain.len], plain);
 
-    const written = run(@intCast(plain.len));
+    const written = render(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     var out: [64]u8 = undefined;
@@ -370,7 +370,7 @@ test "compresses repetitive data well" {
     }
     @memcpy(input_buf[0..plain.len], &plain);
 
-    const written = run(@intCast(plain.len));
+    const written = render(@intCast(plain.len));
     try std.testing.expect(written > 0);
     try std.testing.expect(written < plain.len / 2);
 

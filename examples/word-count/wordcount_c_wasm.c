@@ -196,8 +196,8 @@ static void clear_state(void) {
     total_count = 0;
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     uint32_t i;
     uint32_t token_len = 0;
     Entry *top[10];

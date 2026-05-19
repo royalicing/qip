@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// CommonMark 0.31.2 compliance checker for qip run() markdown modules.
+// CommonMark 0.31.2 compliance checker for qip render() markdown modules.
 //
 // This checker embeds compliance/commonmark-spec-0.31.2.txt and parses
 // examples using the same state machine as the upstream spec_tests.py:
@@ -28,7 +28,7 @@ extern "impl" fn input_ptr() u32;
 extern "impl" fn input_utf8_cap() u32;
 extern "impl" fn output_ptr() u32;
 extern "impl" fn output_utf8_cap() u32;
-extern "impl" fn run(input_size: u32) u32;
+extern "impl" fn render(input_size: u32) u32;
 
 const SPEC_TEXT = @embedFile("commonmark-spec-0.31.2.txt");
 const OPEN_FENCE = ("`" ** 32) ++ " example";
@@ -299,14 +299,14 @@ fn runExample(
         return -@as(i32, @intCast(example_number));
     }
 
-    const actual_size = run(@as(u32, @intCast(in_len)));
+    const actual_size = render(@as(u32, @intCast(in_len)));
     if (actual_size > out_cap) {
         setFailureDetail(
             section,
             example_number,
             start_line,
             end_line,
-            "run returned output larger than output_utf8_cap",
+            "render returned output larger than output_utf8_cap",
             @as(u32, @intCast(in_len)),
             html_raw,
             actual_size,

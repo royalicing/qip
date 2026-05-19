@@ -14,7 +14,7 @@
     (i32.const 65536)
   )
 
-  (func (export "run") (param i32) (result i32)
+  (func (export "render") (param i32) (result i32)
     (loop $forever
       br $forever
     )

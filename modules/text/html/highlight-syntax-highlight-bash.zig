@@ -547,7 +547,7 @@ fn transformHTML(input: []const u8, w: *Writer) void {
     }
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const input_len: usize = @intCast(input_size);
     if (input_len > INPUT_CAP) @trap();
     const input = input_buf[0..input_len];
@@ -561,7 +561,7 @@ export fn run(input_size: u32) u32 {
 fn runForTest(input: []const u8) []const u8 {
     if (input.len > INPUT_CAP) @trap();
     @memcpy(input_buf[0..input.len], input);
-    const out_len = run(@as(u32, @intCast(input.len)));
+    const out_len = render(@as(u32, @intCast(input.len)));
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 

@@ -346,7 +346,7 @@ fn buildICS() u32 {
     return @as(u32, @intCast(w.idx));
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const bounded_input_size = @min(input_size, INPUT_CAP);
     const input = input_buf[0..@as(usize, @intCast(bounded_input_size))];
     resetError();
@@ -386,7 +386,7 @@ fn resetState() void {
 
 fn feed(input: []const u8) u32 {
     @memcpy(input_buf[0..input.len], input);
-    return run(@as(u32, @intCast(input.len)));
+    return render(@as(u32, @intCast(input.len)));
 }
 
 test "successful flow outputs timed event with duration" {

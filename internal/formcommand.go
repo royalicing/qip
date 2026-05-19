@@ -24,7 +24,7 @@ const (
 	exportMemory           = "memory"
 	exportInputPtr         = "input_ptr"
 	exportInputUTF8Cap     = "input_utf8_cap"
-	exportRun              = "run"
+	exportRun              = "render"
 	exportOutputPtr        = "output_ptr"
 	exportOutputUTF8Cap    = "output_utf8_cap"
 	exportInputKeyPtr      = "input_key_ptr"
@@ -278,7 +278,7 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 
 func readOutputBytes(ctx context.Context, fm formModule, outputSize int32) ([]byte, error) {
 	if outputSize < 0 {
-		return nil, fmt.Errorf("run returned negative output size: %d", outputSize)
+		return nil, fmt.Errorf("render returned negative output size: %d", outputSize)
 	}
 	if outputSize == 0 {
 		return nil, nil
@@ -296,7 +296,7 @@ func readOutputBytes(ctx context.Context, fm formModule, outputSize int32) ([]by
 		return nil, fmt.Errorf("module returned invalid output memory values: ptr=%d cap=%d", outPtr, outCap)
 	}
 	if outputSize > outCap {
-		return nil, fmt.Errorf("run output size exceeds output_utf8_cap (%d > %d)", outputSize, outCap)
+		return nil, fmt.Errorf("render output size exceeds output_utf8_cap (%d > %d)", outputSize, outCap)
 	}
 	b, ok := fm.mem.Read(uint32(outPtr), uint32(outputSize))
 	if !ok {
@@ -338,10 +338,10 @@ func readExportedString(ctx context.Context, mem api.Memory, ptrFn api.Function,
 func callRunSize(ctx context.Context, fn api.Function, inputSize int32) (int32, error) {
 	res, err := fn.Call(ctx, uint64(uint32(inputSize)))
 	if err != nil {
-		return 0, fmt.Errorf("run() failed: %w", err)
+		return 0, fmt.Errorf("render() failed: %w", err)
 	}
 	if len(res) != 1 {
-		return 0, errors.New("run() returned unexpected result arity")
+		return 0, errors.New("render() returned unexpected result arity")
 	}
 	return int32(uint32(res[0])), nil
 }

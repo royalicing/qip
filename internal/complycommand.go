@@ -25,9 +25,9 @@ const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...
 const (
 	implModuleName                = "impl"
 	trapHostModuleName            = "qip"
-	trapHostExportRunMustTrap     = "run_must_trap"
+	trapHostExportRunMustTrap     = "render_must_trap"
 	complyExportMemory            = "memory"
-	complyExportRun               = "run"
+	complyExportRun               = "render"
 	complyExportInputPtr          = "input_ptr"
 	complyExportInputUTF8Cap      = "input_utf8_cap"
 	complyExportInputBytesCap     = "input_bytes_cap"
@@ -56,9 +56,9 @@ func (s *stringListFlag) Set(v string) error {
 type moduleKind string
 
 const (
-	moduleKindRun        moduleKind = "run"
+	moduleKindRun        moduleKind = "render"
 	moduleKindTile       moduleKind = "tile"
-	moduleKindRunAndTile moduleKind = "run+tile"
+	moduleKindRunAndTile moduleKind = "render+tile"
 )
 
 type baseValidationResult struct {
@@ -255,7 +255,7 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
 			return baseValidationResult{}, err
 		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm run module must export input_ptr as global or function")
+			return baseValidationResult{}, errors.New("Wasm render module must export input_ptr as global or function")
 		}
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputUTF8Cap); err != nil {
 			return baseValidationResult{}, err
@@ -266,7 +266,7 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 		} else if ok {
 			hasRun = true
 		} else {
-			return baseValidationResult{}, errors.New("Wasm run module must export input_utf8_cap or input_bytes_cap as global or function")
+			return baseValidationResult{}, errors.New("Wasm render module must export input_utf8_cap or input_bytes_cap as global or function")
 		}
 	}
 
@@ -296,7 +296,7 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 	case hasTile:
 		return baseValidationResult{kind: moduleKindTile}, nil
 	default:
-		return baseValidationResult{}, errors.New("Wasm module is neither a run module nor a tile module")
+		return baseValidationResult{}, errors.New("Wasm module is neither a render module nor a tile module")
 	}
 }
 
@@ -505,7 +505,7 @@ func runCompliancePhase(
 func instantiateTrapHost(ctx context.Context, r wazero.Runtime, implMod api.Module, phaseTimeout time.Duration) (api.Module, error) {
 	runFn := implMod.ExportedFunction(complyExportRun)
 	if runFn == nil {
-		return nil, errors.New(`qip.run_must_trap requires implementation module export run(i32) -> i32`)
+		return nil, errors.New(`qip.render_must_trap requires implementation module export render(i32) -> i32`)
 	}
 	probeTimeout := phaseTimeout
 	if probeTimeout > 0 {

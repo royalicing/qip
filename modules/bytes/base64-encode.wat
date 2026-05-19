@@ -43,7 +43,7 @@
     )
   )
 
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $input_idx i32)
     (local $output_idx i32)
     (local $b1 i32)

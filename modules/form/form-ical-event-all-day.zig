@@ -248,7 +248,7 @@ fn buildICS() u32 {
     return @as(u32, @intCast(w.idx));
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const bounded_input_size = @min(input_size, INPUT_CAP);
     const input = input_buf[0..@as(usize, @intCast(bounded_input_size))];
     resetError();
@@ -278,12 +278,12 @@ test "successful flow outputs simple ical event" {
 
     const t = "Team Sync";
     @memcpy(input_buf[0..t.len], t);
-    try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(t.len))));
+    try std.testing.expectEqual(@as(u32, 0), render(@as(u32, @intCast(t.len))));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
 
     const d = "2026-03-14";
     @memcpy(input_buf[0..d.len], d);
-    const out_size = run(@as(u32, @intCast(d.len)));
+    const out_size = render(@as(u32, @intCast(d.len)));
     try std.testing.expect(out_size > 0);
     try std.testing.expectEqual(@as(u32, 0), input_key_size());
 
@@ -299,7 +299,7 @@ test "invalid title keeps step and sets error" {
     resetState();
     const t = "   ";
     @memcpy(input_buf[0..t.len], t);
-    try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(t.len))));
+    try std.testing.expectEqual(@as(u32, 0), render(@as(u32, @intCast(t.len))));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_TITLE.len)), input_key_size());
     try std.testing.expect(error_message_size() > 0);
 }
@@ -309,12 +309,12 @@ test "invalid date keeps step and sets error" {
 
     const t = "Demo";
     @memcpy(input_buf[0..t.len], t);
-    _ = run(@as(u32, @intCast(t.len)));
+    _ = render(@as(u32, @intCast(t.len)));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
 
     const d = "2026-02-30";
     @memcpy(input_buf[0..d.len], d);
-    try std.testing.expectEqual(@as(u32, 0), run(@as(u32, @intCast(d.len))));
+    try std.testing.expectEqual(@as(u32, 0), render(@as(u32, @intCast(d.len))));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_DATE.len)), input_key_size());
     try std.testing.expect(error_message_size() > 0);
 }

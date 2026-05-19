@@ -594,7 +594,7 @@ fn extractTitleToOutput(input: []const u8, out: []u8) u32 {
     return writer.finish();
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     return extractTitleToOutput(input_buf[0..input_size], output_buf[0..]);
 }

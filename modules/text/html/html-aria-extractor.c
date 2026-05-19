@@ -905,8 +905,8 @@ static void finalize_element(TextState *st, int emit, int name_mode,
     st->need_sep = 0;
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     uint32_t pos = 0;
     int inside = 0;
     int emit = 0;

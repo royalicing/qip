@@ -4,7 +4,7 @@
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
   (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
   (global $output_i32_cap (export "output_i32_cap") i32 (i32.const 1))
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $ptr i32)
     (local $i i32)
     (local $c i32)

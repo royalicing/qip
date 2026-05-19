@@ -228,7 +228,7 @@ fn extractAll(input: []const u8, output: []u8) u32 {
     return @as(u32, @intCast(out));
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     return extractAll(input_buf[0..input_size], output_buf[0..]);
 }

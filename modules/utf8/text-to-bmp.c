@@ -267,8 +267,8 @@ static uint32_t count_rows(uint32_t input_size) {
     return rows;
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }

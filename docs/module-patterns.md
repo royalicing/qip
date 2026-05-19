@@ -10,8 +10,8 @@ For validator-style modules that should compose in pipelines, prefer assertion p
 
 Use this quick mapping:
 
-- Validate and keep data flowing (preferred): assertion pass-through (`run` validates, returns input unchanged, traps on failure).
-- Validate and emit only pass/fail (terminal): scalar `run` result, no output buffer exports.
+- Validate and keep data flowing (preferred): assertion pass-through (`render` validates, returns input unchanged, traps on failure).
+- Validate and emit only pass/fail (terminal): scalar `render` result, no output buffer exports.
 - Normalize text: UTF-8 input/output buffers.
 - Transform binary: bytes input/output buffers.
 - Emit numeric rows: `output_i32_cap`.
@@ -28,7 +28,7 @@ Exports:
 - `input_utf8_cap` or `input_bytes_cap`
 - `output_ptr`
 - matching output cap (`output_utf8_cap` for UTF-8, `output_bytes_cap` for bytes)
-- `run(input_size) -> output_size`
+- `render(input_size) -> output_size`
 
 Semantics:
 
@@ -55,13 +55,13 @@ Exports:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
-- `run(input_size) -> i32`
+- `render(input_size) -> i32`
 
 Do not export `output_ptr` or output caps.
 
 Host behavior:
 
-- `qip` prints `Ran: <run_return_value>`.
+- `qip` prints `Ran: <render_return_value>`.
 - In a chain, downstream modules receive empty bytes from this stage. Treat this as terminal unless that is intentional.
 
 Good for:
@@ -78,7 +78,7 @@ Exports:
 - `input_utf8_cap`
 - `output_ptr`
 - `output_utf8_cap`
-- `run(input_size) -> output_size`
+- `render(input_size) -> output_size`
 
 Host behavior:
 
@@ -102,7 +102,7 @@ Exports:
 - `input_bytes_cap`
 - `output_ptr`
 - `output_bytes_cap`
-- `run(input_size) -> output_size`
+- `render(input_size) -> output_size`
 
 Host behavior matches Pattern 3, but no UTF-8 assumptions.
 
@@ -121,7 +121,7 @@ Exports:
 - `input_utf8_cap` or `input_bytes_cap`
 - `output_ptr`
 - `output_i32_cap`
-- `run(...) -> item_count`
+- `render(...) -> item_count`
 
 Semantics:
 
@@ -198,7 +198,7 @@ Host treats this as successful execution unless a bound/contract check failed.
 
 ### Empty Output Semantics
 
-If output buffers are exported and `run` returns `0`, output is empty.
+If output buffers are exported and `render` returns `0`, output is empty.
 
 - In chains, downstream stage receives empty input bytes.
 - This is often useful for filter/drop behavior.
@@ -227,6 +227,6 @@ Prefer soft failure when:
 - Pick one pattern first; do not mix semantics accidentally.
 - Keep pointer/cap units consistent (bytes vs `i32` items).
 - Validate input length and trap on overflow.
-- Ensure `run` return value unit matches exported output cap type.
+- Ensure `render` return value unit matches exported output cap type.
 - For validator modules in chains, default to assertion pass-through (`output_ptr == input_ptr`, return unchanged size, trap on failure).
 - Add tests for malformed input and oversized input.

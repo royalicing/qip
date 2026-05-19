@@ -170,7 +170,7 @@ fn renderCalendar(year: u32, month: u8, out: []u8) usize {
     return w.idx;
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const size = @min(@as(usize, @intCast(input_size)), @as(usize, INPUT_CAP));
     const ym = parseYearMonth(input_buf[0..size]) orelse return 0;
     const written = renderCalendar(ym.year, ym.month, output_buf[0..]);

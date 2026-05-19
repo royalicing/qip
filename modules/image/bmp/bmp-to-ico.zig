@@ -81,7 +81,7 @@ fn rowStrideBytes(width: u32, bits_per_pixel: u32) ?u32 {
     return @intCast(bytes_per_row);
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     var input_size: u32 = input_size_in;
     if (input_size > INPUT_CAP) {
         input_size = @intCast(INPUT_CAP);
@@ -241,7 +241,7 @@ test "converts 24bpp BI_RGB BMP to ICO" {
 
     @memcpy(input_buf[0..bmp.len], bmp[0..]);
 
-    const written = run(@intCast(bmp.len));
+    const written = render(@intCast(bmp.len));
     try std.testing.expectEqual(@as(u32, 70), written);
 
     try std.testing.expectEqual(@as(u8, 0), output_buf[0]);
@@ -306,7 +306,7 @@ test "converts top-down 32bpp BI_RGB BMP to bottom-up ICO XOR bitmap" {
 
     @memcpy(input_buf[0..bmp.len], bmp[0..]);
 
-    const written = run(@intCast(bmp.len));
+    const written = render(@intCast(bmp.len));
     try std.testing.expectEqual(@as(u32, 86), written);
 
     try std.testing.expectEqual(@as(u8, 2), output_buf[6]);
@@ -343,6 +343,6 @@ test "rejects unsupported BMP bit depth" {
 
     @memcpy(input_buf[0..bmp.len], bmp[0..]);
 
-    const written = run(@intCast(bmp.len));
+    const written = render(@intCast(bmp.len));
     try std.testing.expectEqual(@as(u32, 0), written);
 }

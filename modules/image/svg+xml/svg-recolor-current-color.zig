@@ -219,7 +219,7 @@ fn formatColorHex(rgba: u32, out: *[9]u8) usize {
     return 9;
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_in)), @as(usize, INPUT_CAP));
     const replacement = color_css_buf[0..color_css_len];
     const out_len = recolorSVGCurrentColor(input_buf[0..input_size], output_buf[0..], replacement) catch @trap();

@@ -133,15 +133,15 @@ var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\
 var qipPreviewTagPattern = regexp.MustCompile(`(?is)<qip-preview\b[^>]*>`)
 var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ...\n\nModule contracts:\n  Run mode:\n    - Exports run(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a module path to set that module's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ...\n\nModule contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a module path to set that module's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]
 
 What qip comply does:
   1) Base ABI validation on impl.wasm (always):
      - impl must export memory
-     - detects module kind: run, tile, or run+tile
-     - run kind requires:
-         run(i32) -> i32
+     - detects module kind: render, tile, or render+tile
+     - render kind requires:
+         render(i32) -> i32
          input_ptr (global i32 or function () -> i32)
          input_utf8_cap or input_bytes_cap (global i32 or function () -> i32)
      - tile kind requires:
@@ -165,21 +165,21 @@ Compliance module contract (what to implement):
     - must export positive() -> i32
   Optional:
     - export negative() -> i32
-    - import qip.run_must_trap(i32) -> i32 for negative tests that expect trap
+    - import qip.render_must_trap(i32) -> i32 for negative tests that expect trap
 
 Status convention:
   - return > 0 to pass
   - return <= 0 to fail
   - positive() trap always fails
   - if negative() exists, it runs on a fresh impl instance
-  - negative() returning <= 0 fails (use run_must_trap when trap is expected)
+  - negative() returning <= 0 fails (use render_must_trap when trap is expected)
 
 Memory model for compliance modules:
   - compliance imports impl.memory, so both modules see the same linear memory
-  - to test a run module, compliance usually:
+  - to test a render module, compliance usually:
       - calls impl.input_ptr() and impl.input_utf8_cap()/input_bytes_cap()
       - writes test input bytes into impl.memory at input_ptr
-      - calls impl.run(input_size)
+      - calls impl.render(input_size)
       - reads output from impl.output_ptr() and returned output size
 
 Failure detail exports (optional but recommended):
@@ -192,19 +192,19 @@ Failure detail exports (optional but recommended):
     - failure_output_ptr / failure_output_size
   Aliases with fail_* prefix are also accepted.
 
-Minimal WAT template (run module checker):
+Minimal WAT template (render module checker):
   (module
     (import "impl" "memory" (memory 1))
     (import "impl" "input_ptr" (func $input_ptr (result i32)))
-    (import "impl" "run" (func $run (param i32) (result i32)))
+    (import "impl" "render" (func $render (param i32) (result i32)))
     (import "impl" "output_ptr" (func $output_ptr (result i32)))
 
     (func (export "positive") (result i32)
-      ;; write input at (call $input_ptr), call $run, compare output, return >0 on pass
+      ;; write input at (call $input_ptr), call $render, compare output, return >0 on pass
       i32.const 1)
 
     ;; optional negative phase:
-    ;; (import "qip" "run_must_trap" (func $run_must_trap (param i32) (result i32)))
+    ;; (import "qip" "render_must_trap" (func $render_must_trap (param i32) (result i32)))
     ;; (func (export "negative") (result i32) ...)
   )
 
@@ -361,7 +361,7 @@ func runCmd(args []string) {
 
 	moduleSpecs, parseErr := parseModuleSpecs(fs.Args(), "run")
 	if parseErr != nil {
-		gameOver("Invalid run module args: %v", parseErr)
+		gameOver("Invalid render module args: %v", parseErr)
 	}
 	if len(moduleSpecs) == 0 {
 		gameOver(usageRun)
@@ -582,7 +582,7 @@ func benchCmd(args []string) {
 			gameOver("Wasm module could not be compiled")
 		}
 		funcs := cm.ExportedFunctions()
-		_, hasRun := funcs["run"]
+		_, hasRun := funcs["render"]
 		_, hasTile := funcs["tile_rgba_f32_64x64"]
 		switch {
 		case hasTile:
@@ -590,7 +590,7 @@ func benchCmd(args []string) {
 		case hasRun:
 			moduleKinds[i] = benchModuleKindRun
 		default:
-			gameOver("bench check failed for %s: Wasm module must export run(i32) -> i32 or tile_rgba_f32_64x64(f32, f32)", modules[i])
+			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32 or tile_rgba_f32_64x64(f32, f32)", modules[i])
 		}
 		compiled[i] = cm
 		defer compiled[i].Close(ctx)
@@ -1907,8 +1907,8 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	}
 	defer mod.Close(baseCtx)
 
-	// Keep run-module behavior unchanged when a module exports run(...).
-	if mod.ExportedFunction("run") != nil {
+	// Keep render-module behavior unchanged when a module exports render(...).
+	if mod.ExportedFunction("render") != nil {
 		return false, nil, nil
 	}
 
@@ -2134,9 +2134,9 @@ func executeModuleWithInput(
 		exec.outputContentType = ""
 	}
 
-	runFunc := mod.ExportedFunction("run")
+	runFunc := mod.ExportedFunction("render")
 	if runFunc == nil {
-		returnErr = errors.New("Wasm module must export run(i32) -> i32")
+		returnErr = errors.New("Wasm module must export render(i32) -> i32")
 		return
 	}
 

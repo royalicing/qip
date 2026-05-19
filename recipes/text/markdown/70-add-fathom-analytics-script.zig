@@ -51,7 +51,7 @@ fn injectFathom(input: []const u8, output: []u8) usize {
     return required;
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const size = @as(usize, @intCast(input_size));
     const input = input_buf[0..size];
     const output = output_buf[0..];

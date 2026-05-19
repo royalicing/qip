@@ -366,7 +366,7 @@ fn writeTarEntry(out: *Output, path: []const u8, body: []const u8) void {
     }
 }
 
-export fn run(input_size_u32: u32) u32 {
+export fn render(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 

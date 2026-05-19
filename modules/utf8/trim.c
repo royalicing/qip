@@ -30,8 +30,8 @@ static int is_space(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }

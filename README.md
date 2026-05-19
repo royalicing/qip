@@ -22,7 +22,7 @@ qip does not use WASI or WIT, standards that have ballooned in complexity due to
 
 - `input_ptr` / `input_utf8_cap`: where `qip` writes input bytes.
 - `output_ptr` / `output_utf8_cap`: where your module writes its output bytes.
-- `run(input_size)`: function to process input and return output length in bytes.
+- `render(input_size)`: function to process input and return output length in bytes.
 
 This contract (capacity, output, and optional content type metadata) is documented in:
 
@@ -111,7 +111,7 @@ fn isDigit(c: u8) bool {
     return c >= '0' and c <= '9';
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
 
     // Emit '+' then append only digits.
@@ -144,7 +144,7 @@ zig build-exe e164.zig \
   -target wasm32-freestanding \
   -O ReleaseSmall \
   -fno-entry \
-  --export=run \
+  --export=render \
   --export=input_ptr \
   --export=input_utf8_cap \
   --export=output_ptr \
@@ -201,8 +201,8 @@ static int is_space(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }
@@ -237,7 +237,7 @@ zig cc trim.c \
   -target wasm32-freestanding \
   -nostdlib \
   -Wl,--no-entry \
-  -Wl,--export=run \
+  -Wl,--export=render \
   -Wl,--export-memory \
   -Wl,--export=input_ptr \
   -Wl,--export=input_utf8_cap \
@@ -273,10 +273,10 @@ You can also write raw WebAssembly text format which compiles directly to `.wasm
   (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
   (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
 
-  ;; Required export: run(input_size) -> output_size
+  ;; Required export: render(input_size) -> output_size
   ;; Input is at input_ptr, output goes to output_ptr
   ;; Return length of output written
-  (func (export "run") (param i32 $input_size) (result i32)
+  (func (export "render") (param i32 $input_size) (result i32)
     ;; Write "Hello, World" as i64 + i32
     ;; "Hello, W" as i64 (little-endian: 0x57202c6f6c6c6548)
     (i64.store (global.get $output_ptr) (i64.const 0x57202c6f6c6c6548))

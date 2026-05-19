@@ -350,8 +350,8 @@ static void draw_glyph_scaled(uint32_t base_x, uint32_t base_y, unsigned char gl
     }
 }
 
-__attribute__((export_name("run")))
-uint32_t run(uint32_t input_size) {
+__attribute__((export_name("render")))
+uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }

@@ -304,7 +304,7 @@ fn writeUtf8(cp: u32, out: []u8, out_len: *usize) bool {
     return false;
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     const input_size: usize = input_size_in;
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
@@ -332,7 +332,7 @@ export fn run(input_size_in: u32) u32 {
 fn normalizeForTest(input: []const u8) []const u8 {
     if (input.len > INPUT_CAP) @trap();
     @memcpy(input_buf[0..input.len], input);
-    const out_len = run(@as(u32, @intCast(input.len)));
+    const out_len = render(@as(u32, @intCast(input.len)));
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 

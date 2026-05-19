@@ -34,7 +34,7 @@ wordcount_zig_wasm.wasm: wordcount_zig_wasm.zig wordcount_core.zig
 	$(ZIG_ENV) zig build-exe wordcount_zig_wasm.zig -target wasm32-freestanding -O ReleaseSmall -fno-entry -rdynamic -femit-bin=$@
 
 wordcount_c_wasm.wasm: wordcount_c_wasm.c
-	$(ZIG_ENV) zig cc wordcount_c_wasm.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=run -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc wordcount_c_wasm.c -target wasm32-freestanding -nostdlib -Wl,--no-entry -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 wordcount_simple.go.bin: wordcount_simple.go
 	go build -o $@ wordcount_simple.go

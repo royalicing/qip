@@ -26,7 +26,7 @@ fn isContinuation(b: u8) bool {
     return (b & 0xC0) == 0x80;
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     var input_size: u32 = input_size_in;
     if (input_size > INPUT_CAP) {
         input_size = @intCast(INPUT_CAP);

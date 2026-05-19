@@ -22,7 +22,7 @@ export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
 
-export fn run(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) u32 {
     var input_size: u32 = input_size_in;
     if (input_size > INPUT_CAP) {
         input_size = @intCast(INPUT_CAP);

@@ -240,7 +240,7 @@
     };
   }
 
-  async function runDetailed(wasmModule, input, inputContentType) {
+  async function renderDetailed(wasmModule, input, inputContentType) {
     const instance = await instantiateWasm(wasmModule);
     const exportsObj = instance.exports;
 
@@ -248,9 +248,9 @@
       throw new Error("module export memory must be WebAssembly.Memory");
     }
 
-    const runExport = exportsObj.run;
-    if (typeof runExport !== "function") {
-      throw new Error("module missing export run");
+    const renderExport = exportsObj.render;
+    if (typeof renderExport !== "function") {
+      throw new Error("module missing export render");
     }
 
     const inputSignature = parseInputSignature(exportsObj);
@@ -289,9 +289,9 @@
 
     writeSlice(exportsObj.memory, inputSignature.ptr, normalized.bytes, "input_ptr");
 
-    const outputLen = toI32(runExport(normalized.bytes.length), "run");
+    const outputLen = toI32(renderExport(normalized.bytes.length), "render");
     if (outputLen < 0) {
-      throw new Error("run returned negative output size");
+      throw new Error("render returned negative output size");
     }
 
     if (outputSignature.kind === "scalar") {
@@ -304,7 +304,7 @@
 
     if (outputLen > outputSignature.cap) {
       throw new Error(
-        "run output exceeds module capacity: " + String(outputLen) + " > " + String(outputSignature.cap),
+        "render output exceeds module capacity: " + String(outputLen) + " > " + String(outputSignature.cap),
       );
     }
 
@@ -337,8 +337,8 @@
     };
   }
 
-  async function run(wasmModule, input) {
-    const result = await runDetailed(wasmModule, input, "");
+  async function render(wasmModule, input) {
+    const result = await renderDetailed(wasmModule, input, "");
     return result.value;
   }
 
@@ -349,16 +349,16 @@
       }
       this.inputMimeType = normalizeMimeType(inputMimeType);
       this.modules = arrayOfWasmModules.slice();
-      this.lastRun = null;
+      this.lastRender = null;
     }
 
-    async run(input) {
+    async render(input) {
       let current = input;
       let currentMimeType = this.inputMimeType;
 
       for (let i = 0; i < this.modules.length; i += 1) {
         const isLast = i === this.modules.length - 1;
-        const result = await runDetailed(this.modules[i], current, currentMimeType);
+        const result = await renderDetailed(this.modules[i], current, currentMimeType);
 
         if (!isLast && (result.kind === "scalar" || result.kind === "i32")) {
           throw new Error(
@@ -373,7 +373,7 @@
         }
       }
 
-      this.lastRun = {
+      this.lastRender = {
         outputMimeType: currentMimeType,
         outputKind:
           typeof current === "string"
@@ -390,7 +390,7 @@
   }
 
   return {
-    run,
+    render,
     Recipe,
   };
 });

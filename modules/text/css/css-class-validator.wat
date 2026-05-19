@@ -28,7 +28,7 @@
   ;; Per HTML5: class names can contain any character except ASCII whitespace
   ;; This allows Tailwind classes like: hover:text-red-500, w-1/2, text-[#000]
   ;; Leading and trailing whitespace is ignored
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $len i32)

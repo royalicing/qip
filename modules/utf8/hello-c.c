@@ -44,9 +44,9 @@ static void copy_bytes(char *dest, const char *src, uint32_t n)
 }
 
 // Main entry point
-__attribute__((export_name("run")))
+__attribute__((export_name("render")))
 uint32_t
-run(uint32_t input_size)
+render(uint32_t input_size)
 {
     // Example: prepend "Hello, " to input
     const char *prefix = "Hello, ";

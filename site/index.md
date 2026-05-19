@@ -4,11 +4,25 @@
 h1 { text-align: center; }
 </style>
 
-# AI coding, components, security: choose three
+# Components, Security, AI Coding — Choose 3
 
-QIP modules are WebAssembly components for files, graphics, and interactive UI. They compose like Unix pipes, speak MIME types, and run sandboxed in the browser, server, cli & native.
+## Components
 
-Because WebAssembly is specifically designed to be self-contained & sandboxed you can using AI coding agents without worry. QIP modules have no access to your file system, network, or secrets. Plus you can vibe C or Zig to create really fast code.
+**QIP components** let you render text, images, bytes, and interactive UI. They compose like Unix pipes, speak MIME types, and run sandboxed via WebAssembly in the browser, server, cli & native.
+
+## Security
+
+Because WebAssembly is specifically designed to be self-contained & fully isolated you can using AI coding agents without worry: QIP components have no access to your file system, network, or secrets.
+
+## AI Coding
+
+You can vibe C or Zig to create really fast components. You get security and speed.
+
+---
+
+- **Quick:** these components are designed to be fast to run and fast to write. You can often one-shot many solutions.
+- **Isolated:** everything runs in its own separate sandbox via WebAssembly. A component cannot read from any other or from the host.
+- **Portable:** the contract for QIP components has been designed to run anywhere: browser, server, cli & native.
 
 ## Getting started
 
@@ -23,6 +37,8 @@ qip comply vibe-coded-commonmark.wasm --with commonmark-spec.wasm
 
 qip dev ./site --recipes ./recipes
 ```
+
+---
 
 ## The problem with software today
 

@@ -369,7 +369,7 @@ function qipPreviewWriteInput(exportsObj, inputBytes) {
 
 function qipPreviewReadOutputBytes(exportsObj, outputLen) {
   if (outputLen < 0) {
-    throw new Error("run returned negative output size");
+    throw new Error("render returned negative output size");
   }
   const outputPtr = qipPreviewReadI32Export(exportsObj, "output_ptr");
   if (outputPtr < 0) {
@@ -394,7 +394,7 @@ function qipPreviewReadOutputBytes(exportsObj, outputLen) {
     throw new Error("module returned invalid " + capName);
   }
   if (outputLen > cap) {
-    throw new Error("run output size exceeds " + capName);
+    throw new Error("render output size exceeds " + capName);
   }
   return qipPreviewReadSlice(exportsObj.memory, outputPtr, byteLen, "output_ptr/" + capName);
 }
@@ -410,8 +410,8 @@ async function qipPreviewRunStage(stage, input) {
   if (!(exportsObj.memory instanceof WebAssembly.Memory)) {
     throw new Error("preview module must export memory");
   }
-  if (typeof exportsObj.run !== "function") {
-    throw new Error("preview module missing export run");
+  if (typeof exportsObj.render !== "function") {
+    throw new Error("preview module missing export render");
   }
 
   const expectedInputType = qipPreviewReadDeclaredContentType(exportsObj, "input_content_type_ptr", "input_content_type_size");
@@ -424,7 +424,7 @@ async function qipPreviewRunStage(stage, input) {
     qipPreviewApplyUniform(exportsObj, uniform.key, qipPreviewReadUniformValue(uniform));
   }
 
-  const outputLen = qipPreviewToI32(exportsObj.run(input.bytes.length), "run");
+  const outputLen = qipPreviewToI32(exportsObj.render(input.bytes.length), "render");
   const outputBytes = qipPreviewReadOutputBytes(exportsObj, outputLen);
   let outputContentType = qipPreviewReadDeclaredContentType(exportsObj, "output_content_type_ptr", "output_content_type_size");
   if (outputContentType === "") {

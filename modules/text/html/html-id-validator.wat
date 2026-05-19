@@ -28,7 +28,7 @@
   ;; Per HTML5: id must contain at least one character and no ASCII whitespace
   ;; This is more permissive than CSS - ids can start with digits, contain special chars, etc.
   ;; Leading and trailing whitespace is trimmed
-  (func $run (export "run") (param $input_size i32) (result i32)
+  (func $run (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $len i32)

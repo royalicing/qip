@@ -749,7 +749,7 @@ fn renderScore(result: ScoreResult, w: *Writer) void {
     w.writeFmt("  range: [{s}, {s}]\n", .{ jit, interp });
 }
 
-export fn run(input_size: u32) u32 {
+export fn render(input_size: u32) u32 {
     const input_len: usize = @intCast(input_size);
     if (input_len > INPUT_CAP) @trap();
 
@@ -764,7 +764,7 @@ export fn run(input_size: u32) u32 {
 fn runForTest(input: []const u8) []const u8 {
     if (input.len > INPUT_CAP) @trap();
     @memcpy(input_buf[0..input.len], input);
-    const out_len = run(@intCast(input.len));
+    const out_len = render(@intCast(input.len));
     return output_buf[0..out_len];
 }
 
