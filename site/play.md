@@ -4,6 +4,7 @@ Click the game area to focus it, then use arrow keys.
 
 More interactive pages:
 
+- [Liar's Dice](/play-liars-dice)
 - [Sudoku](/play-sudoku)
 - [Tetris](/play-tetris)
 - [Snake](/play-snake)

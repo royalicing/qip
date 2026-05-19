@@ -116,7 +116,7 @@ Read the full walkthrough in [`/docs/how-it-works`](/docs/how-it-works).
 ## Examples
 
 See also: [`/qr`](/qr) for a live url-to-qr-code example.
-See also: [`/play-sudoku`](/play-sudoku) for a live interactive Sudoku module.
+See also: [`/play-sudoku`](/play-sudoku) for a live interactive Sudoku module and [`/play-liars-dice`](/play-liars-dice) for a 3-player Liar's Dice game.
 
 <form aria-labelledby="form-wc-heading">
     <h3 id="form-wc-heading">Word count (wc.wasm running in browser)</h3>
