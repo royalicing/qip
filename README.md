@@ -460,6 +460,12 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 
 ## TODO
 
+- [ ] Change render contract to extend existing contract:
+  - [ ] `export fn render(input_size: i32) i32` instead of `export fn render_output() i32`
+  - [ ] No need for `export fn output_bytes_cap() u32`
+  - [ ] `export fn output_rgba_u8_width() i32` instead of `export fn render_width_px() i32`
+  - [ ] `export fn output_rgba_u8_height() i32` instead of `export fn render_height_px() i32`
+- [ ] Merge `<qip-form>` with other module elements. Can we render using `<qip-play>` to a `<form>` instead of a `<canvas>`. What about html-in-canvas, perhaps we might want a model that renders to both?
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
