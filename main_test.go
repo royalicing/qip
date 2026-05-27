@@ -484,7 +484,7 @@ func TestDevHandlerServesURIListRedirect(t *testing.T) {
 		recipeDigests: map[string][][32]byte{},
 	}
 	var stateMu sync.RWMutex
-	handler := newDevRequestHandler("test", &stateMu, &state, nil, qinternal.DefaultRouteOptions(), routeHandlerTimeouts{})
+	handler := newDevRequestHandler("test", &stateMu, &state, nil, nil, qinternal.DefaultRouteOptions(), routeHandlerTimeouts{})
 
 	resp, err := qinternal.ServeInProcessHTTP(handler, http.MethodGet, "/how-it-works", nil)
 	if err != nil {

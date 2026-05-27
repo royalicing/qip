@@ -2420,7 +2420,17 @@ func devCmd(args []string) {
 		contentRecipe:   defaultRouteRecipeTimeout,
 		applicationWARC: defaultRouteRecipeTimeout,
 	}
-	handler := newDevRequestHandler("dev", &stateMu, &state, reloadRecipesIfChanged, routeOptions, handlerTimeouts)
+	reloadStateIfHardRefresh := func(r *http.Request) {
+		if opts.mode != modeDev {
+			return
+		}
+		if !isDevHardRefreshRequest(r) {
+			return
+		}
+		reloadRuntimeState("request_hard_reload")
+	}
+
+	handler := newDevRequestHandler("dev", &stateMu, &state, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
 
 	server := &http.Server{
 		Addr:    addr,
@@ -2457,6 +2467,7 @@ func devCmd(args []string) {
 
 	log.Printf("dev: listening on http://%s", addr)
 	log.Printf("dev: send SIGHUP to reload routes, recipes, forms, and modules: `kill -HUP %d`", os.Getpid())
+	log.Printf("dev: browser hard reload (Cache-Control: no-cache/max-age=0) triggers full runtime reload")
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		gameOver("dev server error: %v", err)
@@ -2556,7 +2567,7 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		contentRecipe:   defaultRouteRecipeTimeout,
 		applicationWARC: defaultRouteRecipeTimeout,
 	}
-	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, routeOptions, handlerTimeouts)
+	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
 	response, err := qinternal.ServeInProcessHTTP(handler, method, requestPath, nil)
 	if err != nil {
 		gameOver("%v", err)
@@ -2873,7 +2884,7 @@ func routerCmd(args []string) {
 			return nil, err
 		}
 		var stateMu sync.RWMutex
-		handler := newDevRequestHandler("router", &stateMu, &state, nil, routeOptions, handlerTimeouts)
+		handler := newDevRequestHandler("router", &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
 		runtime = &routeRuntime{
 			state:        state,
 			handler:      handler,
@@ -2949,7 +2960,30 @@ func routerCmd(args []string) {
 	}
 }
 
-func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRuntimeState, reloadRecipesIfChanged func(), routeOptions qinternal.RouteOptions, timeouts routeHandlerTimeouts) http.Handler {
+func isDevHardRefreshRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	cacheControl := strings.ToLower(r.Header.Get("Cache-Control"))
+	pragma := strings.ToLower(r.Header.Get("Pragma"))
+	hasHardReloadCacheHint := strings.Contains(cacheControl, "no-cache") || strings.Contains(cacheControl, "max-age=0") || strings.Contains(pragma, "no-cache")
+	if !hasHardReloadCacheHint {
+		return false
+	}
+
+	dest := strings.ToLower(r.Header.Get("Sec-Fetch-Dest"))
+	if dest == "document" {
+		return true
+	}
+	if dest != "" && dest != "empty" {
+		return false
+	}
+
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	return strings.Contains(accept, "text/html")
+}
+
+func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRuntimeState, reloadRecipesIfChanged func(), reloadStateForRequest func(*http.Request), routeOptions qinternal.RouteOptions, timeouts routeHandlerTimeouts) http.Handler {
 	return qinternal.NewRequestHandler(qinternal.RequestHandlerConfig{
 		LogPrefix:    logPrefix,
 		RouteOptions: routeOptions,
@@ -2962,6 +2996,10 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 			log.Printf(format, args...)
 		},
 		Resolve: func(r *http.Request, reqID uint64) (qinternal.RoutedResponse, error) {
+			if reloadStateForRequest != nil {
+				reloadStateForRequest(r)
+			}
+
 			stateMu.RLock()
 			current := *state
 			if current == nil {
