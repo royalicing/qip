@@ -74,7 +74,7 @@
   ;; Checks for characters that are safe for form submission
   ;; Avoids: whitespace, =, &, ?, #, /, and other URL-special characters
   ;; Leading and trailing whitespace is trimmed
-  (func $run (export "render") (param $input_size i32) (result i32)
+  (func $render (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $len i32)

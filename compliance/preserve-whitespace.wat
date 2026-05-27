@@ -3,7 +3,7 @@
   (import "impl" "input_ptr" (func $input_ptr (result i32)))
   (import "impl" "input_utf8_cap" (func $input_utf8_cap (result i32)))
   (import "impl" "output_ptr" (func $output_ptr (result i32)))
-  (import "impl" "render" (func $run (param i32) (result i32)))
+  (import "impl" "render" (func $render (param i32) (result i32)))
 
   (data $case1_in "  leading and trailing  ")
   (data $case2_in "\09tabbed\09fields\09")
@@ -107,7 +107,7 @@
 
     ;; Case 1: leading/trailing spaces.
     (memory.init $case1_in (local.get $in_ptr) (i32.const 0) (i32.const 24))
-    (local.set $out_size (call $run (i32.const 24)))
+    (local.set $out_size (call $render (i32.const 24)))
     (memory.init $case1_in (local.get $expected_ptr) (i32.const 0) (i32.const 24))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 24)))
       (then
@@ -118,7 +118,7 @@
 
     ;; Case 2: tabs.
     (memory.init $case2_in (local.get $in_ptr) (i32.const 0) (i32.const 15))
-    (local.set $out_size (call $run (i32.const 15)))
+    (local.set $out_size (call $render (i32.const 15)))
     (memory.init $case2_in (local.get $expected_ptr) (i32.const 0) (i32.const 15))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 15)))
       (then
@@ -129,7 +129,7 @@
 
     ;; Case 3: mixed line endings.
     (memory.init $case3_in (local.get $in_ptr) (i32.const 0) (i32.const 19))
-    (local.set $out_size (call $run (i32.const 19)))
+    (local.set $out_size (call $render (i32.const 19)))
     (memory.init $case3_in (local.get $expected_ptr) (i32.const 0) (i32.const 19))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 19)))
       (then
@@ -140,7 +140,7 @@
 
     ;; Case 4: whitespace only.
     (memory.init $case4_in (local.get $in_ptr) (i32.const 0) (i32.const 5))
-    (local.set $out_size (call $run (i32.const 5)))
+    (local.set $out_size (call $render (i32.const 5)))
     (memory.init $case4_in (local.get $expected_ptr) (i32.const 0) (i32.const 5))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 5)))
       (then
@@ -150,7 +150,7 @@
     )
 
     ;; Case 5: empty input -> empty output.
-    (local.set $out_size (call $run (i32.const 0)))
+    (local.set $out_size (call $render (i32.const 0)))
     (if (i32.ne (local.get $out_size) (i32.const 0))
       (then
         (call $fail (local.get $in_ptr) (i32.const 0) (local.get $expected_ptr) (i32.const 0) (local.get $out_size))

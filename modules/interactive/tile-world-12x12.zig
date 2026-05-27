@@ -1,20 +1,20 @@
 const std = @import("std");
 
-const WORLD_W: usize = 12;
-const WORLD_H: usize = 12;
+const SCREEN_W: usize = 12;
+const SCREEN_H: usize = 12;
 const TILE_PX: usize = 24;
 
-const RENDER_W: usize = WORLD_W * TILE_PX;
-const RENDER_H: usize = WORLD_H * TILE_PX;
+const RENDER_W: usize = SCREEN_W * TILE_PX;
+const RENDER_H: usize = SCREEN_H * TILE_PX;
 const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
 
 const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
 const XK_RIGHT: i32 = 0xFF53;
 const XK_DOWN: i32 = 0xFF54;
+const XK_ENTER: i32 = 0xFF0D;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
-
 const BTN_PRIMARY: i32 = 1 << 0;
 
 const MOVE_INTERVAL_MS: i32 = 120;
@@ -24,36 +24,17 @@ const KEY_DOWN: u8 = 1 << 1;
 const KEY_LEFT: u8 = 1 << 2;
 const KEY_RIGHT: u8 = 1 << 3;
 
-const WORLD_ROWS = [_][]const u8{
-    "............",
-    "..###.......",
-    "......##....",
-    ".#..........",
-    ".#..####....",
-    ".#..........",
-    ".#....###...",
-    ".#..........",
-    ".####.......",
-    ".....#......",
-    "..#..#..##..",
-    "............",
-};
-
-comptime {
-    if (WORLD_ROWS.len != WORLD_H) @compileError("WORLD_ROWS height mismatch");
-    for (WORLD_ROWS) |row| {
-        if (row.len != WORLD_W) @compileError("WORLD_ROWS width mismatch");
-    }
-}
-
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
 
-var player_tx: i32 = 1;
-var player_ty: i32 = 1;
+var player_wx: i64 = 1;
+var player_wy: i64 = 1;
 var keys_down: u8 = 0;
 var last_move_ms: i32 = 0;
 var has_last_move: bool = false;
 var needs_redraw: bool = true;
+var world_ready: bool = false;
+var level_counter: u64 = 0;
+var world_seed: u64 = 0xA53C_9E21_7D2B_4C11;
 
 const Color = [4]u8;
 const COLOR_GROUND: Color = .{ 0xA7, 0xD6, 0x8D, 0xFF };
@@ -78,8 +59,14 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
+
+    // Regenerate with a new world seed.
+    if (is_down and (x11_key == 'r' or x11_key == 'R' or x11_key == 'n' or x11_key == 'N' or x11_key == XK_ENTER)) {
+        generateLevel(now_ms);
+        return 1;
+    }
 
     const key_bit: u8 = switch (x11_key) {
         XK_UP => KEY_UP,
@@ -103,17 +90,28 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
 
     const tx = @divFloor(x_px, @as(i32, @intCast(TILE_PX)));
     const ty = @divFloor(y_px, @as(i32, @intCast(TILE_PX)));
-    if (!inBoundsTile(tx, ty) or isTree(tx, ty)) return 0;
+    if (!inBoundsScreenTile(tx, ty)) return 0;
 
-    if (player_tx != tx or player_ty != ty) {
-        player_tx = tx;
-        player_ty = ty;
+    const origin_x = screenOrigin(player_wx, SCREEN_W);
+    const origin_y = screenOrigin(player_wy, SCREEN_H);
+
+    const wx = origin_x + @as(i64, tx);
+    const wy = origin_y + @as(i64, ty);
+    if (isTree(wx, wy)) return 0;
+
+    if (player_wx != wx or player_wy != wy) {
+        player_wx = wx;
+        player_wy = wy;
         needs_redraw = true;
     }
     return 1;
 }
 
 export fn tick(now_ms: i32) i32 {
+    if (!world_ready) {
+        generateLevel(now_ms);
+    }
+
     if (!has_last_move) {
         has_last_move = true;
         last_move_ms = now_ms;
@@ -131,8 +129,6 @@ export fn tick(now_ms: i32) i32 {
         last_move_ms = now_ms;
     }
 
-    // Keep ticking while any movement key is held so host-side loops can stay
-    // event-driven at idle, but continuous during active input.
     return if (needs_redraw or keys_down != 0) 1 else 0;
 }
 
@@ -155,30 +151,92 @@ fn moveOneStep() bool {
     return false;
 }
 
-fn tryMove(dx: i32, dy: i32) bool {
-    const nx = player_tx + dx;
-    const ny = player_ty + dy;
-    if (!inBoundsTile(nx, ny)) return false;
+fn tryMove(dx: i64, dy: i64) bool {
+    const nx = player_wx + dx;
+    const ny = player_wy + dy;
     if (isTree(nx, ny)) return false;
 
-    if (nx != player_tx or ny != player_ty) {
-        player_tx = nx;
-        player_ty = ny;
-        needs_redraw = true;
-        return true;
-    }
-    return false;
+    player_wx = nx;
+    player_wy = ny;
+    needs_redraw = true;
+    return true;
 }
 
-fn inBoundsTile(tx: i32, ty: i32) bool {
-    return tx >= 0 and ty >= 0 and tx < @as(i32, @intCast(WORLD_W)) and ty < @as(i32, @intCast(WORLD_H));
+fn inBoundsScreenTile(tx: i32, ty: i32) bool {
+    return tx >= 0 and ty >= 0 and tx < @as(i32, @intCast(SCREEN_W)) and ty < @as(i32, @intCast(SCREEN_H));
 }
 
-fn isTree(tx: i32, ty: i32) bool {
-    if (!inBoundsTile(tx, ty)) return true;
-    const ux: usize = @intCast(tx);
-    const uy: usize = @intCast(ty);
-    return WORLD_ROWS[uy][ux] == '#';
+fn screenOrigin(v: i64, comptime screen_tiles: usize) i64 {
+    const s: i64 = @intCast(screen_tiles);
+    return @divFloor(v, s) * s;
+}
+
+fn localTile(v: i64, comptime screen_tiles: usize) usize {
+    const s: i64 = @intCast(screen_tiles);
+    const m = @mod(v, s);
+    return @as(usize, @intCast(m));
+}
+
+fn screenCoord(v: i64, comptime screen_tiles: usize) i64 {
+    const s: i64 = @intCast(screen_tiles);
+    return @divFloor(v, s);
+}
+
+fn mix64(x: u64) u64 {
+    var z = x +% 0x9E37_79B9_7F4A_7C15;
+    z ^= z >> 30;
+    z *%= 0xBF58_476D_1CE4_E5B9;
+    z ^= z >> 27;
+    z *%= 0x94D0_49BB_1331_11EB;
+    z ^= z >> 31;
+    return z;
+}
+
+fn packCoords(x: i64, y: i64) u64 {
+    const ux: u64 = @bitCast(x);
+    const uy: u64 = @bitCast(y);
+    return mix64(ux ^ mix64(uy));
+}
+
+fn randomForTile(wx: i64, wy: i64) u64 {
+    const sx = screenCoord(wx, SCREEN_W);
+    const sy = screenCoord(wy, SCREEN_H);
+    const lx = localTile(wx, SCREEN_W);
+    const ly = localTile(wy, SCREEN_H);
+
+    const screen_hash = mix64(world_seed ^ packCoords(sx, sy));
+    const tile_hash = mix64(screen_hash ^ packCoords(@intCast(lx), @intCast(ly)));
+    return tile_hash;
+}
+
+fn isTree(wx: i64, wy: i64) bool {
+    const lx = localTile(wx, SCREEN_W);
+    const ly = localTile(wy, SCREEN_H);
+
+    // Keep screen borders open so every edge transition is possible.
+    if (lx == 0 or lx + 1 == SCREEN_W or ly == 0 or ly + 1 == SCREEN_H) return false;
+
+    const screen_hash = mix64(world_seed ^ packCoords(screenCoord(wx, SCREEN_W), screenCoord(wy, SCREEN_H)));
+    const density: u64 = 20 + (screen_hash % 16); // 20..35%
+    return (randomForTile(wx, wy) % 100) < density;
+}
+
+fn generateLevel(seed_hint_ms: i32) void {
+    level_counter +%= 1;
+    const ms_bits: u64 = @as(u64, @bitCast(@as(i64, seed_hint_ms)));
+    world_seed = mix64(world_seed ^ ms_bits ^ (level_counter *% 0x9E37_79B9_7F4A_7C15));
+
+    player_wx = 1;
+    player_wy = 1;
+
+    // Ensure spawn and immediate neighbors are open.
+    // Borders are already open; this opens local interior around spawn too.
+    // Using fixed nearby points keeps this deterministic per seed.
+    if (isTree(1, 1)) world_seed = mix64(world_seed ^ 0xA2F3_D91B_C77E_114D);
+
+    has_last_move = false;
+    needs_redraw = true;
+    world_ready = true;
 }
 
 fn setPixel(x: usize, y: usize, color: Color) void {
@@ -223,7 +281,6 @@ fn drawPlayerTile(tx: usize, ty: usize) void {
 
     fillRect(px, py, size, size, COLOR_PLAYER);
 
-    // Simple edge to make the player stand out from the map.
     fillRect(px, py, size, 2, COLOR_PLAYER_EDGE);
     fillRect(px, py + size - 2, size, 2, COLOR_PLAYER_EDGE);
     fillRect(px, py, 2, size, COLOR_PLAYER_EDGE);
@@ -233,39 +290,59 @@ fn drawPlayerTile(tx: usize, ty: usize) void {
 fn drawWorld() void {
     fillRect(0, 0, RENDER_W, RENDER_H, COLOR_GROUND);
 
+    const origin_x = screenOrigin(player_wx, SCREEN_W);
+    const origin_y = screenOrigin(player_wy, SCREEN_H);
+
     var ty: usize = 0;
-    while (ty < WORLD_H) : (ty += 1) {
+    while (ty < SCREEN_H) : (ty += 1) {
         var tx: usize = 0;
-        while (tx < WORLD_W) : (tx += 1) {
-            if (WORLD_ROWS[ty][tx] == '#') {
+        while (tx < SCREEN_W) : (tx += 1) {
+            const wx = origin_x + @as(i64, @intCast(tx));
+            const wy = origin_y + @as(i64, @intCast(ty));
+            if (isTree(wx, wy)) {
                 drawTreeTile(tx, ty);
             }
         }
     }
 
-    drawPlayerTile(@intCast(player_tx), @intCast(player_ty));
+    const player_screen_x = @as(usize, @intCast(player_wx - origin_x));
+    const player_screen_y = @as(usize, @intCast(player_wy - origin_y));
+    drawPlayerTile(player_screen_x, player_screen_y);
 }
 
-test "player cannot move into a tree" {
-    player_tx = 1;
-    player_ty = 1;
+fn resetForTest(seed: u64) void {
+    world_seed = seed;
+    world_ready = true;
+    has_last_move = false;
+    keys_down = 0;
+    needs_redraw = false;
+}
+
+test "player moves on open border tile" {
+    resetForTest(0x1234_5678_9ABC_DEF0);
+    player_wx = @as(i64, @intCast(SCREEN_W - 1));
+    player_wy = 5;
     keys_down = KEY_RIGHT;
-    needs_redraw = false;
 
-    // Tile (2,1) is a tree in WORLD_ROWS.
-    const moved = moveOneStep();
-    try std.testing.expect(!moved);
-    try std.testing.expect(player_tx == 1 and player_ty == 1);
-}
-
-test "player moves on open tile" {
-    player_tx = 1;
-    player_ty = 1;
-    keys_down = KEY_DOWN;
-    needs_redraw = false;
-
-    // Tile (1,2) is open.
     const moved = moveOneStep();
     try std.testing.expect(moved);
-    try std.testing.expect(player_tx == 1 and player_ty == 2);
+    try std.testing.expect(player_wx == @as(i64, @intCast(SCREEN_W)) and player_wy == 5);
+}
+
+test "player can move infinitely negative" {
+    resetForTest(0x0F0E_0D0C_0B0A_0908);
+    player_wx = 0;
+    player_wy = 5;
+    keys_down = KEY_LEFT;
+
+    const moved = moveOneStep();
+    try std.testing.expect(moved);
+    try std.testing.expect(player_wx == -1 and player_wy == 5);
+}
+
+test "procedural map is deterministic by seed" {
+    resetForTest(0xCAFE_BABE_D00D_F00D);
+    const a = isTree(37, -19);
+    const b = isTree(37, -19);
+    try std.testing.expect(a == b);
 }

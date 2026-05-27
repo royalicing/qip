@@ -12,7 +12,7 @@
   ;; Required export: render(input_size) -> output_size
   ;; Input is at input_ptr, output goes to output_ptr
   ;; Return 0 for no output, or the length of output written
-  (func $run (export "render") (param $input_size i32) (result i32)
+  (func $render (export "render") (param $input_size i32) (result i32)
     (local $i i32)
     (local $out_pos i32)
 

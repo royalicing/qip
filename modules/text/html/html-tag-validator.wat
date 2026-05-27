@@ -65,7 +65,7 @@
   )
 
   ;; Returns output describing tag type: "builtin", "custom", or "invalid"
-  (func $run (export "render") (param $input_size i32) (result i32)
+  (func $render (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $len i32)

@@ -3,7 +3,7 @@
   (import "impl" "input_ptr" (func $input_ptr (result i32)))
   (import "impl" "input_utf8_cap" (func $input_utf8_cap (result i32)))
   (import "impl" "output_ptr" (func $output_ptr (result i32)))
-  (import "impl" "render" (func $run (param i32) (result i32)))
+  (import "impl" "render" (func $render (param i32) (result i32)))
 
   (data $case1_in "+1 (415) 555-2671")
   (data $case1_out "+14155552671")
@@ -121,7 +121,7 @@
 
     ;; Case 1: "+1 (415) 555-2671" -> "+14155552671"
     (memory.init $case1_in (local.get $in_ptr) (i32.const 0) (i32.const 17))
-    (local.set $out_size (call $run (i32.const 17)))
+    (local.set $out_size (call $render (i32.const 17)))
     (memory.init $case1_out (local.get $expected_ptr) (i32.const 0) (i32.const 12))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 12)))
       (then
@@ -132,7 +132,7 @@
 
     ;; Case 2: "  1212-555-0100  " -> "+12125550100"
     (memory.init $case2_in (local.get $in_ptr) (i32.const 0) (i32.const 17))
-    (local.set $out_size (call $run (i32.const 17)))
+    (local.set $out_size (call $render (i32.const 17)))
     (memory.init $case2_out (local.get $expected_ptr) (i32.const 0) (i32.const 12))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 12)))
       (then
@@ -143,7 +143,7 @@
 
     ;; Case 3: "5552671" -> "+5552671"
     (memory.init $case3_in (local.get $in_ptr) (i32.const 0) (i32.const 7))
-    (local.set $out_size (call $run (i32.const 7)))
+    (local.set $out_size (call $render (i32.const 7)))
     (memory.init $case3_out (local.get $expected_ptr) (i32.const 0) (i32.const 8))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 8)))
       (then
@@ -153,7 +153,7 @@
     )
 
     ;; Case 4: "" -> invalid (size 0)
-    (local.set $out_size (call $run (i32.const 0)))
+    (local.set $out_size (call $render (i32.const 0)))
     (if (i32.ne (local.get $out_size) (i32.const 0))
       (then
         (call $fail (local.get $in_ptr) (i32.const 0) (local.get $expected_ptr) (i32.const 0) (local.get $out_size))
@@ -163,7 +163,7 @@
 
     ;; Case 5: "abc" -> invalid (size 0)
     (memory.init $case5_in (local.get $in_ptr) (i32.const 0) (i32.const 3))
-    (local.set $out_size (call $run (i32.const 3)))
+    (local.set $out_size (call $render (i32.const 3)))
     (if (i32.ne (local.get $out_size) (i32.const 0))
       (then
         (call $fail (local.get $in_ptr) (i32.const 3) (local.get $expected_ptr) (i32.const 0) (local.get $out_size))
@@ -173,7 +173,7 @@
 
     ;; Case 6: "+" -> invalid (size 0)
     (memory.init $case6_in (local.get $in_ptr) (i32.const 0) (i32.const 1))
-    (local.set $out_size (call $run (i32.const 1)))
+    (local.set $out_size (call $render (i32.const 1)))
     (if (i32.ne (local.get $out_size) (i32.const 0))
       (then
         (call $fail (local.get $in_ptr) (i32.const 1) (local.get $expected_ptr) (i32.const 0) (local.get $out_size))
@@ -183,7 +183,7 @@
 
     ;; Case 7: "0044 20 7946 0958" -> "+00442079460958"
     (memory.init $case7_in (local.get $in_ptr) (i32.const 0) (i32.const 17))
-    (local.set $out_size (call $run (i32.const 17)))
+    (local.set $out_size (call $render (i32.const 17)))
     (memory.init $case7_out (local.get $expected_ptr) (i32.const 0) (i32.const 15))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 15)))
       (then
@@ -194,7 +194,7 @@
 
     ;; Case 8: "1-2-3" -> "+123"
     (memory.init $case8_in (local.get $in_ptr) (i32.const 0) (i32.const 5))
-    (local.set $out_size (call $run (i32.const 5)))
+    (local.set $out_size (call $render (i32.const 5)))
     (memory.init $case8_out (local.get $expected_ptr) (i32.const 0) (i32.const 4))
     (if (i32.eqz (call $output_equal (local.get $out_size) (local.get $expected_ptr) (i32.const 4)))
       (then

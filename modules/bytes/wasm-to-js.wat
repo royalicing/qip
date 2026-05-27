@@ -94,7 +94,7 @@
   (data (i32.const 0x2F00) "  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));\n")
   (data (i32.const 0x3000) "}\n")
 
-  (func $run (export "render") (param $input_size i32) (result i32)
+  (func $render (export "render") (param $input_size i32) (result i32)
     (local $out_pos i32)
     (local $in_pos i32)
     (local $b1 i32)
