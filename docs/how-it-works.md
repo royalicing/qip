@@ -1,6 +1,6 @@
-# How qip Works
+# How QIP Works
 
-`qip` is a small host runtime that executes WebAssembly modules with explicit memory contracts.
+QIP is a small host runtime that executes WebAssembly modules with explicit memory contracts.
 
 The mental model is simple:
 

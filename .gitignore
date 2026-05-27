@@ -39,3 +39,5 @@ __pycache__
 qip
 site-static.tar
 site-static/
+
+.zig-global-cache-local/

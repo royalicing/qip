@@ -1,10 +1,38 @@
 <title>QIP: render everything predictably anywhere</title>
 
 <style>
-h1 { text-align: center; }
+.hero-left {
+    max-width: 50%;
+    float: left;
+
+    a {
+        padding: 0.5lh 1.5em;
+        border: 1px solid currentColor;
+        border-radius: 10000px;
+        text-decoration: none;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.125);
+        }
+    }
+}
+.hero-right {
+    max-width: 50%;
+    float: right;
+}
+hr { clear: both }
 </style>
 
-# Components, Security, AI Coding — Choose 3
+
+<section class="hero-left">
+
+<h1>Components,<br> Security,<br> AI Coding:<br> Choose 3</h1>
+
+<a href="/docs">Read the docs</a>
+
+</section>
+
+<section class="hero-right">
 
 ## Render everything anywhere
 
@@ -17,6 +45,10 @@ Because WebAssembly modules are specifically designed to be self-contained & ful
 ## Code efficiently with AI
 
 The QIP component contract is simple yet allows a wide range of flexibility inside. You can vibe C or Zig to create fast components that lightly use the CPU and memory. You can break problems into small, reusable components and keep strong boundaries between them. You get both speed and security.
+
+</section>
+
+---
 
 ## Install the CLI
 
@@ -307,9 +339,3 @@ $ qip router warc ./site --recipes recipes \
 > site-static.tar
 $ mkdir -p site-static && tar -xvf site-static.tar -C site-static
 ```
-
----
-
-## vibe once, run securely everywhere
-
-## render everything anywhere securely

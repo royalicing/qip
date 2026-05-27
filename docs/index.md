@@ -1,15 +1,15 @@
-# qip docs
+# QIP Docs
 
+- [How QIP Works](/docs/how-it-works)
 - [Module Contract](/docs/module-contract)
 - [Module Patterns](/docs/module-patterns)
-- [Router](/docs/router)
-- [How qip Works](/docs/how-it-works)
-- [JavaScript Runner (Annotated Source)](/docs/javascript-runner)
 - [Interactive ABI](/docs/interactive)
 - [Interactive Events](/docs/events)
 - [Formats and Encodings](/docs/formats)
 - [Security Model](/docs/security-model)
 - [Content Layout](/docs/content)
 - [Recipe Layout](/docs/recipes)
+- [Router](/docs/router)
+- [JavaScript Renderer Annotated Source](/docs/javascript-runner)
 - [Visitor Router ABI v0](/docs/visitor_router_abi_v0)
 - [Form ABI](/docs/form_abi)
