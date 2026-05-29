@@ -38,6 +38,8 @@ const MINING_STEPS: i32 = 52;
 const DEPOSIT_STEPS: i32 = 10;
 const GOLD_PER_TRIP: i32 = 100;
 const START_MINE_GOLD: i32 = 3000;
+const PEON_SPAWN_COST: i32 = 300;
+const MAX_PEONS: usize = 8;
 
 const Color = [4]u8;
 const C_BG: Color = .{ 0xA8, 0x9D, 0x6A, 0xFF };
@@ -78,6 +80,18 @@ const CommandMode = enum(u8) {
     harvest,
 };
 
+const Peon = struct {
+    x_fp: i32,
+    y_fp: i32,
+    target_x_fp: i32,
+    target_y_fp: i32,
+    order: Order,
+    state: PeonState,
+    move_target: MoveTarget,
+    state_timer_steps: i32,
+    carry_gold: i32,
+};
+
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
 
 var initialized: bool = false;
@@ -86,20 +100,11 @@ var needs_redraw: bool = true;
 var has_last_tick: bool = false;
 var last_tick_ms: i32 = 0;
 
-var selected_peon: bool = true;
+var selected_peon: i32 = 0;
 var cmd_mode: CommandMode = .smart;
 
-var peon_x_fp: i32 = (HALL_X + 18) * FP_ONE;
-var peon_y_fp: i32 = (HALL_Y + HALL_H - 14) * FP_ONE;
-var peon_target_x_fp: i32 = 0;
-var peon_target_y_fp: i32 = 0;
-
-var peon_order: Order = .none;
-var peon_state: PeonState = .idle;
-var move_target: MoveTarget = .point;
-var state_timer_steps: i32 = 0;
-
-var peon_carry_gold: i32 = 0;
+var peons: [MAX_PEONS]Peon = undefined;
+var peon_count: usize = 0;
 var collected_gold: i32 = 0;
 var mine_gold_left: i32 = START_MINE_GOLD;
 
@@ -129,7 +134,12 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
             return 1;
         },
         'p', 'P' => {
-            selected_peon = true;
+            selectNextPeon();
+            needs_redraw = true;
+            return 1;
+        },
+        'b', 'B' => {
+            _ = trySpawnPeon();
             needs_redraw = true;
             return 1;
         },
@@ -155,19 +165,19 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
             return 1;
         },
         XK_LEFT => {
-            if (selected_peon) issueMovePeon(@divFloor(peon_x_fp, FP_ONE) - 16, @divFloor(peon_y_fp, FP_ONE));
+            if (selectedPeon()) |peon| issueMovePeon(peon, @divFloor(peon.x_fp, FP_ONE) - 16, @divFloor(peon.y_fp, FP_ONE));
             return 1;
         },
         XK_RIGHT => {
-            if (selected_peon) issueMovePeon(@divFloor(peon_x_fp, FP_ONE) + 16, @divFloor(peon_y_fp, FP_ONE));
+            if (selectedPeon()) |peon| issueMovePeon(peon, @divFloor(peon.x_fp, FP_ONE) + 16, @divFloor(peon.y_fp, FP_ONE));
             return 1;
         },
         XK_UP => {
-            if (selected_peon) issueMovePeon(@divFloor(peon_x_fp, FP_ONE), @divFloor(peon_y_fp, FP_ONE) - 16);
+            if (selectedPeon()) |peon| issueMovePeon(peon, @divFloor(peon.x_fp, FP_ONE), @divFloor(peon.y_fp, FP_ONE) - 16);
             return 1;
         },
         XK_DOWN => {
-            if (selected_peon) issueMovePeon(@divFloor(peon_x_fp, FP_ONE), @divFloor(peon_y_fp, FP_ONE) + 16);
+            if (selectedPeon()) |peon| issueMovePeon(peon, @divFloor(peon.x_fp, FP_ONE), @divFloor(peon.y_fp, FP_ONE) + 16);
             return 1;
         },
         else => return 0,
@@ -181,20 +191,21 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     const secondary = (button_mask & BTN_SECONDARY) != 0;
 
     if (primary) {
-        selected_peon = peonContains(x_px, y_px);
+        selected_peon = peonIndexAt(x_px, y_px);
         needs_redraw = true;
         return 1;
     }
 
-    if (secondary and selected_peon) {
+    if (secondary) {
+        const peon = selectedPeon() orelse return 0;
         const clicked_mine = mineContains(x_px, y_px);
         switch (cmd_mode) {
-            .move => issueMovePeon(x_px, y_px),
+            .move => issueMovePeon(peon, x_px, y_px),
             .harvest => {
-                if (clicked_mine) issueGatherOrder() else issueMovePeon(x_px, y_px);
+                if (clicked_mine) issueGatherOrder(peon) else issueMovePeon(peon, x_px, y_px);
             },
             .smart => {
-                if (clicked_mine) issueGatherOrder() else issueMovePeon(x_px, y_px);
+                if (clicked_mine) issueGatherOrder(peon) else issueMovePeon(peon, x_px, y_px);
             },
         }
 
@@ -239,19 +250,11 @@ fn ensureInitialized(now_ms: i32) void {
 }
 
 fn resetGame(_: i32) void {
-    selected_peon = true;
+    selected_peon = 0;
     cmd_mode = .smart;
 
-    peon_x_fp = (HALL_X + 18) * FP_ONE;
-    peon_y_fp = (HALL_Y + HALL_H - 14) * FP_ONE;
-    peon_target_x_fp = peon_x_fp;
-    peon_target_y_fp = peon_y_fp;
-    peon_order = .none;
-    peon_state = .idle;
-    move_target = .point;
-    state_timer_steps = 0;
-
-    peon_carry_gold = 0;
+    peon_count = 1;
+    peons[0] = newPeonAt(HALL_X + 18, HALL_Y + HALL_H - 14);
     collected_gold = 0;
     mine_gold_left = START_MINE_GOLD;
 
@@ -260,145 +263,202 @@ fn resetGame(_: i32) void {
 }
 
 fn stopPeon() void {
-    peon_order = .none;
-    peon_state = .idle;
-    move_target = .point;
-    state_timer_steps = 0;
+    if (selectedPeon()) |peon| {
+        peon.order = .none;
+        peon.state = .idle;
+        peon.move_target = .point;
+        peon.state_timer_steps = 0;
+    }
 }
 
-fn issueMovePeon(x_px: i32, y_px: i32) void {
+fn newPeonAt(x_px: i32, y_px: i32) Peon {
+    const x_fp = x_px * FP_ONE;
+    const y_fp = y_px * FP_ONE;
+    return .{
+        .x_fp = x_fp,
+        .y_fp = y_fp,
+        .target_x_fp = x_fp,
+        .target_y_fp = y_fp,
+        .order = .none,
+        .state = .idle,
+        .move_target = .point,
+        .state_timer_steps = 0,
+        .carry_gold = 0,
+    };
+}
+
+fn selectedPeon() ?*Peon {
+    if (selected_peon < 0) return null;
+    const idx = @as(usize, @intCast(selected_peon));
+    if (idx >= peon_count) return null;
+    return &peons[idx];
+}
+
+fn selectNextPeon() void {
+    if (peon_count == 0) {
+        selected_peon = -1;
+        return;
+    }
+    if (selected_peon < 0) {
+        selected_peon = 0;
+        return;
+    }
+    selected_peon = @as(i32, @intCast((@as(usize, @intCast(selected_peon)) + 1) % peon_count));
+}
+
+fn trySpawnPeon() bool {
+    if (collected_gold < PEON_SPAWN_COST or peon_count >= MAX_PEONS) return false;
+
+    collected_gold -= PEON_SPAWN_COST;
+    const slot = peon_count;
+    const offset_x = @as(i32, @intCast((slot % 4) * 12));
+    const offset_y = @as(i32, @intCast((slot / 4) * 12));
+    peons[slot] = newPeonAt(HALL_X + 18 + offset_x, HALL_Y + HALL_H - 14 - offset_y);
+    peon_count += 1;
+    selected_peon = @as(i32, @intCast(slot));
+    return true;
+}
+
+fn issueMovePeon(peon: *Peon, x_px: i32, y_px: i32) void {
     const clamped_x = clampI32(x_px, 4, @as(i32, @intCast(RENDER_W)) - 4);
     const clamped_y = clampI32(y_px, 26, @as(i32, @intCast(RENDER_H)) - 4);
-    peon_target_x_fp = clamped_x * FP_ONE;
-    peon_target_y_fp = clamped_y * FP_ONE;
-    peon_order = .move;
-    peon_state = .moving;
-    move_target = .point;
+    peon.target_x_fp = clamped_x * FP_ONE;
+    peon.target_y_fp = clamped_y * FP_ONE;
+    peon.order = .move;
+    peon.state = .moving;
+    peon.move_target = .point;
 }
 
-fn issueGatherOrder() void {
-    peon_order = .gather;
-    if (peon_carry_gold > 0) {
-        setTargetToHall();
-        peon_state = .moving;
-        move_target = .hall;
+fn issueGatherOrder(peon: *Peon) void {
+    peon.order = .gather;
+    if (peon.carry_gold > 0) {
+        setTargetToHall(peon);
+        peon.state = .moving;
+        peon.move_target = .hall;
         return;
     }
 
     if (mine_gold_left <= 0) {
-        peon_order = .none;
-        peon_state = .idle;
+        peon.order = .none;
+        peon.state = .idle;
         return;
     }
 
-    setTargetToMine();
-    peon_state = .moving;
-    move_target = .mine;
+    setTargetToMine(peon);
+    peon.state = .moving;
+    peon.move_target = .mine;
 }
 
-fn setTargetToMine() void {
-    peon_target_x_fp = (MINE_X + @divFloor(MINE_W, 2)) * FP_ONE;
-    peon_target_y_fp = (MINE_Y + MINE_H - 6) * FP_ONE;
+fn setTargetToMine(peon: *Peon) void {
+    peon.target_x_fp = (MINE_X + @divFloor(MINE_W, 2)) * FP_ONE;
+    peon.target_y_fp = (MINE_Y + MINE_H - 6) * FP_ONE;
 }
 
-fn setTargetToHall() void {
-    peon_target_x_fp = (HALL_X + @divFloor(HALL_W, 2)) * FP_ONE;
-    peon_target_y_fp = (HALL_Y + 12) * FP_ONE;
+fn setTargetToHall(peon: *Peon) void {
+    peon.target_x_fp = (HALL_X + @divFloor(HALL_W, 2)) * FP_ONE;
+    peon.target_y_fp = (HALL_Y + 12) * FP_ONE;
 }
 
 fn stepGame() void {
-    switch (peon_state) {
+    var i: usize = 0;
+    while (i < peon_count) : (i += 1) {
+        stepPeon(&peons[i]);
+    }
+
+    needs_redraw = true;
+}
+
+fn stepPeon(peon: *Peon) void {
+    switch (peon.state) {
         .idle => {},
         .moving => {
-            const speed = if (peon_carry_gold > 0) PEON_SPEED_LOADED_FP else PEON_SPEED_EMPTY_FP;
-            if (moveTowardsTarget(speed)) {
-                switch (peon_order) {
-                    .none => peon_state = .idle,
+            const speed = if (peon.carry_gold > 0) PEON_SPEED_LOADED_FP else PEON_SPEED_EMPTY_FP;
+            if (moveTowardsTarget(peon, speed)) {
+                switch (peon.order) {
+                    .none => peon.state = .idle,
                     .move => {
-                        peon_order = .none;
-                        peon_state = .idle;
+                        peon.order = .none;
+                        peon.state = .idle;
                     },
                     .gather => {
-                        if (move_target == .mine) {
-                            if (mine_gold_left > 0 and peon_carry_gold == 0) {
-                                peon_state = .mining;
-                                state_timer_steps = MINING_STEPS;
-                            } else if (peon_carry_gold > 0) {
-                                setTargetToHall();
-                                move_target = .hall;
-                                peon_state = .moving;
+                        if (peon.move_target == .mine) {
+                            if (mine_gold_left > 0 and peon.carry_gold == 0) {
+                                peon.state = .mining;
+                                peon.state_timer_steps = MINING_STEPS;
+                            } else if (peon.carry_gold > 0) {
+                                setTargetToHall(peon);
+                                peon.move_target = .hall;
+                                peon.state = .moving;
                             } else {
-                                peon_order = .none;
-                                peon_state = .idle;
+                                peon.order = .none;
+                                peon.state = .idle;
                             }
-                        } else if (move_target == .hall) {
-                            if (peon_carry_gold > 0) {
-                                peon_state = .depositing;
-                                state_timer_steps = DEPOSIT_STEPS;
+                        } else if (peon.move_target == .hall) {
+                            if (peon.carry_gold > 0) {
+                                peon.state = .depositing;
+                                peon.state_timer_steps = DEPOSIT_STEPS;
                             } else if (mine_gold_left > 0) {
-                                setTargetToMine();
-                                move_target = .mine;
-                                peon_state = .moving;
+                                setTargetToMine(peon);
+                                peon.move_target = .mine;
+                                peon.state = .moving;
                             } else {
-                                peon_order = .none;
-                                peon_state = .idle;
+                                peon.order = .none;
+                                peon.state = .idle;
                             }
                         } else {
-                            peon_state = .idle;
+                            peon.state = .idle;
                         }
                     },
                 }
             }
         },
         .mining => {
-            if (state_timer_steps > 0) {
-                state_timer_steps -= 1;
+            if (peon.state_timer_steps > 0) {
+                peon.state_timer_steps -= 1;
             } else {
                 const mined = @min(GOLD_PER_TRIP, mine_gold_left);
                 if (mined > 0) {
-                    peon_carry_gold = mined;
+                    peon.carry_gold = mined;
                     mine_gold_left -= mined;
-                    setTargetToHall();
-                    move_target = .hall;
-                    peon_state = .moving;
+                    setTargetToHall(peon);
+                    peon.move_target = .hall;
+                    peon.state = .moving;
                 } else {
-                    peon_order = .none;
-                    peon_state = .idle;
+                    peon.order = .none;
+                    peon.state = .idle;
                 }
             }
         },
         .depositing => {
-            if (state_timer_steps > 0) {
-                state_timer_steps -= 1;
+            if (peon.state_timer_steps > 0) {
+                peon.state_timer_steps -= 1;
             } else {
-                collected_gold += peon_carry_gold;
-                peon_carry_gold = 0;
-                if (peon_order == .gather and mine_gold_left > 0) {
-                    setTargetToMine();
-                    move_target = .mine;
-                    peon_state = .moving;
+                collected_gold += peon.carry_gold;
+                peon.carry_gold = 0;
+                if (peon.order == .gather and mine_gold_left > 0) {
+                    setTargetToMine(peon);
+                    peon.move_target = .mine;
+                    peon.state = .moving;
                 } else {
-                    peon_order = .none;
-                    peon_state = .idle;
+                    peon.order = .none;
+                    peon.state = .idle;
                 }
             }
         },
     }
-
-    needs_redraw = true;
 }
 
-fn moveTowardsTarget(speed_fp: i32) bool {
-    const dx = peon_target_x_fp - peon_x_fp;
-    const dy = peon_target_y_fp - peon_y_fp;
+fn moveTowardsTarget(peon: *Peon, speed_fp: i32) bool {
+    const dx = peon.target_x_fp - peon.x_fp;
+    const dy = peon.target_y_fp - peon.y_fp;
     if (absI32(dx) <= speed_fp and absI32(dy) <= speed_fp) {
-        peon_x_fp = peon_target_x_fp;
-        peon_y_fp = peon_target_y_fp;
+        peon.x_fp = peon.target_x_fp;
+        peon.y_fp = peon.target_y_fp;
         return true;
     }
 
-    if (dx > 0) peon_x_fp += @min(dx, speed_fp) else if (dx < 0) peon_x_fp -= @min(-dx, speed_fp);
-    if (dy > 0) peon_y_fp += @min(dy, speed_fp) else if (dy < 0) peon_y_fp -= @min(-dy, speed_fp);
+    if (dx > 0) peon.x_fp += @min(dx, speed_fp) else if (dx < 0) peon.x_fp -= @min(-dx, speed_fp);
+    if (dy > 0) peon.y_fp += @min(dy, speed_fp) else if (dy < 0) peon.y_fp -= @min(-dy, speed_fp);
     return false;
 }
 
@@ -406,9 +466,18 @@ fn mineContains(x: i32, y: i32) bool {
     return x >= MINE_X and y >= MINE_Y and x < MINE_X + MINE_W and y < MINE_Y + MINE_H;
 }
 
-fn peonContains(x: i32, y: i32) bool {
-    const px = @divFloor(peon_x_fp, FP_ONE);
-    const py = @divFloor(peon_y_fp, FP_ONE);
+fn peonIndexAt(x: i32, y: i32) i32 {
+    var i = peon_count;
+    while (i > 0) {
+        i -= 1;
+        if (peonContains(&peons[i], x, y)) return @as(i32, @intCast(i));
+    }
+    return -1;
+}
+
+fn peonContains(peon: *const Peon, x: i32, y: i32) bool {
+    const px = @divFloor(peon.x_fp, FP_ONE);
+    const py = @divFloor(peon.y_fp, FP_ONE);
     const r = @divFloor(PEON_SIZE, 2);
     return x >= px - r and y >= py - r and x < px + r and y < py + r;
 }
@@ -417,8 +486,8 @@ fn drawScene() void {
     drawBackground();
     drawMine();
     drawHall();
-    drawPeon();
-    drawTargetMarker();
+    drawPeons();
+    drawTargetMarkers();
     drawHud();
 }
 
@@ -454,27 +523,40 @@ fn drawHall() void {
     fillRectI32(HALL_X + 28, HALL_Y + 24, 14, HALL_H - 24, .{ 0x2C, 0x18, 0x0D, 0xFF });
 }
 
-fn drawPeon() void {
-    const x = @divFloor(peon_x_fp, FP_ONE);
-    const y = @divFloor(peon_y_fp, FP_ONE);
+fn drawPeons() void {
+    var i: usize = 0;
+    while (i < peon_count) : (i += 1) {
+        drawPeon(&peons[i], selected_peon == @as(i32, @intCast(i)));
+    }
+}
+
+fn drawPeon(peon: *const Peon, selected: bool) void {
+    const x = @divFloor(peon.x_fp, FP_ONE);
+    const y = @divFloor(peon.y_fp, FP_ONE);
     const r = @divFloor(PEON_SIZE, 2);
 
-    if (selected_peon) {
+    if (selected) {
         fillRectI32(x - r - 2, y - r - 2, PEON_SIZE + 4, PEON_SIZE + 4, C_PEON_SEL);
     }
 
     fillRectI32(x - r, y - r, PEON_SIZE, PEON_SIZE, C_PEON);
     fillRectI32(x - 1, y - r - 1, 3, 2, .{ 0xE7, 0xF5, 0xC0, 0xFF });
 
-    if (peon_carry_gold > 0) {
+    if (peon.carry_gold > 0) {
         fillRectI32(x + r - 2, y + 1, 4, 4, C_PEON_BAG);
     }
 }
 
-fn drawTargetMarker() void {
-    if (peon_state != .moving) return;
-    const tx = @divFloor(peon_target_x_fp, FP_ONE);
-    const ty = @divFloor(peon_target_y_fp, FP_ONE);
+fn drawTargetMarkers() void {
+    var i: usize = 0;
+    while (i < peon_count) : (i += 1) {
+        if (peons[i].state == .moving) drawTargetMarker(&peons[i]);
+    }
+}
+
+fn drawTargetMarker(peon: *const Peon) void {
+    const tx = @divFloor(peon.target_x_fp, FP_ONE);
+    const ty = @divFloor(peon.target_y_fp, FP_ONE);
     fillRectI32(tx - 4, ty - 1, 9, 2, C_CURSOR);
     fillRectI32(tx - 1, ty - 4, 2, 9, C_CURSOR);
 }
@@ -488,7 +570,7 @@ fn drawHud() void {
 
     // Carrying indicator.
     fillRect(124, 6, 8, 10, C_PEON_BAG);
-    drawNumber(136, 8, peon_carry_gold, C_NUMBER);
+    drawNumber(136, 8, selectedCarryGold(), C_NUMBER);
 
     // Mine remaining.
     fillRect(210, 6, 8, 10, C_MINE);
@@ -498,6 +580,19 @@ fn drawHud() void {
     drawModeTab(260, cmd_mode == .smart, .{ 0x5D, 0xB4, 0xD5, 0xFF });
     drawModeTab(280, cmd_mode == .move, .{ 0xD1, 0xAF, 0x56, 0xFF });
     drawModeTab(300, cmd_mode == .harvest, .{ 0x74, 0xD0, 0x7A, 0xFF });
+
+    // Unit count and spawn availability.
+    fillRect(176, 6, 8, 10, if (canSpawnPeon()) C_PEON_SEL else C_PEON);
+    drawNumber(188, 8, @as(i32, @intCast(peon_count)), C_NUMBER);
+}
+
+fn selectedCarryGold() i32 {
+    if (selectedPeon()) |peon| return peon.carry_gold;
+    return 0;
+}
+
+fn canSpawnPeon() bool {
+    return collected_gold >= PEON_SPAWN_COST and peon_count < MAX_PEONS;
 }
 
 fn drawModeTab(x: i32, active: bool, color: Color) void {
@@ -598,23 +693,46 @@ fn absI32(v: i32) i32 {
 
 test "right click mine sets gather order" {
     resetGame(0);
-    issueGatherOrder();
-    try std.testing.expect(peon_order == .gather);
-    try std.testing.expect(peon_state == .moving);
-    try std.testing.expect(move_target == .mine);
+    const peon = selectedPeon().?;
+    issueGatherOrder(peon);
+    try std.testing.expect(peon.order == .gather);
+    try std.testing.expect(peon.state == .moving);
+    try std.testing.expect(peon.move_target == .mine);
 }
 
 test "deposit increments collected gold" {
     resetGame(0);
-    peon_order = .gather;
-    peon_state = .depositing;
-    state_timer_steps = 0;
-    peon_carry_gold = 100;
+    const peon = selectedPeon().?;
+    peon.order = .gather;
+    peon.state = .depositing;
+    peon.state_timer_steps = 0;
+    peon.carry_gold = 100;
     mine_gold_left = 0;
     collected_gold = 50;
 
     stepGame();
 
     try std.testing.expect(collected_gold == 150);
-    try std.testing.expect(peon_carry_gold == 0);
+    try std.testing.expect(peon.carry_gold == 0);
+}
+
+test "spawning costs gold and selects new peon" {
+    resetGame(0);
+    collected_gold = PEON_SPAWN_COST;
+
+    try std.testing.expect(trySpawnPeon());
+
+    try std.testing.expect(peon_count == 2);
+    try std.testing.expect(collected_gold == 0);
+    try std.testing.expect(selected_peon == 1);
+}
+
+test "spawning requires enough gold" {
+    resetGame(0);
+    collected_gold = PEON_SPAWN_COST - 1;
+
+    try std.testing.expect(!trySpawnPeon());
+
+    try std.testing.expect(peon_count == 1);
+    try std.testing.expect(collected_gold == PEON_SPAWN_COST - 1);
 }

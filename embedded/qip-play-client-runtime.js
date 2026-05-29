@@ -158,6 +158,7 @@ class QIPPlayElement extends HTMLElement {
     this._boundKeyUp = null;
     this._boundPointer = null;
     this._boundPointerUp = null;
+    this._boundContextMenu = null;
     this._boundClickFocus = null;
     this._boundFrame = null;
     this._boundBlur = null;
@@ -434,6 +435,10 @@ class QIPPlayElement extends HTMLElement {
       console.log("pointerup");
       this._dispatchPointer(event);
     };
+    this._boundContextMenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
 
     this._boundClickFocus = () => {
       this.focus();
@@ -445,9 +450,12 @@ class QIPPlayElement extends HTMLElement {
     this.addEventListener("keydown", this._boundKeyDown);
     this.addEventListener("keyup", this._boundKeyUp);
     this._canvas.addEventListener("pointerdown", this._boundPointer);
-    //this._canvas.addEventListener("pointermove", this._boundPointer);
+    this._canvas.addEventListener("pointermove", this._boundPointer);
     this._canvas.addEventListener("pointerup", this._boundPointerUp);
     this._canvas.addEventListener("pointercancel", this._boundPointerUp);
+    this._canvas.addEventListener("contextmenu", this._boundContextMenu, true);
+    this.addEventListener("contextmenu", this._boundContextMenu, true);
+    this._canvas.oncontextmenu = () => false;
     this._canvas.addEventListener("click", this._boundClickFocus);
     this.addEventListener("blur", this._boundBlur);
   }
@@ -466,6 +474,14 @@ class QIPPlayElement extends HTMLElement {
         this._canvas.removeEventListener("pointerup", this._boundPointerUp);
         this._canvas.removeEventListener("pointercancel", this._boundPointerUp);
       }
+      if (this._boundContextMenu) {
+        this._canvas.removeEventListener(
+          "contextmenu",
+          this._boundContextMenu,
+          true,
+        );
+        this.removeEventListener("contextmenu", this._boundContextMenu, true);
+      }
       if (this._boundClickFocus) {
         this._canvas.removeEventListener("click", this._boundClickFocus);
       }
@@ -475,6 +491,10 @@ class QIPPlayElement extends HTMLElement {
     this._boundKeyUp = null;
     this._boundPointer = null;
     this._boundPointerUp = null;
+    this._boundContextMenu = null;
+    if (this._canvas) {
+      this._canvas.oncontextmenu = null;
+    }
     this._boundClickFocus = null;
     if (this._boundBlur) this.removeEventListener("blur", this._boundBlur);
     this._boundBlur = null;
