@@ -461,6 +461,12 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 ## TODO
 
 - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
+- [ ] Add spreadsheet example.
+- [ ] Add bar charts.
+- [ ] Add pixel editor.
+- [ ] Add Cover Flow example.
+- [ ] Add Figma vector networks example.
+- [ ] Add timeline editor a la After Effects.
 - [ ] Change render contract to extend existing contract:
   - [ ] `export fn render(input_size: i32) i32` instead of `export fn render_output() i32`
   - [ ] No need for `export fn output_bytes_cap() u32` instead have `export fn output_rgba8888_stride() u32`

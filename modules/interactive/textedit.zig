@@ -17,6 +17,8 @@ const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
 const XK_RIGHT: i32 = 0xFF53;
 const XK_DOWN: i32 = 0xFF54;
+const XK_SHIFT_L: i32 = 0xFFE1;
+const XK_SHIFT_R: i32 = 0xFFE2;
 const XK_HOME: i32 = 0xFF50;
 const XK_END: i32 = 0xFF57;
 const XK_PAGE_UP: i32 = 0xFF55;
@@ -76,6 +78,7 @@ var has_undo: bool = false;
 
 var clipboard: [CLIP_CAP]u8 = undefined;
 var clipboard_len: usize = 0;
+var scratch: [DOC_CAP]u8 = undefined;
 
 var caret: usize = 0;
 var anchor: usize = 0;
@@ -91,6 +94,7 @@ var secondary_down: bool = false;
 var mouse_selecting: bool = false;
 var last_primary_click_ms: i64 = -1000000;
 var last_primary_click_idx: usize = 0;
+var shift_down: bool = false;
 
 var blink_on: bool = true;
 var next_blink_at_ms: i64 = BLINK_INTERVAL_MS;
@@ -115,23 +119,39 @@ export fn render_height_px() i32 {
 
 export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     ensureInit();
-    if ((flags & FLAG_KEY_DOWN) == 0) return 0;
+    const key_down = (flags & FLAG_KEY_DOWN) != 0;
+    const shift_flag = (flags & FLAG_SHIFT) != 0;
+
+    if (x11_key == XK_SHIFT_L or x11_key == XK_SHIFT_R) {
+        shift_down = key_down;
+        return 1;
+    }
+    shift_down = shift_flag;
+
+    if (!key_down) return 0;
 
     const extend = (flags & FLAG_SHIFT) != 0;
+    const control = (flags & FLAG_CTRL) != 0;
     const shortcut_mod = (flags & (FLAG_CTRL | FLAG_META)) != 0;
+    const command = (flags & FLAG_META) != 0;
     const alt = (flags & FLAG_ALT) != 0;
 
-    if (shortcut_mod and handleShortcut(x11_key)) {
+    if (shortcut_mod and handleShortcut(x11_key, control, command)) {
         touchAfterEdit(now_ms);
         return 1;
     }
 
-    if (handleNavKey(x11_key, extend, alt)) {
+    if (alt and !command and handleLineSwapKey(x11_key)) {
+        touchAfterEdit(now_ms);
+        return 1;
+    }
+
+    if (handleNavKey(x11_key, extend, alt, command)) {
         touchAfterNav(now_ms);
         return 1;
     }
 
-    if (handleEditKey(x11_key, alt)) {
+    if (handleEditKey(x11_key, alt, command)) {
         touchAfterEdit(now_ms);
         return 1;
     }
@@ -165,9 +185,14 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32
     if (primary and !primary_down) {
         const idx = textIndexAtPoint(x_px, y_px);
         const in_text = pointInRect(x_px, y_px, .{ .x = TEXT_X, .y = TEXT_Y, .w = TEXT_W, .h = TEXT_H });
+        const extend_selection = shift_down and in_text;
         const near_last = absI32(@as(i32, @intCast(idx)) - @as(i32, @intCast(last_primary_click_idx))) <= 1;
-        const is_double = in_text and (now_ms - last_primary_click_ms) >= 0 and (now_ms - last_primary_click_ms) <= DOUBLE_CLICK_MS and near_last;
-        if (is_double) {
+        const is_double = !extend_selection and in_text and (now_ms - last_primary_click_ms) >= 0 and (now_ms - last_primary_click_ms) <= DOUBLE_CLICK_MS and near_last;
+        if (extend_selection) {
+            caret = idx;
+            preferred_col = -1;
+            mouse_selecting = true;
+        } else if (is_double) {
             selectWordAt(idx);
             mouse_selecting = false;
         } else {
@@ -235,6 +260,7 @@ fn resetState() void {
     mouse_selecting = false;
     last_primary_click_ms = -1000000;
     last_primary_click_idx = 0;
+    shift_down = false;
     blink_on = true;
     next_blink_at_ms = BLINK_INTERVAL_MS;
 
@@ -260,7 +286,7 @@ fn touchAfterNav(now_ms: i64) void {
     needs_redraw = true;
 }
 
-fn handleShortcut(key: i32) bool {
+fn handleShortcut(key: i32, control: bool, command: bool) bool {
     switch (key) {
         'a', 'A' => {
             anchor = 0;
@@ -288,28 +314,49 @@ fn handleShortcut(key: i32) bool {
             undo();
             return true;
         },
+        't', 'T' => {
+            if (!control or command) return false;
+            pushUndo();
+            return transposeChars();
+        },
         else => return false,
     }
 }
 
-fn handleNavKey(key: i32, extend: bool, alt: bool) bool {
+fn handleLineSwapKey(key: i32) bool {
+    switch (key) {
+        XK_UP => {
+            pushUndo();
+            _ = swapLineUp();
+            return true;
+        },
+        XK_DOWN => {
+            pushUndo();
+            _ = swapLineDown();
+            return true;
+        },
+        else => return false,
+    }
+}
+
+fn handleNavKey(key: i32, extend: bool, alt: bool, command: bool) bool {
     switch (key) {
         XK_LEFT => {
-            if (alt) moveWordLeft(extend) else moveLeft(extend);
+            if (command) moveHome(extend) else if (alt) moveWordLeft(extend) else moveLeft(extend);
             preferred_col = -1;
             return true;
         },
         XK_RIGHT => {
-            if (alt) moveWordRight(extend) else moveRight(extend);
+            if (command) moveEnd(extend) else if (alt) moveWordRight(extend) else moveRight(extend);
             preferred_col = -1;
             return true;
         },
         XK_UP => {
-            moveVertical(-1, extend);
+            if (command) moveDocStart(extend) else moveVertical(-1, extend);
             return true;
         },
         XK_DOWN => {
-            moveVertical(1, extend);
+            if (command) moveDocEnd(extend) else moveVertical(1, extend);
             return true;
         },
         XK_HOME => {
@@ -334,15 +381,17 @@ fn handleNavKey(key: i32, extend: bool, alt: bool) bool {
     }
 }
 
-fn handleEditKey(key: i32, alt: bool) bool {
+fn handleEditKey(key: i32, alt: bool, command: bool) bool {
     switch (key) {
         XK_BACKSPACE => {
             pushUndo();
+            if (command) return deleteToLineStart();
             if (alt) return deleteWordBackward();
             return backspace();
         },
         XK_DELETE => {
             pushUndo();
+            if (command) return deleteToLineEnd();
             if (alt) return deleteWordForward();
             return deleteForward();
         },
@@ -398,6 +447,16 @@ fn moveVertical(delta_lines: i32, extend: bool) void {
     if (preferred_col < 0) preferred_col = col;
     const target_line = @max(0, line + delta_lines);
     caret = indexAtLineCol(target_line, preferred_col);
+    if (!extend) anchor = caret;
+}
+
+fn moveDocStart(extend: bool) void {
+    caret = 0;
+    if (!extend) anchor = caret;
+}
+
+fn moveDocEnd(extend: bool) void {
+    caret = doc_len;
     if (!extend) anchor = caret;
 }
 
@@ -543,6 +602,118 @@ fn deleteWordForward() bool {
     anchor = caret;
     caret = start;
     return deleteSelection();
+}
+
+fn deleteToLineStart() bool {
+    if (deleteSelection()) return true;
+    const start = lineStartAt(caret);
+    if (start >= caret) return false;
+    anchor = caret;
+    caret = start;
+    return deleteSelection();
+}
+
+fn deleteToLineEnd() bool {
+    if (deleteSelection()) return true;
+    const line_end = lineEndAt(caret);
+    if (line_end <= caret) return false;
+    anchor = line_end;
+    return deleteSelection();
+}
+
+fn swapLineUp() bool {
+    const current_start = lineStartAt(caret);
+    if (current_start == 0) return false;
+    const previous_start = lineStartAt(current_start - 1);
+    return swapAdjacentLines(previous_start);
+}
+
+fn swapLineDown() bool {
+    const current_start = lineStartAt(caret);
+    const current_end = lineEndAt(current_start);
+    if (current_end >= doc_len or doc[current_end] != '\n') return false;
+    return swapAdjacentLines(current_start);
+}
+
+fn swapAdjacentLines(first_start: usize) bool {
+    const first_end = lineEndAt(first_start);
+    if (first_end >= doc_len or doc[first_end] != '\n') return false;
+    const second_start = first_end + 1;
+    if (second_start > doc_len) return false;
+    const second_end = lineEndAt(second_start);
+    const second_has_nl = second_end < doc_len and doc[second_end] == '\n';
+    const region_end = second_end + @as(usize, if (second_has_nl) 1 else 0);
+
+    const first_len = first_end - first_start;
+    const second_len = second_end - second_start;
+    const region_len = region_end - first_start;
+
+    var w: usize = 0;
+    var i = second_start;
+    while (i < second_end) : (i += 1) {
+        scratch[w] = doc[i];
+        w += 1;
+    }
+    scratch[w] = '\n';
+    w += 1;
+    i = first_start;
+    while (i < first_end) : (i += 1) {
+        scratch[w] = doc[i];
+        w += 1;
+    }
+    if (second_has_nl) {
+        scratch[w] = '\n';
+        w += 1;
+    }
+    if (w != region_len) return false;
+
+    i = 0;
+    while (i < region_len) : (i += 1) {
+        doc[first_start + i] = scratch[i];
+    }
+
+    caret = remapAfterAdjacentLineSwap(caret, first_start, first_len, second_len);
+    anchor = remapAfterAdjacentLineSwap(anchor, first_start, first_len, second_len);
+    preferred_col = -1;
+    return true;
+}
+
+fn remapAfterAdjacentLineSwap(pos: usize, first_start: usize, first_len: usize, second_len: usize) usize {
+    const sep1 = first_start + first_len;
+    const second_start = sep1 + 1;
+    const second_end = second_start + second_len;
+
+    if (pos < first_start or pos > second_end) return pos;
+    if (pos < sep1) return pos + second_len + 1; // first line text
+    if (pos == sep1) return first_start + second_len; // separator between lines
+    if (pos < second_end) return pos - (first_len + 1); // second line text
+    return pos; // trailing separator after second line (if present)
+}
+
+fn transposeChars() bool {
+    if (hasSelection()) return false;
+    if (doc_len < 2 or caret == 0) return false;
+
+    // Emacs-style: at end of line/buffer, transpose the two chars before point.
+    var left: usize = undefined;
+    var right: usize = undefined;
+    if (caret >= doc_len or doc[caret] == '\n') {
+        if (caret < 2) return false;
+        left = caret - 2;
+        right = caret - 1;
+    } else {
+        left = caret - 1;
+        right = caret;
+    }
+
+    if (right >= doc_len) return false;
+    const tmp = doc[left];
+    doc[left] = doc[right];
+    doc[right] = tmp;
+
+    if (caret < doc_len) caret += 1;
+    anchor = caret;
+    return true;
 }
 
 fn pushUndo() void {
@@ -727,6 +898,23 @@ fn drawDocumentText() void {
         const visible_start = @min(line_end, line_start + @as(usize, @intCast(scroll_col)));
         const visible_end = @min(line_end, visible_start + @as(usize, @intCast(VIEW_COLS)));
         const y = TEXT_Y + row * LINE_H;
+        const newline_selected = has_sel and line_end < doc_len and line_end >= sel.start and line_end < sel.end;
+        const line_selected_start = @max(sel.start, line_start);
+        const line_has_selected_chars = has_sel and line_selected_start < line_end;
+        var newline_fill_x0 = TEXT_X;
+        if (line_has_selected_chars) {
+            if (line_selected_start <= visible_start) {
+                newline_fill_x0 = TEXT_X;
+            } else if (line_selected_start >= visible_end) {
+                newline_fill_x0 = TEXT_X + TEXT_W;
+            } else {
+                newline_fill_x0 = TEXT_X + @as(i32, @intCast(line_selected_start - visible_start)) * CHAR_W;
+            }
+        }
+        if (newline_selected) {
+            const w = (TEXT_X + TEXT_W) - newline_fill_x0;
+            if (w > 0) fillRectI32(newline_fill_x0, y, w, LINE_H, C_SEL);
+        }
 
         var i = visible_start;
         while (i < visible_end) : (i += 1) {

@@ -14,6 +14,7 @@ More interactive pages:
 - [Perlin Noise](/play-perlin-noise)
 - [Peon Gold Loop](/play-peon-gold)
 - [Paint](/play-paint)
+- [Vector Editor](/play-vector-editor)
 - [Calculator](/play-calculator)
 - [Graph Calculator](/play-graph-calculator)
 - [Windows 95 Desktop](/play-windows95-desktop)

@@ -89,10 +89,12 @@ function qipPlayMapKeyboardEventToKeysym(event) {
   if (key === "ArrowUp") return 0xff52;
   if (key === "ArrowRight") return 0xff53;
   if (key === "ArrowDown") return 0xff54;
+  if (key === "Shift") return event.location === 2 ? 0xffe2 : 0xffe1;
   if (key === "Escape") return 0xff1b;
   if (key === "Enter") return 0xff0d;
   if (key === "Tab") return 0xff09;
   if (key === "Backspace") return 0xff08;
+  if (key === "Delete") return 0xffff;
   if (key === " ") return 0x20;
 
   if (key.length === 1) {
@@ -100,6 +102,38 @@ function qipPlayMapKeyboardEventToKeysym(event) {
   }
 
   return null;
+}
+
+function qipPlayShouldCaptureMetaKey(event, keysym) {
+  // Preserve browser/app-level shortcuts by default, but allow the common
+  // text-editing/navigation shortcuts modules expect.
+  if (event.ctrlKey) return false;
+  switch (keysym | 0) {
+    case 0xff51: // Left
+    case 0xff52: // Up
+    case 0xff53: // Right
+    case 0xff54: // Down
+    case 0xff08: // Backspace
+    case 0xffff: // Delete
+    case 0xff50: // Home
+    case 0xff57: // End
+      return true;
+    case 0x41: // A
+    case 0x43: // C
+    case 0x56: // V
+    case 0x58: // X
+    case 0x5a: // Z
+    case 0x54: // T
+    case 0x61: // a
+    case 0x63: // c
+    case 0x76: // v
+    case 0x78: // x
+    case 0x7a: // z
+    case 0x74: // t
+      return true;
+    default:
+      return false;
+  }
 }
 
 function qipPlayBuildKeyFlags(event, isDown) {
@@ -318,7 +352,7 @@ class QIPPlayElement extends HTMLElement {
     this._canvas.width = this._renderWidth;
     this._canvas.height = this._renderHeight;
     this._canvas.style.display = "block";
-    this._canvas.style.width = "100%";
+    this._canvas.style.width = String(this._renderWidth) + "px";
     this._canvas.style.height = "auto";
     this._canvas.style.imageRendering = "pixelated";
     this._canvas.style.touchAction = "none";
@@ -502,14 +536,12 @@ class QIPPlayElement extends HTMLElement {
       return;
     }
 
-    // Preserve browser/app shortcuts like Cmd+R on macOS by not capturing
-    // Meta-modified keystrokes for qip-play modules.
-    if (event.metaKey) {
+    const keysym = qipPlayMapKeyboardEventToKeysym(event);
+    if (keysym === null) {
       return;
     }
 
-    const keysym = qipPlayMapKeyboardEventToKeysym(event);
-    if (keysym === null) {
+    if (event.metaKey && !qipPlayShouldCaptureMetaKey(event, keysym)) {
       return;
     }
 
