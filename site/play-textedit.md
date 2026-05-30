@@ -1,0 +1,21 @@
+# TextEdit (Plain Text)
+
+An interactive plain-text editor inspired by TextEdit.app basics.
+
+Supported:
+
+- Typing plain ASCII text
+- Mouse caret placement and drag selection
+- Arrow/Home/End/PageUp/PageDown navigation
+- `Shift` + navigation for selection extension
+- `Backspace` / `Delete` / `Enter` / `Tab`
+- `Ctrl`/`Cmd` + `A`, `C`, `X`, `V`, `Z`
+
+Notes:
+
+- Clipboard is internal to this module (`Copy/Cut/Paste` within this editor session).
+- Plain text only (no style attributes).
+
+<qip-play>
+  <source src="/modules/interactive/textedit.wasm" type="application/wasm" />
+</qip-play>
