@@ -91,8 +91,8 @@ var phase: u8 = PHASE_PLAYER_TURN;
 var reveal_kind: u8 = REVEAL_NONE;
 var reveal_caller: usize = 0;
 var reveal_total: u8 = 0;
-var reveal_deadline_ms: i32 = 0;
-var ai_due_ms: i32 = 0;
+var reveal_deadline_ms: i64 = 0;
+var ai_due_ms: i64 = 0;
 var winner: i32 = -1;
 
 var primary_down: bool = false;
@@ -145,7 +145,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     if (!initialized) resetGame(0);
 
@@ -188,7 +188,7 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     }
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     if (!initialized) resetGame(0);
 
     const is_primary = (button_mask & BTN_PRIMARY) != 0;
@@ -202,7 +202,7 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     if (!initialized) resetGame(now_ms);
 
     if (phase == PHASE_AI_WAIT and now_ms >= ai_due_ms) {
@@ -213,7 +213,9 @@ export fn tick(now_ms: i32) i32 {
         advanceAfterReveal(now_ms);
     }
 
-    return if (needs_redraw) 1 else 0;
+    if (phase == PHASE_AI_WAIT) return ai_due_ms;
+    if (phase == PHASE_REVEAL) return reveal_deadline_ms;
+    return 0;
 }
 
 export fn render_output() i32 {
@@ -223,7 +225,7 @@ export fn render_output() i32 {
     return @as(i32, @intCast(OUTPUT_BYTES));
 }
 
-fn resetGame(now_ms: i32) void {
+fn resetGame(now_ms: i64) void {
     initialized = true;
     primary_down = false;
     game_count +%= 1;
@@ -239,7 +241,7 @@ fn resetGame(now_ms: i32) void {
     startRound(now_ms, round_starter);
 }
 
-fn startRound(now_ms: i32, starter: usize) void {
+fn startRound(now_ms: i64, starter: usize) void {
     round_starter = starter;
     bid_qty = 0;
     bid_face = 0;
@@ -253,7 +255,7 @@ fn startRound(now_ms: i32, starter: usize) void {
         phase = PHASE_PLAYER_TURN;
     } else {
         phase = PHASE_AI_WAIT;
-        ai_due_ms = now_ms + AI_DELAY_MIN_MS + @as(i32, @intCast(rngNext() % AI_DELAY_VAR_MS));
+        ai_due_ms = now_ms + @as(i64, AI_DELAY_MIN_MS) + @as(i64, @intCast(rngNext() % @as(u32, @intCast(AI_DELAY_VAR_MS))));
     }
 
     resetDraftToMinimumLegal();
@@ -271,7 +273,7 @@ fn rollAllAliveDice() void {
     }
 }
 
-fn runAiTurn(now_ms: i32) void {
+fn runAiTurn(now_ms: i64) void {
     if (phase != PHASE_AI_WAIT) return;
     if (turn_player == HUMAN) {
         phase = PHASE_PLAYER_TURN;
@@ -435,7 +437,7 @@ fn setBid(qty: u8, face: u8, player: usize) void {
     resetDraftToMinimumLegal();
 }
 
-fn resolveBluff(caller: usize, now_ms: i32) void {
+fn resolveBluff(caller: usize, now_ms: i64) void {
     const total = countFaceAcrossAlive(bid_face);
     reveal_kind = REVEAL_BLUFF;
     reveal_caller = caller;
@@ -448,11 +450,11 @@ fn resolveBluff(caller: usize, now_ms: i32) void {
     }
 
     phase = PHASE_REVEAL;
-    reveal_deadline_ms = now_ms + REVEAL_HOLD_MS;
+    reveal_deadline_ms = now_ms + @as(i64, REVEAL_HOLD_MS);
     needs_redraw = true;
 }
 
-fn resolveSpotOn(caller: usize, now_ms: i32) void {
+fn resolveSpotOn(caller: usize, now_ms: i64) void {
     const total = countFaceAcrossAlive(bid_face);
     reveal_kind = REVEAL_SPOT;
     reveal_caller = caller;
@@ -469,7 +471,7 @@ fn resolveSpotOn(caller: usize, now_ms: i32) void {
     }
 
     phase = PHASE_REVEAL;
-    reveal_deadline_ms = now_ms + REVEAL_HOLD_MS;
+    reveal_deadline_ms = now_ms + @as(i64, REVEAL_HOLD_MS);
     needs_redraw = true;
 }
 
@@ -478,7 +480,7 @@ fn loseOneDie(player: usize) void {
     dice_count[player] -= 1;
 }
 
-fn advanceAfterReveal(now_ms: i32) void {
+fn advanceAfterReveal(now_ms: i64) void {
     const alive = countAlivePlayers();
     if (alive <= 1) {
         winner = @as(i32, @intCast(lastAlivePlayer()));
@@ -491,14 +493,14 @@ fn advanceAfterReveal(now_ms: i32) void {
     startRound(now_ms, next_starter);
 }
 
-fn advanceTurnAfterRaise(now_ms: i32) void {
+fn advanceTurnAfterRaise(now_ms: i64) void {
     turn_player = nextAliveFrom(turn_player, false);
     if (turn_player == HUMAN) {
         phase = PHASE_PLAYER_TURN;
         resetDraftToMinimumLegal();
     } else {
         phase = PHASE_AI_WAIT;
-        ai_due_ms = now_ms + AI_DELAY_MIN_MS + @as(i32, @intCast(rngNext() % AI_DELAY_VAR_MS));
+        ai_due_ms = now_ms + @as(i64, AI_DELAY_MIN_MS) + @as(i64, @intCast(rngNext() % @as(u32, @intCast(AI_DELAY_VAR_MS))));
     }
 }
 

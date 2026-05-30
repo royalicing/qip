@@ -6,8 +6,11 @@ Supported:
 
 - Typing plain ASCII text
 - Mouse caret placement and drag selection
+- Double-click word selection
 - Arrow/Home/End/PageUp/PageDown navigation
 - `Shift` + navigation for selection extension
+- `Option/Alt` + `Left/Right` word navigation
+- `Option/Alt` + `Delete/Backspace` word delete
 - `Backspace` / `Delete` / `Enter` / `Tab`
 - `Ctrl`/`Cmd` + `A`, `C`, `X`, `V`, `Z`
 

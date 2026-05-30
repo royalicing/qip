@@ -15,7 +15,7 @@ const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
 const BTN_SECONDARY: i32 = 1 << 2;
 
-const STEP_MS: i32 = 16;
+const STEP_MS: i64 = 16;
 
 const FP_SHIFT: i32 = 8;
 const FP_ONE: i32 = 1 << FP_SHIFT;
@@ -98,7 +98,7 @@ var initialized: bool = false;
 var needs_redraw: bool = true;
 
 var has_last_tick: bool = false;
-var last_tick_ms: i32 = 0;
+var last_tick_ms: i64 = 0;
 
 var selected_peon: i32 = 0;
 var cmd_mode: CommandMode = .smart;
@@ -124,7 +124,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
 
@@ -184,7 +184,7 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
     }
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     if (x_px < 0 or y_px < 0 or x_px >= @as(i32, @intCast(RENDER_W)) or y_px >= @as(i32, @intCast(RENDER_H))) return 0;
 
     const primary = (button_mask & BTN_PRIMARY) != 0;
@@ -217,7 +217,7 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     ensureInitialized(now_ms);
 
     if (!has_last_tick) {
@@ -234,7 +234,7 @@ export fn tick(now_ms: i32) i32 {
         elapsed -= STEP_MS;
     }
 
-    return if (needs_redraw) 1 else 0;
+    return last_tick_ms + STEP_MS;
 }
 
 export fn render_output() i32 {
@@ -243,13 +243,13 @@ export fn render_output() i32 {
     return @as(i32, @intCast(OUTPUT_BYTES));
 }
 
-fn ensureInitialized(now_ms: i32) void {
+fn ensureInitialized(now_ms: i64) void {
     if (initialized) return;
     resetGame(now_ms);
     initialized = true;
 }
 
-fn resetGame(_: i32) void {
+fn resetGame(_: i64) void {
     selected_peon = 0;
     cmd_mode = .smart;
 

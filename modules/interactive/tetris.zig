@@ -20,7 +20,7 @@ const XK_RIGHT: i32 = 0xFF53;
 const XK_DOWN: i32 = 0xFF54;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 
-const DROP_MS: i32 = 520;
+const DROP_MS: i64 = 520;
 
 const Color = [4]u8;
 const COLOR_BG: Color = .{ 0x10, 0x12, 0x18, 0xFF };
@@ -68,7 +68,7 @@ var next_type: u8 = 0;
 var rng_state: u32 = 0xCAFEB157;
 
 var has_last_drop: bool = false;
-var last_drop_ms: i32 = 0;
+var last_drop_ms: i64 = 0;
 
 var score: i32 = 0;
 var lines_cleared: i32 = 0;
@@ -97,7 +97,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
     if (!initialized) resetGame();
@@ -135,13 +135,13 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i32) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
     return 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     if (!initialized) resetGame();
-    if (game_over or paused) return if (needs_redraw) 1 else 0;
+    if (game_over or paused) return 0;
 
     if (!has_last_drop) {
         has_last_drop = true;
@@ -158,7 +158,7 @@ export fn tick(now_ms: i32) i32 {
         elapsed -= DROP_MS;
     }
 
-    return 1;
+    return last_drop_ms + DROP_MS;
 }
 
 export fn render_output() i32 {

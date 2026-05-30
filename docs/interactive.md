@@ -11,9 +11,9 @@ Required exports:
 - `memory`
 - `output_ptr() -> i32`
 - `output_bytes_cap() -> i32`
-- `key_event(x11_key: i32, flags: i32, now_ms: i32) -> i32`
-- `pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i32) -> i32`
-- `tick(now_ms: i32) -> i32`
+- `key_event(x11_key: i32, flags: i32, now_ms: i64) -> i32`
+- `pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) -> i32`
+- `tick(now_ms: i64) -> i64`
 - `render_output() -> i32`
 
 ### Output Format
@@ -39,14 +39,14 @@ Little-endian note:
   - `bit 3`: ctrl
   - `bit 4`: alt
   - `bit 5`: meta
-- `now_ms` is monotonic elapsed milliseconds from the same timeline used by `tick(now_ms)`.
+- `now_ms` is monotonic elapsed milliseconds (`i64`) from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
 
 `pointer_event(...)`:
 
 - `button_mask` uses only the low 3 bits: primary=`1`, middle=`2`, secondary=`4`.
 - `x_px` and `y_px` are integer pixel coordinates in current render space.
-- `now_ms` is monotonic elapsed milliseconds from the same timeline used by `tick(now_ms)`.
+- `now_ms` is monotonic elapsed milliseconds (`i64`) from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
 
 ### Tick + Render Flow
@@ -58,15 +58,13 @@ We intentionally split simulation from rendering.
 
 `tick(now_ms)` return value:
 
-- `0`: no visual change (host may skip `render_output()`)
-- `1`: output changed (host should call `render_output()`)
-
-This dirty bit pattern is common in interactive systems and helps avoid unnecessary redraw work.
+- `0`: no scheduled wakeup needed
+- `>0`: absolute next wake timestamp (`next_wake_at_ms`) in the same monotonic timeline as `now_ms`
 
 Time source requirements:
 
 - `now_ms` should be monotonic time in milliseconds.
-- Hosts should call `tick(0)` first, then pass elapsed milliseconds since that start tick.
+- Hosts should call `tick(0)` first, then pass current monotonic elapsed milliseconds.
 - Do not use wall-clock time for simulation.
 
 ## Sizing Variants
@@ -111,8 +109,9 @@ Rules:
 Typical host flow:
 
 1. Deliver input as it arrives via `key_event(...)` / `pointer_event(...)`.
-2. On frame callback (for example `requestAnimationFrame`), call `tick(now_ms)`.
-3. If `tick` returns `1`, call `render_output()` and read `output_ptr()` bytes.
+2. Call `tick(now_ms)` when input is ready to apply, or when host time reaches `next_wake_at_ms`.
+3. Call `render_output()` after each tick that was run and read `output_ptr()` bytes.
+4. Schedule the next host wake from the returned `next_wake_at_ms` (if non-zero) and pending input times.
 
 This gives low-latency input handling while keeping frame scheduling host-driven.
 

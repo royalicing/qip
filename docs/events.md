@@ -17,7 +17,7 @@ The ABI follows a small subset inspired by the Remote Framebuffer Protocol ([RFC
   - bit `3`: ctrl
   - bit `4`: alt
   - bit `5`: meta
-- `now_ms` is monotonic elapsed milliseconds in the same host timeline as `tick(now_ms)`.
+- `now_ms` is monotonic elapsed milliseconds (`i64`) in the same host timeline as `tick(now_ms)`.
 
 Common keysyms:
 
@@ -37,7 +37,7 @@ For printable keys, pass Unicode/ASCII code points as keysyms (for example `A` i
 
 - `button_mask` is a bitfield.
 - `x_px`, `y_px` are integer pixel coordinates in render space.
-- `now_ms` is monotonic elapsed milliseconds in the same host timeline as `tick(now_ms)`.
+- `now_ms` is monotonic elapsed milliseconds (`i64`) in the same host timeline as `tick(now_ms)`.
 
 Supported button bits:
 

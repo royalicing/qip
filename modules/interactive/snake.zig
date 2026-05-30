@@ -15,7 +15,7 @@ const XK_RIGHT: i32 = 0xFF53;
 const XK_DOWN: i32 = 0xFF54;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 
-const STEP_MS: i32 = 120;
+const STEP_MS: i64 = 120;
 
 const Color = [4]u8;
 const COLOR_BG: Color = .{ 0x0A, 0x11, 0x17, 0xFF };
@@ -42,7 +42,7 @@ var apple_y: i32 = 0;
 
 var rng_state: u32 = 0xA3575D17;
 var has_last_step: bool = false;
-var last_step_ms: i32 = 0;
+var last_step_ms: i64 = 0;
 
 var initialized: bool = false;
 var paused: bool = false;
@@ -65,7 +65,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
 
@@ -90,14 +90,14 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i32) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
     return 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     if (!initialized) resetGame();
     if (paused or game_over) {
-        return if (needs_redraw) 1 else 0;
+        return 0;
     }
 
     if (!has_last_step) {
@@ -113,7 +113,7 @@ export fn tick(now_ms: i32) i32 {
         elapsed -= STEP_MS;
     }
 
-    return if (needs_redraw) 1 else 1;
+    return last_step_ms + STEP_MS;
 }
 
 export fn render_output() i32 {

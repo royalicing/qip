@@ -18,7 +18,7 @@ const KEY_DOWN: u8 = 1 << 1;
 const KEY_LEFT: u8 = 1 << 2;
 const KEY_RIGHT: u8 = 1 << 3;
 
-const MOVE_INTERVAL_MS: i32 = 16;
+const MOVE_INTERVAL_MS: i64 = 16;
 const PAN_PIXELS_PER_STEP: f64 = 4.0;
 const SHIFT_SPEED_MULTIPLIER: f64 = 3.0;
 const BASE_SCALE: f64 = 0.020;
@@ -32,7 +32,7 @@ var output_buf: [OUTPUT_BYTES]u8 = undefined;
 var needs_redraw: bool = true;
 var keys_down: u8 = 0;
 var has_last_move: bool = false;
-var last_move_ms: i32 = 0;
+var last_move_ms: i64 = 0;
 var shift_down: bool = false;
 
 var camera_x: f64 = 0.0;
@@ -56,7 +56,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
 
     if (x11_key == XK_SHIFT_L or x11_key == XK_SHIFT_R) {
@@ -106,11 +106,11 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i32) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
     return 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     if (!has_last_move) {
         has_last_move = true;
         last_move_ms = now_ms;
@@ -128,7 +128,7 @@ export fn tick(now_ms: i32) i32 {
         last_move_ms = now_ms;
     }
 
-    return if (needs_redraw or keys_down != 0) 1 else 0;
+    return if (keys_down != 0) last_move_ms + MOVE_INTERVAL_MS else 0;
 }
 
 export fn render_output() i32 {

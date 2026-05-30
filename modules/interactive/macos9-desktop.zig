@@ -118,7 +118,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     ensureInit();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     if (x11_key == 'r' or x11_key == 'R') {
@@ -128,7 +128,7 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     ensureInit();
     const down = (button_mask & BTN_PRIMARY) != 0;
     const secondary = (button_mask & BTN_SECONDARY) != 0;
@@ -191,11 +191,6 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
             mode = .idle;
         } else if (!window_minimized and closeButtonAt(x_px, y_px)) {
             window_minimized = true;
-            selected_icon = -1;
-            selected_mask = 0;
-            mode = .idle;
-        } else if (!window_minimized and shadeButtonAt(x_px, y_px)) {
-            window_shaded = !window_shaded;
             selected_icon = -1;
             selected_mask = 0;
             mode = .idle;
@@ -332,9 +327,9 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return 0;
 }
 
-export fn tick(_: i32) i32 {
+export fn tick(_: i64) i64 {
     ensureInit();
-    return if (needs_redraw) 1 else 0;
+    return 0;
 }
 
 export fn render_output() i32 {
@@ -594,7 +589,7 @@ fn titlebarAt(x: i32, y: i32) bool {
     return x >= window_x and x < window_x + window_w and y >= window_y and y < window_y + WINDOW_SHADED_H;
 }
 
-const Mac9CaptionButton = enum(u8) { close, shade, minimize, zoom };
+const Mac9CaptionButton = enum(u8) { close, minimize, zoom };
 
 fn mac9CaptionButtonRect(which: Mac9CaptionButton) Rect {
     const btn_w: i32 = 8;
@@ -605,17 +600,11 @@ fn mac9CaptionButtonRect(which: Mac9CaptionButton) Rect {
         .close => .{ .x = window_x + 5, .y = btn_y, .w = btn_w, .h = btn_h },
         .zoom => .{ .x = zoom_x, .y = btn_y, .w = btn_w, .h = btn_h },
         .minimize => .{ .x = zoom_x - btn_w - 2, .y = btn_y, .w = btn_w, .h = btn_h },
-        .shade => .{ .x = zoom_x - (btn_w + 2) * 2, .y = btn_y, .w = btn_w, .h = btn_h },
     };
 }
 
 fn closeButtonAt(x: i32, y: i32) bool {
     const r = mac9CaptionButtonRect(.close);
-    return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h;
-}
-
-fn shadeButtonAt(x: i32, y: i32) bool {
-    const r = mac9CaptionButtonRect(.shade);
     return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h;
 }
 
@@ -869,7 +858,6 @@ fn drawWindow(x: i32, y: i32, w: i32, h: i32) void {
     fillRectI32(x + 1, y + 1, w - 2, 12, C_BAR);
     drawTitlebarStripes(x, y, w);
     drawMac9CaptionButton(mac9CaptionButtonRect(.close), .close);
-    drawMac9CaptionButton(mac9CaptionButtonRect(.shade), .shade);
     drawMac9CaptionButton(mac9CaptionButtonRect(.minimize), .minimize);
     drawMac9CaptionButton(mac9CaptionButtonRect(.zoom), .zoom);
     if (h <= WINDOW_SHADED_H) return;
@@ -884,13 +872,7 @@ fn drawMac9CaptionButton(r: Rect, which: Mac9CaptionButton) void {
     fillRectI32(r.x, r.y, r.w, r.h, C_LIGHT);
     drawRect(r.x, r.y, r.w, r.h, C_DARK);
     switch (which) {
-        .close => {
-            drawLine(r.x + 2, r.y + 2, r.x + r.w - 3, r.y + r.h - 3, C_DARK);
-            drawLine(r.x + r.w - 3, r.y + 2, r.x + 2, r.y + r.h - 3, C_DARK);
-        },
-        .shade => {
-            fillRectI32(r.x + 2, r.y + r.h - 3, r.w - 4, 1, C_DARK);
-        },
+        .close => {},
         .minimize => {
             fillRectI32(r.x + 2, r.y + r.h - 3, r.w - 4, 1, C_DARK);
             fillRectI32(r.x + 2, r.y + 2, r.w - 4, 1, C_MID);
@@ -1296,15 +1278,16 @@ test "window outline commits on release" {
     try std.testing.expect(window_x == window_drag_x and window_y == window_drag_y);
 }
 
-test "shade button collapses to titlebar" {
+test "view menu Shade toggles window shade state" {
     resetDesktop();
-    const shade_btn = mac9CaptionButtonRect(.shade);
-    _ = pointer_event(BTN_PRIMARY, shade_btn.x + 2, shade_btn.y + 2, 0);
-    _ = pointer_event(0, shade_btn.x + 2, shade_btn.y + 2, 0);
+    _ = pointer_event(BTN_PRIMARY, 160, 8, 0);
+    _ = pointer_event(BTN_PRIMARY, 162, 26, 0);
+    _ = pointer_event(0, 162, 26, 0);
     try std.testing.expect(window_shaded);
     try std.testing.expect(!window_minimized);
-    _ = pointer_event(BTN_PRIMARY, shade_btn.x + 2, shade_btn.y + 2, 0);
-    _ = pointer_event(0, shade_btn.x + 2, shade_btn.y + 2, 0);
+    _ = pointer_event(BTN_PRIMARY, 160, 8, 0);
+    _ = pointer_event(BTN_PRIMARY, 162, 26, 0);
+    _ = pointer_event(0, 162, 26, 0);
     try std.testing.expect(!window_shaded);
 }
 

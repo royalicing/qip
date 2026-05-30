@@ -7,7 +7,7 @@ const MAX_PILE: usize = 52;
 const CARD_W: usize = 68;
 const CARD_H: usize = 96;
 const STACK_DY: usize = 18;
-const DEAL_STEP_MS: i32 = 75;
+const DEAL_STEP_MS: i64 = 75;
 
 const PAD_X: usize = 16;
 const PAD_Y: usize = 16;
@@ -67,7 +67,7 @@ var needs_redraw: bool = true;
 var initialized: bool = false;
 var dealing: bool = false;
 var deal_next_pile: u8 = 0;
-var deal_next_ms: i32 = 0;
+var deal_next_ms: i64 = 0;
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
@@ -85,7 +85,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
 
@@ -100,7 +100,7 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     const is_down = (button_mask & BTN_PRIMARY) != 0;
     var changed = false;
 
@@ -112,14 +112,14 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     if (!initialized) {
         resetGame();
     }
     if (dealing) {
         stepDeal(now_ms);
     }
-    return if (needs_redraw or dealing) 1 else 0;
+    return if (dealing) deal_next_ms else 0;
 }
 
 export fn render_output() i32 {
@@ -201,7 +201,7 @@ fn canDealRow() bool {
     return true;
 }
 
-fn stepDeal(now_ms: i32) void {
+fn stepDeal(now_ms: i64) void {
     if (!dealing) return;
     if (deal_next_ms == 0) {
         deal_next_ms = now_ms;

@@ -153,7 +153,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     ensureInit();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (x11_key == XK_SHIFT_L or x11_key == XK_SHIFT_R) {
@@ -168,7 +168,7 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     ensureInit();
     pointer_x = x_px;
     pointer_y = y_px;
@@ -338,7 +338,7 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(_: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     ensureInit();
     if (genie_mode != .none) {
         genie_frame += 1;
@@ -349,8 +349,9 @@ export fn tick(_: i32) i32 {
             genie_total_frames = GENIE_FRAMES;
         }
         needs_redraw = true;
+        return now_ms + 16;
     }
-    return if (needs_redraw) 1 else 0;
+    return 0;
 }
 
 export fn render_output() i32 {

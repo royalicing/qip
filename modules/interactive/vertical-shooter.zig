@@ -19,7 +19,7 @@ const KEY_LEFT: u8 = 1 << 2;
 const KEY_RIGHT: u8 = 1 << 3;
 const KEY_FIRE: u8 = 1 << 4;
 
-const STEP_MS: i32 = 16;
+const STEP_MS: i64 = 16;
 
 const FP_SHIFT: i32 = 8;
 const FP_ONE: i32 = 1 << FP_SHIFT;
@@ -116,7 +116,7 @@ var needs_redraw: bool = true;
 
 var keys_down: u8 = 0;
 var has_last_tick: bool = false;
-var last_tick_ms: i32 = 0;
+var last_tick_ms: i64 = 0;
 
 var player_x_fp: i32 = PLAYER_START_X_FP;
 var player_y_fp: i32 = PLAYER_START_Y_FP;
@@ -154,7 +154,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
 
     if (x11_key == XK_ENTER and is_down and game_over) {
@@ -209,7 +209,7 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     if (game_over) return 0;
     if ((button_mask & BTN_PRIMARY) == 0) return 0;
 
@@ -225,7 +225,7 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return 1;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     ensureInitialized(now_ms);
 
     if (!has_last_tick) {
@@ -242,7 +242,7 @@ export fn tick(now_ms: i32) i32 {
         elapsed -= STEP_MS;
     }
 
-    return if (needs_redraw or keys_down != 0) 1 else 0;
+    return last_tick_ms + STEP_MS;
 }
 
 export fn render_output() i32 {
@@ -251,14 +251,14 @@ export fn render_output() i32 {
     return @as(i32, @intCast(OUTPUT_BYTES));
 }
 
-fn ensureInitialized(now_ms: i32) void {
+fn ensureInitialized(now_ms: i64) void {
     if (initialized) return;
     resetGame(now_ms);
     initialized = true;
 }
 
-fn resetGame(now_ms: i32) void {
-    const now_bits: u32 = @as(u32, @bitCast(now_ms));
+fn resetGame(now_ms: i64) void {
+    const now_bits: u32 = @truncate(@as(u64, @bitCast(now_ms)));
     seed = mix32(seed ^ now_bits ^ 0x9E37_79B9);
 
     player_x_fp = PLAYER_START_X_FP;

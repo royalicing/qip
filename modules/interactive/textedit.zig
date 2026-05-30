@@ -25,6 +25,8 @@ const XK_RETURN: i32 = 0xFF0D;
 const XK_BACKSPACE: i32 = 0xFF08;
 const XK_DELETE: i32 = 0xFFFF;
 const XK_TAB: i32 = 0xFF09;
+const DOUBLE_CLICK_MS: i64 = 360;
+const BLINK_INTERVAL_MS: i64 = 500;
 
 const DOC_CAP: usize = 8192;
 const CLIP_CAP: usize = 2048;
@@ -87,9 +89,11 @@ var pointer_y: i32 = -1000;
 var primary_down: bool = false;
 var secondary_down: bool = false;
 var mouse_selecting: bool = false;
+var last_primary_click_ms: i64 = -1000000;
+var last_primary_click_idx: usize = 0;
 
-var blink_counter: i32 = 0;
 var blink_on: bool = true;
+var next_blink_at_ms: i64 = BLINK_INTERVAL_MS;
 var needs_redraw: bool = true;
 var initialized: bool = false;
 
@@ -109,40 +113,39 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     ensureInit();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
     const extend = (flags & FLAG_SHIFT) != 0;
     const shortcut_mod = (flags & (FLAG_CTRL | FLAG_META)) != 0;
     const alt = (flags & FLAG_ALT) != 0;
-    if (alt) return 0;
 
     if (shortcut_mod and handleShortcut(x11_key)) {
-        touchAfterEdit();
+        touchAfterEdit(now_ms);
         return 1;
     }
 
-    if (handleNavKey(x11_key, extend)) {
-        touchAfterNav();
+    if (handleNavKey(x11_key, extend, alt)) {
+        touchAfterNav(now_ms);
         return 1;
     }
 
-    if (handleEditKey(x11_key)) {
-        touchAfterEdit();
+    if (handleEditKey(x11_key, alt)) {
+        touchAfterEdit(now_ms);
         return 1;
     }
 
-    if (isPrintable(x11_key) and !shortcut_mod) {
+    if (isPrintable(x11_key) and !shortcut_mod and !alt) {
         const ch: u8 = @as(u8, @intCast(x11_key));
-        if (insertSlice(&[_]u8{ch})) touchAfterEdit();
+        if (insertSlice(&[_]u8{ch})) touchAfterEdit(now_ms);
         return 1;
     }
 
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32 {
     ensureInit();
     pointer_x = x_px;
     pointer_y = y_px;
@@ -156,24 +159,36 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
         anchor = idx;
         preferred_col = -1;
         mouse_selecting = false;
-        touchAfterNav();
+        touchAfterNav(now_ms);
     }
 
     if (primary and !primary_down) {
         const idx = textIndexAtPoint(x_px, y_px);
-        caret = idx;
-        anchor = idx;
-        preferred_col = -1;
-        mouse_selecting = pointInRect(x_px, y_px, .{ .x = TEXT_X, .y = TEXT_Y, .w = TEXT_W, .h = TEXT_H });
-        touchAfterNav();
+        const in_text = pointInRect(x_px, y_px, .{ .x = TEXT_X, .y = TEXT_Y, .w = TEXT_W, .h = TEXT_H });
+        const near_last = absI32(@as(i32, @intCast(idx)) - @as(i32, @intCast(last_primary_click_idx))) <= 1;
+        const is_double = in_text and (now_ms - last_primary_click_ms) >= 0 and (now_ms - last_primary_click_ms) <= DOUBLE_CLICK_MS and near_last;
+        if (is_double) {
+            selectWordAt(idx);
+            mouse_selecting = false;
+        } else {
+            caret = idx;
+            anchor = idx;
+            preferred_col = -1;
+            mouse_selecting = in_text;
+        }
+        if (in_text) {
+            last_primary_click_ms = now_ms;
+            last_primary_click_idx = idx;
+        }
+        touchAfterNav(now_ms);
     } else if (primary and primary_down and mouse_selecting) {
         const idx = textIndexAtPoint(x_px, y_px);
         caret = idx;
         ensureCaretVisible();
-        touchAfterNav();
+        touchAfterNav(now_ms);
     } else if (!primary and primary_down) {
         mouse_selecting = false;
-        touchAfterNav();
+        touchAfterNav(now_ms);
     }
 
     primary_down = primary;
@@ -181,15 +196,14 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(_: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     ensureInit();
-    blink_counter = @mod(blink_counter + 1, 120);
-    const next = blink_counter < 60;
-    if (next != blink_on) {
-        blink_on = next;
+    if (next_blink_at_ms > 0 and now_ms >= next_blink_at_ms) {
+        blink_on = !blink_on;
+        next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
         needs_redraw = true;
     }
-    return if (needs_redraw) 1 else 0;
+    return next_blink_at_ms;
 }
 
 export fn render_output() i32 {
@@ -219,8 +233,10 @@ fn resetState() void {
     primary_down = false;
     secondary_down = false;
     mouse_selecting = false;
-    blink_counter = 0;
+    last_primary_click_ms = -1000000;
+    last_primary_click_idx = 0;
     blink_on = true;
+    next_blink_at_ms = BLINK_INTERVAL_MS;
 
     _ = insertSliceRaw("Untitled.txt\n\nThis is a plain text document.\nUse keyboard and mouse selection.\n\nShortcuts:\n- Ctrl/Cmd+A Select All\n- Ctrl/Cmd+C Copy\n- Ctrl/Cmd+X Cut\n- Ctrl/Cmd+V Paste\n- Ctrl/Cmd+Z Undo\n");
     caret = doc_len;
@@ -229,18 +245,18 @@ fn resetState() void {
     needs_redraw = true;
 }
 
-fn touchAfterEdit() void {
+fn touchAfterEdit(now_ms: i64) void {
     preferred_col = -1;
     ensureCaretVisible();
-    blink_counter = 0;
     blink_on = true;
+    next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
     needs_redraw = true;
 }
 
-fn touchAfterNav() void {
+fn touchAfterNav(now_ms: i64) void {
     ensureCaretVisible();
-    blink_counter = 0;
     blink_on = true;
+    next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
     needs_redraw = true;
 }
 
@@ -276,15 +292,15 @@ fn handleShortcut(key: i32) bool {
     }
 }
 
-fn handleNavKey(key: i32, extend: bool) bool {
+fn handleNavKey(key: i32, extend: bool, alt: bool) bool {
     switch (key) {
         XK_LEFT => {
-            moveLeft(extend);
+            if (alt) moveWordLeft(extend) else moveLeft(extend);
             preferred_col = -1;
             return true;
         },
         XK_RIGHT => {
-            moveRight(extend);
+            if (alt) moveWordRight(extend) else moveRight(extend);
             preferred_col = -1;
             return true;
         },
@@ -318,14 +334,16 @@ fn handleNavKey(key: i32, extend: bool) bool {
     }
 }
 
-fn handleEditKey(key: i32) bool {
+fn handleEditKey(key: i32, alt: bool) bool {
     switch (key) {
         XK_BACKSPACE => {
             pushUndo();
+            if (alt) return deleteWordBackward();
             return backspace();
         },
         XK_DELETE => {
             pushUndo();
+            if (alt) return deleteWordForward();
             return deleteForward();
         },
         XK_RETURN => {
@@ -380,6 +398,37 @@ fn moveVertical(delta_lines: i32, extend: bool) void {
     if (preferred_col < 0) preferred_col = col;
     const target_line = @max(0, line + delta_lines);
     caret = indexAtLineCol(target_line, preferred_col);
+    if (!extend) anchor = caret;
+}
+
+fn moveWordLeft(extend: bool) void {
+    if (!extend and hasSelection()) {
+        caret = selectionRange().start;
+        anchor = caret;
+        return;
+    }
+    var i = caret;
+    if (i == 0) {
+        if (!extend) anchor = caret;
+        return;
+    }
+    i -= 1;
+    while (i > 0 and isSkippableWordBoundary(doc[i])) : (i -= 1) {}
+    while (i > 0 and !isSkippableWordBoundary(doc[i - 1])) : (i -= 1) {}
+    caret = i;
+    if (!extend) anchor = caret;
+}
+
+fn moveWordRight(extend: bool) void {
+    if (!extend and hasSelection()) {
+        caret = selectionRange().end;
+        anchor = caret;
+        return;
+    }
+    var i = caret;
+    while (i < doc_len and isSkippableWordBoundary(doc[i])) : (i += 1) {}
+    while (i < doc_len and !isSkippableWordBoundary(doc[i])) : (i += 1) {}
+    caret = i;
     if (!extend) anchor = caret;
 }
 
@@ -477,6 +526,25 @@ fn deleteForward() bool {
     return true;
 }
 
+fn deleteWordBackward() bool {
+    if (deleteSelection()) return true;
+    if (caret == 0) return false;
+    const end = caret;
+    moveWordLeft(false);
+    anchor = end;
+    return deleteSelection();
+}
+
+fn deleteWordForward() bool {
+    if (deleteSelection()) return true;
+    if (caret >= doc_len) return false;
+    const start = caret;
+    moveWordRight(false);
+    anchor = caret;
+    caret = start;
+    return deleteSelection();
+}
+
 fn pushUndo() void {
     if (has_undo and undo_len == doc_len and undo_caret == caret and undo_anchor == anchor) return;
     var i: usize = 0;
@@ -571,6 +639,47 @@ fn textIndexAtPoint(x: i32, y: i32) usize {
     const line = scroll_line + @divTrunc(clamped_y - TEXT_Y, LINE_H);
     const col = scroll_col + @divTrunc(clamped_x - TEXT_X, CHAR_W);
     return indexAtLineCol(line, col);
+}
+
+fn selectWordAt(idx: usize) void {
+    const r = wordRangeAt(idx);
+    anchor = r.start;
+    caret = r.end;
+    preferred_col = -1;
+}
+
+fn wordRangeAt(idx: usize) Range {
+    if (doc_len == 0) return .{ .start = 0, .end = 0 };
+    var pos = @min(idx, doc_len - 1);
+    if (idx == doc_len and doc_len > 0 and doc[doc_len - 1] == '\n') {
+        pos = doc_len - 1;
+    }
+    const cls = charClass(doc[pos]);
+    var start = pos;
+    while (start > 0 and charClass(doc[start - 1]) == cls) : (start -= 1) {}
+    var end = pos + 1;
+    while (end < doc_len and charClass(doc[end]) == cls) : (end += 1) {}
+    return .{ .start = start, .end = end };
+}
+
+const CharClass = enum(u2) { word, space, punct, newline };
+
+fn charClass(ch: u8) CharClass {
+    if (ch == '\n') return .newline;
+    if (ch == ' ' or ch == '\t') return .space;
+    if (isWordChar(ch)) return .word;
+    return .punct;
+}
+
+fn isWordChar(ch: u8) bool {
+    if (ch >= 'a' and ch <= 'z') return true;
+    if (ch >= 'A' and ch <= 'Z') return true;
+    if (ch >= '0' and ch <= '9') return true;
+    return ch == '_' or ch == '\'';
+}
+
+fn isSkippableWordBoundary(ch: u8) bool {
+    return ch == ' ' or ch == '\t' or ch == '\n' or (!isWordChar(ch));
 }
 
 fn drawFrame() void {
@@ -877,4 +986,8 @@ fn clampI32(v: i32, lo: i32, hi: i32) i32 {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
+}
+
+fn absI32(v: i32) i32 {
+    return if (v < 0) -v else v;
 }

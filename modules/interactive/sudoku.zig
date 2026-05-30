@@ -100,7 +100,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
     if (!initialized) resetPuzzle();
@@ -150,7 +150,7 @@ export fn key_event(x11_key: i32, flags: i32, _: i32) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     if (!initialized) resetPuzzle();
 
     const is_primary = (button_mask & BTN_PRIMARY) != 0;
@@ -172,9 +172,9 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(_: i32) i32 {
+export fn tick(_: i64) i64 {
     if (!initialized) resetPuzzle();
-    return if (needs_redraw) 1 else 0;
+    return 0;
 }
 
 export fn render_output() i32 {

@@ -41,7 +41,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, ms: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, ms: i64) i32 {
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
     switch (x11_key) {
@@ -49,21 +49,21 @@ export fn key_event(x11_key: i32, flags: i32, ms: i32) i32 {
         else => return 0,
     }
     total_key_count += 1;
-    last_key_ms = ms;
+    last_key_ms = @as(i32, @intCast(ms));
     needs_redraw = true;
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, ms: i32) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32, ms: i64) i32 {
     total_pointer_count += 1;
-    last_pointer_ms = ms;
+    last_pointer_ms = @as(i32, @intCast(ms));
     return 0;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     total_tick_count += 1;
-    last_tick_ms = now_ms;
-    return if (needs_redraw) 1 else 0;
+    last_tick_ms = @as(i32, @intCast(now_ms));
+    return now_ms + 16;
 }
 
 export fn render_output() i32 {

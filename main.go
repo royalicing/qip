@@ -1963,8 +1963,8 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	}
 
 	tickFunc := mod.ExportedFunction("tick")
-	// Interactive snapshot contract: first tick is always tick(0),
-	// and modules should interpret later host ticks as elapsed ms from start.
+	// Interactive snapshot contract: first tick is always tick(0).
+	// Runtime hosts then pass monotonic elapsed milliseconds and schedule by returned next_wake_at_ms.
 	if _, err := tickFunc.Call(execCtx, 0); err != nil {
 		return true, nil, fmt.Errorf("%s: tick(0) failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
 	}

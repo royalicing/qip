@@ -17,7 +17,7 @@ const XK_ENTER: i32 = 0xFF0D;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
 
-const MOVE_INTERVAL_MS: i32 = 120;
+const MOVE_INTERVAL_MS: i64 = 120;
 
 const KEY_UP: u8 = 1 << 0;
 const KEY_DOWN: u8 = 1 << 1;
@@ -29,7 +29,7 @@ var output_buf: [OUTPUT_BYTES]u8 = undefined;
 var player_wx: i64 = 1;
 var player_wy: i64 = 1;
 var keys_down: u8 = 0;
-var last_move_ms: i32 = 0;
+var last_move_ms: i64 = 0;
 var has_last_move: bool = false;
 var needs_redraw: bool = true;
 var world_ready: bool = false;
@@ -59,7 +59,7 @@ export fn render_height_px() i32 {
     return @as(i32, @intCast(RENDER_H));
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
+export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
 
     // Regenerate with a new world seed.
@@ -85,7 +85,7 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i32) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     if ((button_mask & BTN_PRIMARY) == 0) return 0;
 
     const tx = @divFloor(x_px, @as(i32, @intCast(TILE_PX)));
@@ -107,7 +107,7 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i32) i32 {
     return 1;
 }
 
-export fn tick(now_ms: i32) i32 {
+export fn tick(now_ms: i64) i64 {
     if (!world_ready) {
         generateLevel(now_ms);
     }
@@ -129,7 +129,7 @@ export fn tick(now_ms: i32) i32 {
         last_move_ms = now_ms;
     }
 
-    return if (needs_redraw or keys_down != 0) 1 else 0;
+    return if (keys_down != 0) last_move_ms + MOVE_INTERVAL_MS else 0;
 }
 
 export fn render_output() i32 {
@@ -221,7 +221,7 @@ fn isTree(wx: i64, wy: i64) bool {
     return (randomForTile(wx, wy) % 100) < density;
 }
 
-fn generateLevel(seed_hint_ms: i32) void {
+fn generateLevel(seed_hint_ms: i64) void {
     level_counter +%= 1;
     const ms_bits: u64 = @as(u64, @bitCast(@as(i64, seed_hint_ms)));
     world_seed = mix64(world_seed ^ ms_bits ^ (level_counter *% 0x9E37_79B9_7F4A_7C15));
