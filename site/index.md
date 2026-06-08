@@ -34,15 +34,15 @@ hr { clear: both }
 
 <section class="hero-right">
 
-## Render everything anywhere
+## Quick for AI to make & quick for users to run
 
-**QIP components** let you render text, images, bytes, and interactive UI. They compose like Unix pipes, speak MIME types, and run sandboxed via WebAssembly in the browser, server, cli & native.
+**QIP components** let you render text, images, and interactive UI. They compose like Unix CLIs, speak MIME types, and run sandboxed via WebAssembly in the browser, server, cli & native.
 
-## Predictably secure
+## Isolated like a browser tab with no file system, network, or secrets access
 
 Because WebAssembly modules are specifically designed to be self-contained & fully isolated (with no access to your file system, network, or secrets) you can run untrusted QIP components as confidently as using a web browser. They are entirely deterministic making them predictable to combine and test.
 
-## Code efficiently with AI
+## Portable components that work exactly the same in browser, server, and native
 
 The QIP component contract is simple yet allows a wide range of flexibility inside. You can vibe C or Zig to create fast components that lightly use the CPU and memory. You can break problems into small, reusable components and keep strong boundaries between them. You get both speed and security.
 
