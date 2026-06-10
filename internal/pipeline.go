@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -283,6 +285,36 @@ func ContentTypeOf(content Content) string {
 	return ""
 }
 
+func ContentByteSize(content Content) int {
+	if content == nil {
+		return 0
+	}
+	if raw, ok := content.(RawBytesContent); ok {
+		return len(raw.RawBytes())
+	}
+	if text, ok := content.(StringContent); ok {
+		return len(text.String())
+	}
+	if rgba, ok := content.(RGBAF32Content); ok {
+		return len(rgba.Pixels()) * 4
+	}
+	return 0
+}
+
+func contentEncoding(content Content) Encoding {
+	if content == nil {
+		return EncodingRawBytes
+	}
+	return content.Encoding()
+}
+
+func stageLabel(stage Stage) string {
+	if labeled, ok := stage.(labeledStage); ok {
+		return labeled.Label()
+	}
+	return fmt.Sprintf("stage-%T", stage)
+}
+
 func unwrapContent(content Content) Content {
 	cur := content
 	for {
@@ -540,12 +572,59 @@ type Pipeline struct {
 	CloseFunc func(ctx context.Context) error
 }
 
+type PipelineTraceStep struct {
+	StageIndex        int
+	StageLabel        string
+	InputEncoding     Encoding
+	InputContentType  string
+	InputBytes        int
+	OutputEncoding    Encoding
+	OutputContentType string
+	OutputBytes       int
+	Duration          time.Duration
+}
+
+type PipelineTraceFunc func(PipelineTraceStep)
+
+type pipelineTraceContextKey struct{}
+
+func WithPipelineTrace(ctx context.Context, trace PipelineTraceFunc) context.Context {
+	if trace == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, pipelineTraceContextKey{}, trace)
+}
+
+func pipelineTraceFromContext(ctx context.Context) PipelineTraceFunc {
+	trace, _ := ctx.Value(pipelineTraceContextKey{}).(PipelineTraceFunc)
+	return trace
+}
+
 func (p *Pipeline) Process(ctx context.Context, input Content, requestID uint64) (Content, error) {
 	var cur = input
-	for _, stage := range p.Stages {
+	trace := pipelineTraceFromContext(ctx)
+	for i, stage := range p.Stages {
+		inputBytes := ContentByteSize(cur)
+		inputEncoding := contentEncoding(cur)
+		inputContentType := ContentTypeOf(cur)
+		start := time.Now()
 		next, err := stage.Process(ctx, cur, requestID)
+		duration := time.Since(start)
 		if err != nil {
 			return nil, err
+		}
+		if trace != nil {
+			trace(PipelineTraceStep{
+				StageIndex:        i,
+				StageLabel:        stageLabel(stage),
+				InputEncoding:     inputEncoding,
+				InputContentType:  inputContentType,
+				InputBytes:        inputBytes,
+				OutputEncoding:    contentEncoding(next),
+				OutputContentType: ContentTypeOf(next),
+				OutputBytes:       ContentByteSize(next),
+				Duration:          duration,
+			})
 		}
 		cur = next
 	}
@@ -569,10 +648,18 @@ type Stage interface {
 	Close(ctx context.Context) error
 }
 
+type labeledStage interface {
+	Label() string
+}
+
 // ModuleDriver defines the interface for executing a specific type of Wasm module.
 type ModuleDriver interface {
 	Execute(ctx context.Context, input Content, requestID uint64) (Content, error)
 	Close(ctx context.Context) error
+}
+
+type labeledModuleDriver interface {
+	Label() string
 }
 
 type RunStage struct {
@@ -585,6 +672,13 @@ func (s *RunStage) Process(ctx context.Context, input Content, requestID uint64)
 
 func (s *RunStage) Close(ctx context.Context) error {
 	return s.Driver.Close(ctx)
+}
+
+func (s *RunStage) Label() string {
+	if labeled, ok := s.Driver.(labeledModuleDriver); ok {
+		return labeled.Label()
+	}
+	return "run"
 }
 
 // WasmRunDriver implements ModuleDriver for a single 'run' Wasm module.
@@ -610,6 +704,10 @@ type TileModuleDriver interface {
 	SetImageSize(ctx context.Context, width, height int) error
 	Close(ctx context.Context) error
 	HaloPx() int
+}
+
+type labeledTileModuleDriver interface {
+	Label() string
 }
 
 // WasmTileModuleDriver implements TileModuleDriver for a 'tile' Wasm module.
@@ -644,6 +742,21 @@ func (d *WasmTileModuleDriver) HaloPx() int {
 
 type TileGroupStage struct {
 	Drivers []TileModuleDriver
+}
+
+func (s *TileGroupStage) Label() string {
+	if len(s.Drivers) == 0 {
+		return "tile-group"
+	}
+	labels := make([]string, 0, len(s.Drivers))
+	for _, driver := range s.Drivers {
+		if labeled, ok := driver.(labeledTileModuleDriver); ok {
+			labels = append(labels, labeled.Label())
+		} else {
+			labels = append(labels, "tile")
+		}
+	}
+	return strings.Join(labels, " | ")
 }
 
 func (s *TileGroupStage) Process(ctx context.Context, input Content, requestID uint64) (Content, error) {

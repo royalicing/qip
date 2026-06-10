@@ -1,6 +1,7 @@
 package qinternal
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -152,8 +153,15 @@ func NewRequestHandler(config RequestHandlerConfig) http.Handler {
 }
 
 func ServeInProcessHTTP(handler http.Handler, method string, requestPath string, headers http.Header) (InProcessHTTPResponse, error) {
+	return ServeInProcessHTTPWithContext(handler, context.Background(), method, requestPath, headers)
+}
+
+func ServeInProcessHTTPWithContext(handler http.Handler, ctx context.Context, method string, requestPath string, headers http.Header) (InProcessHTTPResponse, error) {
 	if handler == nil {
 		return InProcessHTTPResponse{}, fmt.Errorf("handler is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if method == "" {
 		method = http.MethodGet
@@ -165,7 +173,7 @@ func ServeInProcessHTTP(handler http.Handler, method string, requestPath string,
 		requestPath = "/" + requestPath
 	}
 
-	req := httptest.NewRequest(method, "http://qip.local"+requestPath, nil)
+	req := httptest.NewRequest(method, "http://qip.local"+requestPath, nil).WithContext(ctx)
 	for key, values := range headers {
 		for _, value := range values {
 			req.Header.Add(key, value)

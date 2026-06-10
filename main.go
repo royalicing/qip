@@ -2328,7 +2328,7 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 				var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
 				if hasRecipes {
 					pipeline := current.recipeChains[route.SourceMIME]
-					ctx := context.Background()
+					ctx := r.Context()
 					ctx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
 					defer cancel()
 					result, err = pipeline.Process(ctx, result, reqID)
@@ -2366,7 +2366,7 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 			}
 			applicationWARCPipeline := current.recipeChains[applicationWARCRecipeMIME]
 			if applicationWARCPipeline != nil {
-				ctx := context.Background()
+				ctx := r.Context()
 				ctx, cancel := withExecutionTimeout(ctx, timeouts.applicationWARC)
 				defer cancel()
 				response, err = transformRouteResponseWithApplicationWARCContext(ctx, applicationWARCPipeline, r.URL.Path, response, reqID, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
@@ -3813,6 +3813,10 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 	}
 }
 
+func (d *wasmRunDriver) Label() string {
+	return d.modulePath
+}
+
 func (d *wasmRunDriver) Close(ctx context.Context) error {
 	return d.compiled.Close(ctx)
 }
@@ -3895,6 +3899,10 @@ func (d *wasmTileModuleDriver) ExecuteTile(ctx context.Context, x, y float32, ti
 	outPixels := make([]float32, len(tilePixels))
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(&outPixels[0])), len(outPixels)*4), outBytes)
 	return outPixels, nil
+}
+
+func (d *wasmTileModuleDriver) Label() string {
+	return d.modulePath
 }
 
 func (d *wasmTileModuleDriver) Close(ctx context.Context) error {

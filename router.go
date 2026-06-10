@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	qcmd "github.com/royalicing/qip/cmd"
 	qinternal "github.com/royalicing/qip/internal"
@@ -23,6 +24,55 @@ type routeListEntry struct {
 	Method      string
 	Path        string
 	ContentType string
+}
+
+type routeTraceRecorder struct {
+	steps []qinternal.PipelineTraceStep
+}
+
+func (r *routeTraceRecorder) Record(step qinternal.PipelineTraceStep) {
+	r.steps = append(r.steps, step)
+}
+
+func formatByteCount(n int) string {
+	if n < 1024 {
+		return fmt.Sprintf("%dB", n)
+	}
+	if n < 1024*1024 {
+		return fmt.Sprintf("%.1fKiB", float64(n)/1024)
+	}
+	return fmt.Sprintf("%.1fMiB", float64(n)/(1024*1024))
+}
+
+func formatTraceDuration(d time.Duration) string {
+	if d < time.Millisecond {
+		return fmt.Sprintf("%.3fms", float64(d)/float64(time.Millisecond))
+	}
+	return fmt.Sprintf("%dms", d.Milliseconds())
+}
+
+func formatTraceContent(encoding qinternal.Encoding, contentType string, bytes int) string {
+	if contentType == "" {
+		contentType = "-"
+	}
+	return fmt.Sprintf("%s/%s/%s", encoding.String(), contentType, formatByteCount(bytes))
+}
+
+func logRouteTrace(logPrefix string, recorder *routeTraceRecorder) {
+	if recorder == nil || len(recorder.steps) == 0 {
+		return
+	}
+	for _, step := range recorder.steps {
+		log.Printf(
+			"%s: recipe[%d] %s input=%s output=%s duration=%s",
+			logPrefix,
+			step.StageIndex+1,
+			step.StageLabel,
+			formatTraceContent(step.InputEncoding, step.InputContentType, step.InputBytes),
+			formatTraceContent(step.OutputEncoding, step.OutputContentType, step.OutputBytes),
+			formatTraceDuration(step.Duration),
+		)
+	}
 }
 
 func validateRouteAssetRoots(recipesRoot string, formsRoot string, componentsRoot string) error {
@@ -126,10 +176,17 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		applicationWARC: defaultRouteRecipeTimeout,
 	}
 	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
-	response, err := qinternal.ServeInProcessHTTP(handler, method, requestPath, nil)
+	requestCtx := context.Background()
+	var traceRecorder *routeTraceRecorder
+	if routeVerbose {
+		traceRecorder = &routeTraceRecorder{}
+		requestCtx = qinternal.WithPipelineTrace(requestCtx, traceRecorder.Record)
+	}
+	response, err := qinternal.ServeInProcessHTTPWithContext(handler, requestCtx, method, requestPath, nil)
 	if err != nil {
 		gameOver("%v", err)
 	}
+	logRouteTrace(logPrefix, traceRecorder)
 
 	if contentType := response.Header.Get("Content-Type"); contentType != "" {
 		log.Printf("%s: Content-Type: %s", logPrefix, contentType)
@@ -441,10 +498,17 @@ func routerCmd(args []string) {
 					Body:       asset.body,
 				}, nil
 			}
-			response, ok, err := resolveDevBaseRouteResponse(ctx, loaded.state, request.RequestPath, 0, handlerTimeouts)
+			requestCtx := ctx
+			var traceRecorder *routeTraceRecorder
+			if request.Verbose {
+				traceRecorder = &routeTraceRecorder{}
+				requestCtx = qinternal.WithPipelineTrace(requestCtx, traceRecorder.Record)
+			}
+			response, ok, err := resolveDevBaseRouteResponse(requestCtx, loaded.state, request.RequestPath, 0, handlerTimeouts)
 			if err != nil {
 				return qinternal.InProcessHTTPResponse{}, err
 			}
+			logRouteTrace("router warc "+request.RequestPath, traceRecorder)
 			if !ok {
 				return qinternal.InProcessHTTPResponse{
 					StatusCode: http.StatusNotFound,
@@ -465,10 +529,16 @@ func routerCmd(args []string) {
 			}
 			execCtx, cancel := withExecutionTimeout(ctx, scaleRouteWARCTransformTimeout(warcTransformTimeout, request.RouteCount))
 			defer cancel()
+			var traceRecorder *routeTraceRecorder
+			if request.Verbose {
+				traceRecorder = &routeTraceRecorder{}
+				execCtx = qinternal.WithPipelineTrace(execCtx, traceRecorder.Record)
+			}
 			transformed, err := processApplicationWARCArchive(execCtx, pipeline, warc, 0)
 			if err != nil {
 				return nil, err
 			}
+			logRouteTrace("router warc archive", traceRecorder)
 			return transformed, nil
 		},
 		Verbosef: func(format string, args ...any) {
