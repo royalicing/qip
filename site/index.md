@@ -2,9 +2,8 @@
 
 <style>
 .hero-left {
-    max-width: 50%;
-    float: left;
-
+    padding-bottom: 1lh;
+    
     a {
         text-align: center;
         display: inline-block;
@@ -18,11 +17,18 @@
         }
     }
 }
-.hero-right {
-    max-width: 50%;
-    float: right;
+
+@media (min-width: 940px) {
+    .hero-left {
+        max-width: 50%;
+        float: left;
+    }
+    .hero-right {
+        max-width: 50%;
+        float: right;
+    }
+    hr { clear: both }
 }
-hr { clear: both }
 </style>
 
 <section class="hero-left">
