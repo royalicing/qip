@@ -376,6 +376,15 @@ fn bodyAlreadyHasSidebar(body: []const u8) bool {
         indexOfIgnoreCase(body, "<nav class='docs-sidebar'", 0) != null;
 }
 
+fn mainStartsWithDocsSidebar(body: []const u8, main_range: MainRange) bool {
+    const start = skipASCIIWhitespaceIn(body, main_range.open_end);
+    if (start >= main_range.close_start or !startsWithIgnoreCase(body[start..], "<nav")) return false;
+    const open_end = findTagEnd(body, start) orelse return false;
+    if (open_end >= main_range.close_start) return false;
+    const tag = body[start .. open_end + 1];
+    return indexOfIgnoreCase(tag, "docs-sidebar", 0) != null;
+}
+
 fn skipASCIIWhitespaceIn(s: []const u8, start: usize) usize {
     var i = start;
     while (i < s.len and (s[i] == ' ' or s[i] == '\t' or s[i] == '\r' or s[i] == '\n')) : (i += 1) {}
@@ -446,6 +455,14 @@ fn digits10(value: usize) usize {
 
 fn injectedBodyLen(body: []const u8, nav: []const u8, current_path: []const u8) usize {
     return body.len + adjustedNavLen(nav, current_path) + "<article class=\"docs-content\">".len + "</article>".len;
+}
+
+fn injectedRootDocsBodyLen(body: []const u8, nav: []const u8, current_path: []const u8, nav_range: NavRange) usize {
+    return body.len - (nav_range.end - nav_range.start) + adjustedNavLen(nav, current_path) + "<article class=\"docs-content\">".len + "</article>".len;
+}
+
+fn docsPath(path: []const u8) bool {
+    return std.mem.eql(u8, path, "/docs") or std.mem.startsWith(u8, path, "/docs/");
 }
 
 fn childDocsPath(path: []const u8) bool {
@@ -555,6 +572,18 @@ fn writeHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8,
     out.writeSlice(http.body[main_range.close_start..]);
 }
 
+fn writeRootDocsHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8, current_path: []const u8, main_range: MainRange, nav_range: NavRange) void {
+    const body_len = injectedRootDocsBodyLen(http.body, nav, current_path, nav_range);
+    writeHTTPHeaders(out, http, body_len);
+    out.writeSlice(http.body[0..main_range.open_end]);
+    writeAdjustedNav(out, nav, current_path);
+    out.writeSlice("<article class=\"docs-content\">");
+    out.writeSlice(http.body[main_range.open_end..nav_range.start]);
+    out.writeSlice(http.body[nav_range.end..main_range.close_start]);
+    out.writeSlice("</article>");
+    out.writeSlice(http.body[main_range.close_start..]);
+}
+
 fn findDocsNav(input: []const u8) ?[]const u8 {
     var cursor: usize = 0;
     while (cursor < input.len) {
@@ -588,12 +617,24 @@ fn processWARC(input: []const u8, out: *Output) void {
 
         var payload_to_write: ?HTTPPayload = null;
         var main_range: ?MainRange = null;
+        var nav_range: ?NavRange = null;
         var payload_len = record.payload.len;
         const request_path = pathFromTargetURI(record.target_uri);
 
-        if (nav != null and eqlIgnoreCase(record.warc_type, "response") and childDocsPath(request_path)) {
+        if (nav != null and eqlIgnoreCase(record.warc_type, "response") and docsPath(request_path)) {
             if (parseHTTPPayload(record.payload)) |http| {
-                if (http.status == 200 and isHTMLContentType(http.content_type) and !bodyAlreadyHasSidebar(http.body)) {
+                if (http.status == 200 and isHTMLContentType(http.content_type) and std.mem.eql(u8, request_path, "/docs")) {
+                    if (findMainRange(http.body)) |range| {
+                        if (!mainStartsWithDocsSidebar(http.body, range) and findDocsNavRange(http.body, range) != null) {
+                            const docs_nav_range = findDocsNavRange(http.body, range).?;
+                            const body_len = injectedRootDocsBodyLen(http.body, nav.?, request_path, docs_nav_range);
+                            payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
+                            payload_to_write = http;
+                            main_range = range;
+                            nav_range = docs_nav_range;
+                        }
+                    }
+                } else if (http.status == 200 and isHTMLContentType(http.content_type) and childDocsPath(request_path) and !bodyAlreadyHasSidebar(http.body)) {
                     if (findMainRange(http.body)) |range| {
                         const body_len = injectedBodyLen(http.body, nav.?, request_path);
                         payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
@@ -606,7 +647,11 @@ fn processWARC(input: []const u8, out: *Output) void {
 
         writeWARCRecordHeader(out, record.warc_type, record.target_uri, payload_len);
         if (payload_to_write) |http| {
-            writeHTTPPayloadWithSidebar(out, http, nav.?, request_path, main_range.?);
+            if (std.mem.eql(u8, request_path, "/docs")) {
+                writeRootDocsHTTPPayloadWithSidebar(out, http, nav.?, request_path, main_range.?, nav_range.?);
+            } else {
+                writeHTTPPayloadWithSidebar(out, http, nav.?, request_path, main_range.?);
+            }
         } else {
             out.writeSlice(record.payload);
         }
@@ -665,5 +710,6 @@ test "injects docs sidebar from docs index into docs child page" {
     try std.testing.expect(std.mem.indexOf(u8, transformed, "href=\"/docs/security-model\" aria-current=\"page\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, transformed, "href=\"/docs/router\" aria-current=\"page\"") == null);
     try std.testing.expect(std.mem.indexOf(u8, transformed, "<article class=\"docs-content\"><h1>Security Model</h1></article>") != null);
-    try std.testing.expect(std.mem.indexOf(u8, transformed, "<h1>Docs</h1><p>Start here.</p><nav class=\"docs-sidebar\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "<main><nav class=\"docs-sidebar\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "<article class=\"docs-content\"><h1>Docs</h1><p>Start here.</p></article>") != null);
 }

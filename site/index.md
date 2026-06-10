@@ -27,9 +27,9 @@ hr { clear: both }
 
 <section class="hero-left">
 
-<h1>Small WebAssembly components with hard boundaries</h1>
+<h1>Write once, render securely anywhere</h1>
 
-<p><strong>QIP:</strong> Quarantined. Immutable. Portable.</p>
+<p>Quarantined. Immutable. Portable.</p>
 
 <a href="/docs">Read the docs</a>
 
@@ -59,10 +59,10 @@ QIP makes the unit of composition a **QIP component**: a small self-contained We
 
 - **Quarantined:** components run in a deterministic sandbox with zero access to the host (no filesystem, network, or environment).
 - **Immutable:** components are self-contained with no required dependencies, so once you have a working component it keeps working with no updates required.
-- **Portable:** components run identically across web and native hosts through the same QIP contract.
+- **Portable:** components run identically across web and native hosts through a simple API contract.
+- **Agent-friendly:** components are small, making them easy to generate, review, benchmark, and replace.
+- **Deterministic:** the same component and input are guaranteed to produce the same output no matter where you run it.
 - **Composable:** pipe components together like CLI tools.
-- **Deterministic:** the same component and input are guaranteed to produce the same output.
-- **Agent-friendly:** components are small enough to generate, review, benchmark, and replace.
 
 ## What you can build
 

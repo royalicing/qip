@@ -461,9 +461,11 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 ## TODO
 
 - [ ] Add tracing by modifying modules:
+  - [ ] Trace unreachable by adding calls to memory reads of input so we can check last read which will likely be source reason for the trap.
   - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
-  - [ ] Trace any internal calls by adding calls to an imported function in each iteration. e.g. `trace_call($func_n, $call_n)`
-  - [ ] Trace any branches by adding calls to an imported function in each iteration. e.g. `trace_if($func_n, $if_n)` and `trace_block($func_n, $block_n)`
+  - [ ] Trace any internal calls by adding calls to an imported function. e.g. `trace_will_call($func_n, $call_n)`
+  - [ ] Trace any branches by adding calls to an imported function. e.g. `trace_if($func_n, $if_n)` and `trace_block($func_n, $block_n)`
+  - [ ] Trace any memory reads/write by adding calls to an imported function. e.g. `trace_will_read_memory($func_n, $read_n)` and `trace_will_write_memory($func_n, $write_n)`
 - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
 - [ ] Add spreadsheet example.
 - [ ] Add bar charts.

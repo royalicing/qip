@@ -142,6 +142,10 @@ test-snapshot: qip modules
 	@printf %s "email" | $(QIP_BIN) run modules/text/html/html-input-name-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-aria-extractor.wasm" >> test/latest.txt
 	@printf %s "<a href=\"/a\">Go</a><button>Push</button><h2>Title</h2><input type=\"radio\" aria-label=\"Yes\"><div role=\"checkbox\" aria-label=\"Ok\"></div>" | $(QIP_BIN) run modules/text/html/html-aria-extractor.wasm >> test/latest.txt
+	@printf "%s\n" "module: html-escape.wasm" >> test/latest.txt
+	@printf "%s" "<textarea>Tom & \"QIP\"</textarea><input value='raw'>" | $(QIP_BIN) run modules/text/html/html-escape.wasm >> test/latest.txt
+	@printf "%s\n" "module: html-wcag-contrast-aa.wasm" >> test/latest.txt
+	@printf "%s" "<style>.ok{color:#111;background:#fff}</style><p class=ok>Readable</p>" | $(QIP_BIN) run modules/text/html/html-wcag-contrast-aa.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-tag-validator.wasm" >> test/latest.txt
 	@printf %s "div" | $(QIP_BIN) run modules/text/html/html-tag-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: luhn.wasm" >> test/latest.txt
@@ -224,6 +228,9 @@ site-static:
 	$(QIP_BIN) router warc ./site --recipes recipes --forms modules/form --modules modules --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
+
+site-checks:
+	$(QIP_BIN) router get site / | $(QIP_BIN) run modules/text/html/html-wcag-contrast-aa.wasm
 
 dev:
 	$(QIP_BIN) dev ./site -p 4114 --view-source

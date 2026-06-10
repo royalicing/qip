@@ -13,7 +13,8 @@
     --bg-light: #e6e6e6;
     --bg-dark: #0f1115;
     --link-light: #0051dc;
-    --link-dark: #8ab4ff;
+    --link-dark: #009bca;
+    --link-dark: #0eafe0;
     --output-tint: rgb(146, 211, 255);
 }
 @media (prefers-color-scheme: dark) {
@@ -73,6 +74,8 @@ a {
 hr {
     color: inherit;
     opacity: 25%;
+    border: none;
+    border-top: 1px solid currentColor;
 }
 
 header[role="banner"],
@@ -133,6 +136,9 @@ main {
     }
     blockquote {
         font-style: italic;
+    }
+    hr {
+        margin-top: var(--paragraph-leading);
     }
     ul ul {
         margin-bottom: 0;
@@ -200,10 +206,6 @@ pre {
 img {
     max-width: 100%;
     height: auto;
-}
-hr {
-    border: none;
-    border-top: 1px solid currentColor;
 }
 
 form {

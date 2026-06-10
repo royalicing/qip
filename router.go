@@ -348,7 +348,6 @@ func routerCmd(args []string) {
 
 	type routeRuntime struct {
 		state        *devRuntimeState
-		handler      http.Handler
 		routeOptions qinternal.RouteOptions
 	}
 	handlerTimeouts := routeHandlerTimeouts{
@@ -388,11 +387,8 @@ func routerCmd(args []string) {
 		if err != nil {
 			return nil, err
 		}
-		var stateMu sync.RWMutex
-		handler := newDevRequestHandler("router", &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
 		runtime = &routeRuntime{
 			state:        state,
-			handler:      handler,
 			routeOptions: routeOptions,
 		}
 		return runtime, nil
@@ -438,7 +434,25 @@ func routerCmd(args []string) {
 			if err != nil {
 				return qinternal.InProcessHTTPResponse{}, err
 			}
-			return qinternal.ServeInProcessHTTP(loaded.handler, http.MethodGet, request.RequestPath, nil)
+			if asset, ok := loaded.state.componentAssets[request.RequestPath]; ok {
+				return qinternal.InProcessHTTPResponse{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{asset.contentType}},
+					Body:       asset.body,
+				}, nil
+			}
+			response, ok, err := resolveDevBaseRouteResponse(ctx, loaded.state, request.RequestPath, 0, handlerTimeouts)
+			if err != nil {
+				return qinternal.InProcessHTTPResponse{}, err
+			}
+			if !ok {
+				return qinternal.InProcessHTTPResponse{
+					StatusCode: http.StatusNotFound,
+					Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
+					Body:       []byte("404 page not found\n"),
+				}, nil
+			}
+			return response, nil
 		},
 		TransformWARC: func(ctx context.Context, request qcmd.RouteWARCRequest, warc []byte) ([]byte, error) {
 			loaded, err := ensureRuntime(ctx, request)
