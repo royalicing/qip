@@ -226,7 +226,7 @@ site-static:
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
 
 dev:
-	$(QIP_BIN) dev ./site --recipes recipes --forms modules/form --modules modules -p 4114 --view-source
+	$(QIP_BIN) dev ./site -p 4114 --view-source
 
 defluff:
 	find . -name '.DS_Store' -type f -delete

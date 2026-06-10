@@ -134,6 +134,10 @@ main {
     blockquote {
         font-style: italic;
     }
+    ul ul {
+        margin-bottom: 0;
+        margin-left: 4em;
+    }
 }
 main.docs-layout,
 main:has(> .docs-sidebar) {
@@ -187,6 +191,7 @@ output {
 }
 code:not(pre *) {
     font-size: 100%;
+    font-weight: 700;
 }
 pre {
     overflow: auto;

@@ -1,44 +1,50 @@
-# QIP Component Contract Guide
+# QIP Component Contract
 
-QIP works best when each component clearly targets one contract. This page names those contracts with their required exports, and explains where overlap is intentional versus ambiguous.
+There are four types of QIP components:
 
-## Contract Sets At A Glance
+- `Content`: receive input of any type and render output of any type
+- `Interactive`: receive user events and render pixels
+- `Tile`: receive a 64x64 tile of pixels and output another 64x64 tile
+- `Form`: receive multiple user input and output optional errors and a final result of any type
 
-QIP has four contracts:
+## Contract Exports
 
-- `Content`: non-interactive text/bytes components in `qip run` pipelines
-- `Play`: RGBA frame producers for canvas-style playback/snapshot
-- `Tile`: `qip image` RGBA32Float tile filters
-- `Form`: prompt/response components for `qip form`
-
-### Required Exports Per Set
-
-`Content` contract:
+### `Content` contract:
 
 - `memory`
-- `render(input_size: i32) -> i32`
-- `input_ptr`
-- one of `input_utf8_cap` or `input_bytes_cap`
+- Input:
+  - `input_ptr(): i32` — the offset within `memory` the host will write input to.
+  - Either `input_utf8_cap(): i32` or `input_bytes_cap(): i32` — the maximum bytes the host can write as input.
+  - Optional `input_content_type_ptr(): i32` and `input_content_type_size(): i32` — the MIME type of the input e.g. `text/markdown`.
+- Output:
+  - `output_ptr(): i32` — the offset within `memory` the module will write output to, which the host will then read. The host _must_ call the `render()` function first before calling `output_ptr()`.
+  - Either `output_utf8_cap(): i32` or `output_bytes_cap(): i32` — the maximum bytes the `render()` function can return.
+  - Optional `output_content_type_ptr(): i32` and `output_content_type_size(): i32` — the MIME type of the output e.g. `text/html`.
+- `render(input_size: i32): i32` — transforms the input into output, returning the number of bytes output.
 
-`Play` contract:
+### `Interactive` contract:
 
 - `memory`
-- `render(input_size: i32)`
-- `output_ptr`
-- `output_rgba8_srgb_bytes`
-- `render_width_px`
-- `render_height_px`
-- `key_event(x11_key, flags, now_ms)`
-- `pointer_event(button_mask, x_px, y_px, now_ms)`
-- `tick(now_ms)`
+- `render(input_size: i32): i32`
+- Events:
+  - Optional `key_event(x11_key: i32, flags: i32, now_ms: i64)`
+  - Optional `pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64)`
+  - `tick(now_ms: i64)`
+- Output:
+  - `output_ptr(): i32`
+  - `output_rgba8_srgb_bytes(): i32`
+  - `render_width_px(): i32`
+  - `render_height_px(): i32`
 
-`Tile` contract:
+### `Tile` contract:
 
-- `input_ptr`
-- `input_bytes_cap`
+- `memory`
+- `input_ptr(): i32`
 - `tile_rgba32float_64x64(f32 tile_x, f32 tile_y)`
+- Optional: `calculate_halo_px(): i32`
+- Optional: `uniform_set_width_and_height(width: f32, height: f32)`
 
-`Form` contract:
+### `Form` contract:
 
 - See [docs/form_abi.md](/docs/form_abi) for the full required export list.
 
@@ -47,17 +53,11 @@ Export style notes:
 - Pointer/size values may be exported as zero-arg functions returning `i32` or as `i32` globals.
 - Function-style exports are common in Zig/C components; global-style is common in `.wat`.
 
-## Set Detection And Precedence
+## Contract Detection
 
-Claim: export-set detection should be deterministic and easy to reason about.
+Detecting which contract a wasm module conforms to is a deterministic process of checking exports.
 
-Reason:
-
-- Mixed exports are possible, so hosts need simple tie-breakers.
-
-Current behavior:
-
-1. `qip run` with exactly one component tries `Play` first-frame handling first.
+1. `qip run` with exactly one component tries `Interactive` first-frame handling first.
 2. If that does not match, normal pipeline building starts.
 3. During pipeline building, any component exporting `tile_rgba32float_64x64` is classified as `Tile`.
 4. Non-tile components are classified as `Content`.

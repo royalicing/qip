@@ -1,4 +1,4 @@
-<title>QIP: render everything predictably anywhere</title>
+<title>QIP: sandboxed components that run anywhere</title>
 
 <style>
 .hero-left {
@@ -6,6 +6,8 @@
     float: left;
 
     a {
+        text-align: center;
+        display: inline-block;
         padding: 0.5lh 1.5em;
         border: 1px solid currentColor;
         border-radius: 10000px;
@@ -23,10 +25,11 @@
 hr { clear: both }
 </style>
 
-
 <section class="hero-left">
 
-<h1>Components,<br> Security,<br> AI Coding:<br> Choose 3</h1>
+<h1>Small WebAssembly components with hard boundaries</h1>
+
+<p><strong>QIP:</strong> Quarantined. Immutable. Portable.</p>
 
 <a href="/docs">Read the docs</a>
 
@@ -34,308 +37,88 @@ hr { clear: both }
 
 <section class="hero-right">
 
-## Quick for AI to make & quick for users to run
+## QIP components run sandboxed on browser, server, and native.
 
-**QIP components** let you render text, images, and interactive UI. They compose like Unix CLIs, speak MIME types, and run sandboxed via WebAssembly in the browser, server, cli & native.
+QIP components are WebAssembly modules with a small explicit contract: bytes in, bytes out, no filesystem, no network, no environment, and explicit composition.
 
-## Isolated like a browser tab with no file system, network, or secrets access
-
-Because WebAssembly modules are specifically designed to be self-contained & fully isolated (with no access to your file system, network, or secrets) you can run untrusted QIP components as confidently as using a web browser. They are entirely deterministic making them predictable to combine and test.
-
-## Portable components that work exactly the same in browser, server, and native
-
-The QIP component contract is simple yet allows a wide range of flexibility inside. You can vibe C or Zig to create fast components that lightly use the CPU and memory. You can break problems into small, reusable components and keep strong boundaries between them. You get both speed and security.
+They are quick for coding agents to create and quick for users to run. You can plonk them into existing applications or use QIP Router to create websites like this one.
 
 </section>
 
 ---
 
-## Install the CLI
+## The problem
+
+Modern software often depends on ambient state: packages, framework runtime behavior, environment variables, filesystem layout, network services, clocks, and containers that try to freeze all of it.
+
+Docker can package that world, but it does not make the code small or easy to reason about. A small transform or preview should not need a whole application environment to run predictably.
+
+## The QIP approach
+
+QIP makes the unit of composition a **QIP component**: a small self-contained WebAssembly module with explicit memory exports and no ambient authority.
+
+- **Quarantined:** components run in a deterministic sandbox with zero access to the host (no filesystem, network, or environment).
+- **Immutable:** components are self-contained with no required dependencies, so once you have a working component it keeps working with no updates required.
+- **Portable:** components run identically across web and native hosts through the same QIP contract.
+- **Composable:** pipe components together like CLI tools.
+- **Deterministic:** the same component and input are guaranteed to produce the same output.
+- **Agent-friendly:** components are small enough to generate, review, benchmark, and replace.
+
+## What you can build
+
+### Content pipelines
 
 ```bash
-go install github.com/royalicing/qip@latest
-
-qip run hand-coded-c.wasm
-qip run vibe-coded-zig.wasm
-qip run a.wasm b.wasm c.wasm > out.png
-
-qip comply vibe-coded-commonmark.wasm --with commonmark-spec.wasm
-
-qip dev ./site
+echo "rgb(101, 79, 240)" \
+| qip run modules/utf8/rgb-to-hex.wasm
+# #654ff0
 ```
 
----
+Content components can convert, assert, or refine text and bytes. A pipeline can turn Markdown into HTML, SVG into an icon, URLs into QR codes, or WARC archives into deployable site artifacts.
 
-- **Quick:** these components are designed to be fast to run and fast to write. You can often one-shot many solutions.
-- **Isolated:** everything runs in its own separate sandbox via WebAssembly. A component cannot read from any other or from the host.
-- **Portable:** the contract for QIP components has been designed to run anywhere: browser, server, cli & native.
-
----
-
-## The problem with software today
-
-Much software today is built like Matryoshka dolls, using frameworks that depend on libraries that depend on platforms that depend on operating systems. This can feel incredibly productive at first, but has lead to increasingly complex apps that need constant updates from devs and feel bloated to users.
-
-The large number of layers and moving parts has expanded the surface areas for security attacks. A developer can no longer fit the actually-running code in their head, and AI agents needs more context and tools to verify what they have generated. This increases iteration time and surface for exploits. A culture of countless dependencies has made us prone to supply-chain attacks. Any line of a package or AI-generated code could be reading SSH keys, mining bitcoin, remotely executing code, or infiltrating private data.
-
-Software is less predictable and harder to debug, both for humans and for AI.
-
-## High expressivity meets low level
-
-Two recent technologies change this: WebAssembly and AI coding.
-
-With WebAssembly we get light cross-platform executables. We can really write once and run anywhere. We can create stable, self-contained binaries that don’t depend on anything external. We can sandbox them so they don’t have any access to the outside world: no file system, no network, not even the current time. This makes them deterministic, a property that makes software more predictable, reliable, and easy to test.
-
-## AI needs hard boundaries
-
-With agentic coding we get the ability to quickly mass produce software. But most programming languages today have wide capabilities that make untrustworthy code risky. Any generated line could hack the system or exploit the user. We need hard constraints, especially if we are no longer closely reviewing code.
-
-Coding agents are now good enough that you can vibe code C or Zig QIP components that compile into super fast assembly.
-
-`qip` forces you to break code into clear boundaries. QIP components follow a dead-simple contract: there’s some input written to WebAssembly memory, and there’s some output that is read. Since this contract is deterministic and components are self-contained and immutable we can cache easily using the input and component as a key. Connect these components together and you get a fully deterministic pipeline. Weave these pipelines together and you get a predictable, understandable system.
-
-## Old guardrails
-
-Paradigms like functional or object-oriented or garbage collection become less relevant in this new world. These were patterns that allowed teams of humans to consistently make sense of the modular parts they wove into software. To a LLM, imperative is just as easy as any other paradigm to author. Static allocation is no harder than `malloc`/`free` or garbage collection.
-
-Memory is copied between QIP components so each component can mutate its own memory as much as it likes, which lets you (or your agent) find the most optimal algorithm. If we align code written to the underlying computing model of the von-Neumann-architecture we can get predictably faster performance. We get pockets of speed safely sewn together.
-
-## Content-first formats & encodings
-
-We believe in using formats that have stood the test of time. Need a simple uncompressed image format? `image/bmp`. Need vector graphics? `image/svg+xml`. Need a snapshot of a directory of files? `application/x-tar`. Need a snapshot of a website? `application/warc`. Need a collection of structured data? `application/vnd.sqlite3`. All text should be `UTF-8`.
-
-qip prefers adding functionality via swappable QIP components rather than building it into qip itself. This then means our aim is to use open formats that are easily consumed and produced.
-
-For example, our static site builder produces a [Web Archive](<https://en.wikipedia.org/wiki/WARC_(file_format)>) — it’s up to you to decide how that would be turned into a collection of files. Perhaps you want trailing/ slashes/ in your URLs. Perhaps you don’t. Maybe you want to upload the content straight to a S3 bucket with no intermediate files touching disk. Or you prefer running it using Nginx. This is left up to you. qip produces a full archive of every page route, and then it’s up to you and the ecosystem to determine how to use that.
-
-qip is content-first not file-first. Web pages are made of served content, and that content might be dynamic: there might not be a file representation backing what users see. This unlocks flexibility with the ability to pipeline any content together. Files need a name, permissions, a file system for it to live in. We just want the content inside so then we can create QIP components that consume and produce that type of content.
-
-## Benefits
-
-- **Composable:** swappable units that you author either with AI or by hand.
-- **Secure:** isolated from fs/network/env.
-- **Small**: lean core instead of giant runtime or framework.
-- **Deterministic:** input/output contracts that are easy to test and cache.
-- **Portable:** execution that works identically across platforms.
-- **Boring**: simple conventions, predictable, reproducible, maintainable.
-
-## Philosophy
-
-Good tools should be:
-
-- easy to compose
-- secure by default
-- cheap to replace
-- rapid to test and iterate
-- work on the web, on native, and as a cli
-- runnable by both agents and users
-
-## Why not WASI?
-
-QIP favors explicit simple contracts and plain directory layouts over magic.
-
-It decidedly does not use WASI, a standard due to scope creep has ballooned in complexity. To get stuff done and to support browsers we use a much smaller contract between hosts and modules.
-
-The `qip` cli is built in Go using its venerable standard library for file system access, HTTP server, and common format decoding/encoding. The [wazero](https://wazero.io) library runs QIP components in a secure sandbox. QIP components can be authored in C, Zig, WAT, or any language that targets wasm32.
-
-
-## What QIP does:
-
-- Run tiny, focused QIP components to process or create text, bytes, and images.
-- Compose those components into deterministic pipelines.
-- Reuse the same components in CLI, browser, server, and mobile.
-- Provide a stable contract that is simpler than WASI.
-- Web file router with everything as replaceable QIP components.
-
-What QIP does not do:
-
-- It does not have package manager with nested dependencies.
-- It does not give components fs/network/env access.
-
-If you know popular tools, think:
-
-- **Unix pipes**: data flows stage-by-stage.
-- **React components**: QIP components are swappable units with clean contracts.
-- **GitHub Actions**: qip recipes have explicit ordered steps.
-
-Think of them as “React components for more than just rendering HTML that run anywhere.” Everything on this site has been made using coding agents and qip, from the Markdown HTML renderer through to syntax highlighting.
-
-Read the full walkthrough in [`/docs/how-it-works`](/docs/how-it-works).
-
-## Examples
-
-See also: [`/qr`](/qr) for a live URL-to-QR-code example.
-See also: [`/play-sudoku`](/play-sudoku) for a live interactive Sudoku component and [`/play-liars-dice`](/play-liars-dice) for a 3-player Liar's Dice game.
+### Browser previews
 
 <form aria-labelledby="form-wc-heading">
-    <h3 id="form-wc-heading">Word count (wc.wasm running in browser)</h3>
-    <p><code>text/plain → text/plain</code></p>
+    <h3 id="form-wc-heading">Word count</h3>
+    <p><code>text/plain -> text/plain</code></p>
     <blockquote><p>Coding agent prompt: Write a wc.zig QIP component like /usr/bin/wc</p></blockquote>
     <qip-preview>
         <source src="/components/utf8/wc.wasm" type="application/wasm" />
-        <textarea name="input" rows="2" cols="40">There are eight words here. Try typing more… </textarea>
+        <textarea name="input" rows="2" cols="40">There are eight words here. Try typing more...</textarea>
         <output name="output"></output>
     </qip-preview>
 </form>
 
-### Word count (same wc.wasm running via cli)
+The browser runtime loads the same component shape as the CLI. There is no separate plugin model for previewing small tools.
 
-```bash
-echo -n "There are eight words here. Try typing more… " | qip run modules/utf8/wc.wasm
-#        0       8      47
+### Interactive components
+
+Interactive QIP components render full frames and receive explicit key, pointer, and tick events.
+
+See [`/play-sudoku`](/play-sudoku), [`/play-side-scroller-platformer`](/play-side-scroller-platformer), and [`/play-liars-dice`](/play-liars-dice) for examples.
+
+## Site routing without a config file
+
+QIP can also route a content tree:
+
+```txt
+site/
+  index.md
+  docs/router.md
+  _recipes/text/markdown/10-markdown-basic.wasm
+  _components/interactive/sudoku.wasm
 ```
 
----
-
-<form aria-labelledby="form-qr-url-heading">
-    <h3 id="form-qr-url-heading">URL to QR SVG (js)</h3>
-    <p><code style="font-style: italic">text/uri-list → image/svg+xml</code></p>
-    <br />
-    <qip-preview>
-        <source src="/components/text/uri-list/url-to-qr-svg.wasm" type="application/wasm" />
-        <label>
-            <b>Enter URL</b>
-            <input
-                type="url"
-                name="input"
-                value="https://example.com/docs/how-it-works"
-                placeholder="https://example.com"
-                spellcheck="false"
-                style="min-width: 100%; border-radius: 0; border: none; padding: 0.5em 1em;"
-            />
-        </label>
-        <output name="output"></output>
-    </qip-preview>
-</form>
-
-### URL to QR SVG (cli)
-
 ```bash
-echo "https://example.com/docs/how-it-works" \
-| qip run modules/text/uri-list/url-to-qr-svg.wasm \
-> qr.svg
+qip dev ./site
+qip router warc ./site --view-source
 ```
 
----
+Content files become request paths. Recipes transform content by MIME type. Browser-loadable components are served from `/components/*`. The source layout stays explicit because the filesystem is the specification.
 
-<form aria-labelledby="form-markdown-heading">
-    <h3 id="form-markdown-heading">Recolor svg icon as orange and convert to favicon (js)</h3>
-    <p><code>image/svg+xml → image/svg+xml → image/bmp → image/x-icon</code></p>
-    <qip-preview>
-        <source src="/components/image/svg+xml/svg-recolor-current-color.wasm" type="application/wasm" data-uniform-color_rgba />
-        <source src="/components/image/svg+xml/svg-rasterize.wasm" type="application/wasm" />
-        <source src="/components/image/bmp/bmp-to-ico.wasm" type="application/wasm" />
-        <textarea name="input" rows="9" cols="40">&lt;svg class=&quot;lucide lucide-smile&quot; xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;24&quot; height=&quot;24&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot; stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot;
-&gt;
-  &lt;circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;10&quot; /&gt;
-  &lt;path d=&quot;M8 14s1.5 2 4 2 4-2 4-2&quot; /&gt;
-  &lt;line x1=&quot;9&quot; x2=&quot;9.01&quot; y1=&quot;9&quot; y2=&quot;9&quot; /&gt;
-  &lt;line x1=&quot;15&quot; x2=&quot;15.01&quot; y1=&quot;9&quot; y2=&quot;9&quot; /&gt;
-&lt;/svg&gt;</textarea>
-        <input type="color" name="uniform-color_rgba" value="#ff7722" />
-        <output name="output" style="zoom: 2; image-rendering: pixelated"></output>
-    </qip-preview>
-</form>
+## Learn the model
 
-### Recolor svg icon as orange and convert to favicon (cli)
-
-```bash
-curl https://unpkg.com/lucide-static@0.575.0/icons/smile.svg \
-| qip run modules/image/svg+xml/svg-recolor-current-color.wasm '?color_rgba=0xff7722ff' \
-modules/image/svg+xml/svg-rasterize.wasm \
-modules/image/bmp/bmp-to-ico.wasm \
-> cog.ico
-```
-
----
-
-<form aria-labelledby="form-markdown-heading">
-    <h3 id="form-markdown-heading">Markdown to HTML (js)</h3>
-    <p><code>text/markdown → text/html</code></p>
-    <qip-preview>
-        <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
-        <textarea name="input" rows="7" cols="40"># Write some CommonMark *Markdown*
-&#10;- Here’s a [link](https&colon;//example.com) in a list
-&#10;```bash
-qip help run
-```</textarea>
-    <output name="output"></output>
-    </qip-preview>
-</form>
-
-### Markdown to HTML (cli)
-
-```bash
-echo '# Write some CommonMark *Markdown*' | qip run modules/text/markdown/commonmark.0.31.2.wasm
-# <h1>Write some CommonMark <em>Markdown</em></h1>
-```
-
----
-
-## Turing-complete specs for your agents to iterate against
-
-Here’s how to implement CommonMark using Codex and `qip comply`:
-
-1. Download the CommonMark [spec.txt](https://raw.githubusercontent.com/commonmark/commonmark-spec/0.31.2/spec.txt).
-2. Ask a coding agent like Codex or Claude Code to generate a qip compliance component from the spec. This creates cases with inputs and expected outputs in fast WebAssembly.
-3. Ask your coding agent to implement a new CommonMark from scratch in Zig and iterate until `qip comply` passes.
-
-```bash
-# 1) Download CommonMark spec text
-curl -L https://raw.githubusercontent.com/commonmark/commonmark-spec/0.31.2/spec.txt -o compliance/commonmark-spec-0.31.2.txt
-
-# 2) Tell your AI to create a qip compliance component using the txt
-agent 'Create a `qip comply` component `compliance/commonmark-spec-0.31.2.wasm` in zig from `commonmark-spec-0.31.2.txt`. Run `qip help comply` to learn how to create a compliance component.'
-
-# 3) Tell your AI to create a QIP component and keep iterating until compliance passes
-agent 'Implement a CommonMark implementation in zig using the compliance component to check'
-
-# 4) Your new shiny should PASS your generated spec
-qip comply modules/text/markdown/commonmark.0.31.2.wasm \
-  --with compliance/commonmark-spec-0.31.2.wasm
-
-# 5) Run your component with whatever markdown you like
-echo '# It works!' | qip run modules/text/markdown/commonmark.0.31.2.wasm
-# <h1>It works!</h1>
-```
-
----
-
-## Make websites that never go stale
-
-```bash
-# List site content
-$ ls -R1 site
-about.md
-favicon.ico
-index.md
-
-docs:
-first.md
-second.md
-third.md
-
-# List recipe component pipeline to transform site content
-$ ls -R1 site/_recipes
-site/_recipes/text/markdown:
-10-markdown.wasm
-10-markdown.zig
-20-highlight-syntax-highlight-bash.wasm
-20-highlight-syntax-highlight-bash.zig
-29-add-highlight-stylesheet-night-owl.wasm
-29-add-highlight-stylesheet-night-owl.zig
-70-add-fathom-analytics-script.wasm
-70-add-fathom-analytics-script.zig
-80-html-page-wrap.wasm
-80-html-page-wrap.zig
-footer.html
-header.html
-highlight-night-owl.css
-styles.css
-
-# Build site as Web Archive then convert that to static HTML with no trailing slashes
-$ qip router warc ./site \
-| qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
-> site-static.tar
-$ mkdir -p site-static && tar -xvf site-static.tar -C site-static
-```
+- [How QIP Works](/docs/how-it-works)
+- [QIP Component Contract](/docs/module-contract)
+- [Router Specification](/docs/router)
+- [Why QIP Exists](/docs/why-qip)

@@ -2,11 +2,11 @@
 
 A small runtime to run composable QIP components securely in the browser, server, and native.
 
-You provide QIP components compiled to WebAssembly that work with text, data, and images and compose them together into powerful pipelines. You can run them the browser, on the server, or natively on mobile and desktop.
+You provide QIP components compiled to WebAssembly that work with text, data, and images and compose them together into powerful pipelines. You can run them in the browser, on the server, or natively on mobile and desktop.
 
-- Quarantined: components are provided a single buffer as input and are sandboxed with zero access to the host (no fs/network/env).
-- Immutable: components are self-contained, once you have a working component it will keep working forever.
-- Portable: components can be composed into pipelines that run identically across platforms.
+- Quarantined: components run in a deterministic sandbox with zero access to the host (no fs/network/env).
+- Immutable: components are self-contained with no required dependencies, so once you have a working component it keeps working with no updates required.
+- Portable: components run identically across web and native hosts through the same QIP contract.
 
 These attributes make QIP components deterministic: the same input with the same WebAssembly module will produce the same output. You are encouraged to write small, focused components that do one job. These constraints also make a good pairing with untrusted AI coding tools: write single-file C or Zig that is easy to review and compiles to decently fast `.wasm`.
 

@@ -5,6 +5,7 @@ QIP keeps its documentation small and navigable. This page is the source of trut
 <nav class="docs-sidebar" aria-label="Docs">
 <ol>
 <li><a href="/docs/how-it-works">How QIP Works</a></li>
+<li><a href="/docs/why-qip">Why QIP Exists</a></li>
 <li><a href="/docs/module-contract">QIP Component Contract</a></li>
 <li><a href="/docs/module-patterns">QIP Component Patterns</a></li>
 <li><a href="/docs/interactive">Interactive ABI</a></li>
