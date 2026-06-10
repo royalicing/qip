@@ -1,10 +1,10 @@
-# Module Patterns
+# QIP Component Patterns
 
-This is a practical cookbook for writing `qip` modules.
+This is a practical cookbook for writing QIP components.
 
 It also includes the error semantics for deciding whether to return a value, return empty output, or trap.
-Default recommendation: trap on invalid input or overflow for transformation modules.
-For validator-style modules that should compose in pipelines, prefer assertion pass-through: return input unchanged on success, trap on failure.
+Default recommendation: trap on invalid input or overflow for transformation components.
+For validator-style components that should compose in pipelines, prefer assertion pass-through: return input unchanged on success, trap on failure.
 
 ## Choose A Pattern
 
@@ -38,7 +38,7 @@ Semantics:
 
 Host behavior:
 
-- Downstream modules receive the original data when validation passes.
+- Downstream components receive the original data when validation passes.
 - Pipeline aborts on trap when validation fails.
 
 Good for:

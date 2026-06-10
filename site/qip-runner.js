@@ -345,7 +345,7 @@
   class Recipe {
     constructor(inputMimeType, arrayOfWasmModules) {
       if (!Array.isArray(arrayOfWasmModules) || arrayOfWasmModules.length === 0) {
-        throw new Error("Recipe requires a non-empty array of wasm modules");
+        throw new Error("Recipe requires a non-empty array of QIP components");
       }
       this.inputMimeType = normalizeMimeType(inputMimeType);
       this.modules = arrayOfWasmModules.slice();

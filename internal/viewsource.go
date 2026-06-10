@@ -24,8 +24,8 @@ func CollectRecipeSourceAssets(recipesRoot string) ([]RecipeSourceAsset, error) 
 	return collectViewSourceAssets(recipesRoot, "/view-source/recipes/")
 }
 
-func CollectModuleSourceAssets(modulesRoot string) ([]RecipeSourceAsset, error) {
-	return collectViewSourceAssets(modulesRoot, "/view-source/modules/")
+func CollectComponentSourceAssets(componentsRoot string) ([]RecipeSourceAsset, error) {
+	return collectViewSourceAssets(componentsRoot, "/view-source/components/")
 }
 
 func collectViewSourceAssets(root string, requestPrefix string) ([]RecipeSourceAsset, error) {
@@ -76,14 +76,14 @@ func collectViewSourceAssets(root string, requestPrefix string) ([]RecipeSourceA
 	return assets, nil
 }
 
-func BuildViewSourceIndexHTML(recipeAssets []RecipeSourceAsset, markdownRequestPaths []string, moduleRequestPaths []string, moduleSourceAssets []RecipeSourceAsset) []byte {
+func BuildViewSourceIndexHTML(recipeAssets []RecipeSourceAsset, markdownRequestPaths []string, componentRequestPaths []string, componentSourceAssets []RecipeSourceAsset) []byte {
 	markdownRequestPaths = FilterMarkdownRequestPaths(markdownRequestPaths)
-	moduleRequestPaths = filterModuleRequestPaths(moduleRequestPaths)
-	moduleSourceAssets = filterViewSourceAssetsByPrefix(moduleSourceAssets, "/view-source/modules/")
-	moduleEntries := buildModuleViewSourceEntries(moduleRequestPaths, moduleSourceAssets)
+	componentRequestPaths = filterComponentRequestPaths(componentRequestPaths)
+	componentSourceAssets = filterViewSourceAssetsByPrefix(componentSourceAssets, "/view-source/components/")
+	componentEntries := buildComponentViewSourceEntries(componentRequestPaths, componentSourceAssets)
 
 	var b strings.Builder
-	b.Grow(1280 + len(recipeAssets)*96 + len(markdownRequestPaths)*64 + len(moduleEntries)*96)
+	b.Grow(1280 + len(recipeAssets)*96 + len(markdownRequestPaths)*64 + len(componentEntries)*96)
 	b.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>/view-source</title><style>")
 	b.WriteString(":root{font-family:system-ui,sans-serif}body{margin:0;padding:1.5rem 1rem;display:flex;justify-content:center}main{width:100%;max-width:44rem;line-height:1.5}h1{margin:0 0 1rem}h2{margin:1.5rem 0 .5rem}ul{padding-left:1.25rem}")
 	b.WriteString("</style></head><body><main><h1>View Source</h1>")
@@ -109,8 +109,8 @@ func BuildViewSourceIndexHTML(recipeAssets []RecipeSourceAsset, markdownRequestP
 		b.WriteString("</a></li>")
 	}
 	b.WriteString("</ul>")
-	b.WriteString("<h2>Modules</h2><ul>")
-	for _, entry := range moduleEntries {
+	b.WriteString("<h2>Components</h2><ul>")
+	for _, entry := range componentEntries {
 		b.WriteString("<li><a href=\"")
 		b.WriteString(html.EscapeString(entry.href))
 		b.WriteString("\">")
@@ -121,24 +121,24 @@ func BuildViewSourceIndexHTML(recipeAssets []RecipeSourceAsset, markdownRequestP
 	return []byte(b.String())
 }
 
-type moduleViewSourceEntry struct {
+type componentViewSourceEntry struct {
 	label string
 	href  string
 }
 
-func buildModuleViewSourceEntries(moduleRequestPaths []string, moduleSourceAssets []RecipeSourceAsset) []moduleViewSourceEntry {
-	entriesByLabel := make(map[string]moduleViewSourceEntry, len(moduleRequestPaths)+len(moduleSourceAssets))
-	for _, asset := range moduleSourceAssets {
-		label := strings.TrimPrefix(asset.RequestPath, "/view-source/modules/")
-		entriesByLabel[label] = moduleViewSourceEntry{
+func buildComponentViewSourceEntries(componentRequestPaths []string, componentSourceAssets []RecipeSourceAsset) []componentViewSourceEntry {
+	entriesByLabel := make(map[string]componentViewSourceEntry, len(componentRequestPaths)+len(componentSourceAssets))
+	for _, asset := range componentSourceAssets {
+		label := strings.TrimPrefix(asset.RequestPath, "/view-source/components/")
+		entriesByLabel[label] = componentViewSourceEntry{
 			label: label,
 			href:  requestPathForHref(asset.RequestPath),
 		}
 	}
-	// Prefer direct module endpoints for matching labels.
-	for _, requestPath := range moduleRequestPaths {
-		label := strings.TrimPrefix(requestPath, "/modules/")
-		entriesByLabel[label] = moduleViewSourceEntry{
+	// Prefer direct component endpoints for matching labels.
+	for _, requestPath := range componentRequestPaths {
+		label := strings.TrimPrefix(requestPath, "/components/")
+		entriesByLabel[label] = componentViewSourceEntry{
 			label: label,
 			href:  requestPathForHref(requestPath),
 		}
@@ -150,7 +150,7 @@ func buildModuleViewSourceEntries(moduleRequestPaths []string, moduleSourceAsset
 	}
 	sort.Strings(labels)
 
-	entries := make([]moduleViewSourceEntry, 0, len(labels))
+	entries := make([]componentViewSourceEntry, 0, len(labels))
 	for _, label := range labels {
 		entries = append(entries, entriesByLabel[label])
 	}
@@ -192,11 +192,11 @@ func FilterMarkdownRequestPaths(paths []string) []string {
 	return out
 }
 
-func filterModuleRequestPaths(paths []string) []string {
+func filterComponentRequestPaths(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	seen := make(map[string]struct{}, len(paths))
 	for _, requestPath := range paths {
-		if !strings.HasPrefix(requestPath, "/modules/") {
+		if !strings.HasPrefix(requestPath, "/components/") {
 			continue
 		}
 		normalized := path.Clean(requestPath)

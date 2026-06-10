@@ -280,6 +280,9 @@ func BuildContentRoutes(contentRoot string, options RouteOptions) (map[string]Co
 		}
 		for _, entry := range entries {
 			name := entry.Name()
+			if relDir == "" && IsReservedRouterDirectoryName(name) {
+				continue
+			}
 			relPath := name
 			if relDir != "" {
 				relPath = path.Join(relDir, name)
@@ -337,6 +340,9 @@ func BuildContentRoutesFromEntries(entries []ContentRouteEntry, options RouteOpt
 	for _, entry := range entries {
 		if err := validateContentRelPath(entry.RelPath); err != nil {
 			return nil, err
+		}
+		if IsReservedRouterRelPath(entry.RelPath) {
+			continue
 		}
 		if strings.TrimSpace(entry.FilePath) == "" {
 			return nil, fmt.Errorf("content path %q is missing file path", entry.RelPath)

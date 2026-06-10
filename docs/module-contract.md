@@ -1,21 +1,81 @@
-# Module Contract Guide
+# QIP Component Contract Guide
 
-This guide documents the contract `qip` expects for modules, and how it passes input in and reads output back.
+QIP works best when each component clearly targets one contract. This page names those contracts with their required exports, and explains where overlap is intentional versus ambiguous.
 
-## Quick Model
+## Contract Sets At A Glance
 
-- A `.wasm` module file can be tiny, while instances’ initial linear memory can be much larger.
-- WebAssembly memory is broken into multiple pages, where each page is `64 KiB` each.
-- `qip` writes input into module memory, calls `render`, then reads output from module memory.
+QIP has four contracts:
 
-## Render Mode Contract
+- `Content`: non-interactive text/bytes components in `qip run` pipelines
+- `Play`: RGBA frame producers for canvas-style playback/snapshot
+- `Tile`: `qip image` RGBA32Float tile filters
+- `Form`: prompt/response components for `qip form`
 
-In `qip run`, modules can export pointer/cap values as either:
+### Required Exports Per Set
 
-- zero-arg functions returning `i32` (common with Zig & C), or
-- `i32` globals (common with `.wat`)
+`Content` contract:
 
-`qip` accepts both styles.
+- `memory`
+- `render(input_size: i32) -> i32`
+- `input_ptr`
+- one of `input_utf8_cap` or `input_bytes_cap`
+
+`Play` contract:
+
+- `memory`
+- `render(input_size: i32)`
+- `output_ptr`
+- `output_rgba8_srgb_bytes`
+- `render_width_px`
+- `render_height_px`
+- `key_event(x11_key, flags, now_ms)`
+- `pointer_event(button_mask, x_px, y_px, now_ms)`
+- `tick(now_ms)`
+
+`Tile` contract:
+
+- `input_ptr`
+- `input_bytes_cap`
+- `tile_rgba32float_64x64(f32 tile_x, f32 tile_y)`
+
+`Form` contract:
+
+- See [docs/form_abi.md](/docs/form_abi) for the full required export list.
+
+Export style notes:
+
+- Pointer/size values may be exported as zero-arg functions returning `i32` or as `i32` globals.
+- Function-style exports are common in Zig/C components; global-style is common in `.wat`.
+
+## Set Detection And Precedence
+
+Claim: export-set detection should be deterministic and easy to reason about.
+
+Reason:
+
+- Mixed exports are possible, so hosts need simple tie-breakers.
+
+Current behavior:
+
+1. `qip run` with exactly one component tries `Play` first-frame handling first.
+2. If that does not match, normal pipeline building starts.
+3. During pipeline building, any component exporting `tile_rgba32float_64x64` is classified as `Tile`.
+4. Non-tile components are classified as `Content`.
+5. `qip form` uses the `Form` contract path.
+
+Example:
+
+- A component with `tile_rgba32float_64x64` is treated as `Tile` in pipeline composition, even if it also exports `render(...)`.
+
+## Content Component Contract
+
+Use this set for one-input/one-output non-interactive components in `qip run`.
+
+Common Content component behaviors:
+
+- Convert content by changing content type (`A -> B`).
+- Assert content by validating invariants and trapping on failure, often passing input through on success.
+- Refine content by keeping content type the same while rewriting or normalizing content.
 
 Required input exports:
 
@@ -31,24 +91,24 @@ Required function:
 
 - `render(input_size) -> output_size`
 
-If `output_ptr` + output cap are not exported, `qip` falls back to printing `Ran: <run_return_value>`.
+If `output_ptr` + output cap are not exported, `QIP` falls back to printing `Ran: <render_return_value>`.
 
 ### Optional Uniforms (`uniform_set_<key>`)
 
-Modules may export uniform setter functions and callers can pass values via query args.
+Components may export uniform setter functions and callers can pass values via query args.
 
 Uniform export contract:
 
 - Name must be `uniform_set_<key>` where `<key>` matches the query key.
 - Setter must accept exactly one parameter.
 - Supported parameter types are: `i32`, `i64`, `f32`, `f64`.
-- Setter return value is ignored by `qip` (you can still return the clamped/applied value).
-- Exception: image modules may also export `uniform_set_width_and_height(f32, f32)`; this is host-managed and not set via query args.
+- Setter return value is ignored by `QIP` (you can still return the clamped/applied value).
+- Exception: image components may also export `uniform_set_width_and_height(f32, f32)`; this is host-managed and not set via query args.
 
 Host behavior:
 
 - Uniforms are applied after module instantiation and before `render(...)` (or before tile execution in image mode).
-- If a query key is provided but the module does not export `uniform_set_<key>`, execution fails.
+- If a query key is provided but the component does not export `uniform_set_<key>`, execution fails.
 - If parsing fails for the expected numeric type, execution fails.
 - Integer uniforms (`i32`, `i64`) parse decimal as signed values by default.
 - For integer uniforms, hexadecimal is accepted only when prefixed with `0x` (or `0X`) and is parsed as an unsigned bit pattern.
@@ -56,7 +116,7 @@ Host behavior:
 
 CLI syntax:
 
-- Put uniform query args immediately after the module path.
+- Put uniform query args immediately after the component path.
 - Quote the full query arg in shells so `&` is not treated as a command separator.
 - `qip run ... module.wasm '?key=value'`
 - `qip run ... module.wasm '?width=900&height=400&font_size=48'`
@@ -88,23 +148,9 @@ export fn uniform_set_color_rgba(v: u32) u32 {
 }
 ```
 
-## WebAssembly Module Contract
+### Content-Type Metadata (Optional)
 
-### `input_utf8_cap` / `input_bytes_cap`
-
-Use `input_utf8_cap` for UTF-8 text input and `input_bytes_cap` for binary input.
-
-### `output_utf8_cap` / `output_bytes_cap` / `output_i32_cap`
-
-Use `output_utf8_cap` for UTF-8 text output, `output_bytes_cap` for binary output, and `output_i32_cap` for `i32[]` output.
-
-If output exports are omitted, the return value of `render` is used as the result.
-
-If output exports are present, the return value of `render` is used as the output size.
-
-### Optional Content Type Metadata
-
-Run modules may optionally export content type metadata for friendlier composition and host `Content-Type` selection.
+Content components may optionally export content-type metadata for friendlier composition and host `Content-Type` selection.
 
 - `input_content_type_ptr` / `input_content_type_size`
 - `output_content_type_ptr` / `output_content_type_size`
@@ -115,35 +161,119 @@ Rules:
 - Export exactly one MIME type value when present.
 - Do not use media ranges (for example, `text/*` or `*/*`).
 - Do not use comma-separated MIME lists.
-- Omit input content type for modules that accept any UTF-8 text regardless of media type (for example: plain text, HTML, XML).
+- Omit input content type for components that accept any UTF-8 text regardless of media type (for example: plain text, HTML, XML).
 - Omit output content type for generic raw bytes and `i32[]` outputs unless the module guarantees a specific media type.
-- Do not export `text/plain` for generic UTF-8 modules; `input_utf8_cap` / `output_utf8_cap` already imply plain UTF-8 text.
+- Do not export `text/plain` for generic UTF-8 components; `input_utf8_cap` / `output_utf8_cap` already imply plain UTF-8 text.
 - Export content type when the module knows it exactly (for example: `text/javascript`, `text/html`, `image/bmp`).
 - Export only the media type value. Do not append `charset=utf-8`; UTF-8 is already implied by `input_utf8_cap` / `output_utf8_cap`.
 - If the host/caller provides an initial content type, treat it as authoritative for composition.
 - For direct user ingress in `qip run` (stdin or `-i` file bytes), there is currently no separate content-type channel; trust user intent for the first stage.
 
-### Content Type Composition Semantics
+### Content-Type Composition
 
-These are the composition rules for render-module pipelines:
+These are the composition rules for QIP component pipelines:
 
 - The pipeline starts with an optional initial content type from the caller/host context.
-- For direct user ingress in `qip run`, when initial content type is absent, the first module is allowed by user intent (stdin/`-i` is trusted as the expected type).
-- If a module exports `input_content_type_ptr`/`input_content_type_size`, the incoming content type must exactly match that MIME type.
-- If a module does not export input content type and uses `input_utf8_cap`, it is treated as a generic UTF-8 transform and may compose with any UTF-8 pipeline input.
-- If a module does not export input content type and uses `input_bytes_cap`, it is treated as a generic bytes transform and may compose with any bytes pipeline input.
-- If a module exports `output_content_type_ptr`/`output_content_type_size`, that MIME type becomes the pipeline content type for downstream stages.
-- If a module does not export output content type and uses `output_utf8_cap`, the existing pipeline content type is preserved.
-- If a module does not export output content type and uses `output_bytes_cap`, the existing pipeline content type is preserved.
-- Generic UTF-8 utility modules (for example, uppercase/trim/rewrite helpers) should usually omit content type metadata so they can run on any UTF-8 text while preserving upstream content type.
-- Generic bytes utility modules (for example, `base64-encode.wasm` style byte transforms) should usually omit content type metadata so they can run on any bytes while preserving upstream content type.
-- Example: `curl ... | qip run modules/text/html/html-link-extractor.wasm` composes by trusting user-provided stdin for the first stage (`text/html` expected by the module).
+- For direct user ingress in `qip run`, when initial content type is absent, the first component is allowed by user intent (stdin/`-i` is trusted as the expected type).
+- If a component exports `input_content_type_ptr`/`input_content_type_size`, the incoming content type must exactly match that MIME type.
+- If a component does not export input content type and uses `input_utf8_cap`, it is treated as a generic UTF-8 transform and may compose with any UTF-8 pipeline input.
+- If a component does not export input content type and uses `input_bytes_cap`, it is treated as a generic bytes transform and may compose with any bytes pipeline input.
+- If a component exports `output_content_type_ptr`/`output_content_type_size`, that MIME type becomes the pipeline content type for downstream stages.
+- If a component does not export output content type and uses `output_utf8_cap`, the existing pipeline content type is preserved.
+- If a component does not export output content type and uses `output_bytes_cap`, the existing pipeline content type is preserved.
 
-## Input/Output Semantics
+## Play Set Contract
+
+Use `Play` for components that produce full RGBA frames suitable for playback/snapshot.
+
+Core output contract:
+
+- `output_ptr` points at frame bytes.
+- `output_rgba8_srgb_bytes` is the exact frame byte count.
+- `render_width_px` and `render_height_px` define geometry.
+- `render(0)` returns the frame byte count.
+- Host expects: `output_rgba8_srgb_bytes == render_width_px * render_height_px * 4`.
+
+Color/layout contract:
+
+- Pixel format: `rgba8_srgb` in byte order `[R, G, B, A]`.
+- Top-left origin, row-major.
+- Tight rows: `stride = width * 4`.
+- Alpha is straight/unassociated.
+
+Input/event contract:
+
+- Current play hosts expect `key_event`, `pointer_event`, and `tick` exports.
+- Event handlers return `1` when visible state changed and a frame should be rendered.
+- Event handlers return `0` when no visual update is needed, such as pointer movement without hover effects.
+- If your component is event-less, export no-op handlers and return `0` from them.
+- For static output, `tick` may return `0`.
+
+## Tile Set Contract
+
+Use `Tile` for `qip image` filter pipelines.
+
+Required:
+
+- `input_ptr`, `input_bytes_cap`, `tile_rgba32float_64x64`
+
+Optional:
+
+- `uniform_set_width_and_height(f32, f32)`
+- `calculate_halo_px() -> i32`
+
+Tile memory:
+
+`tile_bytes = tile_span * tile_span * 4 channels * 4 bytes(float32)`
+
+Where:
+
+- `tile_span = 64` without halo
+- `tile_span = 64 + 2 * halo` with halo
+
+If any stage reports `halo > 0`, host uses the full-image float32 pipeline for all stages in the contiguous tile block.
+
+See also: `IMAGE.md`.
+
+## Form Set Contract
+
+Use `Form` for prompt-driven workflows in `qip form`.
+
+Claim: form logic should stay explicit and host-cooperative.
+
+Reason:
+
+- It keeps prompt progression and validation behavior predictable across CLI and web hosts.
+
+For required exports and flow details, see [docs/form_abi.md](/docs/form_abi).
+
+## Intersections And Non-Intersections
+
+`Content` and `Play`:
+
+- They share `render(...)`, but target different host paths.
+- In single-component `qip run`, matching `Play` exports are handled as play first-frame output.
+
+`Content` and `Tile`:
+
+- If `tile_rgba32float_64x64` is exported, pipeline classification treats the component as `Tile`.
+- Keep combined `Content+Tile` components only when you intentionally want tile classification.
+
+`Content` and `Form`:
+
+- They intersect on some export names (`render`, input/output pointers/caps).
+- Use `qip form` host path for form components; do not treat them as generic run transforms.
+
+`Play` and `Tile`:
+
+- Different execution models (full-frame bytes vs tile callbacks).
+- We prefer keeping them separate.
+
+## Input/Output Semantics (Content Components)
 
 Input:
 
-- `qip` ensures `len(input) <= input_*_cap`.
+- `QIP` ensures `len(input) <= input_*_cap`.
 - Input bytes are written to memory at `input_ptr`.
 - If input is larger than cap, execution fails with `Input is too large`.
 
@@ -151,8 +281,8 @@ Output:
 
 - `render` return value is interpreted as element count.
 - For UTF-8 or raw bytes output, element size is `1` byte.
-- For `output_i32_cap`, element size is `4` bytes aka `32` bits.
-- `qip` checks returned count does not exceed exported output cap.
+- For `output_i32_cap`, element size is `4` bytes.
+- `QIP` checks returned count does not exceed exported output cap.
 
 Capacity units:
 
@@ -161,36 +291,17 @@ Capacity units:
 
 ## Memory Layout Recommendations
 
-- Keep input and output buffers disjoint.
-- Validate `input_size` and trap on out-of-bounds assumptions drifting between host and module.
+- Keep input and output buffers disjoint unless overlap is an intentional and tested optimization.
+- Validate `input_size` and trap on out-of-bounds assumptions drifting between host and component.
 - Reserve explicit scratch space if needed.
 - Preferred for data-preserving transforms: trap on invalid input/overflow so bad data does not silently become empty output.
 - Prefer trapping over silent truncation when output buffers fill.
 - Use `return 0` only when empty output is an intentional, non-error result.
 
-## Image Mode Memory
-
-For `qip image` / RGBA filters:
-
-- Required: `input_ptr`, `input_bytes_cap`, `tile_rgba_f32_64x64`.
-- Host writes tile data into memory at `input_ptr`.
-- Filter runs in-place and host reads back from the same buffer.
-
-Tile byte size:
-
-`tile_bytes = tile_span * tile_span * 4 channels * 4 bytes(float32)`
-
-Where:
-
-- `tile_span = 64` without halo.
-- `tile_span = 64 + 2 * halo` with halo.
-
-If any stage exports `calculate_halo_px` with `halo > 0`, host uses the full-image float32 pipeline for all stages in the contiguous image block.
-
-See also: `IMAGE.md`.
-
 ## Practical Checklist
 
-- Verify your exported caps match actual writable memory.
-- Test both normal and oversized input.
-- Check module trap behavior for malformed/oversized input.
+- Pick one primary contract set (`Content`, `Play`, `Tile`, or `Form`) before writing code.
+- Verify exported pointers/caps/sizes match actual writable memory.
+- Test normal and oversized input paths.
+- Confirm expected host path (`qip run`, `qip image`, or `qip form`) with one real smoke test.
+- Trap on malformed input where data loss would be worse than hard failure.

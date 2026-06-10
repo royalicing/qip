@@ -11,5 +11,5 @@ Controls:
 - Optional mouse shortcut: click the same empty selected cell again to toggle candidates by 3x3 mini-position.
 
 <qip-play log>
-  <source src="/modules/interactive/sudoku.wasm" type="application/wasm" />
+  <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>

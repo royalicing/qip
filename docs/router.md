@@ -1,166 +1,272 @@
-# Router
+# Router Specification
 
-This page is for site authors using `qip router` and `qip dev`.
+The qip router is a deterministic specification for turning a content tree into HTTP responses. We prefer a small set of explicit routing rules because site authors, recipe authors, and export tooling should all be able to predict the same response for the same input files.
 
-It explains:
+This document is normative for `qip dev` and `qip router`.
 
-- where files should go
-- what each command does
-- what runs when (content recipes vs WARC recipes)
+## Site Root
 
-## Project Layout
+`qip dev` and `qip router` take one site root. The site root is the directory or remote snapshot qip routes from.
 
-Typical setup:
+The preferred local layout is:
 
 ```txt
-site/                         # content root
+site/
   index.md
-
-docs/                         # optional additional content root
-  index.md
-  how-it-works.md
-  module-contract.md
-
-recipes/                      # optional recipe root
-  text/markdown/10-...wasm
-  text/markdown/80-...wasm
-  application/warc/10-...wasm
-
-modules/                      # optional browser/module asset root
-  utf8/trim.wasm
-  application/warc/warc-check-broken-links.wasm
-
-modules/form/                 # optional form module root
-  contact.wasm
+  docs/router.md
+  _recipes/
+    text/markdown/10-markdown-basic.wasm
+    application/warc/20-check-links.wasm
+  _forms/
+    contact.wasm
+  _components/
+    interactive/side-scroller-platformer.wasm
 ```
 
-Related references:
+The site root may also be a GitHub locator such as `github:owner/repo/subdir`. GitHub content roots must resolve to one repository snapshot, and a single runtime load must read all content from that snapshot.
 
-- [Content Layout](/docs/content)
-- [Recipe Layout](/docs/recipes)
+## Project Directories
 
-## Content Roots: Local or GitHub
+qip reserves three exact top-level directory names:
 
-`<content_dir>` can be either:
+- `_recipes`: content and archive recipe components
+- `_forms`: form components
+- `_components`: browser-loadable QIP components
 
-- local directory path (existing behavior), for example `./site`
-- GitHub repo locator, for example `github:cool-calm/collected-press/site`
+Reserved project directories must not be routed as content. Other underscore paths, such as `_og/card.png`, are ordinary content unless a future spec reserves them.
 
-For GitHub roots, qip uses a two-step flow:
+qip must auto-discover these project directories under the site root when the matching CLI flag is omitted:
 
-1. Fetch repo HEAD SHA (git `info/refs` style endpoint).
-2. Fetch file bytes from GitHub raw CDN pinned to that SHA.
+| Role | Default directory | Override flag |
+| --- | --- | --- |
+| Recipes | `<site>/_recipes` | `--recipes <dir>` |
+| Forms | `<site>/_forms` | `--forms <dir>` |
+| Components | `<site>/_components` | `--components <dir>` |
 
-That means each runtime load is immutable once resolved: all content in that run comes from one commit SHA.
-
-Examples:
+Explicit flags must override auto-discovery. This keeps the common command short while allowing unusual layouts and shared directories:
 
 ```sh
-qip dev github:cool-calm/collected-press/site --recipes ./recipes --modules ./modules
-qip router get github:cool-calm/collected-press/site /docs/how-it-works --recipes ./recipes
-qip router warc github:cool-calm/collected-press/site --recipes ./recipes > site.warc
+qip dev ./site
+qip dev ./site --recipes ../shared-recipes
 ```
 
-## Route Behavior
+Local project directories may be real directories or symlinks. Symlinks are the preferred way to share recipes across sites without introducing a config file. Remote object stores such as S3 do not have symlinks, so shared project directories must be copied or handled by future remote-root support.
 
-Given a content file like `site/docs/module-contract.md`, qip routes:
+Nested `_recipes`, `_forms`, and `_components` directories are reserved for future path-scoped behavior. qip must not use nested project directories in this version.
 
-- pretty URL: `/docs/module-contract`
-- source URL: `/docs/module-contract.md`
+## Request Paths
 
-Common behavior:
+Request paths must be canonicalized before route lookup.
 
-- pretty URLs are where markdown recipes usually run (for HTML output)
-- source URLs intentionally remain raw source (for example raw markdown)
+- An empty path must become `/`.
+- A path without a leading slash must be treated as if it had one.
+- Dot segments must be cleaned with URL-path semantics.
+- qip currently uses no trailing slash as the canonical form. `/docs/` must redirect to `/docs`.
+- A canonicalization redirect must preserve the query string.
 
-## Redirect Files (`.uri` / `.uris`)
+The router should not allow two different content files to claim the same request path. If route construction finds a duplicate path for different files, it must fail before serving.
 
-We prefer file-based redirects because they are explicit, versioned, and easy to review.
+## File Paths
 
-If a content file ends with `.uri` or `.uris`, qip serves that route as `302 Found` using the first redirect target from a `text/uri-list` payload.
+Content files are discovered by walking the site root.
 
-- comments (lines starting with `#`) are ignored
-- blank lines are ignored
-- first non-comment line wins
-- target can be an absolute URL or a path
+- Regular files must be routable.
+- Directories must be walked recursively.
+- Symlinks may point at regular files or directories.
+- Symlink cycles must not recurse forever.
+- Top-level qip-reserved project directories must be skipped.
+- Content paths must be valid UTF-8.
+- Content paths must not start with `/`.
+- Content paths must not contain backslashes.
+- Content paths must already be clean relative paths; `.` and `..` forms must be rejected.
+
+These rules keep file paths portable and make route generation reviewable.
+
+## File To Route Mapping
+
+Every content file must receive a source route:
+
+```txt
+site root:    site/
+file:         docs/router.md
+source route: /docs/router.md
+```
+
+Some file types also receive a pretty route:
+
+| File extension | Pretty route rule |
+| --- | --- |
+| `.html` | remove the extension |
+| `.md` | remove the extension |
+| `.markdown` | remove the extension |
+| `.uri` | remove the extension |
+| `.uris` | remove the extension |
 
 Example:
 
 ```txt
-# site/how-it-works.uri
+site/docs/router.md -> /docs/router.md and /docs/router
+```
+
+Other file types should not receive a pretty route. They are served only at their source route.
+
+## Parent Pages
+
+An `index` file defines the page for its parent path. This is how qip represents directory-level pages without inventing a separate directory object.
+
+Examples:
+
+```txt
+site/index.md          -> /index.md and /
+site/docs/index.md     -> /docs/index.md and /docs
+site/docs/reference.md -> /docs/reference.md and /docs/reference
+```
+
+The canonical parent path must not end in `/` under the current trailing-slash policy. A request for `/docs/` must redirect to `/docs`.
+
+Parent pages also matter for WARC-level context. When an application-WARC recipe transforms `/docs/reference`, qip may provide context records for `/` and `/docs` if those paths resolve to HTML pages. Recipe authors should treat those records as context, not as the target response.
+
+## Source MIME
+
+The router determines source MIME from the file extension.
+
+- `.md` and `.markdown` must be `text/markdown`.
+- `.uri` and `.uris` must be `text/uri-list`.
+- Other extensions should use the platform MIME table.
+- Unknown extensions must fall back to `application/octet-stream`.
+- MIME parameters from platform lookup should be stripped for route matching.
+
+The source MIME selects content recipes. The response MIME may differ after transformation.
+
+## Redirect Files
+
+Files with source MIME `text/uri-list` are redirects.
+
+The router must read the first non-empty, non-comment line as the redirect target.
+
+- A leading UTF-8 byte-order mark on the first line must be ignored.
+- Blank lines must be ignored.
+- Lines starting with `#` must be ignored.
+- The first remaining line must become the `Location` header.
+- The response status must be `302 Found`.
+- Content recipes must not run for redirect files.
+
+Example:
+
+```txt
+# site/start.uri
 /docs/how-it-works
 ```
 
-This gives you:
+This creates `/start.uri` and `/start`; both resolve to a redirect with `Location: /docs/how-it-works`.
 
-- source path: `/how-it-works.uri`
-- pretty path: `/how-it-works`
-- response: `302` with `Location: /docs/how-it-works`
+## Content Recipes
 
-## What Runs When
+Content recipes transform individual content responses. They are discovered under:
 
-### `qip dev <content_dir> ...`
-
-Per request:
-
-1. Resolve request path to a content file or module asset.
-2. For content pages, run matching content recipes (for example `recipes/text/markdown/*`).
-3. If response is HTML, inject runtime support for `<qip-form>`, `<qip-preview>`, and `<qip-play>`.
-4. If `recipes/application/warc/*` exists, apply that WARC recipe layer to this page response too.
-5. Serve the final response.
-
-Result: preview in dev matches route-archive behavior for WARC-level transforms.
-
-### `qip router get <content_dir> <path> ...`
-
-Runs the same page pipeline as dev for one path and prints the response body.
-
-### `qip router head <content_dir> <path> ...`
-
-Runs the same route pipeline but returns headers only.
-
-### `qip router list <content_dir> ...`
-
-Lists all routed paths and content types.
-
-### `qip router warc <content_dir> ...`
-
-1. Enumerate all routed paths.
-2. Resolve each path to a response.
-3. Build one WARC archive from those responses.
-4. If `recipes/application/warc/*` exists, run it over the archive.
-5. Emit final WARC bytes.
-
-If `--view-source` is used, source artifacts are added as extra WARC records.
-
-## Recipe Layers
-
-There are two independent recipe layers:
-
-- content layer: `recipes/<mime-type>/...`
-- examples: `recipes/text/markdown/*`, `recipes/text/html/*`
-- runs when rendering each page
-
-- archive layer: `recipes/application/warc/...`
-- runs on WARC output
-- also applied in dev per page so behavior stays consistent
-
-## Practical Build Pattern
-
-Static export usually looks like:
-
-1. `qip router warc ./site --recipes recipes --forms modules/form --modules modules`
-2. pipe WARC into archive-processing modules (for checks or export)
-
-Example pipeline:
-
-```sh
-qip router warc ./site --recipes recipes --forms modules/form --modules modules \
-  | qip run modules/application/warc/warc-check-broken-links.wasm \
-           modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm
+```txt
+site/_recipes/<type>/<subtype>/*.wasm
 ```
 
-In this model:
+For example, `site/_recipes/text/markdown/*.wasm` applies to content whose source MIME is `text/markdown`. If `--recipes <dir>` is provided, qip must use `<dir>/<type>/<subtype>/*.wasm` instead.
 
-- page transforms belong in `recipes/text/...`
-- site-wide WARC transforms belong in `recipes/application/warc/...`
+Recipe files must have a numeric order prefix, such as `11-autolink-https.wasm`. qip must order recipe steps by numeric prefix, then by filename. Duplicate numeric prefixes within one MIME recipe chain must fail route loading. A leading `-` disables a recipe file.
+
+Content recipe selection must be based on source MIME, not on the request path extension or output MIME.
+
+Markdown has one special rule:
+
+- Markdown pretty routes such as `/docs/router` should run `text/markdown` recipes.
+- Markdown source routes such as `/docs/router.md` must not run `text/markdown` recipes.
+
+This preserves a raw source URL while still giving authors a clean page URL.
+
+For other MIME types, if a recipe chain exists for the source MIME, the chain should run for the routed content response.
+
+When a recipe chain runs for `text/markdown`, qip currently treats the response as `text/html; charset=utf-8`. Recipe modules should still declare their output content type when a different result is intended.
+
+Nested recipe roots are not active in this version. A file at `site/docs/_recipes/text/markdown/40-docs-sidebar.wasm` must not affect `/docs/router`. If path-scoped recipes are added later, they should merge by numeric prefix and should keep duplicate-prefix failures.
+
+## Runtime Injection
+
+If the final content response is HTML, qip must inject client runtime support needed by embedded qip tags:
+
+- `<qip-form>` uses form components from `--forms`
+- `<qip-preview>` uses the preview runtime
+- `<qip-play>` uses interactive QIP components through the play runtime
+
+If a page contains `<qip-form>` tags and no form components are loaded, qip must fail the response instead of silently serving a broken form.
+
+Form components are discovered from `site/_forms` unless `--forms <dir>` is provided. They are not ordinary routes. They are addressed by form name inside HTML and are included in response identity through their digests.
+
+## Component Assets
+
+`.wasm` files under `site/_components`, or under `--components <dir>` when provided, must be served as browser-loadable QIP component assets at:
+
+```txt
+/components/<relative-path>.wasm
+```
+
+Component asset paths must be valid UTF-8, clean relative paths, and must not start with `/`. Non-`.wasm` files in the component root should be ignored.
+
+Component assets must use `application/wasm`. They are not content pages and should not run content recipes.
+
+## Application WARC Recipes
+
+`site/_recipes/application/warc/*.wasm` is the archive-level recipe layer. It works on WARC records, not raw page bodies. If `--recipes <dir>` is provided, qip must use `<dir>/application/warc/*.wasm` instead.
+
+In `qip router warc`, qip must:
+
+1. Enumerate routed content paths and component asset paths.
+2. Resolve each path to an HTTP response.
+3. Build a WARC response record for each response.
+4. Run the `application/warc` recipe chain over the whole archive, if one exists.
+5. Emit the resulting WARC bytes.
+
+In `qip dev`, `qip router get`, and `qip router head`, qip should apply the same WARC recipe layer to the single requested response so local preview matches archive export.
+
+For single-response WARC transformation, qip may include context records before the target record:
+
+- `/`
+- each parent page path of the target, such as `/docs` for `/docs/router`
+
+Only context paths that resolve to `200 OK` HTML responses should be included. The target response must be selected from the transformed WARC by exact target URI.
+
+## Route Listing
+
+`qip router list` must list all routable content paths and component asset paths known before WARC recipe synthesis.
+
+Each listed route must include:
+
+- method: `GET` and `HEAD`
+- request path
+- media type without parameters
+
+`qip router list` should not list routes synthesized only by an `application/warc` recipe, because those routes are created after the content router has already enumerated the base site.
+
+## Commands
+
+`qip dev <content_dir> ...` must serve the same route resolution pipeline used by router subcommands. In dev mode, it should reload recipe chains on recipe file changes, SIGHUP, or browser hard reload.
+
+`qip router get <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write the response body.
+
+`qip router head <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write headers/log output without a response body.
+
+`qip router list <content_dir> ...` must print the base route table.
+
+`qip router warc <content_dir> ...` must emit a WARC archive. If `--view-source` is set, qip must also add recipe source and view-source records so downstream tools can inspect the transformation inputs.
+
+The project directory flags are overrides, not requirements:
+
+```sh
+qip dev ./site
+qip router get ./site /docs/router
+qip router warc ./site --view-source
+qip router warc ./site --recipes ../shared-recipes --components ../shared-components
+```
+
+## When Not To Use The Router
+
+Do not use the router for ad hoc byte processing. Use `qip run` when you have a direct input-to-output component pipeline and no request paths.
+
+Do not use content recipes for site-wide checks such as broken-link validation. Use `application/warc` recipes because they can see the routed archive as a whole.

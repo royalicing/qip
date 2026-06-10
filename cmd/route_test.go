@@ -15,9 +15,9 @@ import (
 )
 
 func TestNormalizeRouteWarcArgs(t *testing.T) {
-	in := []string{"docs/", "--recipes", "recipes/", "--modules", "modules/", "--host", "example.com", "-o", "out.warc"}
+	in := []string{"docs/", "--recipes", "recipes/", "--components", "components/", "--host", "example.com", "-o", "out.warc"}
 	got := normalizeRouteWarcArgs(in)
-	want := []string{"--recipes", "recipes/", "--modules", "modules/", "--host", "example.com", "-o", "out.warc", "docs/"}
+	want := []string{"--recipes", "recipes/", "--components", "components/", "--host", "example.com", "-o", "out.warc", "docs/"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("args=%v, want %v", got, want)
 	}
@@ -30,14 +30,14 @@ func TestNormalizeRouteWarcArgs(t *testing.T) {
 	}
 }
 
-func TestRunRouteWARCPassesModulesRoot(t *testing.T) {
-	var gotModulesRoot string
-	err := RunRoute([]string{"warc", "--modules", "modules", "docs"}, RouteConfig{
+func TestRunRouteWARCPassesComponentsRoot(t *testing.T) {
+	var gotComponentsRoot string
+	err := RunRoute([]string{"warc", "--components", "components", "docs"}, RouteConfig{
 		UsageRoute:     "usage route",
 		UsageRouteWarc: "usage route warc",
 		DefaultMode:    "dev",
 		ListWARCPaths: func(ctx context.Context, request RouteWARCRequest) ([]string, error) {
-			gotModulesRoot = request.ModulesRoot
+			gotComponentsRoot = request.ComponentsRoot
 			return []string{"/a"}, nil
 		},
 		ResolveWARC: func(ctx context.Context, request RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
@@ -51,8 +51,8 @@ func TestRunRouteWARCPassesModulesRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunRoute: %v", err)
 	}
-	if gotModulesRoot != "modules" {
-		t.Fatalf("modules root=%q, want modules", gotModulesRoot)
+	if gotComponentsRoot != "components" {
+		t.Fatalf("components root=%q, want components", gotComponentsRoot)
 	}
 }
 
@@ -104,13 +104,14 @@ func TestRunRouteWARCArchivesAllPaths(t *testing.T) {
 func TestRunRouteWARCTransformsArchive(t *testing.T) {
 	var out bytes.Buffer
 	var transformedInput []byte
+	var transformedRouteCount int
 	err := RunRoute([]string{"warc", "docs"}, RouteConfig{
 		UsageRoute:     "usage route",
 		UsageRouteWarc: "usage route warc",
 		DefaultMode:    "dev",
 		Stdout:         &out,
 		ListWARCPaths: func(ctx context.Context, request RouteWARCRequest) ([]string, error) {
-			return []string{"/a"}, nil
+			return []string{"/a", "/b", "/c"}, nil
 		},
 		ResolveWARC: func(ctx context.Context, request RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
 			return qinternal.InProcessHTTPResponse{
@@ -121,6 +122,7 @@ func TestRunRouteWARCTransformsArchive(t *testing.T) {
 		},
 		TransformWARC: func(ctx context.Context, request RouteWARCRequest, warc []byte) ([]byte, error) {
 			transformedInput = append([]byte(nil), warc...)
+			transformedRouteCount = request.RouteCount
 			return []byte("transformed"), nil
 		},
 	})
@@ -129,6 +131,9 @@ func TestRunRouteWARCTransformsArchive(t *testing.T) {
 	}
 	if len(transformedInput) == 0 || !bytes.Contains(transformedInput, []byte("WARC/1.0\r\n")) {
 		t.Fatalf("expected original WARC archive bytes to be passed to TransformWARC")
+	}
+	if transformedRouteCount != 3 {
+		t.Fatalf("route count=%d, want 3", transformedRouteCount)
 	}
 	if out.String() != "transformed" {
 		t.Fatalf("stdout=%q, want transformed", out.String())
@@ -258,22 +263,22 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(recipesRoot, ".DS_Store"), []byte("noise"), 0o644); err != nil {
 		t.Fatalf("write hidden file: %v", err)
 	}
-	modulesRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(modulesRoot, "utf8"), 0o755); err != nil {
-		t.Fatalf("mkdir modules: %v", err)
+	componentsRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(componentsRoot, "utf8"), 0o755); err != nil {
+		t.Fatalf("mkdir components: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(modulesRoot, "utf8", "trim.zig"), []byte("const std = @import(\"std\");"), 0o644); err != nil {
-		t.Fatalf("write module source zig: %v", err)
+	if err := os.WriteFile(filepath.Join(componentsRoot, "utf8", "trim.zig"), []byte("const std = @import(\"std\");"), 0o644); err != nil {
+		t.Fatalf("write component source zig: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(modulesRoot, "utf8", "styles.css"), []byte(".x{color:red}"), 0o644); err != nil {
-		t.Fatalf("write module source css: %v", err)
+	if err := os.WriteFile(filepath.Join(componentsRoot, "utf8", "styles.css"), []byte(".x{color:red}"), 0o644); err != nil {
+		t.Fatalf("write component source css: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(modulesRoot, ".DS_Store"), []byte("noise"), 0o644); err != nil {
-		t.Fatalf("write hidden module file: %v", err)
+	if err := os.WriteFile(filepath.Join(componentsRoot, ".DS_Store"), []byte("noise"), 0o644); err != nil {
+		t.Fatalf("write hidden component file: %v", err)
 	}
 
 	var out bytes.Buffer
-	err := RunRoute([]string{"warc", "--view-source", "--recipes", recipesRoot, "--modules", modulesRoot, "docs"}, RouteConfig{
+	err := RunRoute([]string{"warc", "--view-source", "--recipes", recipesRoot, "--components", componentsRoot, "docs"}, RouteConfig{
 		UsageRoute:     "usage route",
 		UsageRouteWarc: "usage route warc",
 		DefaultMode:    "dev",
@@ -282,7 +287,7 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 			if !request.ViewSource {
 				t.Fatalf("expected ViewSource to be true")
 			}
-			return []string{"/a", "/guide", "/guide.md", "/modules/utf8/trim.wasm"}, nil
+			return []string{"/a", "/guide", "/guide.md", "/components/utf8/trim.wasm"}, nil
 		},
 		ResolveWARC: func(ctx context.Context, request RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
 			return qinternal.InProcessHTTPResponse{
@@ -318,14 +323,14 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 	if !strings.Contains(got, "<h2>Content</h2>") {
 		t.Fatalf("missing content heading in view-source index")
 	}
-	if !strings.Contains(got, "<h2>Modules</h2>") {
-		t.Fatalf("missing modules heading in view-source index")
+	if !strings.Contains(got, "<h2>Components</h2>") {
+		t.Fatalf("missing components heading in view-source index")
 	}
-	if gotCount := strings.Count(got, "<h2>Modules</h2>"); gotCount != 1 {
-		t.Fatalf("modules heading count=%d, want 1", gotCount)
+	if gotCount := strings.Count(got, "<h2>Components</h2>"); gotCount != 1 {
+		t.Fatalf("components heading count=%d, want 1", gotCount)
 	}
-	if strings.Contains(got, "<h2>Module Sources</h2>") {
-		t.Fatalf("unexpected module sources heading in view-source index")
+	if strings.Contains(got, "<h2>Component Sources</h2>") {
+		t.Fatalf("unexpected component sources heading in view-source index")
 	}
 	if !strings.Contains(got, "href=\"/view-source/recipes/text/markdown/10-markdown-basic.zig\"") {
 		t.Fatalf("missing zig link in view-source index")
@@ -333,20 +338,20 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 	if !strings.Contains(got, "href=\"/guide.md\"") {
 		t.Fatalf("missing markdown content link in view-source index")
 	}
-	if !strings.Contains(got, "href=\"/modules/utf8/trim.wasm\"") {
-		t.Fatalf("missing module link in view-source index")
+	if !strings.Contains(got, "href=\"/components/utf8/trim.wasm\"") {
+		t.Fatalf("missing component link in view-source index")
 	}
-	if !strings.Contains(got, "href=\"/view-source/modules/utf8/trim.zig\"") {
-		t.Fatalf("missing module zig source link in view-source index")
+	if !strings.Contains(got, "href=\"/view-source/components/utf8/trim.zig\"") {
+		t.Fatalf("missing component zig source link in view-source index")
 	}
-	if !strings.Contains(got, "href=\"/view-source/modules/utf8/styles.css\"") {
-		t.Fatalf("missing module css source link in view-source index")
+	if !strings.Contains(got, "href=\"/view-source/components/utf8/styles.css\"") {
+		t.Fatalf("missing component css source link in view-source index")
 	}
-	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/modules/utf8/trim.zig\r\n") {
-		t.Fatalf("missing module zig source record")
+	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/components/utf8/trim.zig\r\n") {
+		t.Fatalf("missing component zig source record")
 	}
-	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/modules/utf8/styles.css\r\n") {
-		t.Fatalf("missing module css source record")
+	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/components/utf8/styles.css\r\n") {
+		t.Fatalf("missing component css source record")
 	}
 	if !strings.Contains(got, "Content-Type: application/wasm\r\n") {
 		t.Fatalf("missing wasm content-type in archived response payload")
@@ -354,8 +359,8 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 	if strings.Contains(got, "/view-source/recipes/.DS_Store") {
 		t.Fatalf("hidden files should not be included in view-source output")
 	}
-	if strings.Contains(got, "/view-source/modules/.DS_Store") {
-		t.Fatalf("hidden module source files should not be included in view-source output")
+	if strings.Contains(got, "/view-source/components/.DS_Store") {
+		t.Fatalf("hidden component source files should not be included in view-source output")
 	}
 }
 

@@ -85,7 +85,7 @@ export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_bytes_cap() u32 {
+export fn output_rgba8_srgb_bytes() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
@@ -161,7 +161,8 @@ export fn tick(now_ms: i64) i64 {
     return last_drop_ms + DROP_MS;
 }
 
-export fn render_output() i32 {
+export fn render(input_size: i32) i32 {
+    _ = input_size;
     drawFrame();
     needs_redraw = false;
     return @as(i32, @intCast(OUTPUT_BYTES));

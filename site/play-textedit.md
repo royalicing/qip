@@ -26,5 +26,5 @@ Notes:
 - Plain text only (no style attributes).
 
 <qip-play>
-  <source src="/modules/interactive/textedit.wasm" type="application/wasm" />
+  <source src="/components/interactive/textedit.wasm" type="application/wasm" />
 </qip-play>

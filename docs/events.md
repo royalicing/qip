@@ -1,6 +1,6 @@
 # Events
 
-This page documents the event codes used by qip interactive modules.
+This page documents the event codes used by QIP interactive components.
 
 The ABI follows a small subset inspired by the Remote Framebuffer Protocol ([RFC 6143](https://datatracker.ietf.org/doc/html/rfc6143)):
 

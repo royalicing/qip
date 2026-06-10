@@ -10,5 +10,5 @@ Controls:
 - `R`: restart
 
 <qip-play>
-  <source src="/modules/interactive/tetris.wasm" type="application/wasm" />
+  <source src="/components/interactive/tetris.wasm" type="application/wasm" />
 </qip-play>

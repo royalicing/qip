@@ -26,5 +26,5 @@ Bezier notes:
 - Dragging one handle mirrors the opposite handle around the anchor.
 
 <qip-play>
-  <source src="/modules/interactive/vector-editor.wasm" type="application/wasm" />
+  <source src="/components/interactive/vector-editor.wasm" type="application/wasm" />
 </qip-play>

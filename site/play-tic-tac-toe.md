@@ -8,5 +8,5 @@ Click a square to place a symbol.
 - Press `Enter`, `Space`, or `R` to reset.
 
 <qip-play>
-  <source src="/modules/interactive/tic-tac-toe-sun-moon.wasm" type="application/wasm"></source>
+  <source src="/components/interactive/tic-tac-toe-sun-moon.wasm" type="application/wasm"></source>
 </qip-play>

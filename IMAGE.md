@@ -5,18 +5,18 @@ This document describes the RGBA tiling protocol used by `qip image` (Go) and `i
 ## Overview
 
 - Filters operate on **tiles** of size **64x64** pixels.
-- Pixel data is provided as **RGBA float32** values in `[0, 1]`.
+- Pixel data is provided as **RGBA32Float** values in `[0, 1]`.
 - Filters run **in-place**: they read from the input tile buffer and write results back to it.
 - The host may optionally provide a **halo** (extra border pixels) when a filter exports a halo function.
 
 ## Required Exports
 
-Every RGBA filter module must export:
+Every RGBA32Float filter module must export:
 
 - `memory` (linear memory)
 - `input_ptr` (global or function) -> byte offset into `memory`
 - `input_bytes_cap` (global or function) -> capacity in bytes of the input buffer
-- `tile_rgba_f32_64x64(x: f32, y: f32)` (function)
+- `tile_rgba32float_64x64(x: f32, y: f32)` (function)
 
 ### Optional Exports
 
@@ -28,7 +28,7 @@ Every RGBA filter module must export:
 
 ## Tile Buffer Layout
 
-The tile buffer is a **row-major** array of float32 RGBA values:
+The tile buffer is a **row-major** array of RGBA32Float values:
 
 ```
 index = ((row * tileSpan) + col) * 4
@@ -45,7 +45,7 @@ A = buffer[index + 3]
 
 ## Coordinates and Halo
 
-- The host calls `tile_rgba_f32_64x64(x, y)` once per tile.
+- The host calls `tile_rgba32float_64x64(x, y)` once per tile.
 - `x` and `y` are the **top-left pixel coordinates** of the **64x64 core** tile in the original image.
 - If halo is used, the host passes **`x - halo`** and **`y - halo`** so that absolute pixel math remains consistent with the expanded buffer.
 

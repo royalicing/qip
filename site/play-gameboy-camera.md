@@ -17,5 +17,5 @@ Controls:
 - `C`: cycle stamp tool (in Stamp mode)
 
 <qip-play>
-  <source src="/modules/interactive/gameboy-camera.wasm" type="application/wasm" />
+  <source src="/components/interactive/gameboy-camera.wasm" type="application/wasm" />
 </qip-play>

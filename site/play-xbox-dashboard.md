@@ -10,5 +10,5 @@ Controls:
 - Pointer hover and click are also supported
 
 <qip-play>
-  <source src="/modules/interactive/xbox-dashboard.wasm" type="application/wasm" />
+  <source src="/components/interactive/xbox-dashboard.wasm" type="application/wasm" />
 </qip-play>

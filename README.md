@@ -1,14 +1,14 @@
 # `qip`
 
-A small runtime to run composable WebAssembly modules securely in the browser, server, and native.
+A small runtime to run composable QIP components securely in the browser, server, and native.
 
-You provide modules compiled to WebAssembly that work with text, data, and images and compose them together into powerful pipelines. You can run them the browser, on the server, or natively on mobile and desktop.
+You provide QIP components compiled to WebAssembly that work with text, data, and images and compose them together into powerful pipelines. You can run them the browser, on the server, or natively on mobile and desktop.
 
-- Quarantined: modules are provided a single buffer as input and are sandboxed with zero access to the host (no fs/network/env).
-- Immutable: modules are self-contained, once you have a working module it will keep working forever.
-- Portable: modules can be composed into pipelines that run identically across platforms.
+- Quarantined: components are provided a single buffer as input and are sandboxed with zero access to the host (no fs/network/env).
+- Immutable: components are self-contained, once you have a working component it will keep working forever.
+- Portable: components can be composed into pipelines that run identically across platforms.
 
-These attributes make qip modules deterministic: the same input with the same WebAssembly module will produce the same output. You are encouraged to write small, focused modules that do one job. These constraints also make a good pairing with untrusted AI coding tools: write single-file C or Zig that is easy to review and compiles to decently fast `.wasm`.
+These attributes make QIP components deterministic: the same input with the same WebAssembly module will produce the same output. You are encouraged to write small, focused components that do one job. These constraints also make a good pairing with untrusted AI coding tools: write single-file C or Zig that is easy to review and compiles to decently fast `.wasm`.
 
 ## Install
 
@@ -30,7 +30,7 @@ This contract (capacity, output, and optional content type metadata) is document
 
 ## Usage
 
-You can pipe the results of other cli tools to stdin or pass files in via `-i`. You can also chain multiple qip wasm modules together.
+You can pipe the results of other CLI tools to stdin or pass files in via `-i`. You can also chain multiple QIP components together.
 
 ```bash
 # Normalize phone number
@@ -67,13 +67,13 @@ echo "x" | qip run modules/utf8/infinite-loop.wasm
 # Error: Wasm module exceeded the execution time limit (100ms)
 ```
 
-## Guide to making modules
+## Guide to making QIP components
 
-There are a few recommended languages for writing qip modules: Zig, C, or raw WebAssembly text format.
+There are a few recommended languages for writing QIP components: Zig, C, or raw WebAssembly text format.
 
 ### Zig
 
-Here we’ll write a qip module for an E.164 canonicalizer that takes a phone number and converts it into a canonical international form.
+Here we’ll write a QIP component for an E.164 canonicalizer that takes a phone number and converts it into a canonical international form.
 
 - `+1 (212) 555-0100` -> `+12125550100`
 - `  1212-555-0100  ` -> `+12125550100`
@@ -293,7 +293,7 @@ You can also write raw WebAssembly text format which compiles directly to `.wasm
 You can create static websites with `qip`:
 
 1. Put website source content in a directory (Markdown, HTML, images, CSS, etc.).
-2. Add recipe qip modules (for example `recipes/text/markdown/*.wasm`) to transform source files by MIME type.
+2. Add recipe QIP components (for example `_recipes/text/markdown/*.wasm`) to transform source files by MIME type.
 3. Preview locally with `qip dev`.
 4. Export the fully routed site and convert it to static files with `qip router warc`.
 
@@ -304,7 +304,7 @@ docs/
   index.md
   about.md
   images/logo.png
-recipes/
+docs/_recipes/
   text/markdown/10-markdown-basic.wasm
   text/markdown/20-html-page-wrap.wasm
 ```
@@ -312,7 +312,7 @@ recipes/
 Preview in dev mode:
 
 ```bash
-qip dev ./docs --recipes ./recipes -p 4000
+qip dev ./docs -p 4000
 open http://localhost:4000
 ```
 
@@ -320,17 +320,17 @@ Resolve a single path through the same router pipeline:
 
 ```bash
 # GET /about
-qip router get ./docs /about --recipes ./recipes
+qip router get ./docs /about
 # HEAD /about
-qip router head ./docs /about --recipes ./recipes
+qip router head ./docs /about
 # List all routes
-qip router list ./docs --recipes ./recipes
+qip router list ./docs
 ```
 
 Build static tar from the site:
 
 ```bash
-qip router warc ./docs --recipes ./recipes \
+qip router warc ./docs \
   | qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
   > site.tar
 
@@ -343,15 +343,15 @@ With the `warc-to-static-tar-no-trailing-slash` module, route paths like `/about
 
 ```bash
 # Serve a docs directory as a website.
-# If recipes/text/markdown/*.wasm exists, markdown files are transformed before serving.
-qip dev ./docs --recipes ./recipes -p 4000
+# If _recipes/text/markdown/*.wasm exists, markdown files are transformed before serving.
+qip dev ./docs -p 4000
 
 # Enable client-side <qip-form> tags.
-# <qip-form name="form-email-message"></qip-form> resolves to ./modules/form/form-email-message.wasm.
-qip dev ./docs --recipes ./recipes --forms ./modules/form -p 4000
+# <qip-form name="form-email-message"></qip-form> resolves to ./docs/_forms/form-email-message.wasm.
+qip dev ./docs -p 4000
 
-# Serve browser-loadable wasm modules under /modules/*
-qip dev ./docs --recipes ./recipes --modules ./modules -p 4000
+# Serve browser-loadable QIP components under /components/*
+qip dev ./docs -p 4000
 
 # Pages containing <qip-preview> automatically get a client runtime that executes
 # <source type="application/wasm"> modules in order and renders into [name="output"].
@@ -359,7 +359,7 @@ qip dev ./docs --recipes ./recipes --modules ./modules -p 4000
 # Serve static assets with no recipe transforms
 qip dev ./public -p 4001
 
-# Reload routes, recipes, forms, and modules without stopping the server
+# Reload routes, recipes, forms, and components without stopping the server
 kill -HUP <qip-dev-pid>
 ```
 
@@ -379,9 +379,9 @@ printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?w
 
 ## Documentation
 
-- [Module Contract](docs/module-contract.md)
-- [Module Patterns (including error semantics)](docs/module-patterns.md)
-- [Module Compliance](docs/comply.md)
+- [QIP Component Contract](docs/module-contract.md)
+- [QIP Component Patterns (including error semantics)](docs/module-patterns.md)
+- [QIP Component Compliance](docs/comply.md)
 - [Security Model](docs/security-model.md)
 
 ----
@@ -442,36 +442,41 @@ head -c 262144 /dev/urandom > /tmp/qip-bench-random-256k.bin
 ./tools/compare-deflate.py --runs 5 --warmup 1 /tmp/qip-bench-zeros-256k.bin /tmp/qip-bench-random-256k.bin
 ```
 
-Benchmark the performance of one or more modules. If you compare multiple modules then it’ll check each output is exactly the same. This is great for porting say from C to Zig or asking your AI agent to implement optimizations and verifying that it works exactly the same as before.
+Benchmark the performance of one or more QIP components. If you compare multiple components then it’ll check each output is exactly the same. This is useful for porting from C to Zig, or asking your AI agent to implement optimizations and verifying that the result still behaves the same.
 
 ```bash
-# Benchmark module for two seconds
+# Benchmark one component for two seconds
 echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm
 # bench: outputs match
 
-# Benchmark two modules against each other and verify identical output
+# Benchmark two components against each other and verify identical output
 echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm
 # bench: outputs match
 
-# Benchmark three modules against each other and verify identical output
+# Benchmark three components against each other and verify identical output
 echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm modules/utf8/hello-zig.wasm
 # bench: outputs match
 ```
 
 ## TODO
 
+- [ ] Add tracing by modifying modules:
+  - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
+  - [ ] Trace any internal calls by adding calls to an imported function in each iteration. e.g. `trace_call($func_n, $call_n)`
+  - [ ] Trace any branches by adding calls to an imported function in each iteration. e.g. `trace_if($func_n, $if_n)` and `trace_block($func_n, $block_n)`
 - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
 - [ ] Add spreadsheet example.
 - [ ] Add bar charts.
 - [ ] Add pixel editor.
 - [ ] Add Cover Flow example.
 - [ ] Add Figma vector networks example.
-- [ ] Add timeline editor a la After Effects.
+- [ ] Add localized example in multiple languages.
+- [ ] Add a split interactive pipeline mode with two collaborative modules: state/tick module writes an internal scene buffer, renderer module consumes it via `render(input_size)` with a simple memcpy handoff between module instances, enabling presentation variants like language/locale, dark or light mode, font size, DPI scaling, and accessibility-focused rendering.
 - [ ] Change render contract to extend existing contract:
-  - [ ] `export fn render(input_size: i32) i32` instead of `export fn render_output() i32`
-  - [ ] No need for `export fn output_bytes_cap() u32` instead have `export fn output_rgba8888_stride() u32`
+  - [x] Interactive modules use `export fn render(input_size: i32) i32`
+  - [x] Interactive modules use `export fn output_rgba8_srgb_bytes() u32` as the primary output-byte export.
 - [ ] Have separate `pointermove` event handler so we can skip expensive `pointermove` listeners and rendering if not needed??
-- [ ] Merge `<qip-form>` with other module elements. Can we render using `<qip-play>` to a `<form>` instead of a `<canvas>`. What about html-in-canvas, perhaps we might want a model that renders to both?
+- [ ] Retire the web-shaped `Form` framing in favor of a future cross-host `Prompt` contract: sequential prompts with recoverable failure, `submit(input_size, now_ms)` for state changes, and `render(0)` for the current semantic projection/output.
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.

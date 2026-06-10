@@ -156,7 +156,7 @@ func (e Encoding) String() string {
 	case EncodingBMP:
 		return "bmp"
 	case EncodingRGBAF32:
-		return "rgba_f32"
+		return "rgba32float"
 	default:
 		return fmt.Sprintf("unknown(%d)", int(e))
 	}

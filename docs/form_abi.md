@@ -1,6 +1,6 @@
 # Form ABI
 
-This document defines a minimal interactive form ABI for modules that can run in both CLI and web hosts.
+This document defines a minimal interactive form ABI for QIP components that can run in both CLI and web hosts.
 
 Scope:
 
@@ -37,7 +37,7 @@ Host must ensure:
 
 ## Prompt/Completion Semantics
 
-For the current prompt, module provides:
+For the current prompt, the component provides:
 
 - `input_key` (stable field key)
 - `input_label` (human-facing label)

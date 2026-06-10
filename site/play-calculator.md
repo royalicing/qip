@@ -1,6 +1,6 @@
 # Calculator
 
-A compact four-function calculator built as an interactive WebAssembly module.
+A compact four-function calculator built as an interactive QIP component.
 
 Controls:
 
@@ -11,5 +11,5 @@ Controls:
 - `C`: clear
 
 <qip-play>
-  <source src="/modules/interactive/calculator.wasm" type="application/wasm" />
+  <source src="/components/interactive/calculator.wasm" type="application/wasm" />
 </qip-play>

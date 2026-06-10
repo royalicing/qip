@@ -4,21 +4,21 @@ This document describes the current security boundaries of `qip` as implemented 
 
 ## Threat Model
 
-`qip` is designed to run untrusted WebAssembly modules with a narrow host interface.
+`qip` is designed to run untrusted QIP components with a narrow host interface.
 
 Primary concern:
 
-- Untrusted module bytes (local or remote) may be malicious or buggy.
+- Untrusted component bytes (local or remote) may be malicious or buggy.
 
 ## Isolation Boundary
 
-Modules execute inside `wazero` and interact with the host only through exported function calls and linear memory.
+QIP components execute inside `wazero` and interact with the host only through exported function calls and linear memory.
 
 Current host behavior:
 
-- `qip` does not provide WASI to modules.
+- `qip` does not provide WASI to components.
 - `qip` does not register custom host functions for module imports.
-- Modules that depend on unavailable imports fail instantiation.
+- Components that depend on unavailable imports fail instantiation.
 
 Practical effect:
 
@@ -29,7 +29,7 @@ Practical effect:
 The `qip` process itself can still perform host I/O:
 
 - Read input files via `-i` and module files from disk.
-- Fetch module bytes from `https://...` URLs.
+- Fetch component bytes from `https://...` URLs.
 - Write output to stdout (`run`) or output files (`image`).
 - Serve localhost HTTP in `qip dev` (`127.0.0.1:<port>`).
 

@@ -11,5 +11,5 @@ Controls:
 - Pointer hover and click are also supported
 
 <qip-play>
-  <source src="/modules/interactive/ps2-menu.wasm" type="application/wasm" />
+  <source src="/components/interactive/ps2-menu.wasm" type="application/wasm" />
 </qip-play>

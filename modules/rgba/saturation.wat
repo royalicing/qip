@@ -27,7 +27,7 @@
           (f32.mul (f32.sub (local.get $v) (local.get $luma)) (local.get $f)))))
   )
 
-  (func (export "tile_rgba_f32_64x64") (param $x f32) (param $y f32)
+  (func (export "tile_rgba32float_64x64") (param $x f32) (param $y f32)
     (local $p i32)
     (local $end i32)
     (local $r f32)

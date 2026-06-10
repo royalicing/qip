@@ -1,20 +1,20 @@
 # How QIP Works
 
-QIP is a small host runtime that executes WebAssembly modules with explicit memory contracts.
+QIP is a small host runtime that executes QIP components with explicit memory contracts.
 
 The mental model is simple:
 
 1. Host reads bytes
-2. Host writes bytes into module memory
-3. Module runs
+2. Host writes bytes into component memory
+3. Component runs
 4. Host reads output bytes
-5. Optional: feed output to the next module
+5. Optional: feed output to the next component
 
 That is the core loop for both CLI pipelines and web preview workflows.
 
-## 1. Module Contracts
+## 1. QIP Component Contracts
 
-A text/binary module exports a small ABI:
+A text/binary QIP component exports a small ABI:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
@@ -24,20 +24,20 @@ A text/binary module exports a small ABI:
 
 The host validates capacities and boundaries before writing/reading memory.
 
-This keeps modules interchangeable and predictable.
+This keeps QIP components interchangeable and predictable.
 
 ## 2. Runtime Execution
 
 When you run:
 
 ```bash
-qip render module-a.wasm module-b.wasm
+qip run component-a.wasm component-b.wasm
 ```
 
 `qip`:
 
-- compiles the modules
-- instantiates each module for execution
+- compiles the components
+- instantiates each component for execution
 - passes output of stage N as input to stage N+1
 - preserves deterministic stage order
 
@@ -48,17 +48,17 @@ No hidden dependency graph, no plugin magic.
 When you run:
 
 ```bash
-qip dev ./content --recipes ./recipes
+qip dev ./site
 ```
 
-`qip` builds in-memory state from two trees:
+`qip` builds in-memory state from the site tree:
 
 - content files (source documents/assets)
-- recipe modules grouped by source MIME
+- reserved project directories such as `_recipes`, `_forms`, and `_components`
 
 Recipe discovery uses:
 
-- `recipes/<type>/<subtype>/NN-name.wasm`
+- `_recipes/<type>/<subtype>/NN-name.wasm`
 - optional disabled form: `-NN-name.wasm`
 
 Where `NN` is `00..99` and lower runs first.
@@ -101,4 +101,4 @@ The architecture optimizes for:
 - reproducible builds and serving
 - operational safety under change
 
-Instead of adding framework complexity, `qip` keeps the host narrow and pushes domain logic into replaceable WASM modules.
+Instead of adding framework complexity, `qip` keeps the host narrow and pushes domain logic into replaceable QIP components.

@@ -211,13 +211,17 @@ class QIPPlayElement extends HTMLElement {
     this._canvas = null;
     this._ctx = null;
     this._imageData = null;
+    this._stats = null;
 
     this._outputPtr = 0;
-    this._outputCap = 0;
+    this._outputBytes = 0;
     this._renderWidth = 0;
     this._renderHeight = 0;
     this._expectedOutputBytes = 0;
     this._logTimings = false;
+    this._lastTickMS = 0;
+    this._lastRenderMS = 0;
+    this._lastDrawMS = 0;
 
     this._boundKeyDown = null;
     this._boundKeyUp = null;
@@ -230,7 +234,9 @@ class QIPPlayElement extends HTMLElement {
     this._boundInputChange = null;
     this._inputElement = null;
     this._eventN = 0;
+    this._tickN = 0;
     this._renderN = 0;
+    this._drawN = 0;
     this._activeKeyRepeats = new Map();
     this._pendingKeyEvents = [];
     this._pendingPointerEvents = [];
@@ -306,13 +312,13 @@ class QIPPlayElement extends HTMLElement {
 
     for (const name of [
       "output_ptr",
-      "output_bytes_cap",
+      "output_rgba8_srgb_bytes",
       "render_width_px",
       "render_height_px",
       "key_event",
       "pointer_event",
       "tick",
-      "render_output",
+      "render",
     ]) {
       if (!(name in exportsObj)) {
         throw new Error("qip-play module missing export " + name);
@@ -322,13 +328,16 @@ class QIPPlayElement extends HTMLElement {
     this._exports = exportsObj;
     this._memory = exportsObj.memory;
     this._outputPtr = qipPlayReadI32Export(exportsObj, "output_ptr");
-    this._outputCap = qipPlayReadI32Export(exportsObj, "output_bytes_cap");
+    this._outputBytes = qipPlayReadI32Export(
+      exportsObj,
+      "output_rgba8_srgb_bytes",
+    );
     this._renderWidth = qipPlayReadI32Export(exportsObj, "render_width_px");
     this._renderHeight = qipPlayReadI32Export(exportsObj, "render_height_px");
 
     if (
       this._outputPtr < 0 ||
-      this._outputCap < 0 ||
+      this._outputBytes < 0 ||
       this._renderWidth <= 0 ||
       this._renderHeight <= 0
     ) {
@@ -338,9 +347,9 @@ class QIPPlayElement extends HTMLElement {
     }
 
     const expected = this._renderWidth * this._renderHeight * 4;
-    if (expected < 0 || expected > this._outputCap) {
+    if (expected < 0 || expected !== this._outputBytes) {
       throw new Error(
-        "qip-play output buffer is smaller than render width*height*4",
+        "qip-play output_rgba8_srgb_bytes must equal render width*height*4",
       );
     }
     this._expectedOutputBytes = expected;
@@ -356,6 +365,17 @@ class QIPPlayElement extends HTMLElement {
     this._canvas.style.height = "auto";
     this._canvas.style.imageRendering = "pixelated";
     this._canvas.style.touchAction = "none";
+
+    this._stats = document.createElement("div");
+    this._stats.setAttribute("aria-label", "qip-play timing stats");
+    this._stats.style.boxSizing = "border-box";
+    this._stats.style.marginTop = "6px";
+    this._stats.style.maxWidth = String(this._renderWidth) + "px";
+    this._stats.style.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    this._stats.style.color = "#666";
+    this._stats.style.whiteSpace = "normal";
+    this._stats.style.lineHeight = "1.35";
+    this._updateStats();
 
     this._ctx = this._canvas.getContext("2d", {
       alpha: false,
@@ -377,6 +397,7 @@ class QIPPlayElement extends HTMLElement {
     if (inputElement) {
       this.appendChild(inputElement);
     }
+    this.appendChild(this._stats);
     this._attachInputHandlers();
   }
 
@@ -681,45 +702,54 @@ class QIPPlayElement extends HTMLElement {
   _flushPendingKeyEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.key_event !== "function") {
       this._pendingKeyEvents.length = 0;
-      return 0;
+      return { count: 0, redrawRequested: false };
     }
     let flushed = 0;
+    let redrawRequested = false;
     while (this._pendingKeyEvents.length > 0) {
       const evt = this._pendingKeyEvents[0];
       if (evt.timeMS > tickNowMS) break;
       this._pendingKeyEvents.shift();
-      this._exports.key_event(evt.keysym, evt.flags, qipPlayNowMSArg(evt.timeMS));
+      const result = this._exports.key_event(
+        evt.keysym,
+        evt.flags,
+        qipPlayNowMSArg(evt.timeMS),
+      );
+      if (Number(result) !== 0) redrawRequested = true;
       flushed += 1;
     }
-    return flushed;
+    return { count: flushed, redrawRequested };
   }
 
   _flushPendingPointerEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.pointer_event !== "function") {
       this._pendingPointerEvents.length = 0;
-      return 0;
+      return { count: 0, redrawRequested: false };
     }
     let flushed = 0;
+    let redrawRequested = false;
     while (this._pendingPointerEvents.length > 0) {
       const evt = this._pendingPointerEvents[0];
       if (evt.timeMS > tickNowMS) break;
       this._pendingPointerEvents.shift();
-      this._exports.pointer_event(
+      const result = this._exports.pointer_event(
         evt.buttonMask,
         evt.x,
         evt.y,
         qipPlayNowMSArg(evt.timeMS),
       );
+      if (Number(result) !== 0) redrawRequested = true;
       flushed += 1;
     }
-    return flushed;
+    return { count: flushed, redrawRequested };
   }
 
   _flushRepeatKeyEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.key_event !== "function") {
-      return 0;
+      return { count: 0, redrawRequested: false };
     }
     let flushed = 0;
+    let redrawRequested = false;
     for (const repeatState of this._activeKeyRepeats.values()) {
       if (!repeatState.pending) {
         continue;
@@ -728,14 +758,15 @@ class QIPPlayElement extends HTMLElement {
         continue;
       }
       repeatState.pending = false;
-      this._exports.key_event(
+      const result = this._exports.key_event(
         repeatState.keysym,
         repeatState.flags,
         qipPlayNowMSArg(repeatState.pendingTimeMS),
       );
+      if (Number(result) !== 0) redrawRequested = true;
       flushed += 1;
     }
-    return flushed;
+    return { count: flushed, redrawRequested };
   }
 
   _resumeLoop() {
@@ -799,7 +830,8 @@ class QIPPlayElement extends HTMLElement {
 
     const frameNow = Number.isFinite(nowMS) ? nowMS : qipPlayPerfNow();
     const tickNowMS = this._elapsedFromPerfNow(frameNow);
-    const eventCount = this._drainEvents(tickNowMS);
+    const eventResult = this._drainEvents(tickNowMS);
+    const eventCount = eventResult.eventCount;
     const wakeDue = this._nextWakeAtMS > 0 && tickNowMS >= this._nextWakeAtMS;
     if (eventCount <= 0 && !wakeDue) {
       return;
@@ -807,35 +839,47 @@ class QIPPlayElement extends HTMLElement {
 
     const tickResult = this._runTick(tickNowMS);
     this._nextWakeAtMS = tickResult.nextWakeAtMS;
-    const renderMS = this._renderFrame();
+    const renderResult = wakeDue || eventResult.redrawRequested
+      ? this._renderFrame()
+      : { renderMS: 0, drawMS: 0 };
     if (this._logTimings) {
       console.log(
-        "[qip-play] now_ms=%d events=%d next_wake_at_ms=%d tick_ms=%s render_ms=%s frame_ms=%s",
+        "[qip-play] now_ms=%d events=%d next_wake_at_ms=%d tick_ms=%s render_ms=%s draw_ms=%s frame_ms=%s",
         tickNowMS,
         eventCount,
         this._nextWakeAtMS,
         tickResult.tickMS.toFixed(3),
-        renderMS.toFixed(3),
-        (tickResult.tickMS + renderMS).toFixed(3),
+        renderResult.renderMS.toFixed(3),
+        renderResult.drawMS.toFixed(3),
+        (tickResult.tickMS + renderResult.renderMS + renderResult.drawMS).toFixed(3),
       );
     }
   }
 
   _runTick(tickNowMS) {
-    const tickStart = this._logTimings ? qipPlayPerfNow() : 0;
+    const tickStart = qipPlayPerfNow();
     const nextWakeAtMS = qipPlayI64MSAsNumber(
       this._exports.tick(qipPlayNowMSArg(tickNowMS)),
       "tick",
     );
-    const tickMS = this._logTimings ? qipPlayPerfNow() - tickStart : 0;
+    const tickMS = qipPlayPerfNow() - tickStart;
+    this._tickN += 1;
+    this._lastTickMS = tickMS;
+    this._updateStats();
     return { nextWakeAtMS, tickMS };
   }
 
   _drainEvents(tickNowMS) {
-    const keyCount = this._flushPendingKeyEvents(tickNowMS);
-    const pointerCount = this._flushPendingPointerEvents(tickNowMS);
-    const repeatCount = this._flushRepeatKeyEvents(tickNowMS);
-    return keyCount + pointerCount + repeatCount;
+    const keyResult = this._flushPendingKeyEvents(tickNowMS);
+    const pointerResult = this._flushPendingPointerEvents(tickNowMS);
+    const repeatResult = this._flushRepeatKeyEvents(tickNowMS);
+    return {
+      eventCount: keyResult.count + pointerResult.count + repeatResult.count,
+      redrawRequested:
+        keyResult.redrawRequested ||
+        pointerResult.redrawRequested ||
+        repeatResult.redrawRequested,
+    };
   }
 
   _elapsedFromPerfNow(perfNowMS) {
@@ -919,41 +963,70 @@ class QIPPlayElement extends HTMLElement {
   }
 
   _renderFrame(reason) {
-    if (!this._exports || typeof this._exports.render_output !== "function") {
-      return;
+    if (!this._exports || typeof this._exports.render !== "function") {
+      return { renderMS: 0, drawMS: 0 };
     }
     if (!this._imageData || !this._ctx) {
-      return;
+      return { renderMS: 0, drawMS: 0 };
     }
 
-    const renderStart = this._logTimings ? qipPlayPerfNow() : 0;
+    const renderStart = qipPlayPerfNow();
     const outputLen = qipPlayToI32(
-      this._exports.render_output(),
-      "render_output",
+      this._exports.render(0),
+      "render",
     );
+    const renderMS = qipPlayPerfNow() - renderStart;
+    this._renderN++;
     if (outputLen !== this._expectedOutputBytes) {
       throw new Error(
-        "qip-play render_output returned unexpected byte length " +
+        "qip-play render(0) returned unexpected byte length " +
           String(outputLen) +
           "; expected " +
           String(this._expectedOutputBytes),
       );
     }
 
+    const drawStart = qipPlayPerfNow();
     const bytes = qipPlayReadSlice(
       this._memory,
       this._outputPtr,
       outputLen,
-      "output_ptr/output_bytes_cap",
+      "output_ptr/output_rgba8_srgb_bytes",
     );
     this._imageData.data.set(bytes);
     this._ctx.putImageData(this._imageData, 0, 0);
-    this._renderN++;
-    const renderMS = this._logTimings ? qipPlayPerfNow() - renderStart : 0;
+    const drawMS = qipPlayPerfNow() - drawStart;
+    this._drawN++;
+    this._lastRenderMS = renderMS;
+    this._lastDrawMS = drawMS;
+    this._updateStats();
     if (this._logTimings && reason === "initial") {
-      console.log("[qip-play] initial_render_ms=%s", renderMS.toFixed(3));
+      console.log(
+        "[qip-play] initial_render_ms=%s initial_draw_ms=%s",
+        renderMS.toFixed(3),
+        drawMS.toFixed(3),
+      );
     }
-    return renderMS;
+    return { renderMS, drawMS };
+  }
+
+  _updateStats() {
+    if (!this._stats) {
+      return;
+    }
+    this._stats.textContent =
+      "tick " +
+      this._lastTickMS.toFixed(3) +
+      " ms | render " +
+      this._lastRenderMS.toFixed(3) +
+      " ms | draw " +
+      this._lastDrawMS.toFixed(3) +
+      " ms | ticks " +
+      String(this._tickN) +
+      " | renders " +
+      String(this._renderN) +
+      " | draws " +
+      String(this._drawN);
   }
 
   _renderError(err) {

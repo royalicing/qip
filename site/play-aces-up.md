@@ -10,5 +10,5 @@ Click cards to play.
 Goal: finish with only four aces.
 
 <qip-play>
-  <source src="/modules/interactive/aces-up.wasm" type="application/wasm"></source>
+  <source src="/components/interactive/aces-up.wasm" type="application/wasm"></source>
 </qip-play>

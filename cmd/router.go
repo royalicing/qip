@@ -20,16 +20,16 @@ import (
 )
 
 type RouteWARCRequest struct {
-	ContentRoot string
-	RequestPath string
-	RecipesRoot string
-	FormsRoot   string
-	ModulesRoot string
-	ModeRaw     string
-	Host        string
-	Verbose     bool
-	OutputPath  string
-	ViewSource  bool
+	ContentRoot    string
+	RequestPath    string
+	RouteCount     int
+	RecipesRoot    string
+	FormsRoot      string
+	ComponentsRoot string
+	ModeRaw        string
+	Host           string
+	Verbose        bool
+	ViewSource     bool
 }
 
 type RouteConfig struct {
@@ -75,7 +75,7 @@ func RunRoute(args []string, config RouteConfig) error {
 func runRouteWARC(args []string, config RouteConfig) error {
 	var recipesRoot string
 	var formsRoot string
-	var modulesRoot string
+	var componentsRoot string
 	var modeRaw string
 	hostRaw := "qip.local"
 	outputPath := "-"
@@ -86,9 +86,9 @@ func runRouteWARC(args []string, config RouteConfig) error {
 	var verbose bool
 	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form modules root directory")
-	fs.StringVar(&modulesRoot, "modules", "", "browser-loadable wasm modules root directory")
+	fs.StringVar(&recipesRoot, "recipes", "", "recipe QIP components root directory")
+	fs.StringVar(&formsRoot, "forms", "", "form QIP components root directory")
+	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", config.DefaultMode, "runtime mode")
 	fs.StringVar(&hostRaw, "host", hostRaw, "WARC-Target-URI host")
 	fs.StringVar(&outputPath, "o", "-", "output WARC path ('-' for stdout)")
@@ -109,19 +109,30 @@ func runRouteWARC(args []string, config RouteConfig) error {
 	}
 
 	contentRoot := rest[0]
+	projectConfig, err := qinternal.ResolveRouterProjectConfig(qinternal.RouterProjectConfig{
+		ContentRoot:    contentRoot,
+		RecipesRoot:    recipesRoot,
+		FormsRoot:      formsRoot,
+		ComponentsRoot: componentsRoot,
+	})
+	if err != nil {
+		return err
+	}
+	recipesRoot = projectConfig.RecipesRoot
+	formsRoot = projectConfig.FormsRoot
+	componentsRoot = projectConfig.ComponentsRoot
 	if viewSource && strings.TrimSpace(recipesRoot) == "" {
 		return errors.New("--view-source requires --recipes <recipes_dir>")
 	}
 	baseRequest := RouteWARCRequest{
-		ContentRoot: contentRoot,
-		RecipesRoot: recipesRoot,
-		FormsRoot:   formsRoot,
-		ModulesRoot: modulesRoot,
-		ModeRaw:     modeRaw,
-		Host:        host,
-		Verbose:     verbose,
-		OutputPath:  outputPath,
-		ViewSource:  viewSource,
+		ContentRoot:    contentRoot,
+		RecipesRoot:    recipesRoot,
+		FormsRoot:      formsRoot,
+		ComponentsRoot: componentsRoot,
+		ModeRaw:        modeRaw,
+		Host:           host,
+		Verbose:        verbose,
+		ViewSource:     viewSource,
 	}
 
 	paths, err := config.ListWARCPaths(context.Background(), baseRequest)
@@ -132,6 +143,7 @@ func runRouteWARC(args []string, config RouteConfig) error {
 		return errors.New("no route paths found to archive")
 	}
 	sort.Strings(paths)
+	baseRequest.RouteCount = len(paths)
 
 	var warcBytes bytes.Buffer
 	for _, requestPath := range paths {
@@ -156,8 +168,8 @@ func runRouteWARC(args []string, config RouteConfig) error {
 
 	if viewSource {
 		markdownPaths := qinternal.FilterMarkdownRequestPaths(paths)
-		modulePaths := filterModuleRequestPaths(paths)
-		sourceRecords, err := buildRecipeSourceWARCRecords(host, recipesRoot, modulesRoot, markdownPaths, modulePaths)
+		modulePaths := filterComponentRequestPaths(paths)
+		sourceRecords, err := buildRecipeSourceWARCRecords(host, recipesRoot, componentsRoot, markdownPaths, modulePaths)
 		if err != nil {
 			return err
 		}
@@ -204,13 +216,13 @@ func parseRouteWARCHost(raw string) (string, error) {
 
 func normalizeRouteWarcArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
-		"--recipes": {},
-		"--forms":   {},
-		"--modules": {},
-		"--mode":    {},
-		"--host":    {},
-		"-o":        {},
-		"--output":  {},
+		"--recipes":    {},
+		"--forms":      {},
+		"--components": {},
+		"--mode":       {},
+		"--host":       {},
+		"-o":           {},
+		"--output":     {},
 	}
 	return qinternal.NormalizeFlagArgs(args, flagsWithValue)
 }
@@ -287,22 +299,22 @@ func buildHTTPResponsePayload(response qinternal.InProcessHTTPResponse) []byte {
 	return payload.Bytes()
 }
 
-func buildRecipeSourceWARCRecords(host string, recipesRoot string, modulesRoot string, markdownRequestPaths []string, moduleRequestPaths []string) ([][]byte, error) {
+func buildRecipeSourceWARCRecords(host string, recipesRoot string, componentsRoot string, markdownRequestPaths []string, componentRequestPaths []string) ([][]byte, error) {
 	recipeAssets, err := qinternal.CollectRecipeSourceAssets(recipesRoot)
 	if err != nil {
 		return nil, err
 	}
-	moduleSourceAssets, err := qinternal.CollectModuleSourceAssets(modulesRoot)
+	componentSourceAssets, err := qinternal.CollectComponentSourceAssets(componentsRoot)
 	if err != nil {
 		return nil, err
 	}
-	indexBody := qinternal.BuildViewSourceIndexHTML(recipeAssets, markdownRequestPaths, moduleRequestPaths, moduleSourceAssets)
+	indexBody := qinternal.BuildViewSourceIndexHTML(recipeAssets, markdownRequestPaths, componentRequestPaths, componentSourceAssets)
 	indexResponse := qinternal.InProcessHTTPResponse{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
 		Body:       indexBody,
 	}
-	records := make([][]byte, 0, len(recipeAssets)+len(moduleSourceAssets)+1)
+	records := make([][]byte, 0, len(recipeAssets)+len(componentSourceAssets)+1)
 	indexRecord, err := buildMinimalWARCResponseRecord("http://"+host+"/view-source", indexResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build WARC record for %q: %w", "/view-source", err)
@@ -320,7 +332,7 @@ func buildRecipeSourceWARCRecords(host string, recipesRoot string, modulesRoot s
 		}
 		records = append(records, record)
 	}
-	for _, asset := range moduleSourceAssets {
+	for _, asset := range componentSourceAssets {
 		response := qinternal.InProcessHTTPResponse{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{asset.ContentType}},
@@ -335,10 +347,10 @@ func buildRecipeSourceWARCRecords(host string, recipesRoot string, modulesRoot s
 	return records, nil
 }
 
-func filterModuleRequestPaths(paths []string) []string {
+func filterComponentRequestPaths(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
-		if strings.HasPrefix(p, "/modules/") {
+		if strings.HasPrefix(p, "/components/") {
 			out = append(out, p)
 		}
 	}

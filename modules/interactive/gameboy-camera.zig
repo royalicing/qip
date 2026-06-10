@@ -103,7 +103,7 @@ export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_bytes_cap() u32 {
+export fn output_rgba8_srgb_bytes() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
@@ -170,7 +170,8 @@ export fn tick(now_ms: i64) i64 {
     return now_ms + 16;
 }
 
-export fn render_output() i32 {
+export fn render(input_size: i32) i32 {
+    _ = input_size;
     ensureInit();
     drawFrame();
     needs_redraw = false;

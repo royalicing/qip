@@ -2,6 +2,8 @@ package qinternal
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -28,5 +30,74 @@ func TestNewRequestHandlerRedirectsTrailingSlashNever(t *testing.T) {
 	}
 	if resolveCalled {
 		t.Fatal("Resolve should not be called for canonical redirect")
+	}
+}
+
+func TestBuildContentRoutesSkipsReservedRouterDirectories(t *testing.T) {
+	root := t.TempDir()
+	mustWrite := func(rel string) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	mustWrite("index.md")
+	mustWrite("_recipes/text/markdown/10-markdown.wasm")
+	mustWrite("_forms/contact.wasm")
+	mustWrite("_components/interactive/game.wasm")
+	mustWrite("_og/card.png")
+
+	routes, err := BuildContentRoutes(root, DefaultRouteOptions())
+	if err != nil {
+		t.Fatalf("BuildContentRoutes: %v", err)
+	}
+	for _, requestPath := range []string{
+		"/_recipes/text/markdown/10-markdown.wasm",
+		"/_forms/contact.wasm",
+		"/_components/interactive/game.wasm",
+	} {
+		if _, ok := routes[requestPath]; ok {
+			t.Fatalf("reserved path %s was routed", requestPath)
+		}
+	}
+	if _, ok := routes["/_og/card.png"]; !ok {
+		t.Fatalf("non-reserved underscore path was not routed")
+	}
+}
+
+func TestResolveRouterProjectConfigDiscoversAndAllowsOverrides(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{ReservedRecipesDir, ReservedFormsDir, ReservedComponentsDir} {
+		if err := os.Mkdir(filepath.Join(root, rel), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+	}
+
+	config, err := ResolveRouterProjectConfig(RouterProjectConfig{ContentRoot: root})
+	if err != nil {
+		t.Fatalf("ResolveRouterProjectConfig: %v", err)
+	}
+	if config.RecipesRoot != filepath.Join(root, ReservedRecipesDir) {
+		t.Fatalf("recipes root=%q", config.RecipesRoot)
+	}
+	if config.FormsRoot != filepath.Join(root, ReservedFormsDir) {
+		t.Fatalf("forms root=%q", config.FormsRoot)
+	}
+	if config.ComponentsRoot != filepath.Join(root, ReservedComponentsDir) {
+		t.Fatalf("components root=%q", config.ComponentsRoot)
+	}
+
+	override, err := ResolveRouterProjectConfig(RouterProjectConfig{
+		ContentRoot: root,
+		RecipesRoot: "custom-recipes",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRouterProjectConfig override: %v", err)
+	}
+	if override.RecipesRoot != "custom-recipes" {
+		t.Fatalf("recipes override=%q", override.RecipesRoot)
 	}
 }

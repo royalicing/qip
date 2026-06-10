@@ -27,7 +27,6 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
-	"os/signal"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -36,7 +35,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 	"unsafe"
@@ -113,19 +111,19 @@ type options struct {
 	viewSource             bool
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of wasm modules on input\n  bench    Compare one or more wasm modules for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate module ABI and run compliance check modules\n  dev      Start a dev server for a content directory with optional recipes\n  router   Resolve routed paths and export route artifacts\n  form     Run an interactive wasm form module in the terminal\n  help     Show command help"
-const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ..."
-const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <module1> [module2 ...]"
-const usageScore = "Usage: qip score <module1.wasm> [module2.wasm ...]"
-const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <wasm module URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  dev      Start a dev server for a content directory with optional recipes\n  router   Resolve routed paths and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
+const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] <component1> [component2 ...]"
+const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
+const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]"
-const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
+const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
 const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site and write a minimal WARC file"
-const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteHead = "Usage: qip router head <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteList = "Usage: qip router list <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteWarc = "Usage: qip router warc <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--modules <modules_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]"
-const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
+const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteHead = "Usage: qip router head <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteList = "Usage: qip router list <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteWarc = "Usage: qip router warc <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]"
+const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or file>"
 const usageHelp = "Usage: qip help [command]"
 
 var qipFormTagPattern = regexp.MustCompile(`(?is)<qip-form\b[^>]*>`)
@@ -133,19 +131,19 @@ var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\
 var qipPreviewTagPattern = regexp.MustCompile(`(?is)<qip-preview\b[^>]*>`)
 var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <wasm module URL or file> [?key=value[&key2=value2...] ...] ...\n\nModule contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba_f32_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a module path to set that module's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a module exports tile_rgba_f32_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]
 
 What qip comply does:
   1) Base ABI validation on impl.wasm (always):
      - impl must export memory
-     - detects module kind: render, tile, or render+tile
+     - detects component kind: render, tile, or render+tile
      - render kind requires:
          render(i32) -> i32
          input_ptr (global i32 or function () -> i32)
          input_utf8_cap or input_bytes_cap (global i32 or function () -> i32)
      - tile kind requires:
-         tile_rgba_f32_64x64(f32, f32) -> ()
+         tile_rgba32float_64x64(f32, f32) -> ()
          input_ptr (global i32 or function () -> i32)
          input_bytes_cap (global i32 or function () -> i32)
 
@@ -154,12 +152,12 @@ What qip comply does:
        vanilla instruction sequences with no calls, loops, or dynamic control flow
      - qip contract globals must be constant init expressions (no global.get dependency)
 
-  3) Executes each --with compliance module:
-     - qip instantiates impl as module name "impl"
-     - all compliance modules run in parallel
+  3) Executes each --with compliance component:
+     - qip instantiates impl as WebAssembly module name "impl"
+     - all compliance components run in parallel
      - all must pass
 
-Compliance module contract (what to implement):
+Compliance component contract (what to implement):
   Required imports/exports:
     - must import impl.memory
     - must export positive() -> i32
@@ -174,9 +172,9 @@ Status convention:
   - if negative() exists, it runs on a fresh impl instance
   - negative() returning <= 0 fails (use render_must_trap when trap is expected)
 
-Memory model for compliance modules:
-  - compliance imports impl.memory, so both modules see the same linear memory
-  - to test a render module, compliance usually:
+Memory model for compliance components:
+  - compliance imports impl.memory, so both components see the same linear memory
+  - to test a render component, compliance usually:
       - calls impl.input_ptr() and impl.input_utf8_cap()/input_bytes_cap()
       - writes test input bytes into impl.memory at input_ptr
       - calls impl.render(input_size)
@@ -192,7 +190,7 @@ Failure detail exports (optional but recommended):
     - failure_output_ptr / failure_output_size
   Aliases with fail_* prefix are also accepted.
 
-Minimal WAT template (render module checker):
+Minimal WAT template (render component checker):
   (module
     (import "impl" "memory" (memory 1))
     (import "impl" "input_ptr" (func $input_ptr (result i32)))
@@ -212,7 +210,7 @@ Authoring workflow for agents:
   1) Build impl wasm.
   2) Run: qip comply impl.wasm --with compliance.wasm
   3) On failure, inspect printed message/input/expected/actual previews.
-  4) Update impl or compliance module and repeat until PASS.`
+  4) Update impl or compliance component and repeat until PASS.`
 
 func main() {
 	args := os.Args[1:]
@@ -583,14 +581,14 @@ func benchCmd(args []string) {
 		}
 		funcs := cm.ExportedFunctions()
 		_, hasRun := funcs["render"]
-		_, hasTile := funcs["tile_rgba_f32_64x64"]
+		_, hasTile := funcs["tile_rgba32float_64x64"]
 		switch {
 		case hasTile:
 			moduleKinds[i] = benchModuleKindTile
 		case hasRun:
 			moduleKinds[i] = benchModuleKindRun
 		default:
-			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32 or tile_rgba_f32_64x64(f32, f32)", modules[i])
+			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32 or tile_rgba32float_64x64(f32, f32)", modules[i])
 		}
 		compiled[i] = cm
 		defer compiled[i].Close(ctx)
@@ -958,7 +956,7 @@ func parseModuleSpecs(args []string, commandName string) ([]moduleSpec, error) {
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "?") {
 			if len(specs) == 0 {
-				return nil, fmt.Errorf("%s uniform query %q must follow a wasm module path", commandName, arg)
+				return nil, fmt.Errorf("%s uniform query %q must follow a QIP component path", commandName, arg)
 			}
 			if len(arg) == 1 {
 				return nil, fmt.Errorf("%s uniform query must not be empty", commandName)
@@ -1054,9 +1052,9 @@ func encodingName(encoding dataEncoding) string {
 }
 
 func loadTileStage(ctx context.Context, mod api.Module) (tileStage, error) {
-	tileFunc := mod.ExportedFunction("tile_rgba_f32_64x64")
+	tileFunc := mod.ExportedFunction("tile_rgba32float_64x64")
 	if tileFunc == nil {
-		return tileStage{}, errors.New("Wasm module must export tile_rgba_f32_64x64")
+		return tileStage{}, errors.New("Wasm module must export tile_rgba32float_64x64")
 	}
 	uniformFunc := mod.ExportedFunction("uniform_set_width_and_height")
 	haloFunc := mod.ExportedFunction("calculate_halo_px")
@@ -1217,7 +1215,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						api.EncodeF32(float32(tileX)),
 						api.EncodeF32(float32(tileY)),
 					); err != nil {
-						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(ctx, err))
+						return nil, nil, fmt.Errorf("Error running tile_rgba32float_64x64: %w", wasmruntime.HumanizeExecutionError(ctx, err))
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
@@ -1332,7 +1330,7 @@ func runTileStages(ctx context.Context, stages []tileStage, inputRGBA *image.RGB
 						api.EncodeF32(float32(x)),
 						api.EncodeF32(float32(y)),
 					); err != nil {
-						return nil, nil, fmt.Errorf("Error running tile_rgba_f32_64x64: %w", wasmruntime.HumanizeExecutionError(ctx, err))
+						return nil, nil, fmt.Errorf("Error running tile_rgba32float_64x64: %w", wasmruntime.HumanizeExecutionError(ctx, err))
 					}
 					tileOutBytes, ok := stage.mem.Read(stage.inputPtr, uint32(len(tileBytes)))
 					if !ok {
@@ -1907,16 +1905,11 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	}
 	defer mod.Close(baseCtx)
 
-	// Keep render-module behavior unchanged when a module exports render(...).
-	if mod.ExportedFunction("render") != nil {
-		return false, nil, nil
-	}
-
 	requiredFuncs := []string{
 		"key_event",
 		"pointer_event",
 		"tick",
-		"render_output",
+		"render",
 		"render_width_px",
 		"render_height_px",
 	}
@@ -1936,7 +1929,7 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	if !ok {
 		return false, nil, nil
 	}
-	outputCapValue, ok, err := getExportedValue(execCtx, mod, "output_bytes_cap")
+	outputBytesValue, ok, err := getExportedValue(execCtx, mod, "output_rgba8_srgb_bytes")
 	if err != nil {
 		return false, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
 	}
@@ -1968,24 +1961,27 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	if _, err := tickFunc.Call(execCtx, 0); err != nil {
 		return true, nil, fmt.Errorf("%s: tick(0) failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
 	}
-	renderOutputFunc := mod.ExportedFunction("render_output")
-	renderResult, err := renderOutputFunc.Call(execCtx)
+	renderFunc := mod.ExportedFunction("render")
+	renderResult, err := renderFunc.Call(execCtx, 0)
 	if err != nil {
-		return true, nil, fmt.Errorf("%s: render_output() failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
+		return true, nil, fmt.Errorf("%s: render(0) failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
 	}
 	if len(renderResult) != 1 {
-		return true, nil, fmt.Errorf("%s: render_output() returned %d values, want 1", spec.path, len(renderResult))
+		return true, nil, fmt.Errorf("%s: render(0) returned %d values, want 1", spec.path, len(renderResult))
 	}
 
 	outputLen := int(int32(renderResult[0]))
 	expectedLen := renderWidth * renderHeight * 4
 	if outputLen != expectedLen {
-		return true, nil, fmt.Errorf("%s: render_output() returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.path, outputLen, expectedLen)
+		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.path, outputLen, expectedLen)
 	}
 
-	outputCap := int(outputCapValue)
-	if outputLen > outputCap {
-		return true, nil, fmt.Errorf("%s: render_output() exceeds output_bytes_cap (%d > %d)", spec.path, outputLen, outputCap)
+	outputBytes := int(int32(outputBytesValue))
+	if outputBytes != expectedLen {
+		return true, nil, fmt.Errorf("%s: output_rgba8_srgb_bytes returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.path, outputBytes, expectedLen)
+	}
+	if outputLen != outputBytes {
+		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected output_rgba8_srgb_bytes=%d", spec.path, outputLen, outputBytes)
 	}
 
 	outputPtr := uint32(outputPtrValue)
@@ -2233,754 +2229,26 @@ type moduleFileStamp struct {
 	sizeBytes       int64
 }
 
-type moduleAsset struct {
+type componentAsset struct {
 	body        []byte
 	contentType string
 }
 
 type devRuntimeState struct {
-	contentRoutes      map[string]qinternal.ContentRoute
-	contentRead        contentReadFunc
-	routeOptions       qinternal.RouteOptions
-	recipeChains       map[string]*qinternal.Pipeline
-	recipeOutput       map[string]string
-	recipeDigests      map[string][][32]byte
-	recipeStamps       map[string]moduleFileStamp
-	recipeSourceAssets []qinternal.RecipeSourceAsset
-	recipeSourceByPath map[string]qinternal.RecipeSourceAsset
-	recipeSourceIndex  []byte
-	formModules        map[string][]byte
-	formDigests        map[string][32]byte
-	moduleAssets       map[string]moduleAsset
-	moduleRequestPaths []string
-}
-
-func devCmd(args []string) {
-	opts := options{
-		contentTypeChecking: ContentTypeCheckingStrong,
-	}
-	var recipesRoot string
-	var formsRoot string
-	var modulesRoot string
-	var modeRaw string
-	port := 4000
-	fs := flag.NewFlagSet("dev", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var devVerbose bool
-	fs.BoolVar(&devVerbose, "v", false, "enable verbose logging")
-	fs.BoolVar(&devVerbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form modules root directory")
-	fs.StringVar(&modulesRoot, "modules", "", "browser-loadable wasm modules root directory")
-	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
-	fs.BoolVar(&opts.viewSource, "view-source", false, "serve /view-source plus recipe source files from --recipes")
-	fs.IntVar(&port, "p", 4000, "port")
-	if err := fs.Parse(normalizeDevArgs(args)); err != nil {
-		gameOver("%s %v", usageDev, err)
-	}
-
-	mode, err := parseRuntimeMode(modeRaw)
-	if err != nil {
-		gameOver("%v", err)
-	}
-
-	opts.verbose = devVerbose
-	opts.mode = mode
-	contentArgs := fs.Args()
-	if len(contentArgs) != 1 {
-		gameOver(usageDev)
-	}
-	contentRoot := contentArgs[0]
-	if port <= 0 || port > 65535 {
-		gameOver("Invalid port: %d", port)
-	}
-
-	if err := validateContentRootArg(contentRoot); err != nil {
-		gameOver("%v", err)
-	}
-
-	if recipesRoot != "" {
-		recipeInfo, err := os.Stat(recipesRoot)
-		if err != nil {
-			gameOver("Invalid recipes directory: %v", err)
-		}
-		if !recipeInfo.IsDir() {
-			gameOver("Invalid recipes directory: %q is not a directory", recipesRoot)
-		}
-	}
-	if opts.viewSource && recipesRoot == "" {
-		gameOver("--view-source requires --recipes <recipes_dir>")
-	}
-
-	if formsRoot != "" {
-		formInfo, err := os.Stat(formsRoot)
-		if err != nil {
-			gameOver("Invalid forms directory: %v", err)
-		}
-		if !formInfo.IsDir() {
-			gameOver("Invalid forms directory: %q is not a directory", formsRoot)
-		}
-	}
-	if modulesRoot != "" {
-		moduleInfo, err := os.Stat(modulesRoot)
-		if err != nil {
-			gameOver("Invalid modules directory: %v", err)
-		}
-		if !moduleInfo.IsDir() {
-			gameOver("Invalid modules directory: %q is not a directory", modulesRoot)
-		}
-	}
-
-	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, modulesRoot, opts, routeOptions)
-	if err != nil {
-		gameOver("%v", err)
-	}
-	var stateMu sync.RWMutex
-	var reloadMu sync.Mutex
-	swapRuntimeState := func(nextState *devRuntimeState) {
-		stateMu.Lock()
-		previous := state
-		state = nextState
-		stateMu.Unlock()
-		if previous != nil {
-			closePipelines(context.Background(), previous.recipeChains)
-		}
-	}
-	reloadRuntimeState := func(reason string) {
-		reloadMu.Lock()
-		defer reloadMu.Unlock()
-
-		reloadStart := time.Now()
-		nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, modulesRoot, opts, routeOptions)
-		if err != nil {
-			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
-			return
-		}
-
-		swapRuntimeState(nextState)
-		log.Printf("dev: reloaded reason=%s paths=%d recipe_mimes=%d forms=%d modules=%d duration_ms=%d", reason, len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), len(nextState.moduleAssets), time.Since(reloadStart).Milliseconds())
-	}
-	reloadRecipesIfChanged := func() {
-		if opts.mode != modeDev || recipesRoot == "" {
-			return
-		}
-
-		reloadMu.Lock()
-		defer reloadMu.Unlock()
-
-		stamps, err := scanRecipeModuleStamps(recipesRoot)
-		if err != nil {
-			log.Printf("dev: recipe change check failed: %v", err)
-			return
-		}
-
-		stateMu.RLock()
-		currentStamps := state.recipeStamps
-		unchanged := recipeModuleStampsEqual(currentStamps, stamps)
-		stateMu.RUnlock()
-		if unchanged {
-			return
-		}
-
-		reloadStart := time.Now()
-		nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, modulesRoot, opts, routeOptions)
-		if err != nil {
-			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
-			return
-		}
-
-		swapRuntimeState(nextState)
-		log.Printf("dev: reloaded reason=recipe_change paths=%d recipe_mimes=%d forms=%d modules=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), len(nextState.moduleAssets), time.Since(reloadStart).Milliseconds())
-	}
-
-	defer func() {
-		stateMu.Lock()
-		current := state
-		state = nil
-		stateMu.Unlock()
-		if current != nil {
-			closePipelines(context.Background(), current.recipeChains)
-		}
-	}()
-
-	log.Printf("dev: indexed %d request paths from %s", len(state.contentRoutes), contentRoot)
-	if recipesRoot != "" {
-		log.Printf("dev: loaded %d recipe mime chains from %s", len(state.recipeChains), recipesRoot)
-	}
-	if formsRoot != "" {
-		log.Printf("dev: loaded %d form modules from %s", len(state.formModules), formsRoot)
-	}
-	if modulesRoot != "" {
-		log.Printf("dev: loaded %d browser modules from %s", len(state.moduleAssets), modulesRoot)
-	}
-
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteRecipeTimeout,
-	}
-	reloadStateIfHardRefresh := func(r *http.Request) {
-		if opts.mode != modeDev {
-			return
-		}
-		if !isDevHardRefreshRequest(r) {
-			return
-		}
-		reloadRuntimeState("request_hard_reload")
-	}
-
-	handler := newDevRequestHandler("dev", &stateMu, &state, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
-
-	server := &http.Server{
-		Addr:    addr,
-		Handler: handler,
-	}
-
-	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	hupCh := make(chan os.Signal, 1)
-	signal.Notify(hupCh, syscall.SIGHUP)
-	defer signal.Stop(hupCh)
-
-	var reloadWG sync.WaitGroup
-	reloadWG.Go(func() {
-		for {
-			select {
-			case <-signalCtx.Done():
-				return
-			case <-hupCh:
-				reloadRuntimeState("signal_hup")
-			}
-		}
-	})
-	defer func() {
-		stop()
-		reloadWG.Wait()
-	}()
-
-	go func() {
-		<-signalCtx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-
-	log.Printf("dev: listening on http://%s", addr)
-	log.Printf("dev: send SIGHUP to reload routes, recipes, forms, and modules: `kill -HUP %d`", os.Getpid())
-	log.Printf("dev: browser hard reload (Cache-Control: no-cache/max-age=0) triggers full runtime reload")
-
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		gameOver("dev server error: %v", err)
-	}
-}
-
-func routePathCmd(args []string, method string, usage string, logPrefix string) {
-	opts := options{
-		contentTypeChecking: ContentTypeCheckingStrong,
-	}
-	var recipesRoot string
-	var formsRoot string
-	var modulesRoot string
-	var modeRaw string
-
-	fs := flag.NewFlagSet("router "+strings.ToLower(method), flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var routeVerbose bool
-	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
-	fs.BoolVar(&routeVerbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form modules root directory")
-	fs.StringVar(&modulesRoot, "modules", "", "browser-loadable wasm modules root directory")
-	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
-	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
-		gameOver("%s %v", usage, err)
-	}
-
-	mode, err := parseRuntimeMode(modeRaw)
-	if err != nil {
-		gameOver("%v", err)
-	}
-
-	opts.verbose = routeVerbose
-	opts.mode = mode
-
-	rest := fs.Args()
-	if len(rest) != 2 {
-		gameOver("%s", usage)
-	}
-	contentRoot := rest[0]
-	requestPath := rest[1]
-	if requestPath == "" {
-		requestPath = "/"
-	}
-
-	if err := validateContentRootArg(contentRoot); err != nil {
-		gameOver("%v", err)
-	}
-
-	if recipesRoot != "" {
-		recipeInfo, err := os.Stat(recipesRoot)
-		if err != nil {
-			gameOver("Invalid recipes directory: %v", err)
-		}
-		if !recipeInfo.IsDir() {
-			gameOver("Invalid recipes directory: %q is not a directory", recipesRoot)
-		}
-	}
-
-	if formsRoot != "" {
-		formInfo, err := os.Stat(formsRoot)
-		if err != nil {
-			gameOver("Invalid forms directory: %v", err)
-		}
-		if !formInfo.IsDir() {
-			gameOver("Invalid forms directory: %q is not a directory", formsRoot)
-		}
-	}
-	if modulesRoot != "" {
-		moduleInfo, err := os.Stat(modulesRoot)
-		if err != nil {
-			gameOver("Invalid modules directory: %v", err)
-		}
-		if !moduleInfo.IsDir() {
-			gameOver("Invalid modules directory: %q is not a directory", modulesRoot)
-		}
-	}
-
-	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, modulesRoot, opts, routeOptions)
-	if err != nil {
-		gameOver("%v", err)
-	}
-	var stateMu sync.RWMutex
-	defer func() {
-		stateMu.Lock()
-		current := state
-		state = nil
-		stateMu.Unlock()
-		if current != nil {
-			closePipelines(context.Background(), current.recipeChains)
-		}
-	}()
-
-	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteRecipeTimeout,
-	}
-	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
-	response, err := qinternal.ServeInProcessHTTP(handler, method, requestPath, nil)
-	if err != nil {
-		gameOver("%v", err)
-	}
-
-	if contentType := response.Header.Get("Content-Type"); contentType != "" {
-		log.Printf("%s: Content-Type: %s", logPrefix, contentType)
-	}
-	if etag := response.Header.Get("ETag"); etag != "" {
-		log.Printf("%s: ETag: %s", logPrefix, etag)
-	}
-	if location := response.Header.Get("Location"); location != "" {
-		log.Printf("%s: Location: %s", logPrefix, location)
-	}
-	contentLength := response.Header.Get("Content-Length")
-	if contentLength == "" {
-		contentLength = strconv.Itoa(len(response.Body))
-	}
-	log.Printf("%s: Content-Length: %s", logPrefix, contentLength)
-
-	if method != http.MethodHead && len(response.Body) > 0 {
-		if _, err := os.Stdout.Write(response.Body); err != nil {
-			gameOver("Error writing response body: %v", err)
-		}
-	}
-
-	if response.StatusCode >= http.StatusBadRequest {
-		statusText := http.StatusText(response.StatusCode)
-		if statusText == "" {
-			gameOver("%d", response.StatusCode)
-		}
-		gameOver("%d %s", response.StatusCode, statusText)
-	}
-}
-
-type routeListEntry struct {
-	Method      string
-	Path        string
-	ContentType string
-}
-
-func routeListCmd(args []string) {
-	opts := options{
-		contentTypeChecking: ContentTypeCheckingStrong,
-	}
-	var recipesRoot string
-	var formsRoot string
-	var modulesRoot string
-	var modeRaw string
-
-	fs := flag.NewFlagSet("router list", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var routeVerbose bool
-	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
-	fs.BoolVar(&routeVerbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&recipesRoot, "recipes", "", "recipe modules root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form modules root directory")
-	fs.StringVar(&modulesRoot, "modules", "", "browser-loadable wasm modules root directory")
-	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
-	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
-		gameOver("%s %v", usageRouteList, err)
-	}
-
-	mode, err := parseRuntimeMode(modeRaw)
-	if err != nil {
-		gameOver("%v", err)
-	}
-
-	opts.verbose = routeVerbose
-	opts.mode = mode
-
-	rest := fs.Args()
-	if len(rest) != 1 {
-		gameOver("%s", usageRouteList)
-	}
-	contentRoot := rest[0]
-
-	if err := validateContentRootArg(contentRoot); err != nil {
-		gameOver("%v", err)
-	}
-
-	if recipesRoot != "" {
-		recipeInfo, err := os.Stat(recipesRoot)
-		if err != nil {
-			gameOver("Invalid recipes directory: %v", err)
-		}
-		if !recipeInfo.IsDir() {
-			gameOver("Invalid recipes directory: %q is not a directory", recipesRoot)
-		}
-	}
-
-	if formsRoot != "" {
-		formInfo, err := os.Stat(formsRoot)
-		if err != nil {
-			gameOver("Invalid forms directory: %v", err)
-		}
-		if !formInfo.IsDir() {
-			gameOver("Invalid forms directory: %q is not a directory", formsRoot)
-		}
-	}
-	if modulesRoot != "" {
-		moduleInfo, err := os.Stat(modulesRoot)
-		if err != nil {
-			gameOver("Invalid modules directory: %v", err)
-		}
-		if !moduleInfo.IsDir() {
-			gameOver("Invalid modules directory: %q is not a directory", modulesRoot)
-		}
-	}
-
-	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, modulesRoot, opts, routeOptions)
-	if err != nil {
-		gameOver("%v", err)
-	}
-	defer closePipelines(context.Background(), state.recipeChains)
-
-	entries := buildRouteListEntries(state)
-	for _, entry := range entries {
-		fmt.Printf("%-4s %s  %s\n", entry.Method, entry.Path, entry.ContentType)
-	}
-}
-
-func buildRouteListEntries(state *devRuntimeState) []routeListEntry {
-	if state == nil {
-		return nil
-	}
-
-	canonicalRoutes := make(map[string]qinternal.ContentRoute, len(state.contentRoutes))
-	for requestPath := range state.contentRoutes {
-		canonicalPath, _ := qinternal.CanonicalRequestPath(requestPath, state.routeOptions)
-		if _, exists := canonicalRoutes[canonicalPath]; exists {
-			continue
-		}
-		route, ok := qinternal.ResolveContentRoute(state.contentRoutes, canonicalPath, state.routeOptions)
-		if !ok {
-			continue
-		}
-		canonicalRoutes[canonicalPath] = route
-	}
-
-	paths := make([]string, 0, len(canonicalRoutes))
-	for requestPath := range canonicalRoutes {
-		paths = append(paths, requestPath)
-	}
-	sort.Strings(paths)
-
-	entries := make([]routeListEntry, 0, len(paths)*2)
-	for _, requestPath := range paths {
-		route := canonicalRoutes[requestPath]
-		hasRecipes := shouldApplyRecipesForRequestPath(requestPath, route, state.recipeChains)
-		contentType := devResponseContentType(route.SourceMIME, hasRecipes, qinternal.NewRawBytesContent(nil), nil)
-		if hasRecipes {
-			if recipeType := state.recipeOutput[route.SourceMIME]; recipeType != "" {
-				contentType = recipeType
-			}
-		}
-		contentType = mediaTypeOnly(contentType)
-		entries = append(entries, routeListEntry{
-			Method:      http.MethodGet,
-			Path:        requestPath,
-			ContentType: contentType,
-		})
-		entries = append(entries, routeListEntry{
-			Method:      http.MethodHead,
-			Path:        requestPath,
-			ContentType: contentType,
-		})
-	}
-	for _, requestPath := range state.moduleRequestPaths {
-		asset, ok := state.moduleAssets[requestPath]
-		if !ok {
-			continue
-		}
-		contentType := mediaTypeOnly(asset.contentType)
-		entries = append(entries, routeListEntry{
-			Method:      http.MethodGet,
-			Path:        requestPath,
-			ContentType: contentType,
-		})
-		entries = append(entries, routeListEntry{
-			Method:      http.MethodHead,
-			Path:        requestPath,
-			ContentType: contentType,
-		})
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Path != entries[j].Path {
-			return entries[i].Path < entries[j].Path
-		}
-		return entries[i].Method < entries[j].Method
-	})
-	return entries
-}
-
-func mediaTypeOnly(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "application/octet-stream"
-	}
-	mediaType, _, err := mime.ParseMediaType(value)
-	if err == nil && mediaType != "" {
-		return mediaType
-	}
-	if cut := strings.IndexByte(value, ';'); cut != -1 {
-		value = strings.TrimSpace(value[:cut])
-	}
-	if value == "" {
-		return "application/octet-stream"
-	}
-	return value
-}
-
-func firstURIListTarget(body []byte) (string, bool) {
-	seenFirstLine := false
-	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
-		line := strings.TrimSpace(strings.TrimSuffix(string(rawLine), "\r"))
-		if !seenFirstLine {
-			seenFirstLine = true
-			line = strings.TrimPrefix(line, "\uFEFF")
-		}
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		return line, true
-	}
-	return "", false
-}
-
-func routerCmd(args []string) {
-	if len(args) == 0 {
-		gameOver(usageRoute)
-	}
-	switch args[0] {
-	case "get":
-		routePathCmd(args[1:], http.MethodGet, usageRouteGet, "router get")
-		return
-	case "head":
-		routePathCmd(args[1:], http.MethodHead, usageRouteHead, "router head")
-		return
-	case "list":
-		routeListCmd(args[1:])
-		return
-	case "warc":
-	default:
-		gameOver(usageRoute)
-	}
-
-	type routeRuntime struct {
-		state        *devRuntimeState
-		handler      http.Handler
-		routeOptions qinternal.RouteOptions
-	}
-	handlerTimeouts := routeHandlerTimeouts{
-		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteRecipeTimeout,
-	}
-	warcTransformTimeout := defaultRouteWARCTransformTimeout
-	var runtimeMu sync.Mutex
-	var runtime *routeRuntime
-	ensureRuntime := func(ctx context.Context, request qcmd.RouteWARCRequest) (*routeRuntime, error) {
-		runtimeMu.Lock()
-		defer runtimeMu.Unlock()
-		if runtime != nil {
-			return runtime, nil
-		}
-
-		mode, err := parseRuntimeMode(request.ModeRaw)
-		if err != nil {
-			return nil, err
-		}
-		opts := options{
-			verbose:             request.Verbose,
-			mode:                mode,
-			contentTypeChecking: ContentTypeCheckingStrong,
-		}
-
-		if err := validateContentRootArg(request.ContentRoot); err != nil {
-			return nil, err
-		}
-
-		if request.RecipesRoot != "" {
-			recipeInfo, err := os.Stat(request.RecipesRoot)
-			if err != nil {
-				return nil, fmt.Errorf("Invalid recipes directory: %v", err)
-			}
-			if !recipeInfo.IsDir() {
-				return nil, fmt.Errorf("Invalid recipes directory: %q is not a directory", request.RecipesRoot)
-			}
-		}
-
-		if request.FormsRoot != "" {
-			formInfo, err := os.Stat(request.FormsRoot)
-			if err != nil {
-				return nil, fmt.Errorf("Invalid forms directory: %v", err)
-			}
-			if !formInfo.IsDir() {
-				return nil, fmt.Errorf("Invalid forms directory: %q is not a directory", request.FormsRoot)
-			}
-		}
-		if request.ModulesRoot != "" {
-			moduleInfo, err := os.Stat(request.ModulesRoot)
-			if err != nil {
-				return nil, fmt.Errorf("Invalid modules directory: %v", err)
-			}
-			if !moduleInfo.IsDir() {
-				return nil, fmt.Errorf("Invalid modules directory: %q is not a directory", request.ModulesRoot)
-			}
-		}
-
-		routeOptions := qinternal.DefaultRouteOptions()
-		state, err := loadDevRuntimeState(ctx, request.ContentRoot, request.RecipesRoot, request.FormsRoot, request.ModulesRoot, opts, routeOptions)
-		if err != nil {
-			return nil, err
-		}
-		var stateMu sync.RWMutex
-		handler := newDevRequestHandler("router", &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
-		runtime = &routeRuntime{
-			state:        state,
-			handler:      handler,
-			routeOptions: routeOptions,
-		}
-		return runtime, nil
-	}
-	defer func() {
-		runtimeMu.Lock()
-		defer runtimeMu.Unlock()
-		if runtime == nil || runtime.state == nil {
-			return
-		}
-		closePipelines(context.Background(), runtime.state.recipeChains)
-		runtime.state = nil
-	}()
-
-	if err := qcmd.RunRoute(args, qcmd.RouteConfig{
-		UsageRoute:     usageRoute,
-		UsageRouteWarc: usageRouteWarc,
-		DefaultMode:    string(modeDev),
-		ListWARCPaths: func(ctx context.Context, request qcmd.RouteWARCRequest) ([]string, error) {
-			loaded, err := ensureRuntime(ctx, request)
-			if err != nil {
-				return nil, err
-			}
-
-			pathSet := make(map[string]struct{}, len(loaded.state.contentRoutes))
-			for requestPath := range loaded.state.contentRoutes {
-				canonical, _ := qinternal.CanonicalRequestPath(requestPath, loaded.routeOptions)
-				pathSet[canonical] = struct{}{}
-			}
-			for _, requestPath := range loaded.state.moduleRequestPaths {
-				pathSet[requestPath] = struct{}{}
-			}
-
-			paths := make([]string, 0, len(pathSet))
-			for requestPath := range pathSet {
-				paths = append(paths, requestPath)
-			}
-			sort.Strings(paths)
-			return paths, nil
-		},
-		ResolveWARC: func(ctx context.Context, request qcmd.RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
-			loaded, err := ensureRuntime(ctx, request)
-			if err != nil {
-				return qinternal.InProcessHTTPResponse{}, err
-			}
-			return qinternal.ServeInProcessHTTP(loaded.handler, http.MethodGet, request.RequestPath, nil)
-		},
-		TransformWARC: func(ctx context.Context, request qcmd.RouteWARCRequest, warc []byte) ([]byte, error) {
-			loaded, err := ensureRuntime(ctx, request)
-			if err != nil {
-				return nil, err
-			}
-			pipeline := loaded.state.recipeChains[applicationWARCRecipeMIME]
-			if pipeline == nil {
-				return warc, nil
-			}
-			execCtx, cancel := withExecutionTimeout(ctx, warcTransformTimeout)
-			defer cancel()
-			transformed, err := processApplicationWARCArchive(execCtx, pipeline, warc, 0)
-			if err != nil {
-				return nil, err
-			}
-			return transformed, nil
-		},
-		Verbosef: func(format string, args ...any) {
-			log.Printf(format, args...)
-		},
-	}); err != nil {
-		gameOver("%v", err)
-	}
-}
-
-func isDevHardRefreshRequest(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	cacheControl := strings.ToLower(r.Header.Get("Cache-Control"))
-	pragma := strings.ToLower(r.Header.Get("Pragma"))
-	hasHardReloadCacheHint := strings.Contains(cacheControl, "no-cache") || strings.Contains(cacheControl, "max-age=0") || strings.Contains(pragma, "no-cache")
-	if !hasHardReloadCacheHint {
-		return false
-	}
-
-	dest := strings.ToLower(r.Header.Get("Sec-Fetch-Dest"))
-	if dest == "document" {
-		return true
-	}
-	if dest != "" && dest != "empty" {
-		return false
-	}
-
-	accept := strings.ToLower(r.Header.Get("Accept"))
-	return strings.Contains(accept, "text/html")
+	contentRoutes         map[string]qinternal.ContentRoute
+	contentRead           contentReadFunc
+	routeOptions          qinternal.RouteOptions
+	recipeChains          map[string]*qinternal.Pipeline
+	recipeOutput          map[string]string
+	recipeDigests         map[string][][32]byte
+	recipeStamps          map[string]moduleFileStamp
+	recipeSourceAssets    []qinternal.RecipeSourceAsset
+	recipeSourceByPath    map[string]qinternal.RecipeSourceAsset
+	recipeSourceIndex     []byte
+	formModules           map[string][]byte
+	formDigests           map[string][32]byte
+	componentAssets       map[string]componentAsset
+	componentRequestPaths []string
 }
 
 func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRuntimeState, reloadRecipesIfChanged func(), reloadStateForRequest func(*http.Request), routeOptions qinternal.RouteOptions, timeouts routeHandlerTimeouts) http.Handler {
@@ -3010,7 +2278,7 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 				stateMu.RUnlock()
 				return response, nil
 			}
-			if response, ok := resolveModuleAssetResponse(r.URL.Path, current); ok {
+			if response, ok := resolveComponentAssetResponse(r.URL.Path, current); ok {
 				stateMu.RUnlock()
 				return response, nil
 			}
@@ -3101,7 +2369,9 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 				ctx := context.Background()
 				ctx, cancel := withExecutionTimeout(ctx, timeouts.applicationWARC)
 				defer cancel()
-				response, err = transformRouteResponseWithApplicationWARC(ctx, applicationWARCPipeline, r.URL.Path, response, reqID)
+				response, err = transformRouteResponseWithApplicationWARCContext(ctx, applicationWARCPipeline, r.URL.Path, response, reqID, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+					return resolveDevBaseRouteResponse(ctx, current, requestPath, reqID, timeouts)
+				})
 				if err != nil {
 					stateMu.RUnlock()
 					return qinternal.RoutedResponse{}, err
@@ -3178,11 +2448,11 @@ func resolveRecipeSourceResponse(requestPath string, state *devRuntimeState) (qi
 	}, true
 }
 
-func resolveModuleAssetResponse(requestPath string, state *devRuntimeState) (qinternal.RoutedResponse, bool) {
-	if state == nil || len(state.moduleAssets) == 0 {
+func resolveComponentAssetResponse(requestPath string, state *devRuntimeState) (qinternal.RoutedResponse, bool) {
+	if state == nil || len(state.componentAssets) == 0 {
 		return qinternal.RoutedResponse{}, false
 	}
-	asset, ok := state.moduleAssets[requestPath]
+	asset, ok := state.componentAssets[requestPath]
 	if !ok {
 		return qinternal.RoutedResponse{}, false
 	}
@@ -3193,7 +2463,7 @@ func resolveModuleAssetResponse(requestPath string, state *devRuntimeState) (qin
 	}, true
 }
 
-func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot string, formsRoot string, modulesRoot string, opts options, routeOptions qinternal.RouteOptions) (*devRuntimeState, error) {
+func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot string, formsRoot string, componentsRoot string, opts options, routeOptions qinternal.RouteOptions) (*devRuntimeState, error) {
 	contentRoutes, contentRead, err := loadContentRoutesAndReader(ctx, contentRoot, routeOptions)
 	if err != nil {
 		return nil, err
@@ -3213,13 +2483,13 @@ func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot st
 		closePipelines(ctx, recipeChains)
 		return nil, err
 	}
-	moduleAssets, moduleRequestPaths, err := loadModuleAssets(modulesRoot)
+	componentAssets, componentRequestPaths, err := loadComponentAssets(componentsRoot)
 	if err != nil {
 		closePipelines(ctx, recipeChains)
 		return nil, err
 	}
 	recipeSourceAssets := make([]qinternal.RecipeSourceAsset, 0)
-	moduleSourceAssets := make([]qinternal.RecipeSourceAsset, 0)
+	componentSourceAssets := make([]qinternal.RecipeSourceAsset, 0)
 	recipeSourceByPath := make(map[string]qinternal.RecipeSourceAsset)
 	recipeSourceIndex := []byte(nil)
 	if opts.viewSource && recipesRoot != "" {
@@ -3228,36 +2498,36 @@ func loadDevRuntimeState(ctx context.Context, contentRoot string, recipesRoot st
 			closePipelines(ctx, recipeChains)
 			return nil, err
 		}
-		moduleSourceAssets, err = qinternal.CollectModuleSourceAssets(modulesRoot)
+		componentSourceAssets, err = qinternal.CollectComponentSourceAssets(componentsRoot)
 		if err != nil {
 			closePipelines(ctx, recipeChains)
 			return nil, err
 		}
 		markdownPaths := qinternal.CollectMarkdownRequestPathsFromRoutes(contentRoutes)
-		recipeSourceIndex = qinternal.BuildViewSourceIndexHTML(recipeSourceAssets, markdownPaths, moduleRequestPaths, moduleSourceAssets)
-		recipeSourceByPath = make(map[string]qinternal.RecipeSourceAsset, len(recipeSourceAssets)+len(moduleSourceAssets))
+		recipeSourceIndex = qinternal.BuildViewSourceIndexHTML(recipeSourceAssets, markdownPaths, componentRequestPaths, componentSourceAssets)
+		recipeSourceByPath = make(map[string]qinternal.RecipeSourceAsset, len(recipeSourceAssets)+len(componentSourceAssets))
 		for _, asset := range recipeSourceAssets {
 			recipeSourceByPath[asset.RequestPath] = asset
 		}
-		for _, asset := range moduleSourceAssets {
+		for _, asset := range componentSourceAssets {
 			recipeSourceByPath[asset.RequestPath] = asset
 		}
 	}
 	return &devRuntimeState{
-		contentRoutes:      contentRoutes,
-		contentRead:        contentRead,
-		routeOptions:       routeOptions,
-		recipeChains:       recipeChains,
-		recipeOutput:       recipeOutput,
-		recipeDigests:      recipeDigests,
-		recipeStamps:       recipeStamps,
-		recipeSourceAssets: recipeSourceAssets,
-		recipeSourceByPath: recipeSourceByPath,
-		recipeSourceIndex:  recipeSourceIndex,
-		formModules:        formModules,
-		formDigests:        formDigests,
-		moduleAssets:       moduleAssets,
-		moduleRequestPaths: moduleRequestPaths,
+		contentRoutes:         contentRoutes,
+		contentRead:           contentRead,
+		routeOptions:          routeOptions,
+		recipeChains:          recipeChains,
+		recipeOutput:          recipeOutput,
+		recipeDigests:         recipeDigests,
+		recipeStamps:          recipeStamps,
+		recipeSourceAssets:    recipeSourceAssets,
+		recipeSourceByPath:    recipeSourceByPath,
+		recipeSourceIndex:     recipeSourceIndex,
+		formModules:           formModules,
+		formDigests:           formDigests,
+		componentAssets:       componentAssets,
+		componentRequestPaths: componentRequestPaths,
 	}, nil
 }
 
@@ -3292,21 +2562,21 @@ func normalizeImageArgs(args []string) []string {
 
 func normalizeDevArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
-		"--recipes": {},
-		"--forms":   {},
-		"--modules": {},
-		"--mode":    {},
-		"-p":        {},
+		"--recipes":    {},
+		"--forms":      {},
+		"--components": {},
+		"--mode":       {},
+		"-p":           {},
 	}
 	return qinternal.NormalizeFlagArgs(args, flagsWithValue)
 }
 
 func normalizeRouteArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
-		"--recipes": {},
-		"--forms":   {},
-		"--modules": {},
-		"--mode":    {},
+		"--recipes":    {},
+		"--forms":      {},
+		"--components": {},
+		"--mode":       {},
 	}
 	return qinternal.NormalizeFlagArgs(args, flagsWithValue)
 }
@@ -3568,42 +2838,42 @@ func recipeModuleStampsEqual(a map[string]moduleFileStamp, b map[string]moduleFi
 	return true
 }
 
-func loadModuleAssets(modulesRoot string) (map[string]moduleAsset, []string, error) {
-	assets := make(map[string]moduleAsset)
-	if modulesRoot == "" {
+func loadComponentAssets(componentsRoot string) (map[string]componentAsset, []string, error) {
+	assets := make(map[string]componentAsset)
+	if componentsRoot == "" {
 		return assets, nil, nil
 	}
 
-	err := walkFilesFollowingSymlinks(modulesRoot, "module", func(fullPath string, _ fs.FileInfo) error {
-		relPath, err := filepath.Rel(modulesRoot, fullPath)
+	err := walkFilesFollowingSymlinks(componentsRoot, "component", func(fullPath string, _ fs.FileInfo) error {
+		relPath, err := filepath.Rel(componentsRoot, fullPath)
 		if err != nil {
 			return err
 		}
 		relPath = filepath.ToSlash(relPath)
 		if !utf8.ValidString(relPath) {
-			return fmt.Errorf("module path %q must be valid UTF-8", relPath)
+			return fmt.Errorf("component path %q must be valid UTF-8", relPath)
 		}
 		if strings.HasPrefix(relPath, "/") {
-			return fmt.Errorf("module path %q must not start with /", relPath)
+			return fmt.Errorf("component path %q must not start with /", relPath)
 		}
 		cleanRel := path.Clean(relPath)
 		if cleanRel != relPath || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
-			return fmt.Errorf("module path %q is not canonical", relPath)
+			return fmt.Errorf("component path %q is not canonical", relPath)
 		}
 		if strings.ToLower(path.Ext(relPath)) != ".wasm" {
 			return nil
 		}
 
-		requestPath := "/modules/" + cleanRel
+		requestPath := "/components/" + cleanRel
 		if _, exists := assets[requestPath]; exists {
-			return fmt.Errorf("duplicate module request path %q", requestPath)
+			return fmt.Errorf("duplicate component request path %q", requestPath)
 		}
 
 		body, err := os.ReadFile(fullPath)
 		if err != nil {
 			return err
 		}
-		assets[requestPath] = moduleAsset{
+		assets[requestPath] = componentAsset{
 			body:        body,
 			contentType: "application/wasm",
 		}
@@ -3655,7 +2925,7 @@ func loadFormModules(formsRoot string) (map[string][]byte, map[string][32]byte, 
 		}
 
 		if prev, exists := modulePaths[formName]; exists {
-			return fmt.Errorf("duplicate form module name %q in %q and %q", formName, prev, fullPath)
+			return fmt.Errorf("duplicate form component name %q in %q and %q", formName, prev, fullPath)
 		}
 
 		body, err := os.ReadFile(fullPath)
@@ -3702,6 +2972,16 @@ func withExecutionTimeout(ctx context.Context, timeout time.Duration) (context.C
 	return wasmruntime.WithExecutionTimeout(ctx, timeout)
 }
 
+func scaleRouteWARCTransformTimeout(base time.Duration, routeCount int) time.Duration {
+	if routeCount <= 1 || base <= 0 {
+		return base
+	}
+	if base > time.Duration(math.MaxInt64/int64(routeCount)) {
+		panic("route WARC transform timeout overflow")
+	}
+	return base * time.Duration(routeCount)
+}
+
 func processApplicationWARCArchive(ctx context.Context, pipeline *qinternal.Pipeline, warc []byte, requestID uint64) ([]byte, error) {
 	if pipeline == nil {
 		return warc, nil
@@ -3716,6 +2996,68 @@ func processApplicationWARCArchive(ctx context.Context, pipeline *qinternal.Pipe
 		return nil, err
 	}
 	return output, nil
+}
+
+type devBaseRouteResolver func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error)
+
+func resolveDevBaseRouteResponse(ctx context.Context, current *devRuntimeState, requestPath string, requestID uint64, timeouts routeHandlerTimeouts) (qinternal.InProcessHTTPResponse, bool, error) {
+	if current == nil {
+		return qinternal.InProcessHTTPResponse{}, false, errors.New("runtime state is unavailable")
+	}
+	route, ok := qinternal.ResolveContentRoute(current.contentRoutes, requestPath, current.routeOptions)
+	if !ok {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	}
+	contentRead := current.contentRead
+	if contentRead == nil {
+		contentRead = func(_ context.Context, route qinternal.ContentRoute) ([]byte, error) {
+			return os.ReadFile(route.FilePath)
+		}
+	}
+	inputBytes, err := contentRead(ctx, route)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	if route.SourceMIME == "text/uri-list" {
+		location, ok := firstURIListTarget(inputBytes)
+		if !ok {
+			return qinternal.InProcessHTTPResponse{}, false, fmt.Errorf("%s: text/uri-list missing redirect target", route.FilePath)
+		}
+		return qinternal.InProcessHTTPResponse{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{location}},
+		}, true, nil
+	}
+
+	hasRecipes := shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains)
+	var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
+	if hasRecipes {
+		pipeline := current.recipeChains[route.SourceMIME]
+		execCtx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
+		defer cancel()
+		result, err = pipeline.Process(execCtx, result, requestID)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, false, err
+		}
+	}
+	result, body, err := ensureRawContent(result)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	contentType := devResponseContentType(route.SourceMIME, hasRecipes, result, body)
+	if strings.HasPrefix(contentType, "text/html") {
+		body, _, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, false, err
+		}
+		body = injectQIPPreviewRuntime(body)
+		body = injectQIPPlayRuntime(body)
+	}
+	return qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       body,
+	}, true, nil
 }
 
 func transformRouteResponseWithApplicationWARC(
@@ -3737,11 +3079,91 @@ func transformRouteResponseWithApplicationWARC(
 	if err != nil {
 		return qinternal.InProcessHTTPResponse{}, err
 	}
-	transformedResponse, err := extractFirstWARCResponseRecord(transformedWARC)
+	transformedResponse, err := extractWARCResponseRecordByTargetURI(transformedWARC, requestURI)
 	if err != nil {
 		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to parse transformed WARC response for %q: %w", requestPath, err)
 	}
 	return transformedResponse, nil
+}
+
+func transformRouteResponseWithApplicationWARCContext(
+	ctx context.Context,
+	pipeline *qinternal.Pipeline,
+	requestPath string,
+	response qinternal.InProcessHTTPResponse,
+	requestID uint64,
+	resolveBase devBaseRouteResolver,
+) (qinternal.InProcessHTTPResponse, error) {
+	if pipeline == nil {
+		return response, nil
+	}
+	requestURI := buildWARCRequestURI("qip.local", requestPath)
+	var archive bytes.Buffer
+	seen := make(map[string]struct{})
+
+	for _, contextPath := range contextualWARCRequestPaths(requestPath) {
+		canonical, _ := qinternal.CanonicalRequestPath(contextPath, qinternal.DefaultRouteOptions())
+		if canonical == requestPath {
+			continue
+		}
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		if resolveBase == nil {
+			continue
+		}
+		contextResponse, ok, err := resolveBase(canonical)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, err
+		}
+		if !ok || contextResponse.StatusCode != http.StatusOK || !strings.HasPrefix(mediaTypeOnly(contextResponse.Header.Get("Content-Type")), "text/html") {
+			continue
+		}
+		record, err := buildMinimalWARCResponseRecord(buildWARCRequestURI("qip.local", canonical), contextResponse)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to build WARC context record for %q: %w", canonical, err)
+		}
+		archive.Write(record)
+	}
+
+	record, err := buildMinimalWARCResponseRecord(requestURI, response)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to build WARC record for %q: %w", requestPath, err)
+	}
+	archive.Write(record)
+
+	transformedWARC, err := processApplicationWARCArchive(ctx, pipeline, archive.Bytes(), requestID)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, err
+	}
+	transformedResponse, err := extractWARCResponseRecordByTargetURI(transformedWARC, requestURI)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to parse transformed WARC response for %q: %w", requestPath, err)
+	}
+	return transformedResponse, nil
+}
+
+func contextualWARCRequestPaths(requestPath string) []string {
+	canonical, _ := qinternal.CanonicalRequestPath(requestPath, qinternal.DefaultRouteOptions())
+	if canonical == "" {
+		canonical = "/"
+	}
+	out := []string{"/"}
+	if canonical == "/" {
+		return out
+	}
+	trimmed := strings.Trim(canonical, "/")
+	if trimmed == "" {
+		return out
+	}
+	parts := strings.Split(trimmed, "/")
+	prefix := ""
+	for i := 0; i < len(parts)-1; i++ {
+		prefix += "/" + parts[i]
+		out = append(out, prefix)
+	}
+	return out
 }
 
 func buildWARCRequestURI(host string, requestPath string) string {
@@ -3825,6 +3247,10 @@ func buildWARCHTTPResponsePayload(response qinternal.InProcessHTTPResponse) []by
 }
 
 func extractFirstWARCResponseRecord(warc []byte) (qinternal.InProcessHTTPResponse, error) {
+	return extractWARCResponseRecordByTargetURI(warc, "")
+}
+
+func extractWARCResponseRecordByTargetURI(warc []byte, targetURI string) (qinternal.InProcessHTTPResponse, error) {
 	cursor := 0
 	for cursor < len(warc) {
 		for cursor < len(warc) && (warc[cursor] == '\r' || warc[cursor] == '\n') {
@@ -3841,6 +3267,7 @@ func extractFirstWARCResponseRecord(warc []byte) (qinternal.InProcessHTTPRespons
 		headerBlock := warc[cursor : cursor+headerEnd]
 
 		warcType := ""
+		recordTargetURI := ""
 		contentLength := -1
 		lines := bytes.Split(headerBlock, []byte("\n"))
 		for i, rawLine := range lines {
@@ -3857,6 +3284,8 @@ func extractFirstWARCResponseRecord(warc []byte) (qinternal.InProcessHTTPRespons
 			switch {
 			case strings.EqualFold(key, "WARC-Type"):
 				warcType = value
+			case strings.EqualFold(key, "WARC-Target-URI"):
+				recordTargetURI = value
 			case strings.EqualFold(key, "Content-Length"):
 				n, err := strconv.Atoi(value)
 				if err != nil || n < 0 {
@@ -3875,10 +3304,13 @@ func extractFirstWARCResponseRecord(warc []byte) (qinternal.InProcessHTTPRespons
 			return qinternal.InProcessHTTPResponse{}, errors.New("WARC record payload exceeds archive length")
 		}
 		payload := warc[payloadStart:payloadEnd]
-		if strings.EqualFold(warcType, "response") {
+		if strings.EqualFold(warcType, "response") && (targetURI == "" || recordTargetURI == targetURI) {
 			return parseWARCHTTPResponsePayload(payload)
 		}
 		cursor = payloadEnd
+	}
+	if targetURI != "" {
+		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("WARC archive has no response record for %s", targetURI)
 	}
 	return qinternal.InProcessHTTPResponse{}, errors.New("WARC archive has no response record")
 }
@@ -3952,7 +3384,7 @@ func injectQIPFormRuntime(body []byte, formModules map[string][]byte, formDigest
 		return body, nil, nil
 	}
 	if len(formModules) == 0 {
-		return nil, nil, errors.New("qip-form tags detected, but no form modules are loaded (pass --forms <forms_dir>)")
+		return nil, nil, errors.New("qip-form tags detected, but no form components are loaded (pass --forms <forms_dir>)")
 	}
 
 	usedDigests := make([][32]byte, len(formNames))
@@ -4280,7 +3712,7 @@ func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts option
 		}
 
 		kind := stageKindRun
-		if _, ok := cm.ExportedFunctions()["tile_rgba_f32_64x64"]; ok {
+		if _, ok := cm.ExportedFunctions()["tile_rgba32float_64x64"]; ok {
 			kind = stageKindTile
 		}
 		infos[i] = moduleInfo{path: spec.path, cm: cm, kind: kind, uniforms: spec.uniforms}

@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const RENDER_W: usize = 320;
-const RENDER_H: usize = 220;
+const RENDER_W: usize = 375;
+const RENDER_H: usize = 667;
 const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
@@ -33,10 +33,10 @@ const BLINK_INTERVAL_MS: i64 = 500;
 const DOC_CAP: usize = 8192;
 const CLIP_CAP: usize = 2048;
 
-const WINDOW_X: i32 = 10;
-const WINDOW_Y: i32 = 10;
-const WINDOW_W: i32 = 300;
-const WINDOW_H: i32 = 200;
+const WINDOW_X: i32 = 0;
+const WINDOW_Y: i32 = 0;
+const WINDOW_W: i32 = RENDER_W;
+const WINDOW_H: i32 = RENDER_H;
 const TITLE_H: i32 = 18;
 const MENU_H: i32 = 14;
 
@@ -44,8 +44,8 @@ const TEXT_X: i32 = WINDOW_X + 8;
 const TEXT_Y: i32 = WINDOW_Y + TITLE_H + MENU_H + 6;
 const TEXT_W: i32 = WINDOW_W - 16;
 const TEXT_H: i32 = WINDOW_H - TITLE_H - MENU_H - 14;
-const CHAR_W: i32 = 7;
-const LINE_H: i32 = 10;
+const CHAR_W: i32 = 8;
+const LINE_H: i32 = 16;
 const VIEW_COLS: i32 = @divTrunc(TEXT_W, CHAR_W);
 const VIEW_ROWS: i32 = @divTrunc(TEXT_H, LINE_H);
 
@@ -105,7 +105,7 @@ export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_bytes_cap() u32 {
+export fn output_rgba8_srgb_bytes() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
@@ -231,7 +231,8 @@ export fn tick(now_ms: i64) i64 {
     return next_blink_at_ms;
 }
 
-export fn render_output() i32 {
+export fn render(input_size: i32) i32 {
+    _ = input_size;
     ensureInit();
     drawFrame();
     needs_redraw = false;
@@ -865,7 +866,6 @@ fn drawWindow() void {
     drawVerticalGradient(WINDOW_X + 1, WINDOW_Y + 1, WINDOW_W - 2, TITLE_H - 2, C_TITLE_TOP, C_TITLE_BOTTOM);
     drawRect(WINDOW_X + 1, WINDOW_Y + TITLE_H - 1, WINDOW_W - 2, 1, C_WIN_DARK);
     drawTextScaled(WINDOW_X + 8, WINDOW_Y + 5, "TextEdit", C_TEXT, 1);
-    drawWindowButtons();
 
     fillRectI32(WINDOW_X + 1, WINDOW_Y + TITLE_H, WINDOW_W - 2, MENU_H, .{ 0xE5, 0xE5, 0xE5, 0xFF });
     drawRect(WINDOW_X + 1, WINDOW_Y + TITLE_H + MENU_H - 1, WINDOW_W - 2, 1, .{ 0xB2, 0xB2, 0xB2, 0xFF });
@@ -875,12 +875,6 @@ fn drawWindow() void {
     fillRectI32(TEXT_X, TEXT_Y, TEXT_W, TEXT_H, C_TEXT_BG);
     drawDocumentText();
     drawStatusBar();
-}
-
-fn drawWindowButtons() void {
-    fillCircle(WINDOW_X + 8, WINDOW_Y + 9, 3, .{ 0xE1, 0x65, 0x5B, 0xFF });
-    fillCircle(WINDOW_X + 18, WINDOW_Y + 9, 3, .{ 0xE8, 0xC3, 0x58, 0xFF });
-    fillCircle(WINDOW_X + 28, WINDOW_Y + 9, 3, .{ 0x63, 0xCA, 0x62, 0xFF });
 }
 
 fn drawDocumentText() void {
@@ -923,7 +917,7 @@ fn drawDocumentText() void {
                 fillRectI32(x, y, CHAR_W, LINE_H, C_SEL);
             }
             const ch = doc[i];
-            drawTextScaled(x + 1, y + 2, &[_]u8{ch}, if (has_sel and i >= sel.start and i < sel.end) C_SEL_TEXT else C_TEXT, 1);
+            drawTextScaled(x + 1, y + 3, &[_]u8{ch}, if (has_sel and i >= sel.start and i < sel.end) C_SEL_TEXT else C_TEXT, 2);
         }
     }
 

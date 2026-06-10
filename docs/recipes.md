@@ -1,25 +1,26 @@
 # Recipes
 
-This document defines how recipe modules are discovered from disk.
+This document defines how recipe QIP components are discovered from disk.
 
 ## Root
 
-- Recipe root directory is provided by the host (for example `qip dev ./docs --recipes ./recipes`).
+- Recipe root directory is discovered from the site root as `_recipes` by default.
+- `--recipes <dir>` overrides discovery for shared or unusual layouts.
 - Recipes are grouped by exact MIME type:
-  - `recipes/text/markdown/`
-  - `recipes/text/html/`
-  - `recipes/image/png/`
-  - `recipes/application/warc/`
+  - `_recipes/text/markdown/`
+  - `_recipes/text/html/`
+  - `_recipes/image/png/`
+  - `_recipes/application/warc/`
 
 Given MIME `type/subtype`, recipe directory is:
 
-- `recipes/<type>/<subtype>/`
+- `<recipe-root>/<type>/<subtype>/`
 
 ## WARC Recipes
 
 `application/warc` recipes run at the whole-site layer instead of one page at a time. You can use them for site-wide transforms, such as adding trailing-slash redirects, verifying there are no broken links, or using the path to modify body content.
 
-- Directory: `recipes/application/warc/`
+- Directory: `_recipes/application/warc/`
 - Typical use:
   - link integrity checks on the full routed archive
   - archive rewrites before export (for example tar/static packaging pipelines)
@@ -36,7 +37,7 @@ WARC recipes can run in two useful scopes. We prefer picking scope intentionally
   - `qip dev` applies WARC recipe behavior on the currently resolved response.
   - `qip router get` / `qip router head` let you inspect one routed path.
 - Whole-site scope (final archive behavior):
-  - `qip router warc <content_dir> ...` enumerates the full routed site, builds one WARC, then applies `recipes/application/warc/*`.
+  - `qip router warc <site> ...` enumerates the full routed site, builds one WARC, then applies `_recipes/application/warc/*`.
 
 Claim: use subset scope while developing recipe logic, and whole-site scope before publishing.
 Reason: it shortens edit-test cycles without skipping the final archive semantics.
@@ -44,10 +45,10 @@ Example:
 
 ```sh
 # Fast single-path iteration:
-qip router get ./site /docs/router --recipes ./recipes
+qip router get ./site /docs/router
 
 # Final whole-site run:
-qip router warc ./site --recipes ./recipes --modules ./modules
+qip router warc ./site
 ```
 
 ## Host And URLs
@@ -57,7 +58,7 @@ qip router warc ./site --recipes ./recipes --modules ./modules
 Example:
 
 ```sh
-qip router warc ./site --recipes ./recipes --host https://qip.dev
+qip router warc ./site --host https://qip.dev
 ```
 
 ## Adding Routes
@@ -65,7 +66,7 @@ qip router warc ./site --recipes ./recipes --host https://qip.dev
 WARC recipes can synthesize or rewrite archive records, which means they can add output routes (for example `/sitemap.xml`) when they emit additional WARC records.
 
 - In this repo, route assets like `/favicon.ico` and `/robots.txt` are present in the content/static output.
-- WARC modules such as `modules/application/warc/warc-to-sitemap.wasm` show the pattern for deriving site-wide artifacts from the archive.
+- WARC QIP components such as `modules/application/warc/warc-to-sitemap.wasm` show the pattern for deriving site-wide artifacts from the archive.
 
 ## Ordering
 
@@ -110,3 +111,4 @@ Host should ignore non-`.wasm` files in the recipes tree.
 
 - This contract only defines recipe discovery and order.
 - Which MIME type applies to a content file is determined by routing/build logic.
+- Nested `_recipes` directories are reserved for future path-scoped recipes and are not active in this version.

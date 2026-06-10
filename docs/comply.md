@@ -1,8 +1,8 @@
 # `qip comply`
 
-`qip comply` verifies a given module comply with one or more compliance modules.
+`qip comply` verifies a given QIP component against one or more compliance components.
 
-For example you could have a module that renders an HTML5 page, and you want to check it produces valid HTML5.
+For example you could have a component that renders an HTML page and you want to check it produces valid HTML5.
 
 It’s currently recommended that you write these in WebAssembly text (wat) format.
 
@@ -15,10 +15,10 @@ qip comply <impl.wasm> [--with <check.wasm> ...] [-v|--verbose] [--timeout-ms <m
 ## Examples In This Repo
 
 ```bash
-# Expects that the modules/utf8/e164.wasm module produces normalized phone numbers, and preserves empty input.
+# Expects that modules/utf8/e164.wasm produces normalized phone numbers, and preserves empty input.
 qip comply modules/utf8/e164.wasm --with compliance/e164.comply.wasm --with compliance/preserve-empty.wasm
 
-# Expects that the modules/utf8/utf8-must-be-valid.wasm module traps when provided a range of invalid UTF-8, and also accepts whitespace or empty strings untouched.
+# Expects that modules/utf8/utf8-must-be-valid.wasm traps when provided a range of invalid UTF-8, and also accepts whitespace or empty strings untouched.
 qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
 ```
 
@@ -27,7 +27,7 @@ qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-u
 1. Base validation (always):
 
 - requires `memory` export
-- detects module kind as `render`, `tile`, or `render+tile`
+- detects component kind as `render`, `tile`, or `render+tile`
 - validates required ABI shape for the detected kind
 
 2. Static qip contract checks (always, when qip exports are present):
@@ -38,27 +38,27 @@ qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-u
 
 3. Optional behavior checks (`--with`):
 
-- each check module is executed against the implementation module
+- each check component is executed against the implementation component
 - checks run in parallel
 - all checks must pass
 
 ## Base Contract Rules
 
-`render` module requires:
+`render` component requires:
 
 - `render(i32) -> i32`
 - `input_ptr` as exported global or function returning `i32`
 - `input_utf8_cap` or `input_bytes_cap` as exported global or function returning `i32`
 
-`tile` module requires:
+`tile` component requires:
 
-- `tile_rgba_f32_64x64(f32, f32) -> ()`
+- `tile_rgba32float_64x64(f32, f32) -> ()`
 - `input_ptr` as exported global or function returning `i32`
 - `input_bytes_cap` as exported global or function returning `i32`
 
-## Check Module ABI
+## Check Component ABI
 
-A check module passed with `--with` must:
+A check component passed with `--with` must:
 
 - import `impl.memory`
 - export `positive() -> i32`
@@ -90,7 +90,7 @@ Status convention:
 
 ## Failure Detail Exports (Optional)
 
-If a check fails, `qip comply` tries to print reproducible failure context from optional exports on the check module.
+If a check fails, `qip comply` tries to print reproducible failure context from optional exports on the check component.
 
 Input detail:
 

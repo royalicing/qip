@@ -18,7 +18,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-const usageForm = "Usage: qip form [-v|--verbose] <wasm module URL or file>"
+const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or file>"
 
 const (
 	exportMemory           = "memory"

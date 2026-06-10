@@ -1,0 +1,669 @@
+const std = @import("std");
+
+const INPUT_CAP: usize = 256 * 1024 * 1024;
+const OUTPUT_CAP: usize = 256 * 1024 * 1024;
+const INPUT_CONTENT_TYPE = "application/warc";
+const OUTPUT_CONTENT_TYPE = "application/warc";
+
+var input_buf: [INPUT_CAP]u8 = undefined;
+var output_buf: [OUTPUT_CAP]u8 = undefined;
+
+const WARCRecord = struct {
+    next: usize,
+    warc_type: []const u8,
+    target_uri: []const u8,
+    payload: []const u8,
+};
+
+const HTTPPayload = struct {
+    status: u16,
+    status_line: []const u8,
+    content_type: []const u8,
+    header_block: []const u8,
+    body: []const u8,
+};
+
+const MainRange = struct {
+    open_end: usize,
+    close_start: usize,
+};
+
+const NavRange = struct {
+    start: usize,
+    end: usize,
+};
+
+const AttributeRange = struct {
+    start: usize,
+    end: usize,
+};
+
+const Output = struct {
+    idx: usize = 0,
+    overflow: bool = false,
+
+    fn remaining(self: *const Output) usize {
+        return output_buf.len - self.idx;
+    }
+
+    fn writeSlice(self: *Output, s: []const u8) void {
+        if (self.overflow or s.len == 0) return;
+        if (self.remaining() < s.len) {
+            self.overflow = true;
+            return;
+        }
+        @memcpy(output_buf[self.idx .. self.idx + s.len], s);
+        self.idx += s.len;
+    }
+
+    fn writeUnsigned(self: *Output, value: usize) void {
+        var buf: [32]u8 = undefined;
+        const formatted = std.fmt.bufPrint(&buf, "{d}", .{value}) catch {
+            self.overflow = true;
+            return;
+        };
+        self.writeSlice(formatted);
+    }
+};
+
+export fn input_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&input_buf)));
+}
+
+export fn input_bytes_cap() u32 {
+    return @as(u32, @intCast(INPUT_CAP));
+}
+
+export fn output_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&output_buf)));
+}
+
+export fn output_bytes_cap() u32 {
+    return @as(u32, @intCast(OUTPUT_CAP));
+}
+
+export fn input_content_type_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(INPUT_CONTENT_TYPE.ptr)));
+}
+
+export fn input_content_type_size() u32 {
+    return @as(u32, @intCast(INPUT_CONTENT_TYPE.len));
+}
+
+export fn output_content_type_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr)));
+}
+
+export fn output_content_type_size() u32 {
+    return @as(u32, @intCast(OUTPUT_CONTENT_TYPE.len));
+}
+
+fn asciiLower(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    return c;
+}
+
+fn eqlIgnoreCase(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| {
+        if (asciiLower(x) != asciiLower(y)) return false;
+    }
+    return true;
+}
+
+fn startsWithIgnoreCase(a: []const u8, prefix: []const u8) bool {
+    if (a.len < prefix.len) return false;
+    return eqlIgnoreCase(a[0..prefix.len], prefix);
+}
+
+fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8, start: usize) ?usize {
+    if (needle.len == 0) return start;
+    if (start >= haystack.len or haystack.len - start < needle.len) return null;
+    var i = start;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return i;
+    }
+    return null;
+}
+
+fn trimASCIIWhitespace(s: []const u8) []const u8 {
+    var start: usize = 0;
+    var end: usize = s.len;
+    while (start < end) : (start += 1) {
+        const c = s[start];
+        if (c != ' ' and c != '\t' and c != '\r' and c != '\n') break;
+    }
+    while (end > start) : (end -= 1) {
+        const c = s[end - 1];
+        if (c != ' ' and c != '\t' and c != '\r' and c != '\n') break;
+    }
+    return s[start..end];
+}
+
+fn findHeaderEnd(buf: []const u8, start: usize) ?usize {
+    if (start >= buf.len) return null;
+    if (std.mem.indexOfPos(u8, buf, start, "\r\n\r\n")) |pos| return pos + 4;
+    if (std.mem.indexOfPos(u8, buf, start, "\n\n")) |pos| return pos + 2;
+    return null;
+}
+
+fn parseUnsigned10(s: []const u8) ?usize {
+    if (s.len == 0) return null;
+    var value: usize = 0;
+    for (s) |c| {
+        if (c < '0' or c > '9') return null;
+        value = value * 10 + (c - '0');
+    }
+    return value;
+}
+
+fn parseStatusCode(status_line: []const u8) ?u16 {
+    var i: usize = 0;
+    while (i < status_line.len and status_line[i] != ' ') : (i += 1) {}
+    if (i >= status_line.len) return null;
+    while (i < status_line.len and status_line[i] == ' ') : (i += 1) {}
+    const code_start = i;
+    while (i < status_line.len and status_line[i] >= '0' and status_line[i] <= '9') : (i += 1) {}
+    if (i == code_start) return null;
+    const code = parseUnsigned10(status_line[code_start..i]) orelse return null;
+    if (code > std.math.maxInt(u16)) return null;
+    return @as(u16, @intCast(code));
+}
+
+fn parseWARCRecord(input: []const u8, start: usize) ?WARCRecord {
+    const header_end = findHeaderEnd(input, start) orelse return null;
+    const header_slice = input[start..header_end];
+    var warc_type: []const u8 = "";
+    var target_uri: []const u8 = "";
+    var content_length: ?usize = null;
+
+    var line_start: usize = 0;
+    var line_index: usize = 0;
+    while (line_start < header_slice.len) : (line_index += 1) {
+        const nl = std.mem.indexOfPos(u8, header_slice, line_start, "\n") orelse header_slice.len;
+        var line = header_slice[line_start..nl];
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        line = trimASCIIWhitespace(line);
+        line_start = if (nl < header_slice.len) nl + 1 else header_slice.len;
+        if (line.len == 0) break;
+        if (line_index == 0) continue;
+
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const key = trimASCIIWhitespace(line[0..colon]);
+        const value = trimASCIIWhitespace(line[colon + 1 ..]);
+        if (eqlIgnoreCase(key, "WARC-Type")) {
+            warc_type = value;
+        } else if (eqlIgnoreCase(key, "WARC-Target-URI")) {
+            target_uri = value;
+        } else if (eqlIgnoreCase(key, "Content-Length")) {
+            content_length = parseUnsigned10(value);
+        }
+    }
+
+    const payload_len = content_length orelse return null;
+    if (header_end + payload_len > input.len) return null;
+    const payload = input[header_end .. header_end + payload_len];
+    var next = header_end + payload_len;
+    while (next < input.len and (input[next] == '\r' or input[next] == '\n')) : (next += 1) {}
+
+    return .{ .next = next, .warc_type = warc_type, .target_uri = target_uri, .payload = payload };
+}
+
+fn parseHTTPPayload(payload: []const u8) ?HTTPPayload {
+    const header_end = findHeaderEnd(payload, 0) orelse return null;
+    const header_block = payload[0..header_end];
+    var status_line: []const u8 = "";
+    var status: ?u16 = null;
+    var content_type: []const u8 = "";
+
+    var line_start: usize = 0;
+    var line_index: usize = 0;
+    while (line_start < header_block.len) : (line_index += 1) {
+        const nl = std.mem.indexOfPos(u8, header_block, line_start, "\n") orelse header_block.len;
+        var line = header_block[line_start..nl];
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        line_start = if (nl < header_block.len) nl + 1 else header_block.len;
+
+        const trimmed = trimASCIIWhitespace(line);
+        if (trimmed.len == 0) break;
+        if (line_index == 0) {
+            status_line = trimmed;
+            status = parseStatusCode(trimmed);
+            continue;
+        }
+
+        const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse continue;
+        const key = trimASCIIWhitespace(trimmed[0..colon]);
+        const value = trimASCIIWhitespace(trimmed[colon + 1 ..]);
+        if (eqlIgnoreCase(key, "Content-Type")) {
+            content_type = value;
+        }
+    }
+
+    return .{
+        .status = status orelse return null,
+        .status_line = status_line,
+        .content_type = content_type,
+        .header_block = header_block,
+        .body = payload[header_end..],
+    };
+}
+
+fn mimeTypeToken(content_type_raw: []const u8) []const u8 {
+    const content_type = trimASCIIWhitespace(content_type_raw);
+    var end = content_type.len;
+    if (std.mem.indexOfScalar(u8, content_type, ';')) |idx| end = @min(end, idx);
+    if (std.mem.indexOfScalar(u8, content_type, ' ')) |idx| end = @min(end, idx);
+    return trimASCIIWhitespace(content_type[0..end]);
+}
+
+fn isHTMLContentType(content_type_raw: []const u8) bool {
+    const token = mimeTypeToken(content_type_raw);
+    if (token.len == 0) return false;
+    return eqlIgnoreCase(token, "text/html") or eqlIgnoreCase(token, "application/xhtml+xml");
+}
+
+fn pathFromTargetURI(uri: []const u8) []const u8 {
+    if (uri.len == 0) return "/";
+    var path = uri;
+    if (std.mem.indexOf(u8, uri, "://")) |scheme_sep| {
+        const after_scheme = scheme_sep + 3;
+        path = if (std.mem.indexOfPos(u8, uri, after_scheme, "/")) |slash_pos| uri[slash_pos..] else "/";
+    } else if (startsWithIgnoreCase(uri, "//")) {
+        path = if (std.mem.indexOfPos(u8, uri, 2, "/")) |slash_pos| uri[slash_pos..] else "/";
+    } else if (uri[0] != '/') {
+        path = if (std.mem.indexOfScalar(u8, uri, '/')) |slash_pos| uri[slash_pos..] else "/";
+    }
+    var end = path.len;
+    if (std.mem.indexOfScalar(u8, path, '?')) |idx| end = @min(end, idx);
+    if (std.mem.indexOfScalar(u8, path, '#')) |idx| end = @min(end, idx);
+    path = path[0..end];
+    if (path.len == 0 or path[0] != '/') return "/";
+    return path;
+}
+
+fn isTagBoundary(c: u8) bool {
+    return c == '>' or c == ' ' or c == '\t' or c == '\r' or c == '\n';
+}
+
+fn findTagEnd(body: []const u8, start: usize) ?usize {
+    var i = start;
+    var quote: u8 = 0;
+    while (i < body.len) : (i += 1) {
+        const c = body[i];
+        if (quote != 0) {
+            if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            quote = c;
+            continue;
+        }
+        if (c == '>') return i;
+    }
+    return null;
+}
+
+fn hrefFromOpenATag(tag: []const u8) ?[]const u8 {
+    var i: usize = 0;
+    while (i < tag.len) : (i += 1) {
+        if (asciiLower(tag[i]) != 'h') continue;
+        if (i + 4 > tag.len or !eqlIgnoreCase(tag[i .. i + 4], "href")) continue;
+        if (i > 0 and !isTagBoundary(tag[i - 1])) continue;
+        var j = i + 4;
+        while (j < tag.len and (tag[j] == ' ' or tag[j] == '\t' or tag[j] == '\r' or tag[j] == '\n')) : (j += 1) {}
+        if (j >= tag.len or tag[j] != '=') continue;
+        j += 1;
+        while (j < tag.len and (tag[j] == ' ' or tag[j] == '\t' or tag[j] == '\r' or tag[j] == '\n')) : (j += 1) {}
+        if (j >= tag.len) return null;
+        const quote = tag[j];
+        if (quote == '"' or quote == '\'') {
+            j += 1;
+            const value_start = j;
+            while (j < tag.len and tag[j] != quote) : (j += 1) {}
+            if (j <= tag.len) return tag[value_start..j];
+            return null;
+        }
+        const value_start = j;
+        while (j < tag.len and !isTagBoundary(tag[j])) : (j += 1) {}
+        return tag[value_start..j];
+    }
+    return null;
+}
+
+fn findMainRange(body: []const u8) ?MainRange {
+    var cursor: usize = 0;
+    while (indexOfIgnoreCase(body, "<main", cursor)) |start| {
+        const boundary = start + "<main".len;
+        if (boundary < body.len and !isTagBoundary(body[boundary])) {
+            cursor = boundary;
+            continue;
+        }
+        const open_end = findTagEnd(body, start) orelse return null;
+        var close_start: ?usize = null;
+        var scan = open_end + 1;
+        while (indexOfIgnoreCase(body, "</main>", scan)) |idx| {
+            close_start = idx;
+            scan = idx + 1;
+        }
+        if (close_start) |close| return .{ .open_end = open_end + 1, .close_start = close };
+        return null;
+    }
+    return null;
+}
+
+fn findDocsNavRange(body: []const u8, main_range: MainRange) ?NavRange {
+    var cursor = main_range.open_end;
+    while (cursor < main_range.close_start) {
+        const start = indexOfIgnoreCase(body, "<nav", cursor) orelse return null;
+        const boundary = start + "<nav".len;
+        if (boundary < body.len and !isTagBoundary(body[boundary])) {
+            cursor = boundary;
+            continue;
+        }
+        const open_end = findTagEnd(body, start) orelse return null;
+        if (open_end >= main_range.close_start) return null;
+        const close_start = indexOfIgnoreCase(body, "</nav>", open_end + 1) orelse return null;
+        const close_end = close_start + "</nav>".len;
+        if (close_end > main_range.close_start) return null;
+        return .{ .start = start, .end = close_end };
+    }
+    return null;
+}
+
+fn bodyAlreadyHasSidebar(body: []const u8) bool {
+    return indexOfIgnoreCase(body, "<nav class=\"docs-sidebar\"", 0) != null or
+        indexOfIgnoreCase(body, "<nav class='docs-sidebar'", 0) != null;
+}
+
+fn skipASCIIWhitespaceIn(s: []const u8, start: usize) usize {
+    var i = start;
+    while (i < s.len and (s[i] == ' ' or s[i] == '\t' or s[i] == '\r' or s[i] == '\n')) : (i += 1) {}
+    return i;
+}
+
+fn findAttributeRange(tag: []const u8, attr_name: []const u8) ?AttributeRange {
+    if (tag.len < 2) return null;
+    var i: usize = 1;
+    while (i + attr_name.len <= tag.len) {
+        i = skipASCIIWhitespaceIn(tag, i);
+        if (i >= tag.len or tag[i] == '>') return null;
+        const attr_start = i;
+        while (i < tag.len and tag[i] != '=' and !isTagBoundary(tag[i])) : (i += 1) {}
+        const name = tag[attr_start..i];
+        var j = skipASCIIWhitespaceIn(tag, i);
+        if (j < tag.len and tag[j] == '=') {
+            j += 1;
+            j = skipASCIIWhitespaceIn(tag, j);
+            if (j < tag.len and (tag[j] == '"' or tag[j] == '\'')) {
+                const quote = tag[j];
+                j += 1;
+                while (j < tag.len and tag[j] != quote) : (j += 1) {}
+                if (j < tag.len) j += 1;
+            } else {
+                while (j < tag.len and !isTagBoundary(tag[j])) : (j += 1) {}
+            }
+        }
+        if (eqlIgnoreCase(name, attr_name)) return .{ .start = attr_start, .end = j };
+        i = j;
+    }
+    return null;
+}
+
+fn adjustedOpenATagLen(tag: []const u8, add_current: bool) usize {
+    var len = tag.len;
+    if (findAttributeRange(tag, "aria-current")) |range| {
+        len -= range.end - range.start;
+        if (range.start > 0 and (tag[range.start - 1] == ' ' or tag[range.start - 1] == '\t')) len -= 1;
+    }
+    if (add_current) len += " aria-current=\"page\"".len;
+    return len;
+}
+
+fn adjustedNavLen(nav: []const u8, current_path: []const u8) usize {
+    var len: usize = nav.len;
+    var cursor: usize = 0;
+    while (indexOfIgnoreCase(nav, "<a", cursor)) |a_start| {
+        if (a_start + 2 < nav.len and !isTagBoundary(nav[a_start + 2])) {
+            cursor = a_start + 2;
+            continue;
+        }
+        const open_end = findTagEnd(nav, a_start) orelse break;
+        const tag = nav[a_start .. open_end + 1];
+        const add_current = if (hrefFromOpenATag(tag)) |href| std.mem.eql(u8, href, current_path) else false;
+        len = len - tag.len + adjustedOpenATagLen(tag, add_current);
+        cursor = open_end + 1;
+    }
+    return len;
+}
+
+fn digits10(value: usize) usize {
+    var n = value;
+    var digits: usize = 1;
+    while (n >= 10) : (digits += 1) n /= 10;
+    return digits;
+}
+
+fn injectedBodyLen(body: []const u8, nav: []const u8, current_path: []const u8) usize {
+    return body.len + adjustedNavLen(nav, current_path) + "<article class=\"docs-content\">".len + "</article>".len;
+}
+
+fn childDocsPath(path: []const u8) bool {
+    return std.mem.startsWith(u8, path, "/docs/");
+}
+
+fn computeHeaderRewriteLen(http: HTTPPayload, body_len: usize) usize {
+    var len: usize = http.status_line.len + 2;
+    var line_start: usize = 0;
+    var line_index: usize = 0;
+    while (line_start < http.header_block.len) : (line_index += 1) {
+        const nl = std.mem.indexOfPos(u8, http.header_block, line_start, "\n") orelse http.header_block.len;
+        var line = http.header_block[line_start..nl];
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        line_start = if (nl < http.header_block.len) nl + 1 else http.header_block.len;
+        const trimmed = trimASCIIWhitespace(line);
+        if (trimmed.len == 0) break;
+        if (line_index == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse {
+            len += trimmed.len + 2;
+            continue;
+        };
+        const key = trimASCIIWhitespace(trimmed[0..colon]);
+        if (eqlIgnoreCase(key, "Content-Length")) continue;
+        len += trimmed.len + 2;
+    }
+    len += "Content-Length: ".len + digits10(body_len) + 4;
+    return len;
+}
+
+fn writeWARCRecordHeader(out: *Output, warc_type: []const u8, target_uri: []const u8, payload_len: usize) void {
+    out.writeSlice("WARC/1.0\r\nWARC-Type: ");
+    out.writeSlice(warc_type);
+    out.writeSlice("\r\nWARC-Target-URI: ");
+    out.writeSlice(target_uri);
+    out.writeSlice("\r\nContent-Length: ");
+    out.writeUnsigned(payload_len);
+    out.writeSlice("\r\n\r\n");
+}
+
+fn writeHTTPHeaders(out: *Output, http: HTTPPayload, body_len: usize) void {
+    out.writeSlice(http.status_line);
+    out.writeSlice("\r\n");
+    var line_start: usize = 0;
+    var line_index: usize = 0;
+    while (line_start < http.header_block.len) : (line_index += 1) {
+        const nl = std.mem.indexOfPos(u8, http.header_block, line_start, "\n") orelse http.header_block.len;
+        var line = http.header_block[line_start..nl];
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        line_start = if (nl < http.header_block.len) nl + 1 else http.header_block.len;
+        const trimmed = trimASCIIWhitespace(line);
+        if (trimmed.len == 0) break;
+        if (line_index == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse {
+            out.writeSlice(trimmed);
+            out.writeSlice("\r\n");
+            continue;
+        };
+        const key = trimASCIIWhitespace(trimmed[0..colon]);
+        if (eqlIgnoreCase(key, "Content-Length")) continue;
+        out.writeSlice(trimmed);
+        out.writeSlice("\r\n");
+    }
+    out.writeSlice("Content-Length: ");
+    out.writeUnsigned(body_len);
+    out.writeSlice("\r\n\r\n");
+}
+
+fn writeAdjustedOpenATag(out: *Output, tag: []const u8, add_current: bool) void {
+    const attr_range = findAttributeRange(tag, "aria-current");
+    if (attr_range) |range| {
+        const skip_start = if (range.start > 0 and (tag[range.start - 1] == ' ' or tag[range.start - 1] == '\t')) range.start - 1 else range.start;
+        out.writeSlice(tag[0..skip_start]);
+        out.writeSlice(tag[range.end .. tag.len - 1]);
+    } else {
+        out.writeSlice(tag[0 .. tag.len - 1]);
+    }
+    if (add_current) out.writeSlice(" aria-current=\"page\"");
+    out.writeSlice(">");
+}
+
+fn writeAdjustedNav(out: *Output, nav: []const u8, current_path: []const u8) void {
+    var cursor: usize = 0;
+    while (indexOfIgnoreCase(nav, "<a", cursor)) |a_start| {
+        if (a_start + 2 < nav.len and !isTagBoundary(nav[a_start + 2])) {
+            cursor = a_start + 2;
+            continue;
+        }
+        const open_end = findTagEnd(nav, a_start) orelse break;
+        const tag = nav[a_start .. open_end + 1];
+        const add_current = if (hrefFromOpenATag(tag)) |href| std.mem.eql(u8, href, current_path) else false;
+        out.writeSlice(nav[cursor..a_start]);
+        writeAdjustedOpenATag(out, tag, add_current);
+        cursor = open_end + 1;
+    }
+    out.writeSlice(nav[cursor..]);
+}
+
+fn writeHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8, current_path: []const u8, main_range: MainRange) void {
+    const body_len = injectedBodyLen(http.body, nav, current_path);
+    writeHTTPHeaders(out, http, body_len);
+    out.writeSlice(http.body[0..main_range.open_end]);
+    writeAdjustedNav(out, nav, current_path);
+    out.writeSlice("<article class=\"docs-content\">");
+    out.writeSlice(http.body[main_range.open_end..main_range.close_start]);
+    out.writeSlice("</article>");
+    out.writeSlice(http.body[main_range.close_start..]);
+}
+
+fn findDocsNav(input: []const u8) ?[]const u8 {
+    var cursor: usize = 0;
+    while (cursor < input.len) {
+        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
+        if (cursor >= input.len) break;
+        const record = parseWARCRecord(input, cursor) orelse return null;
+        cursor = record.next;
+        if (!eqlIgnoreCase(record.warc_type, "response")) continue;
+        const path = pathFromTargetURI(record.target_uri);
+        if (!std.mem.eql(u8, path, "/docs")) continue;
+        const http = parseHTTPPayload(record.payload) orelse continue;
+        if (http.status != 200 or !isHTMLContentType(http.content_type)) continue;
+        if (findMainRange(http.body)) |range| {
+            const nav_range = findDocsNavRange(http.body, range) orelse return null;
+            return http.body[nav_range.start..nav_range.end];
+        }
+        return null;
+    }
+    return null;
+}
+
+fn processWARC(input: []const u8, out: *Output) void {
+    const nav = findDocsNav(input);
+    var cursor: usize = 0;
+    while (cursor < input.len and !out.overflow) {
+        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
+        if (cursor >= input.len) break;
+
+        const record = parseWARCRecord(input, cursor) orelse @trap();
+        cursor = record.next;
+
+        var payload_to_write: ?HTTPPayload = null;
+        var main_range: ?MainRange = null;
+        var payload_len = record.payload.len;
+        const request_path = pathFromTargetURI(record.target_uri);
+
+        if (nav != null and eqlIgnoreCase(record.warc_type, "response") and childDocsPath(request_path)) {
+            if (parseHTTPPayload(record.payload)) |http| {
+                if (http.status == 200 and isHTMLContentType(http.content_type) and !bodyAlreadyHasSidebar(http.body)) {
+                    if (findMainRange(http.body)) |range| {
+                        const body_len = injectedBodyLen(http.body, nav.?, request_path);
+                        payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
+                        payload_to_write = http;
+                        main_range = range;
+                    }
+                }
+            }
+        }
+
+        writeWARCRecordHeader(out, record.warc_type, record.target_uri, payload_len);
+        if (payload_to_write) |http| {
+            writeHTTPPayloadWithSidebar(out, http, nav.?, request_path, main_range.?);
+        } else {
+            out.writeSlice(record.payload);
+        }
+        out.writeSlice("\r\n\r\n");
+    }
+}
+
+export fn render(input_size_u32: u32) u32 {
+    const input_size: usize = @intCast(input_size_u32);
+    if (input_size > INPUT_CAP) @trap();
+    var out = Output{};
+    processWARC(input_buf[0..input_size], &out);
+    if (out.overflow) @trap();
+    return @as(u32, @intCast(out.idx));
+}
+
+fn appendWARCRecord(out_buf: []u8, cursor: *usize, warc_type: []const u8, target_uri: []const u8, payload: []const u8) !void {
+    const rec = try std.fmt.bufPrint(
+        out_buf[cursor.*..],
+        "WARC/1.0\r\nWARC-Type: {s}\r\nWARC-Target-URI: {s}\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
+        .{ warc_type, target_uri, payload.len, payload },
+    );
+    cursor.* += rec.len;
+}
+
+fn runTransform(input: []const u8, out: []u8) ![]const u8 {
+    @memset(out, 0);
+    @memcpy(input_buf[0..input.len], input);
+    const n = render(@as(u32, @intCast(input.len)));
+    if (n > out.len) return error.OutputTooSmall;
+    @memcpy(out[0..n], output_buf[0..n]);
+    return out[0..n];
+}
+
+test "injects docs sidebar from docs index into docs child page" {
+    var warc_buf: [8192]u8 = undefined;
+    var n: usize = 0;
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/docs",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<!doctype html><html><body><main><h1>Docs</h1><p>Start here.</p><nav class=\"docs-sidebar\" aria-label=\"Docs\"><ol><li><a href=\"/docs/security-model\">Security Model</a></li><li><a href=\"/docs/router\">Router</a></li></ol></nav></main></body></html>",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/docs/security-model",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<!doctype html><html><body><main><h1>Security Model</h1></main></body></html>",
+    );
+
+    var out: [16384]u8 = undefined;
+    const transformed = try runTransform(warc_buf[0..n], out[0..]);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "class=\"docs-sidebar\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "href=\"/docs/security-model\" aria-current=\"page\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "href=\"/docs/router\" aria-current=\"page\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "<article class=\"docs-content\"><h1>Security Model</h1></article>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, transformed, "<h1>Docs</h1><p>Start here.</p><nav class=\"docs-sidebar\"") != null);
+}

@@ -250,6 +250,19 @@ func TestNormalizeRouteArgs(t *testing.T) {
 	}
 }
 
+func TestScaleRouteWARCTransformTimeout(t *testing.T) {
+	base := 5 * time.Second
+	if got := scaleRouteWARCTransformTimeout(base, 0); got != base {
+		t.Fatalf("route count 0 timeout=%v, want %v", got, base)
+	}
+	if got := scaleRouteWARCTransformTimeout(base, 1); got != base {
+		t.Fatalf("route count 1 timeout=%v, want %v", got, base)
+	}
+	if got := scaleRouteWARCTransformTimeout(base, 5); got != 25*time.Second {
+		t.Fatalf("route count 5 timeout=%v, want 25s", got)
+	}
+}
+
 func TestParseModuleSpecs(t *testing.T) {
 	t.Run("associates uniform queries with prior module", func(t *testing.T) {
 		specs, err := parseModuleSpecs([]string{
@@ -279,7 +292,7 @@ func TestParseModuleSpecs(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects uniform query before module path", func(t *testing.T) {
+	t.Run("rejects uniform query before component path", func(t *testing.T) {
 		_, err := parseModuleSpecs([]string{"?x=1"}, "run")
 		if err == nil {
 			t.Fatal("expected parse error")
@@ -552,24 +565,24 @@ func TestBuildRouteListEntriesUsesRecipeOutputContentType(t *testing.T) {
 	}
 }
 
-func TestBuildRouteListEntriesIncludesModuleAssets(t *testing.T) {
+func TestBuildRouteListEntriesIncludesComponentAssets(t *testing.T) {
 	state := &devRuntimeState{
 		contentRoutes: map[string]qinternal.ContentRoute{
 			"/guide": {FilePath: "docs/guide.md", SourceMIME: "text/markdown"},
 		},
 		routeOptions: qinternal.DefaultRouteOptions(),
-		moduleAssets: map[string]moduleAsset{
-			"/modules/bytes/base64-encode.wasm": {contentType: "application/wasm"},
+		componentAssets: map[string]componentAsset{
+			"/components/bytes/base64-encode.wasm": {contentType: "application/wasm"},
 		},
-		moduleRequestPaths: []string{"/modules/bytes/base64-encode.wasm"},
+		componentRequestPaths: []string{"/components/bytes/base64-encode.wasm"},
 	}
 
 	got := buildRouteListEntries(state)
 	want := []routeListEntry{
+		{Method: "GET", Path: "/components/bytes/base64-encode.wasm", ContentType: "application/wasm"},
+		{Method: "HEAD", Path: "/components/bytes/base64-encode.wasm", ContentType: "application/wasm"},
 		{Method: "GET", Path: "/guide", ContentType: "text/markdown"},
 		{Method: "HEAD", Path: "/guide", ContentType: "text/markdown"},
-		{Method: "GET", Path: "/modules/bytes/base64-encode.wasm", ContentType: "application/wasm"},
-		{Method: "HEAD", Path: "/modules/bytes/base64-encode.wasm", ContentType: "application/wasm"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries=%v, want %v", got, want)
@@ -591,8 +604,8 @@ func TestResolveRecipeSourceResponse(t *testing.T) {
 				Body:        []byte("const x = 1;"),
 				ContentType: "text/plain; charset=utf-8",
 			},
-			"/view-source/modules/utf8/trim.zig": {
-				RequestPath: "/view-source/modules/utf8/trim.zig",
+			"/view-source/components/utf8/trim.zig": {
+				RequestPath: "/view-source/components/utf8/trim.zig",
 				Body:        []byte("const std = @import(\"std\");"),
 				ContentType: "text/plain; charset=utf-8",
 			},
@@ -629,15 +642,15 @@ func TestResolveRecipeSourceResponse(t *testing.T) {
 		t.Fatal("expected missing asset to not resolve")
 	}
 
-	moduleAssetResp, ok := resolveRecipeSourceResponse("/view-source/modules/utf8/trim.zig", state)
+	componentAssetResp, ok := resolveRecipeSourceResponse("/view-source/components/utf8/trim.zig", state)
 	if !ok {
-		t.Fatal("expected module source asset response")
+		t.Fatal("expected component source asset response")
 	}
-	if got := moduleAssetResp.Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
-		t.Fatalf("module asset content-type=%q, want %q", got, "text/plain; charset=utf-8")
+	if got := componentAssetResp.Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("component asset content-type=%q, want %q", got, "text/plain; charset=utf-8")
 	}
-	if string(moduleAssetResp.Body) != "const std = @import(\"std\");" {
-		t.Fatalf("module asset body=%q", string(moduleAssetResp.Body))
+	if string(componentAssetResp.Body) != "const std = @import(\"std\");" {
+		t.Fatalf("component asset body=%q", string(componentAssetResp.Body))
 	}
 }
 
@@ -696,7 +709,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 
 	gotErr := stderr.String()
 	if !strings.Contains(gotErr, "examples/infinite-loop.wasm:") {
-		t.Fatalf("stderr=%q, want module path prefix", gotErr)
+		t.Fatalf("stderr=%q, want component path prefix", gotErr)
 	}
 	if !strings.Contains(gotErr, "Wasm module exceeded the execution time limit") {
 		t.Fatalf("stderr=%q, want execution timeout message", gotErr)
@@ -889,7 +902,7 @@ func TestRunDoubleDashTreatsFollowingAsPositional(t *testing.T) {
 		t.Fatalf("stderr=%q, expected '--not-a-flag' to be treated as positional", gotErr)
 	}
 	if !strings.Contains(gotErr, "open --not-a-flag") {
-		t.Fatalf("stderr=%q, expected file-open error for positional module path", gotErr)
+		t.Fatalf("stderr=%q, expected file-open error for positional component path", gotErr)
 	}
 }
 
@@ -1192,7 +1205,7 @@ func TestScanRecipeModuleStampsDetectsChanges(t *testing.T) {
 	}
 }
 
-func TestScanRecipeModuleStampsSupportsSymlinkedRecipeModules(t *testing.T) {
+func TestScanRecipeModuleStampsSupportsSymlinkedRecipeComponents(t *testing.T) {
 	root := t.TempDir()
 	external := t.TempDir()
 	recipeDir := filepath.Join(root, "text", "markdown")
@@ -1254,7 +1267,7 @@ func TestLoadRecipeChainsIgnoresNonWasm(t *testing.T) {
 	}
 }
 
-func TestLoadRecipeChainsSupportsSymlinkedRecipeModules(t *testing.T) {
+func TestLoadRecipeChainsSupportsSymlinkedRecipeComponents(t *testing.T) {
 	root := t.TempDir()
 	external := t.TempDir()
 
@@ -1453,7 +1466,7 @@ func TestLoadFormModulesSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *testing
 	}
 }
 
-func TestLoadModuleAssets(t *testing.T) {
+func TestLoadComponentAssets(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -1473,9 +1486,9 @@ func TestLoadModuleAssets(t *testing.T) {
 		t.Fatalf("write non-wasm: %v", err)
 	}
 
-	assets, requestPaths, err := loadModuleAssets(root)
+	assets, requestPaths, err := loadComponentAssets(root)
 	if err != nil {
-		t.Fatalf("loadModuleAssets error: %v", err)
+		t.Fatalf("loadComponentAssets error: %v", err)
 	}
 	if len(assets) != 2 {
 		t.Fatalf("asset count=%d, want 2", len(assets))
@@ -1483,18 +1496,18 @@ func TestLoadModuleAssets(t *testing.T) {
 	if len(requestPaths) != 2 {
 		t.Fatalf("request path count=%d, want 2", len(requestPaths))
 	}
-	if !bytes.Equal(assets["/modules/contact.wasm"].body, wasmBytes) {
-		t.Fatalf("contact module bytes mismatch")
+	if !bytes.Equal(assets["/components/contact.wasm"].body, wasmBytes) {
+		t.Fatalf("contact component bytes mismatch")
 	}
-	if got := assets["/modules/contact.wasm"].contentType; got != "application/wasm" {
+	if got := assets["/components/contact.wasm"].contentType; got != "application/wasm" {
 		t.Fatalf("content type=%q, want application/wasm", got)
 	}
-	if !bytes.Equal(assets["/modules/nested/signup.wasm"].body, wasmBytes) {
-		t.Fatalf("nested/signup module bytes mismatch")
+	if !bytes.Equal(assets["/components/nested/signup.wasm"].body, wasmBytes) {
+		t.Fatalf("nested/signup component bytes mismatch")
 	}
 }
 
-func TestLoadModuleAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *testing.T) {
+func TestLoadComponentAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *testing.T) {
 	root := t.TempDir()
 	external := t.TempDir()
 
@@ -1518,9 +1531,9 @@ func TestLoadModuleAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *testin
 		t.Skipf("symlink unsupported: %v", err)
 	}
 
-	assets, requestPaths, err := loadModuleAssets(root)
+	assets, requestPaths, err := loadComponentAssets(root)
 	if err != nil {
-		t.Fatalf("loadModuleAssets error: %v", err)
+		t.Fatalf("loadComponentAssets error: %v", err)
 	}
 	if len(assets) != 1 {
 		t.Fatalf("asset count=%d, want 1", len(assets))
@@ -1528,8 +1541,8 @@ func TestLoadModuleAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *testin
 	if len(requestPaths) != 1 {
 		t.Fatalf("request path count=%d, want 1", len(requestPaths))
 	}
-	if !bytes.Equal(assets["/modules/contact.wasm"].body, wasmBytes) {
-		t.Fatalf("contact module bytes mismatch")
+	if !bytes.Equal(assets["/components/contact.wasm"].body, wasmBytes) {
+		t.Fatalf("contact component bytes mismatch")
 	}
 }
 
@@ -1547,14 +1560,14 @@ func TestExtractQIPFormNames(t *testing.T) {
 
 func TestInjectQIPFormRuntime(t *testing.T) {
 	htmlBody := []byte(`<html><body><h1>Page</h1><qip-form name="contact"></qip-form></body></html>`)
-	formModules := map[string][]byte{
+	formComponents := map[string][]byte{
 		"contact": []byte{0x00, 0x61, 0x73, 0x6d},
 	}
 	formDigests := map[string][32]byte{
-		"contact": sha256.Sum256(formModules["contact"]),
+		"contact": sha256.Sum256(formComponents["contact"]),
 	}
 
-	out, digests, err := injectQIPFormRuntime(htmlBody, formModules, formDigests)
+	out, digests, err := injectQIPFormRuntime(htmlBody, formComponents, formDigests)
 	if err != nil {
 		t.Fatalf("injectQIPFormRuntime error: %v", err)
 	}
@@ -1587,7 +1600,7 @@ func TestInjectQIPFormRuntimeMissingModule(t *testing.T) {
 }
 
 func TestInjectQIPPreviewRuntime(t *testing.T) {
-	htmlBody := []byte(`<html><body><h1>Page</h1><qip-preview><source src="/modules/utf8/hello.wasm" type="application/wasm"></source><textarea name="input"></textarea><output name="output"></output></qip-preview></body></html>`)
+	htmlBody := []byte(`<html><body><h1>Page</h1><qip-preview><source src="/components/utf8/hello.wasm" type="application/wasm"></source><textarea name="input"></textarea><output name="output"></output></qip-preview></body></html>`)
 	out := injectQIPPreviewRuntime(htmlBody)
 	if !bytes.Contains(out, []byte(`<script type="module">`)) {
 		t.Fatalf("expected inline module script injection")
@@ -1611,7 +1624,7 @@ func TestInjectQIPPreviewRuntimeNoTag(t *testing.T) {
 }
 
 func TestInjectQIPPlayRuntime(t *testing.T) {
-	htmlBody := []byte(`<html><body><h1>Play</h1><qip-play><source src="/modules/interactive/tile-world-12x12.wasm" type="application/wasm"></source></qip-play></body></html>`)
+	htmlBody := []byte(`<html><body><h1>Play</h1><qip-play><source src="/components/interactive/tile-world-12x12.wasm" type="application/wasm"></source></qip-play></body></html>`)
 	out := injectQIPPlayRuntime(htmlBody)
 	if !bytes.Contains(out, []byte(`<script type="module">`)) {
 		t.Fatalf("expected inline module script injection")
@@ -1717,5 +1730,50 @@ func TestExtractFirstWARCResponseRecordSkipsNonResponseRecords(t *testing.T) {
 	}
 	if !bytes.Equal(parsed.Body, secondBody) {
 		t.Fatalf("body=%q, want %q", parsed.Body, secondBody)
+	}
+}
+
+func TestExtractWARCResponseRecordByTargetURI(t *testing.T) {
+	first, err := buildMinimalWARCResponseRecord("http://qip.local/docs", qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+		Body:       []byte("docs"),
+	})
+	if err != nil {
+		t.Fatalf("build first record: %v", err)
+	}
+	second, err := buildMinimalWARCResponseRecord("http://qip.local/docs/security-model", qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+		Body:       []byte("security"),
+	})
+	if err != nil {
+		t.Fatalf("build second record: %v", err)
+	}
+
+	parsed, err := extractWARCResponseRecordByTargetURI(append(first, second...), "http://qip.local/docs/security-model")
+	if err != nil {
+		t.Fatalf("extractWARCResponseRecordByTargetURI: %v", err)
+	}
+	if !bytes.Equal(parsed.Body, []byte("security")) {
+		t.Fatalf("body=%q, want security", parsed.Body)
+	}
+}
+
+func TestContextualWARCRequestPaths(t *testing.T) {
+	tests := []struct {
+		requestPath string
+		want        []string
+	}{
+		{"/", []string{"/"}},
+		{"/docs", []string{"/"}},
+		{"/docs/security-model", []string{"/", "/docs"}},
+		{"/docs/api/foo", []string{"/", "/docs", "/docs/api"}},
+	}
+	for _, tt := range tests {
+		got := contextualWARCRequestPaths(tt.requestPath)
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Fatalf("contextualWARCRequestPaths(%q)=%v, want %v", tt.requestPath, got, tt.want)
+		}
 	}
 }

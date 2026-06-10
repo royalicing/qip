@@ -99,7 +99,7 @@
     (f32.sub (f32.const 1.0) (local.get $edge))
   )
 
-  (func (export "tile_rgba_f32_64x64") (param $x f32) (param $y f32)
+  (func (export "tile_rgba32float_64x64") (param $x f32) (param $y f32)
     (local $row i32)
     (local $row_above i32)
     (local $row_below i32)

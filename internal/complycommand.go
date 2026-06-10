@@ -23,20 +23,20 @@ import (
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]"
 
 const (
-	implModuleName                = "impl"
-	trapHostModuleName            = "qip"
-	trapHostExportRunMustTrap     = "render_must_trap"
-	complyExportMemory            = "memory"
-	complyExportRun               = "render"
-	complyExportInputPtr          = "input_ptr"
-	complyExportInputUTF8Cap      = "input_utf8_cap"
-	complyExportInputBytesCap     = "input_bytes_cap"
-	complyExportTileRGBA64        = "tile_rgba_f32_64x64"
-	complyExportPositive          = "positive"
-	complyExportNegative          = "negative"
-	defaultComplianceTimeout      = 5 * time.Second
-	maxFailurePreviewBytes        = 256
-	minComplianceTimeoutMS    int = 1
+	implModuleName                  = "impl"
+	trapHostModuleName              = "qip"
+	trapHostExportRunMustTrap       = "render_must_trap"
+	complyExportMemory              = "memory"
+	complyExportRun                 = "render"
+	complyExportInputPtr            = "input_ptr"
+	complyExportInputUTF8Cap        = "input_utf8_cap"
+	complyExportInputBytesCap       = "input_bytes_cap"
+	complyExportTileRGBA32Float     = "tile_rgba32float_64x64"
+	complyExportPositive            = "positive"
+	complyExportNegative            = "negative"
+	defaultComplianceTimeout        = 5 * time.Second
+	maxFailurePreviewBytes          = 256
+	minComplianceTimeoutMS      int = 1
 )
 
 type stringListFlag []string
@@ -86,7 +86,7 @@ func RunComplyCommand(args []string) error {
 	var withCompliances stringListFlag
 	var verbose bool
 	var timeoutMS int
-	fs.Var(&withCompliances, "with", "compliance module (repeatable)")
+	fs.Var(&withCompliances, "with", "compliance component (repeatable)")
 	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
 	fs.IntVar(&timeoutMS, "timeout-ms", int(defaultComplianceTimeout/time.Millisecond), "per-compliance execution timeout in milliseconds")
@@ -192,7 +192,7 @@ func RunComplyCommand(args []string) error {
 	}
 
 	if failCount > 0 {
-		return fmt.Errorf("compliance failed: %d/%d compliance modules failed", failCount, len(results))
+		return fmt.Errorf("compliance failed: %d/%d compliance components failed", failCount, len(results))
 	}
 	return nil
 }
@@ -271,8 +271,8 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 	}
 
 	hasTile := false
-	if tileDef, ok := funcs[complyExportTileRGBA64]; ok {
-		if err := requireSignature(tileDef, []api.ValueType{api.ValueTypeF32, api.ValueTypeF32}, []api.ValueType{}, complyExportTileRGBA64); err != nil {
+	if tileDef, ok := funcs[complyExportTileRGBA32Float]; ok {
+		if err := requireSignature(tileDef, []api.ValueType{api.ValueTypeF32, api.ValueTypeF32}, []api.ValueType{}, complyExportTileRGBA32Float); err != nil {
 			return baseValidationResult{}, err
 		}
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
@@ -357,7 +357,7 @@ func runComplianceModule(implWasm []byte, compliance complianceSpec, timeout tim
 
 	complianceCompiled, err := r.CompileModule(ctx, compliance.wasm)
 	if err != nil {
-		out.err = errors.New("compliance module could not be compiled")
+		out.err = errors.New("compliance component could not be compiled")
 		return out
 	}
 	defer complianceCompiled.Close(ctx)
@@ -403,23 +403,23 @@ func ensurecomplianceImportsImplMemory(compiled wazero.CompiledModule) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("compliance module must import %s.%s", implModuleName, complyExportMemory)
+	return fmt.Errorf("compliance component must import %s.%s", implModuleName, complyExportMemory)
 }
 
 func ensureComplianceEntrypointSignatures(compiled wazero.CompiledModule) (bool, error) {
 	def, ok := compiled.ExportedFunctions()[complyExportPositive]
 	if !ok {
-		return false, errors.New(`compliance module must export positive() -> i32`)
+		return false, errors.New(`compliance component must export positive() -> i32`)
 	}
 	if err := requireSignature(def, []api.ValueType{}, []api.ValueType{api.ValueTypeI32}, complyExportPositive); err != nil {
-		return false, errors.New(`compliance module export positive must have signature () -> i32`)
+		return false, errors.New(`compliance component export positive must have signature () -> i32`)
 	}
 	def, ok = compiled.ExportedFunctions()[complyExportNegative]
 	if !ok {
 		return false, nil
 	}
 	if err := requireSignature(def, []api.ValueType{}, []api.ValueType{api.ValueTypeI32}, complyExportNegative); err != nil {
-		return false, errors.New(`compliance module export negative must have signature () -> i32`)
+		return false, errors.New(`compliance component export negative must have signature () -> i32`)
 	}
 	return true, nil
 }
@@ -469,15 +469,15 @@ func runCompliancePhase(
 	complianceMod, err := r.InstantiateModule(ctx, complianceCompiled, wazero.NewModuleConfig().WithName("compliance-"+entrypoint))
 	if err != nil {
 		if installTrapHost {
-			return 0, "", fmt.Errorf("compliance module could not be instantiated (imports must bind to %q and %q): %w", implModuleName, trapHostModuleName, err)
+			return 0, "", fmt.Errorf("compliance component could not be instantiated (imports must bind to %q and %q): %w", implModuleName, trapHostModuleName, err)
 		}
-		return 0, "", fmt.Errorf("compliance module could not be instantiated (imports must bind to %q): %w", implModuleName, err)
+		return 0, "", fmt.Errorf("compliance component could not be instantiated (imports must bind to %q): %w", implModuleName, err)
 	}
 	defer complianceMod.Close(ctx)
 
 	fn := complianceMod.ExportedFunction(entrypoint)
 	if fn == nil {
-		return 0, "", fmt.Errorf(`compliance module must export %s() -> i32`, entrypoint)
+		return 0, "", fmt.Errorf(`compliance component must export %s() -> i32`, entrypoint)
 	}
 
 	complianceCtx := context.Background()

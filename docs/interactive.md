@@ -1,6 +1,6 @@
 # Interactive ABI
 
-This ABI is for stateful, event-driven modules that render an output frame. We prefer a small host/module contract over protocol complexity: send key and pointer events directly, advance state with `tick`, then pull pixels with `render_output`.
+This ABI is for stateful, event-driven modules that render an output frame. We prefer a small host/module contract over protocol complexity: send key and pointer events directly, advance state with `tick`, then pull pixels with `render(input_size)`.
 
 The design goal is practical interoperability: browser and native hosts can adapt input to this ABI, and modules stay tiny.
 
@@ -10,16 +10,21 @@ Required exports:
 
 - `memory`
 - `output_ptr() -> i32`
-- `output_bytes_cap() -> i32`
+- `output_rgba8_srgb_bytes() -> i32`
 - `key_event(x11_key: i32, flags: i32, now_ms: i64) -> i32`
 - `pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) -> i32`
 - `tick(now_ms: i64) -> i64`
-- `render_output() -> i32`
+- `render(input_size: i32) -> i32`
+  - If no input bytes are being passed for this frame, host must pass `0`.
+  - The ABI uses one fixed signature to avoid per-runtime export arity/type branching.
 
 ### Output Format
 
-- Pixel format is fixed: RGBA8 bytes in memory order `[R, G, B, A]`.
+- Pixel format is fixed: color component bytes in memory order `[R, G, B, A]`.
 - Output is row-major, top-left origin, tightly packed.
+- Stride is fixed: `bytes_per_row = render_width_px * 4` (no row padding).
+- Alpha is straight (not premultiplied) in module memory.
+- Colors are in sRGB colorspace with 2.2 gamma.
 - Total bytes for a full frame: `render_width_px * render_height_px * 4`.
 
 Little-endian note:
@@ -27,11 +32,18 @@ Little-endian note:
 - Hosts that view pixels as `u32` will see each pixel as `0xAABBGGRR` on little-endian systems.
 - For portability, treat output as byte-addressed RGBA8, not host-endian `u32` values.
 
+### Rendering Target Interop
+
+We chose `rgba8_srgb` with `stride = width * 4` for direct compatibility with browser `<canvas>` 2D context’s `putImageData()`, which expects RGBA bytes in that logical order.
+- WebGL: ABI bytes map to standard RGBA8 upload paths, e.g. `RGBA + UNSIGNED_BYTE`.
+- WebGPU: canvas surface may prefer `bgra8unorm`/`bgra8unorm-srgb`; conversion may happen in the renderer.
+- Native runtimes can convert once at the edge, for example they may prefer premultiplied BGRA with aligned stride.
+
 ### Event Semantics
 
 `key_event(...)`:
 
-- `x11_key` uses X11 keysym values (aligned with RFB `KeyEvent` semantics).
+- `x11_key` uses X11 keysym values (aligned with VNC Remote Framebuffer `KeyEvent` semantics).
 - `flags` is a bitfield:
   - `bit 0`: key down (`1`) / key up (`0`)
   - `bit 1`: repeat
@@ -54,7 +66,7 @@ Little-endian note:
 We intentionally split simulation from rendering.
 
 - `tick(now_ms)` advances state.
-- `render_output()` writes/returns output bytes from current state.
+- `render(input_size)` writes out output bytes using current state.
 
 `tick(now_ms)` return value:
 
@@ -63,9 +75,9 @@ We intentionally split simulation from rendering.
 
 Time source requirements:
 
-- `now_ms` should be monotonic time in milliseconds.
+- `now_ms` should be monotonically-increasing time in milliseconds.
 - Hosts should call `tick(0)` first, then pass current monotonic elapsed milliseconds.
-- Do not use wall-clock time for simulation.
+- Do not use wall-clock time for simulation as it is likely not monotonic.
 
 ## Sizing Variants
 
@@ -83,26 +95,7 @@ Additional required exports:
 Rules:
 
 - Size does not change during instance lifetime.
-- Host validates `output_bytes_cap() >= render_width_px()*render_height_px()*4`.
-
-## Dynamic Size Variant
-
-Host/user can request size changes within declared limits.
-
-Additional required exports:
-
-- `render_width_px() -> i32`
-- `render_height_px() -> i32`
-- `render_max_width_px() -> i32`
-- `render_max_height_px() -> i32`
-- `render_resize(width_px: i32, height_px: i32) -> i32`
-
-Rules:
-
-- `render_resize(...)` returns `1` on success, `0` on rejection.
-- Rejection should be used for out-of-range or unsupported sizes.
-- Width/height getters must reflect current active size.
-- Host validates capacity after resize using current size.
+- Host validates `output_rgba8_srgb_bytes() == render_width_px()*render_height_px()*4`.
 
 ## Host Loop Pattern
 
@@ -110,7 +103,7 @@ Typical host flow:
 
 1. Deliver input as it arrives via `key_event(...)` / `pointer_event(...)`.
 2. Call `tick(now_ms)` when input is ready to apply, or when host time reaches `next_wake_at_ms`.
-3. Call `render_output()` after each tick that was run and read `output_ptr()` bytes.
+3. Call `render(0)` after each tick that was run, then read `output_ptr()` bytes.
 4. Schedule the next host wake from the returned `next_wake_at_ms` (if non-zero) and pending input times.
 
 This gives low-latency input handling while keeping frame scheduling host-driven.
@@ -122,10 +115,5 @@ Claim: this ABI is a better default than embedding a full protocol stream.
 Reason:
 
 - It keeps wasm modules free of packet parsing logic.
-- It aligns with familiar game/UI separation (`tick` then render).
+- It aligns with familiar game/UI separation (tick then render).
 - It composes with multiple hosts (browser/native) by adapting input at the edge.
-
-Tradeoff:
-
-- You lose protocol-level extensibility in v1.
-- If batching or replay is needed later, add an optional batched event API in a future version without breaking this core.

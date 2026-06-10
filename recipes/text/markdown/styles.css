@@ -135,6 +135,48 @@ main {
         font-style: italic;
     }
 }
+main.docs-layout,
+main:has(> .docs-sidebar) {
+    max-width: 78em;
+    display: grid;
+    grid-template-columns: minmax(12em, 16em) minmax(0, 1fr);
+    gap: 2em;
+    align-items: start;
+}
+.docs-sidebar {
+    position: sticky;
+    top: 1lh;
+
+    ol {
+        list-style: none;
+    }
+
+    li {
+        margin-bottom: 0.25rlh;
+    }
+
+    a {
+        display: block;
+        text-decoration: none;
+    }
+
+    a:hover,
+    a[aria-current="page"] {
+        text-decoration: underline;
+    }
+}
+.docs-content {
+    min-width: 0;
+}
+@media (max-width: 48em) {
+    main.docs-layout,
+    main:has(> .docs-sidebar) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .docs-sidebar {
+        position: static;
+    }
+}
 
 code,
 pre,

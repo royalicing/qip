@@ -89,6 +89,7 @@ modules-zig-wasm: recipes/text/markdown/10-markdown-basic.wasm
 modules-zig-wasm: recipes/text/markdown/80-html-page-wrap.wasm
 
 recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(wildcard recipes/text/markdown/*.zig))
+recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 
 modules: modules-wat-wasm modules-c-wasm modules-zig-wasm

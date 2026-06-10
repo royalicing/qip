@@ -8,14 +8,14 @@
 - Likely to still work in 10+ years.
 - Reduced lock-in to proprietary systems.
 
-For qip's one-input/one-output module model, stable interchange formats make modules more reusable.
+For qip's one-input/one-output component model, stable interchange formats make QIP components more reusable.
 
 ## Preferred formats
 
 Current formats directly supported by a qip command or supported by this repo’s modules in `modules/`:
 
 - `application/warc`: website snapshots
-- `application/x-tar`: : directory archive as one input/output blob
+- `application/x-tar`: directory archive as one input/output blob
 - `image/bmp`: simple uncompressed raster interchange
 - `image/svg+xml`: vector graphics that work great with LLMs
 - `image/x-icon`
@@ -48,12 +48,14 @@ Formats and encodings are at different layers:
 `qip` currently supports these encodings:
 
 - `UTF-8` for text pipelines (`input_utf8_cap` / `output_utf8_cap`)
-- `RGBA f32` for image filter tiles in `qip image` (`tile_rgba_f32_64x64`)
+- `RGBA32Float` for image filter tiles in `qip image` (`tile_rgba32float_64x64`)
+- `RGBA8 sRGB` for interactive frame output (`docs/interactive`)
 
-Why these two:
+Why these defaults:
 
 - UTF-8 is the default, broadly interoperable text encoding. It is much easier to process than alternatives like UTF-16.
-- RGBA float32 preserves precision during chained image transforms and maps cleanly to GPU/shader-style workflows.
+- RGBA32Float preserves precision during chained image transforms and maps cleanly to GPU/shader-style workflows.
+- RGBA8 sRGB is the practical interop default for event-driven UI frames, especially for canvas-style rendering paths.
 
 ## Quick Decision Guide
 
@@ -62,12 +64,12 @@ If you need:
 - One file that represents many files: use `application/x-tar`
 - A snapshot of routed web output: use `application/warc`
 - Vector graphics interchange: use `image/svg+xml`
-- Simple raster interchange between modules: use `image/bmp`
-- General text transforms: use `UTF-8` modules in `modules/utf8/`
-- Image filter pipelines: use `RGBA f32` via `qip image`
+- Simple raster interchange between components: use `image/bmp`
+- General text transforms: use `UTF-8` components in `modules/utf8/`
+- Image filter pipelines: use `RGBA32Float` via `qip image`
 
 ## When not to use these defaults
 
 - Use richer app-specific formats only when their extra semantics are required.
-- Keep module boundaries on simple formats, then adapt at ingress/egress.
+- Keep component boundaries on simple formats, then adapt at ingress/egress.
 - Use PNG/JPEG/WebP at system edges where compression is the priority.

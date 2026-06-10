@@ -926,7 +926,7 @@
         filter.exports = exports;
         filter.memory = exports.memory;
         filter.inputPtr = exportedValue(exports.input_ptr);
-        filter.tileFn = exports.tile_rgba_f32_64x64;
+        filter.tileFn = exports.tile_rgba32float_64x64;
         filter.haloFn = exports.calculate_halo_px || null;
         filter.inputBytesCap = exports.input_bytes_cap
           ? Number(exportedValue(exports.input_bytes_cap))

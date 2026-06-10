@@ -7,5 +7,5 @@ Controls:
 - `R`: restart
 
 <qip-play>
-  <source src="/modules/interactive/snake.wasm" type="application/wasm" />
+  <source src="/components/interactive/snake.wasm" type="application/wasm" />
 </qip-play>

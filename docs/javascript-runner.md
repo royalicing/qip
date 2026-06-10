@@ -249,7 +249,7 @@ function parseOutputSignature(exportsObj) {
 <pre><code class="language-js">export class Recipe {
   constructor(inputMimeType, arrayOfWasmModules) {
     if (!Array.isArray(arrayOfWasmModules) || arrayOfWasmModules.length === 0) {
-      throw Error("Recipe requires a non-empty array of wasm modules");
+      throw Error("Recipe requires a non-empty array of QIP components");
     }
     this.inputMimeType = normalizeMimeType(inputMimeType);
     this.modules = arrayOfWasmModules.slice();
@@ -284,12 +284,12 @@ function parseOutputSignature(exportsObj) {
 ```html
 <script src="/qip-runner.js"></script>
 <script type="module">
-  const out = await QIP.render('/modules/utf8/hello.wasm', 'World');
+  const out = await QIP.render('/components/utf8/hello.wasm', 'World');
   console.log(out); // Hello, World
 
   const recipe = new QIP.Recipe('text/markdown', [
-    '/modules/text/markdown/commonmark.0.31.2.wasm',
-    '/modules/text/html/html-page-wrap.wasm',
+    '/components/text/markdown/commonmark.0.31.2.wasm',
+    '/components/text/html/html-page-wrap.wasm',
   ]);
   const html = await recipe.render('# qip');
   console.log(recipe.lastRender.outputMimeType, html.slice(0, 32));
