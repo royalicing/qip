@@ -4,8 +4,9 @@ The qip contract in tiny, pure JavaScript. Write bytes to `input_ptr`, call `ren
 
 - Raw source: [`/qip-runner.js`](/qip-runner.js)
 - API:
-  - `await QIP.render(wasmModule, input)`
-  - `const recipe = new QIP.Recipe(inputMimeType, modules); await recipe.render(input)`
+  - `import { createRecipe, render } from "/qip-runner.js"`
+  - `const result = render(component, input); result.value`
+  - `const recipe = createRecipe(inputMimeType, components); recipe.render(input).value`
 
 <style>
 main { max-width: none; }
@@ -65,7 +66,7 @@ function valueFromExport(exportsObj, name, required) {
   if (typeof value === "function") return toI32(value(), name);
   if (value instanceof WebAssembly.Global) return toI32(value.value, name);
   if (typeof value === "number" || typeof value === "bigint") return toI32(value, name);
-  if (required) throw Error("module missing export " + name);
+  if (required) throw Error("component missing export " + name);
   return null;
 }
 </code></pre>
@@ -80,7 +81,7 @@ function valueFromExport(exportsObj, name, required) {
     <td>
 <pre><code class="language-js">function readSlice(memory, ptr, len, label) {
   if (!(memory instanceof WebAssembly.Memory)) {
-    throw Error("module export memory must be WebAssembly.Memory");
+    throw Error("component export memory must be WebAssembly.Memory");
   }
   if (ptr < 0 || len < 0) {
     throw Error(label + " returned negative pointer/size");
@@ -97,7 +98,7 @@ function valueFromExport(exportsObj, name, required) {
 
 function writeSlice(memory, ptr, bytes, label) {
   if (!(memory instanceof WebAssembly.Memory)) {
-    throw Error("module export memory must be WebAssembly.Memory");
+    throw Error("component export memory must be WebAssembly.Memory");
   }
   const start = ptr >>> 0;
   const end = start + bytes.length;
@@ -113,35 +114,15 @@ function writeSlice(memory, ptr, bytes, label) {
 
   <tr>
     <td>
-      <strong>Module loading</strong><br>
-      `wasmModule` can be an instance, compiled module, URL string, `Response`, `Uint8Array`, `ArrayBuffer`, or typed view.
+      <strong>Component instantiation</strong><br>
+      The runner expects compiled `WebAssembly.Module` values. Fetching, streaming compilation, caching, and invalidation stay under caller control.
     </td>
     <td>
-<pre><code class="language-js">async function instantiateWasm(wasmModule) {
-  if (wasmModule instanceof WebAssembly.Instance) return wasmModule;
-
-  if (wasmModule instanceof WebAssembly.Module) {
-    const out = await WebAssembly.instantiate(wasmModule, {});
-    return out instanceof WebAssembly.Instance ? out : out.instance;
+<pre><code class="language-js">function instantiateComponent(component) {
+  if (!(component instanceof WebAssembly.Module)) {
+    throw Error("component must be a WebAssembly.Module");
   }
-
-  if (typeof wasmModule === "string") {
-    const response = await fetch(wasmModule);
-    if (!response.ok) {
-      throw Error("failed to fetch wasm module: " + response.status + " " + response.statusText);
-    }
-    const bytes = await response.arrayBuffer();
-    const out = await WebAssembly.instantiate(bytes, {});
-    return out instanceof WebAssembly.Instance ? out : out.instance;
-  }
-
-  if (wasmModule && typeof wasmModule.arrayBuffer === "function") {
-    const bytes = await wasmModule.arrayBuffer();
-    const out = await WebAssembly.instantiate(bytes, {});
-    return out instanceof WebAssembly.Instance ? out : out.instance;
-  }
-
-  // ... Uint8Array / ArrayBuffer / TypedArray branch ...
+  return new WebAssembly.Instance(component, {});
 }
 </code></pre>
     </td>
@@ -158,9 +139,9 @@ function writeSlice(memory, ptr, bytes, label) {
   const utf8Cap = valueFromExport(exportsObj, "input_utf8_cap", false);
   const bytesCap = valueFromExport(exportsObj, "input_bytes_cap", false);
 
-  if (utf8Cap !== null) return { ptr: inputPtr, cap: utf8Cap, kind: "utf8" };
-  if (bytesCap !== null) return { ptr: inputPtr, cap: bytesCap, kind: "bytes" };
-  throw Error("module must export input_utf8_cap or input_bytes_cap");
+  if (utf8Cap !== null) return { ptr: inputPtr, cap: utf8Cap, encoding: "utf8" };
+  if (bytesCap !== null) return { ptr: inputPtr, cap: bytesCap, encoding: "bytes" };
+  throw Error("component must export input_utf8_cap or input_bytes_cap");
 }
 
 function parseOutputSignature(exportsObj) {
@@ -170,12 +151,12 @@ function parseOutputSignature(exportsObj) {
   const i32Cap = valueFromExport(exportsObj, "output_i32_cap", false);
 
   if (outputPtr === null || (utf8Cap === null && bytesCap === null && i32Cap === null)) {
-    return { kind: "scalar" };
+    return { encoding: "scalar" };
   }
 
-  if (utf8Cap !== null) return { kind: "utf8", ptr: outputPtr, cap: utf8Cap, itemSize: 1 };
-  if (bytesCap !== null) return { kind: "bytes", ptr: outputPtr, cap: bytesCap, itemSize: 1 };
-  return { kind: "i32", ptr: outputPtr, cap: i32Cap, itemSize: 4 };
+  if (utf8Cap !== null) return { encoding: "utf8", ptr: outputPtr, cap: utf8Cap, itemSize: 1 };
+  if (bytesCap !== null) return { encoding: "bytes", ptr: outputPtr, cap: bytesCap, itemSize: 1 };
+  return { encoding: "i32", ptr: outputPtr, cap: i32Cap, itemSize: 4 };
 }
 </code></pre>
     </td>
@@ -183,44 +164,53 @@ function parseOutputSignature(exportsObj) {
 
   <tr>
     <td>
-      <strong>Stage execution (`renderDetailed`)</strong><br>
+      <strong>Stage execution</strong><br>
       This is the qip loop: validate types, write input bytes, call `render`, read output.
     </td>
     <td>
-<pre><code class="language-js">async function renderDetailed(wasmModule, input, inputContentType) {
-  const instance = await instantiateWasm(wasmModule);
+<pre><code class="language-js">function renderComponent(component, input, inputContentType = "", options = {}) {
+  const instance = instantiateComponent(component);
   const exportsObj = instance.exports;
   const renderExport = exportsObj.render;
   if (typeof renderExport !== "function") {
-    throw Error("module missing export: render");
+    throw Error("component missing export: render");
   }
 
   const inputSignature = parseInputSignature(exportsObj);
   const outputSignature = parseOutputSignature(exportsObj);
 
+  const declaredInputType = readContentType(exportsObj, exportsObj.memory, "input_content_type_ptr", "input_content_type_size");
+  const declaredOutputType = readContentType(exportsObj, exportsObj.memory, "output_content_type_ptr", "output_content_type_size");
+  const normalizedInputType = normalizeMimeType(inputContentType);
+  if (declaredInputType !== "" && normalizedInputType === "" && options.strictInputContentType) {
+    throw Error("input content type mismatch: expected " + declaredInputType + ", got unknown");
+  }
+  if (declaredInputType !== "" && normalizedInputType !== "" && declaredInputType !== normalizedInputType) {
+    throw Error("input content type mismatch: expected " + declaredInputType + ", got " + normalizedInputType);
+  }
+
   const normalized = toInputBytes(input);
   if (normalized.bytes.length > inputSignature.cap) {
-    throw Error("input is too large for module");
+    throw Error("input is too large for component");
   }
 
   writeSlice(exportsObj.memory, inputSignature.ptr, normalized.bytes, "input_ptr");
   const outputLen = toI32(renderExport(normalized.bytes.length), "render");
 
-  // TODO: remove this
-  if (outputSignature.kind === "scalar") {
-    return outputLen;
+  if (outputSignature.encoding === "scalar") {
+    return { value: outputLen, encoding: "scalar", contentType: declaredOutputType };
   }
 
   const byteLen = outputLen * outputSignature.itemSize;
   const outputBytes = readSlice(exportsObj.memory, outputSignature.ptr, byteLen, "output_ptr");
 
-  if (outputSignature.kind === "utf8") {
-    return textDecoder.decode(outputBytes);
+  if (outputSignature.encoding === "utf8") {
+    return { value: textDecoder.decode(outputBytes), bytes: outputBytes, encoding: "utf8", contentType: declaredOutputType };
   }
-  if (outputSignature.kind === "bytes") {
-    return outputBytes;
+  if (outputSignature.encoding === "bytes") {
+    return { value: outputBytes, bytes: outputBytes, encoding: "bytes", contentType: declaredOutputType };
   }
-  return new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen);
+  return { value: new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen), bytes: outputBytes, encoding: "i32", contentType: declaredOutputType };
 }
 </code></pre>
     </td>
@@ -229,12 +219,11 @@ function parseOutputSignature(exportsObj) {
   <tr>
     <td>
       <strong>Public `render`</strong><br>
-      This returns only the stage output value: `string`, `Uint8Array`, `Int32Array`, or scalar `number`.
+      This returns a result object with `value`, `encoding`, optional `bytes`, and `contentType`.
     </td>
     <td>
-<pre><code class="language-js">export async function render(wasmModule, input) {
-  const result = await renderDetailed(wasmModule, input, "");
-  return result.value;
+<pre><code class="language-js">export function render(component, input) {
+  return renderComponent(component, input, "");
 }
 </code></pre>
     </td>
@@ -242,37 +231,29 @@ function parseOutputSignature(exportsObj) {
 
   <tr>
     <td>
-      <strong>`Recipe` pipeline</strong><br>
-      `Recipe` composes multiple render modules in stage order and tracks final MIME/kind metadata.
+      <strong>Recipe pipeline</strong><br>
+      `createRecipe` composes multiple content components in stage order and tracks final MIME/encoding metadata.
     </td>
     <td>
-<pre><code class="language-js">export class Recipe {
-  constructor(inputMimeType, arrayOfWasmModules) {
-    if (!Array.isArray(arrayOfWasmModules) || arrayOfWasmModules.length === 0) {
-      throw Error("Recipe requires a non-empty array of QIP components");
+<pre><code class="language-js">export function createRecipe(inputMimeType, components) {
+  if (!Array.isArray(components) || components.length === 0) {
+    throw Error("createRecipe requires a non-empty array of QIP components");
+  }
+  for (let i = 0; i < components.length; i += 1) {
+    if (!(components[i] instanceof WebAssembly.Module)) {
+      throw Error("recipe component at stage " + String(i + 1) + " must be a WebAssembly.Module");
     }
-    this.inputMimeType = normalizeMimeType(inputMimeType);
-    this.modules = arrayOfWasmModules.slice();
-    this.lastRender = null;
   }
 
-  async render(input) {
-    let current = input;
-    let currentMimeType = this.inputMimeType;
+  const recipeInputMimeType = normalizeMimeType(inputMimeType);
+  const recipeComponents = components.slice();
 
-    for (let i = 0; i < this.modules.length; i += 1) {
-      const isLast = i === this.modules.length - 1;
-      const result = await renderDetailed(this.modules[i], current, currentMimeType);
-      if (!isLast && (result.kind === "scalar" || result.kind === "i32")) {
-        throw Error("only utf8/bytes can be piped to another stage");
-      }
-      current = result.value;
-      if (result.outputContentType !== "") currentMimeType = result.outputContentType;
-    }
-
-    this.lastRender = { outputMimeType: currentMimeType };
-    return current;
-  }
+  return {
+    render(input) {
+      // ... run each component, validate MIME compatibility ...
+      return finalResultWithRecipeContentType;
+    },
+  };
 }
 </code></pre>
     </td>
@@ -282,32 +263,39 @@ function parseOutputSignature(exportsObj) {
 ## Usage Examples
 
 ```html
-<script src="/qip-runner.js"></script>
 <script type="module">
-  const out = await QIP.render('/components/utf8/hello.wasm', 'World');
+  import { createRecipe, render } from '/qip-runner.js';
+
+  const hello = await WebAssembly.compileStreaming(fetch('/components/utf8/hello.wasm'));
+  const out = render(hello, 'World').value;
   console.log(out); // Hello, World
 
-  const recipe = new QIP.Recipe('text/markdown', [
-    '/components/text/markdown/commonmark.0.31.2.wasm',
-    '/components/text/html/html-page-wrap.wasm',
+  const recipe = createRecipe('text/markdown', [
+    await WebAssembly.compileStreaming(fetch('/components/text/markdown/commonmark.0.31.2.wasm')),
+    await WebAssembly.compileStreaming(fetch('/components/text/html/html-page-wrap.wasm')),
   ]);
-  const html = await recipe.render('# qip');
-  console.log(recipe.lastRender.outputMimeType, html.slice(0, 32));
+  const result = recipe.render('# qip');
+  console.log(result.contentType, result.value.slice(0, 32));
 </script>
 ```
 
+For Node, run this from a package that treats `.js` files as ES modules, or import an `.mjs` copy of the runner.
+
 ```js
-const fs = require('node:fs');
-const { render, Recipe } = require('./site/qip-runner.js');
+import { readFile } from 'node:fs/promises';
+import { createRecipe, render } from './site/qip-runner.js';
 
 async function main() {
-  const hello = await render(new Uint8Array(fs.readFileSync('modules/utf8/hello.wasm')), 'World');
-  const recipe = new Recipe('', [
-    new Uint8Array(fs.readFileSync('modules/utf8/trim.wasm')),
-    new Uint8Array(fs.readFileSync('modules/utf8/hello.wasm')),
+  const markdownComponent = await WebAssembly.compile(await readFile('modules/text/markdown/commonmark.0.31.2.wasm'));
+  const pageComponent = await WebAssembly.compile(await readFile('modules/text/html/html-page-wrap.wasm'));
+
+  const htmlFragment = render(markdownComponent, '# Hello').value;
+  const recipe = createRecipe('text/markdown', [
+    markdownComponent,
+    pageComponent,
   ]);
-  const out = await recipe.render('  qip  ');
-  console.log(hello, out);
+  const page = recipe.render('# qip');
+  console.log(htmlFragment, page.value);
 }
 
 main().catch((err) => {
