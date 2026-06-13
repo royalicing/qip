@@ -47,6 +47,7 @@ For example, `qip router warc ./site` produces a Web Archive. Another component 
 <li><a href="/docs/how-it-works">How QIP Works</a></li>
 <li><a href="/docs/module-contract">QIP Component Contract</a></li>
 <li><a href="/docs/module-patterns">QIP Component Patterns</a></li>
+<li><a href="/docs/zig-components">Writing QIP Components In Zig</a></li>
 <li><a href="/docs/interactive">Interactive ABI</a></li>
 <li><a href="/docs/events">Interactive Events</a></li>
 <li><a href="/docs/formats">Formats and Encodings</a></li>

@@ -62,6 +62,10 @@ Current limitations:
 - No explicit per-module memory policy is configured in `qip` runtime config.
 - A module can declare large initial linear memory; instantiation may still reserve significant address space.
 
+Recommendation:
+
+- Components should declare a fixed memory maximum at build time. Zig components should use `--max-memory=<bytes>`; see [Writing QIP Components In Zig](/docs/zig-components).
+
 ## Data Safety Expectations
 
 - Module output should be treated as untrusted bytes.

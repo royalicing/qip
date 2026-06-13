@@ -294,6 +294,7 @@ Capacity units:
 - Keep input and output buffers disjoint unless overlap is an intentional and tested optimization.
 - Validate `input_size` and trap on out-of-bounds assumptions drifting between host and component.
 - Reserve explicit scratch space if needed.
+- For Zig components, compile with `--max-memory=<bytes>` so the Wasm memory has an explicit maximum. See [Writing QIP Components In Zig](/docs/zig-components).
 - Preferred for data-preserving transforms: trap on invalid input/overflow so bad data does not silently become empty output.
 - Prefer trapping over silent truncation when output buffers fill.
 - Use `return 0` only when empty output is an intentional, non-error result.

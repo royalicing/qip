@@ -7,6 +7,7 @@ The qip contract in tiny, pure JavaScript. Write bytes to `input_ptr`, call `ren
   - `import { createRecipe, render } from "/qip-runner.js"`
   - `const result = render(component, input); result.value`
   - `const recipe = createRecipe(inputMimeType, components); recipe.render(input).value`
+  - `result.reusedInput` is true when a byte/text component returned the original input buffer unchanged.
 
 <style>
 main { max-width: none; }
@@ -145,18 +146,18 @@ function writeSlice(memory, ptr, bytes, label) {
 }
 
 function parseOutputSignature(exportsObj) {
-  const outputPtr = valueFromExport(exportsObj, "output_ptr", false);
+  const hasOutputPtr = "output_ptr" in exportsObj;
   const utf8Cap = valueFromExport(exportsObj, "output_utf8_cap", false);
   const bytesCap = valueFromExport(exportsObj, "output_bytes_cap", false);
   const i32Cap = valueFromExport(exportsObj, "output_i32_cap", false);
 
-  if (outputPtr === null || (utf8Cap === null && bytesCap === null && i32Cap === null)) {
+  if (!hasOutputPtr || (utf8Cap === null && bytesCap === null && i32Cap === null)) {
     return { encoding: "scalar" };
   }
 
-  if (utf8Cap !== null) return { encoding: "utf8", ptr: outputPtr, cap: utf8Cap, itemSize: 1 };
-  if (bytesCap !== null) return { encoding: "bytes", ptr: outputPtr, cap: bytesCap, itemSize: 1 };
-  return { encoding: "i32", ptr: outputPtr, cap: i32Cap, itemSize: 4 };
+  if (utf8Cap !== null) return { encoding: "utf8", cap: utf8Cap, itemSize: 1 };
+  if (bytesCap !== null) return { encoding: "bytes", cap: bytesCap, itemSize: 1 };
+  return { encoding: "i32", cap: i32Cap, itemSize: 4 };
 }
 </code></pre>
     </td>
@@ -165,7 +166,8 @@ function parseOutputSignature(exportsObj) {
   <tr>
     <td>
       <strong>Stage execution</strong><br>
-      This is the qip loop: validate types, write input bytes, call `render`, read output.
+      This is the qip loop: validate types, write input bytes, call `render`, then read `output_ptr`.
+      Reading the pointer after `render` lets components return the original input buffer for unchanged output.
     </td>
     <td>
 <pre><code class="language-js">function renderComponent(component, input, inputContentType = "", options = {}) {
@@ -202,15 +204,17 @@ function parseOutputSignature(exportsObj) {
   }
 
   const byteLen = outputLen * outputSignature.itemSize;
-  const outputBytes = readSlice(exportsObj.memory, outputSignature.ptr, byteLen, "output_ptr");
+  const outputPtr = valueFromExport(exportsObj, "output_ptr", true);
+  const outputBytes = readSlice(exportsObj.memory, outputPtr, byteLen, "output_ptr");
+  const reusedInput = outputPtr === inputSignature.ptr && byteLen === normalized.bytes.length;
 
   if (outputSignature.encoding === "utf8") {
-    return { value: textDecoder.decode(outputBytes), bytes: outputBytes, encoding: "utf8", contentType: declaredOutputType };
+    return { value: textDecoder.decode(outputBytes), bytes: outputBytes, encoding: "utf8", contentType: declaredOutputType, reusedInput };
   }
   if (outputSignature.encoding === "bytes") {
-    return { value: outputBytes, bytes: outputBytes, encoding: "bytes", contentType: declaredOutputType };
+    return { value: outputBytes, bytes: outputBytes, encoding: "bytes", contentType: declaredOutputType, reusedInput };
   }
-  return { value: new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen), bytes: outputBytes, encoding: "i32", contentType: declaredOutputType };
+  return { value: new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen), bytes: outputBytes, encoding: "i32", contentType: declaredOutputType, reusedInput };
 }
 </code></pre>
     </td>
@@ -219,7 +223,7 @@ function parseOutputSignature(exportsObj) {
   <tr>
     <td>
       <strong>Public `render`</strong><br>
-      This returns a result object with `value`, `encoding`, optional `bytes`, and `contentType`.
+      This returns a result object with `value`, `encoding`, optional `bytes`, `contentType`, and `reusedInput`.
     </td>
     <td>
 <pre><code class="language-js">export function render(component, input) {

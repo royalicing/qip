@@ -381,6 +381,7 @@ printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?w
 
 - [QIP Component Contract](docs/module-contract.md)
 - [QIP Component Patterns (including error semantics)](docs/module-patterns.md)
+- [Writing QIP Components in Zig](docs/zig-components.md)
 - [QIP Component Compliance](docs/comply.md)
 - [Security Model](docs/security-model.md)
 
@@ -460,6 +461,8 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 
 ## TODO
 
+- [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
+- [ ] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
 - [ ] Add tracing by modifying modules:
   - [ ] Trace unreachable by adding calls to memory reads of input so we can check last read which will likely be source reason for the trap.
   - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
