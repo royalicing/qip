@@ -173,7 +173,7 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 
 	handlerTimeouts := routeHandlerTimeouts{
 		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
 	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
 	requestCtx := context.Background()
@@ -409,7 +409,7 @@ func routerCmd(args []string) {
 	}
 	handlerTimeouts := routeHandlerTimeouts{
 		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
 	warcTransformTimeout := defaultRouteWARCTransformTimeout
 	var runtimeMu sync.Mutex
