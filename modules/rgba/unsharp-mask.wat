@@ -1,5 +1,5 @@
 (module $UnsharpMaskRGBA
-  (memory (export "memory") 12)
+  (memory (export "memory") 12 12)
   (global $input_ptr (export "input_ptr") i32 (i32.const 0))
   (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x40000))
   (global $scratch_orig_ptr i32 (i32.const 0x40000))

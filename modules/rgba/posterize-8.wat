@@ -65,7 +65,7 @@
       i32.lt_u
       br_if 0 (;@1;)
     end)
-  (memory (;0;) 1)
+  (memory (;0;) 1 1)
   (global (;0;) f32 (f32.const 0x1p+3 (;=8;)))
   (global (;1;) i32 (i32.const 0))
   (global (;2;) i32 (i32.const 65536))

@@ -1,4 +1,4 @@
-.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static install score
+.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static install score wasm-safety-report
 
 default: qip compliance modules recipes
 
@@ -26,6 +26,7 @@ compliance: $(patsubst compliance/%.wat,compliance/%.wasm,$(wildcard compliance/
 ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
 ZIG_ENV := ZIG_CACHE_DIR=$(ZIG_CACHE_DIR) ZIG_GLOBAL_CACHE_DIR=$(ZIG_GLOBAL_CACHE_DIR)
+ZIG_WASM_MAX_MEMORY ?= 67108864
 
 MODULE_WAT_FILES := $(shell find modules -type f -name '*.wat')
 MODULE_C_FILES := $(shell find modules -type f -name '*.c')
@@ -53,6 +54,14 @@ modules/image/bmp/bmp-double.wasm: modules/image/bmp/bmp-double.c
 modules/image/bmp/bmp-double-simd.wasm: modules/image/bmp/bmp-double-simd.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -mcpu=generic+simd128 -femit-bin=$@
 
+modules/application/wasm/wasm-safety-check.wasm: ZIG_WASM_MAX_MEMORY = 20971520
+modules/application/wasm/wasm-safety-check.wasm: modules/application/wasm/wasm-safety-check.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+modules/application/wasm/wasm-score.wasm: ZIG_WASM_MAX_MEMORY = 14680064
+modules/application/wasm/wasm-score.wasm: modules/application/wasm/wasm-score.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 modules/text/javascript/js-to-bmp.wasm: modules/text/javascript/js-to-bmp.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
@@ -67,14 +76,19 @@ modules/text/markdown/markdown-basic.wasm: recipes/text/markdown/10-markdown-bas
 modules/text/html/html-page-wrap.wasm: recipes/text/markdown/80-html-page-wrap.wasm
 	cp $< $@
 
+modules/application/warc/warc-check-broken-links.wasm: ZIG_WASM_MAX_MEMORY = 167772160
+modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+modules/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+modules/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
+
 modules/%.wasm: modules/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 modules/%.wasm: modules/%.zig
-	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 recipes/%.wasm: recipes/%.zig
-	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 recipes/application/warc/10-add-open-graph-image-meta.wasm: modules/application/warc/warc-add-open-graph-image-meta.wasm
 	@mkdir -p $(dir $@)
@@ -169,7 +183,7 @@ test-snapshot: qip modules
 	@printf "%s\n" "module: utf8-must-be-valid.wasm" >> test/latest.txt
 	@printf %s "hello" | $(QIP_BIN) run modules/utf8/utf8-must-be-valid.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
-	@cat modules/utf8/hello.wasm | $(QIP_BIN) run modules/bytes/wasm-to-js.wasm >> test/latest.txt
+	@cat modules/utf8/hello.wasm | $(QIP_BIN) run modules/application/wasm/wasm-to-js.wasm >> test/latest.txt
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
 
 ZIG_TEST_FILES := $(MODULE_ZIG_FILES) $(wildcard recipes/text/markdown/*.zig)
@@ -223,6 +237,26 @@ score: qip
 		exit 1; \
 	fi; \
 	$(QIP_BIN) score $$files
+
+wasm-safety-report: qip modules
+	@pass=0; \
+	fail=0; \
+	files="$$(find modules -type f -name '*.wasm' | LC_ALL=C sort)"; \
+	if [ -z "$$files" ]; then \
+		echo "No .wasm files found under modules/"; \
+		exit 1; \
+	fi; \
+	for f in $$files; do \
+		if $(QIP_BIN) run -i "$$f" -- modules/application/wasm/wasm-safety-check.wasm >/dev/null 2>&1; then \
+			printf "PASS %s\n" "$$f"; \
+			pass=$$((pass + 1)); \
+		else \
+			printf "FAIL %s\n" "$$f"; \
+			fail=$$((fail + 1)); \
+		fi; \
+	done; \
+	total=$$((pass + fail)); \
+	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
 site-static:
 	$(QIP_BIN) router warc ./site --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static

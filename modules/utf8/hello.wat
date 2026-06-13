@@ -1,7 +1,7 @@
 (module $Hello
   ;; Memory must be exported with name "memory"
   ;; At least 3 pages needed: input at 0x10000, output at 0x20000
-  (memory (export "memory") 3)
+  (memory (export "memory") 3 3)
 
   ;; Required globals for qip integration
   (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
