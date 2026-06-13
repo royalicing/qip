@@ -1918,13 +1918,6 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 		return false, nil, nil
 	}
 
-	outputPtrValue, ok, err := getExportedValue(execCtx, mod, "output_ptr")
-	if err != nil {
-		return false, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
-	}
-	if !ok {
-		return false, nil, nil
-	}
 	outputBytesValue, ok, err := getExportedValue(execCtx, mod, "output_rgba8_srgb_bytes")
 	if err != nil {
 		return false, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
@@ -1980,6 +1973,13 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected output_rgba8_srgb_bytes=%d", spec.path, outputLen, outputBytes)
 	}
 
+	outputPtrValue, ok, err := getExportedValue(execCtx, mod, "output_ptr")
+	if err != nil {
+		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
+	}
+	if !ok {
+		return true, nil, fmt.Errorf("%s: interactive module missing output_ptr export", spec.path)
+	}
 	outputPtr := uint32(outputPtrValue)
 	outputRaw, ok := mod.Memory().Read(outputPtr, uint32(outputLen))
 	if !ok {
@@ -2058,12 +2058,10 @@ func executeModuleWithInput(
 	exec.inputCapBytes = inputCap
 
 	var outputPtr, outputCap uint32
-	if ptr, ok, err := getExportedValue(ctx, mod, "output_ptr"); err != nil {
+	if _, ok, err := getExportedValue(ctx, mod, "output_ptr"); err != nil {
 		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
 		return
 	} else if ok {
-		outputPtr = uint32(ptr)
-
 		if cap, ok, err := getExportedValue(ctx, mod, "output_utf8_cap"); err != nil {
 			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
 			return
@@ -2149,6 +2147,17 @@ func executeModuleWithInput(
 	outputCount := uint32(runResult[0])
 
 	if outputCap > 0 {
+		ptr, ok, err := getExportedValue(ctx, mod, "output_ptr")
+		if err != nil {
+			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+			return
+		}
+		if !ok {
+			returnErr = errors.New("Wasm module must export output_ptr as global or function")
+			return
+		}
+		outputPtr = uint32(ptr)
+
 		if outputCount > outputCap {
 			returnErr = errors.New("Module returned more bytes than its stated capacity")
 			return
