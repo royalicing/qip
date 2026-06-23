@@ -10,6 +10,7 @@ qip favors explicit contracts and simple pipelines. QIP components are sandboxed
 - [Component contract](/docs/component-contract.md): Required exports, memory pointers, capacities, and host interaction rules.
 - [Module patterns](/docs/module-patterns.md): Practical implementation patterns for QIP components.
 - [Comply](/docs/comply.md): Compliance checks and ABI verification guidance.
+- [WebAssembly ES module integration](/docs/esm-integration.md): Direct `.wasm` ES module import example for a UTF-8 Markdown-to-HTML QIP component.
 - [Security model](/docs/security-model.md): Sandboxing boundaries and trust assumptions.
 
 ## Router & Site Building
