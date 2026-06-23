@@ -1,309 +1,139 @@
-# JavaScript Runner: Annotated Source
+# JavaScript Runner
 
-The qip contract in tiny, pure JavaScript. Write bytes to `input_ptr`, call `render(input_size)`, read bytes from `output_ptr`.
+The JavaScript runner treats QIP work as checked content components: declare what goes in, declare what comes out, and then call the result like an ordinary function.
 
 - Raw source: [`/qip-runner.js`](/qip-runner.js)
 - API:
-  - `import { createRecipe, render } from "/qip-runner.js"`
-  - `const result = render(component, input); result.value`
-  - `const recipe = createRecipe(inputMimeType, components); recipe.render(input).value`
-  - `result.reusedInput` is true when a byte/text component returned the original input buffer unchanged.
+  - `contentContract({ encoding, contentType? })`
+  - `contentComponent(input, implementation, output)`
+  - `contentRecipe(input, components, output)`
 
-<style>
-main { max-width: none; }
+## Contracts
 
-.annotated-source {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  
-  td {
-    vertical-align: top;
-    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-    padding: 0.75rem;
-  }
-  td:first-child {
-    width: 32%;
-  }
-  td:last-child {
-    width: 68%;
-  }
-  pre {
-    margin: 0;
-    white-space: pre;
-    overflow-x: auto;
-  }
-}
-</style>
+Use `contentContract` to create a frozen content boundary. Encoding is required and content type is optional.
 
-<table class="annotated-source">
-  <tr>
-    <td>
-      <strong>Core utilities</strong><br>
-      Numeric conversion, MIME normalization, and export value reading all fail fast with explicit errors.
-    </td>
-    <td>
-<pre><code class="language-js">const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
+```js
+import { contentContract } from "/qip-runner.js";
 
-function toI32(value, label) {
-  const n = typeof value === "bigint" ? Number(value) : value;
-  if (typeof n !== "number" || !Number.isFinite(n)) {
-    throw Error(label + " returned non-finite numeric value");
-  }
-  return n | 0;
-}
+const text = contentContract({ encoding: "utf-8" });
+const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
+const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
+const bmp = contentContract({ encoding: "bytes", contentType: "image/bmp" });
+```
 
-function normalizeMimeType(value) {
-  if (typeof value !== "string") return "";
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed === "") return "";
-  const semi = trimmed.indexOf(";");
-  return semi === -1 ? trimmed : trimmed.slice(0, semi).trim();
-}
+Encoding is a hard requirement. Content type is a refinement: two contracts are compatible when the encodings match and either content type is unspecified or both specify the same type.
 
-function valueFromExport(exportsObj, name, required) {
-  const value = exportsObj[name];
-  if (typeof value === "function") return toI32(value(), name);
-  if (value instanceof WebAssembly.Global) return toI32(value.value, name);
-  if (typeof value === "number" || typeof value === "bigint") return toI32(value, name);
-  if (required) throw Error("component missing export " + name);
-  return null;
-}
-</code></pre>
-    </td>
-  </tr>
+Content types are not normalized. When present, they must already be lowercase media types without parameters or whitespace, such as `text/html` or `image/bmp`. Hosts compare them exactly.
 
-  <tr>
-    <td>
-      <strong>Memory safety helpers</strong><br>
-      Every memory read/write performs pointer and bounds checks.
-    </td>
-    <td>
-<pre><code class="language-js">function readSlice(memory, ptr, len, label) {
-  if (!(memory instanceof WebAssembly.Memory)) {
-    throw Error("component export memory must be WebAssembly.Memory");
-  }
-  if (ptr < 0 || len < 0) {
-    throw Error(label + " returned negative pointer/size");
-  }
-  const start = ptr >>> 0;
-  const size = len >>> 0;
-  const end = start + size;
-  const mem = new Uint8Array(memory.buffer);
-  if (end < start || end > mem.length) {
-    throw Error(label + " exceeds wasm memory bounds");
-  }
-  return mem.slice(start, end);
-}
+## Components
 
-function writeSlice(memory, ptr, bytes, label) {
-  if (!(memory instanceof WebAssembly.Memory)) {
-    throw Error("component export memory must be WebAssembly.Memory");
-  }
-  const start = ptr >>> 0;
-  const end = start + bytes.length;
-  const mem = new Uint8Array(memory.buffer);
-  if (ptr < 0 || end < start || end > mem.length) {
-    throw Error(label + " exceeds wasm memory bounds");
-  }
-  mem.set(bytes, start);
-}
-</code></pre>
-    </td>
-  </tr>
+`contentComponent(input, implementation, output)` returns a callable component with `.input` and `.output` metadata.
 
-  <tr>
-    <td>
-      <strong>Component instantiation</strong><br>
-      The runner expects compiled `WebAssembly.Module` values. Fetching, streaming compilation, caching, and invalidation stay under caller control.
-    </td>
-    <td>
-<pre><code class="language-js">function instantiateComponent(component) {
-  if (!(component instanceof WebAssembly.Module)) {
-    throw Error("component must be a WebAssembly.Module");
-  }
-  return new WebAssembly.Instance(component, {});
-}
-</code></pre>
-    </td>
-  </tr>
+The implementation can be a `WebAssembly.Module`:
 
-  <tr>
-    <td>
-      <strong>Contract parsing</strong><br>
-      The runner supports qip’s dual style exports: function or global for pointers/caps.
-    </td>
-    <td>
-<pre><code class="language-js">function parseInputSignature(exportsObj) {
-  const inputPtr = valueFromExport(exportsObj, "input_ptr", true);
-  const utf8Cap = valueFromExport(exportsObj, "input_utf8_cap", false);
-  const bytesCap = valueFromExport(exportsObj, "input_bytes_cap", false);
+```js
+const markdownToHtml = contentComponent(markdown, markdownModule, html);
+const fragment = markdownToHtml("# Hello");
+```
 
-  if (utf8Cap !== null) return { ptr: inputPtr, cap: utf8Cap, encoding: "utf8" };
-  if (bytesCap !== null) return { ptr: inputPtr, cap: bytesCap, encoding: "bytes" };
-  throw Error("component must export input_utf8_cap or input_bytes_cap");
-}
+For Wasm modules, the runner validates the declared QIP exports up front:
 
-function parseOutputSignature(exportsObj) {
-  const hasOutputPtr = "output_ptr" in exportsObj;
-  const utf8Cap = valueFromExport(exportsObj, "output_utf8_cap", false);
-  const bytesCap = valueFromExport(exportsObj, "output_bytes_cap", false);
-  const i32Cap = valueFromExport(exportsObj, "output_i32_cap", false);
+- `memory`
+- `render`
+- `input_ptr`
+- `input_utf8_cap` or `input_bytes_cap`, matching the input contract
+- `output_ptr`
+- `output_utf8_cap` or `output_bytes_cap`, matching the output contract
 
-  if (!hasOutputPtr || (utf8Cap === null && bytesCap === null && i32Cap === null)) {
-    return { encoding: "scalar" };
-  }
+If the module declares content-type exports, they must match the supplied contracts.
 
-  if (utf8Cap !== null) return { encoding: "utf8", cap: utf8Cap, itemSize: 1 };
-  if (bytesCap !== null) return { encoding: "bytes", cap: bytesCap, itemSize: 1 };
-  return { encoding: "i32", cap: i32Cap, itemSize: 4 };
-}
-</code></pre>
-    </td>
-  </tr>
+The implementation can also be a JavaScript function:
 
-  <tr>
-    <td>
-      <strong>Stage execution</strong><br>
-      This is the qip loop: validate types, write input bytes, call `render`, then read `output_ptr`.
-      Reading the pointer after `render` lets components return the original input buffer for unchanged output.
-    </td>
-    <td>
-<pre><code class="language-js">function renderComponent(component, input, inputContentType = "", options = {}) {
-  const instance = instantiateComponent(component);
-  const exportsObj = instance.exports;
-  const renderExport = exportsObj.render;
-  if (typeof renderExport !== "function") {
-    throw Error("component missing export: render");
-  }
+```js
+const trim = contentComponent(text, (value) => value.trim(), text);
+```
 
-  const inputSignature = parseInputSignature(exportsObj);
-  const outputSignature = parseOutputSignature(exportsObj);
+JavaScript functions are checked at the call boundary: UTF-8 contracts receive and return strings, byte contracts receive and return `Uint8Array`.
 
-  const declaredInputType = readContentType(exportsObj, exportsObj.memory, "input_content_type_ptr", "input_content_type_size");
-  const declaredOutputType = readContentType(exportsObj, exportsObj.memory, "output_content_type_ptr", "output_content_type_size");
-  const normalizedInputType = normalizeMimeType(inputContentType);
-  if (declaredInputType !== "" && normalizedInputType === "" && options.strictInputContentType) {
-    throw Error("input content type mismatch: expected " + declaredInputType + ", got unknown");
-  }
-  if (declaredInputType !== "" && normalizedInputType !== "" && declaredInputType !== normalizedInputType) {
-    throw Error("input content type mismatch: expected " + declaredInputType + ", got " + normalizedInputType);
-  }
+## Recipes
 
-  const normalized = toInputBytes(input);
-  if (normalized.bytes.length > inputSignature.cap) {
-    throw Error("input is too large for component");
-  }
+`contentRecipe(input, components, output)` composes content components and returns another callable component.
 
-  writeSlice(exportsObj.memory, inputSignature.ptr, normalized.bytes, "input_ptr");
-  const outputLen = toI32(renderExport(normalized.bytes.length), "render");
+```js
+const page = contentRecipe(markdown, [markdownToHtml, htmlPageWrap], html);
+const result = page("# qip");
+```
 
-  if (outputSignature.encoding === "scalar") {
-    return { value: outputLen, encoding: "scalar", contentType: declaredOutputType };
-  }
+Recipe creation checks the whole chain:
 
-  const byteLen = outputLen * outputSignature.itemSize;
-  const outputPtr = valueFromExport(exportsObj, "output_ptr", true);
-  const outputBytes = readSlice(exportsObj.memory, outputPtr, byteLen, "output_ptr");
-  const reusedInput = outputPtr === inputSignature.ptr && byteLen === normalized.bytes.length;
+- recipe input matches the first component input
+- each component output matches the next component input
+- the last component output matches recipe output
 
-  if (outputSignature.encoding === "utf8") {
-    return { value: textDecoder.decode(outputBytes), bytes: outputBytes, encoding: "utf8", contentType: declaredOutputType, reusedInput };
-  }
-  if (outputSignature.encoding === "bytes") {
-    return { value: outputBytes, bytes: outputBytes, encoding: "bytes", contentType: declaredOutputType, reusedInput };
-  }
-  return { value: new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen), bytes: outputBytes, encoding: "i32", contentType: declaredOutputType, reusedInput };
-}
-</code></pre>
-    </td>
-  </tr>
+Recipes are components, so they can be nested:
 
-  <tr>
-    <td>
-      <strong>Public `render`</strong><br>
-      This returns a result object with `value`, `encoding`, optional `bytes`, `contentType`, and `reusedInput`.
-    </td>
-    <td>
-<pre><code class="language-js">export function render(component, input) {
-  return renderComponent(component, input, "");
-}
-</code></pre>
-    </td>
-  </tr>
+```js
+const cleanMarkdown = contentRecipe(markdown, [trim], markdown);
+const cleanPage = contentRecipe(markdown, [cleanMarkdown, markdownToHtml, htmlPageWrap], html);
+```
 
-  <tr>
-    <td>
-      <strong>Recipe pipeline</strong><br>
-      `createRecipe` composes multiple content components in stage order and tracks final MIME/encoding metadata.
-    </td>
-    <td>
-<pre><code class="language-js">export function createRecipe(inputMimeType, components) {
-  if (!Array.isArray(components) || components.length === 0) {
-    throw Error("createRecipe requires a non-empty array of QIP components");
-  }
-  for (let i = 0; i < components.length; i += 1) {
-    if (!(components[i] instanceof WebAssembly.Module)) {
-      throw Error("recipe component at stage " + String(i + 1) + " must be a WebAssembly.Module");
-    }
-  }
+An empty recipe is allowed only when input and output are compatible:
 
-  const recipeInputMimeType = normalizeMimeType(inputMimeType);
-  const recipeComponents = components.slice();
+```js
+const identityText = contentRecipe(text, [], text);
+```
 
-  return {
-    render(input) {
-      // ... run each component, validate MIME compatibility ...
-      return finalResultWithRecipeContentType;
-    },
-  };
-}
-</code></pre>
-    </td>
-  </tr>
-</table>
-
-## Usage Examples
+## Browser Example
 
 ```html
 <script type="module">
-  import { createRecipe, render } from '/qip-runner.js';
+  import {
+    contentComponent,
+    contentContract,
+    contentRecipe,
+  } from "/qip-runner.js";
 
-  const hello = await WebAssembly.compileStreaming(fetch('/components/utf8/hello.wasm'));
-  const out = render(hello, 'World').value;
-  console.log(out); // Hello, World
+  const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
+  const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
 
-  const recipe = createRecipe('text/markdown', [
-    await WebAssembly.compileStreaming(fetch('/components/text/markdown/commonmark.0.31.2.wasm')),
-    await WebAssembly.compileStreaming(fetch('/components/text/html/html-page-wrap.wasm')),
-  ]);
-  const result = recipe.render('# qip');
-  console.log(result.contentType, result.value.slice(0, 32));
+  const markdownModule = await WebAssembly.compileStreaming(
+    fetch("/components/text/markdown/commonmark.0.31.2.wasm"),
+  );
+  const pageModule = await WebAssembly.compileStreaming(
+    fetch("/components/text/html/html-page-wrap.wasm"),
+  );
+
+  const markdownToHtml = contentComponent(markdown, markdownModule, html);
+  const htmlPageWrap = contentComponent(html, pageModule, html);
+  const renderPage = contentRecipe(markdown, [markdownToHtml, htmlPageWrap], html);
+
+  console.log(renderPage("# qip"));
 </script>
 ```
 
-For Node, run this from a package that treats `.js` files as ES modules, or import an `.mjs` copy of the runner.
+For Node, run from a package that treats `.js` files as ES modules, or import an `.mjs` copy of the runner.
 
 ```js
-import { readFile } from 'node:fs/promises';
-import { createRecipe, render } from './site/qip-runner.js';
+import { readFile } from "node:fs/promises";
+import {
+  contentComponent,
+  contentContract,
+  contentRecipe,
+} from "./site/qip-runner.js";
 
-async function main() {
-  const markdownComponent = await WebAssembly.compile(await readFile('modules/text/markdown/commonmark.0.31.2.wasm'));
-  const pageComponent = await WebAssembly.compile(await readFile('modules/text/html/html-page-wrap.wasm'));
+const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
+const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
 
-  const htmlFragment = render(markdownComponent, '# Hello').value;
-  const recipe = createRecipe('text/markdown', [
-    markdownComponent,
-    pageComponent,
-  ]);
-  const page = recipe.render('# qip');
-  console.log(htmlFragment, page.value);
-}
+const markdownModule = await WebAssembly.compile(
+  await readFile("modules/text/markdown/commonmark.0.31.2.wasm"),
+);
+const pageModule = await WebAssembly.compile(
+  await readFile("modules/text/html/html-page-wrap.wasm"),
+);
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const markdownToHtml = contentComponent(markdown, markdownModule, html);
+const htmlPageWrap = contentComponent(html, pageModule, html);
+const renderPage = contentRecipe(markdown, [markdownToHtml, htmlPageWrap], html);
+
+console.log(renderPage("# qip"));
 ```
