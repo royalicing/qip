@@ -155,5 +155,5 @@ You break things into small pieces amenable to agentic coding, and those pieces 
 
 - [Why QIP](/docs)
 - [How QIP Works](/docs/how-it-works)
-- [QIP Component Contract](/docs/module-contract)
+- [QIP Component Contract](/docs/component-contract)
 - [Router Specification](/docs/router)

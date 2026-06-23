@@ -26,7 +26,7 @@ qip does not use WASI or WIT, standards that have ballooned in complexity due to
 
 This contract (capacity, output, and optional content type metadata) is documented in:
 
-- [`docs/module-contract.md`](./docs/module-contract.md#webassembly-module-contract)
+- [`docs/component-contract.md`](./docs/component-contract.md#qip-component-contract)
 
 ## Usage
 
@@ -379,7 +379,7 @@ printf 'Café' | qip run modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?w
 
 ## Documentation
 
-- [QIP Component Contract](docs/module-contract.md)
+- [QIP Component Contract](docs/component-contract.md)
 - [QIP Component Patterns (including error semantics)](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
 - [QIP Component Compliance](docs/comply.md)
@@ -492,6 +492,6 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Add `--postcondition` or `--outmust` flag to `qip run` that verifies the final output conforms to a particular module e.g. `--postcondition valid-xml-1.0.wasm`.
 - [ ] Add first-stage content-type guards: either lightweight ingress sniffing (check initial bytes against expected type) or validator modules (for example `validate-html.wasm`) that accept untrusted input and re-emit it with asserted MIME type on success.
 - [ ] Add `qip photocopy` command that observes an existing tool’s input/output behavior and generates a behaviorally similar QIP module implementation in wasm, then validates it with duel/fuzz tests and reports divergences.
-- [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/module-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
+- [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/component-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
 
 ![qip logo](qip-logo.svg)
