@@ -105,19 +105,55 @@ hi
 module: utf8-must-be-valid.wasm
 hello
 module: wasm-to-js.wasm
-export async function render(input) {
-  const wasmBytes = Uint8Array.from(atob('AGFzbQEAAAABBgFgAX8BfwMCAQAFAwEAAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTwYGbWVtb3J5AgAJaW5wdXRfcHRyAwAOaW5wdXRfdXRmOF9jYXADAQpvdXRwdXRfcHRyAwIPb3V0cHV0X3V0ZjhfY2FwAwMGcmVuZGVyAAAKZwFlAQJ/IwJCyMqx4/aNi5DXADcDACMCQQhqQe/ksaMGNgIAQQwhAiAAQQBLBEBBACEBQQchAgJAA0AgASAATw0BIwIgAmojACABai0AADoAACABQQFqIQEgAkEBaiECDAALCwsgAgs='), c => c.charCodeAt(0));
-  const module = await WebAssembly.compile(wasmBytes);
-  const instance = await WebAssembly.instantiate(module);
-  const exports = instance.exports;
-  const memory = exports.memory;
-  const inputPtr = exports.input_ptr.value;
-  const outputPtr = exports.output_ptr.value;
-  const encoder = new TextEncoder();
-  const inputBytes = encoder.encode(input);
-  new Uint8Array(memory.buffer, inputPtr, inputBytes.length).set(inputBytes);
-  const outputLen = exports.render(inputBytes.length);
-  if (outputLen === 0) return '';
-  const decoder = new TextDecoder();
-  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
+const wasmBytes = Uint8Array.from(atob("AGFzbQEAAAABBgFgAX8BfwMCAQAFBAEBAwMGHQR/AEGAgAQLfwBBgIAEC38AQYCACAt/AEGAgAQLB08GBm1lbW9yeQIACWlucHV0X3B0cgMADmlucHV0X3V0ZjhfY2FwAwEKb3V0cHV0X3B0cgMCD291dHB1dF91dGY4X2NhcAMDBnJlbmRlcgAACmcBZQECfyMCQsjKseP2jYuQ1wA3AwAjAkEIakHv5LGjBjYCAEEMIQIgAEEASwRAQQAhAUEHIQICQANAIAEgAE8NASMCIAJqIwAgAWotAAA6AAAgAUEBaiEBIAJBAWohAgwACwsLIAIL"), c => c.charCodeAt(0));
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const wasmModule = await WebAssembly.compile(wasmBytes);
+export const input = Object.freeze({ encoding: "utf-8" });
+export const output = Object.freeze({ encoding: "utf-8" });
+
+function i32(value, label) {
+  const n = typeof value === "bigint" ? Number(value) : value;
+  if (typeof n !== "number" || !Number.isFinite(n)) throw new Error(label + " returned non-finite numeric value");
+  return n | 0;
 }
+
+function assertMemory(memory) {
+  if (!(memory instanceof WebAssembly.Memory)) throw new Error("component export memory must be WebAssembly.Memory");
+}
+
+function checkSlice(memory, ptr, len, label) {
+  if (ptr < 0 || len < 0) throw new Error(label + " returned negative pointer/size");
+  const start = ptr >>> 0;
+  const end = start + (len >>> 0);
+  if (end < start || end > memory.buffer.byteLength) throw new Error(label + " exceeds wasm memory bounds");
+  return start;
+}
+
+export function render(value) {
+  const instance = new WebAssembly.Instance(wasmModule, {});
+  const e = instance.exports;
+  assertMemory(e.memory);
+  if (typeof value !== "string") throw new Error("input must be a string");
+  const inputBytes = textEncoder.encode(value);
+  const inputPtr = i32(e.input_ptr.value, "input_ptr");
+  const inputCap = i32(e.input_utf8_cap.value, "input_utf8_cap");
+  if (inputBytes.length > inputCap) throw new Error("input exceeds component capacity: " + inputBytes.length + " > " + inputCap);
+  new Uint8Array(e.memory.buffer).set(inputBytes, checkSlice(e.memory, inputPtr, inputBytes.length, "input_ptr"));
+  const outputLen = i32(e.render(inputBytes.length), "render");
+  const outputCap = i32(e.output_utf8_cap.value, "output_utf8_cap");
+  if (outputLen < 0) throw new Error("render returned negative output size");
+  if (outputLen > outputCap) throw new Error("render output exceeds component capacity: " + outputLen + " > " + outputCap);
+  const outputPtr = i32(e.output_ptr.value, "output_ptr");
+  const outputStart = checkSlice(e.memory, outputPtr, outputLen, "output_ptr");
+  const outputBytes = new Uint8Array(e.memory.buffer).slice(outputStart, outputStart + outputLen);
+  return textDecoder.decode(outputBytes);
+}
+
+Object.defineProperties(render, {
+  input: { value: input, enumerable: true },
+  output: { value: output, enumerable: true },
+});
+
+export default render;
+

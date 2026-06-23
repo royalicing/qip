@@ -62,6 +62,9 @@ modules/application/wasm/wasm-score.wasm: ZIG_WASM_MAX_MEMORY = 14680064
 modules/application/wasm/wasm-score.wasm: modules/application/wasm/wasm-score.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+modules/application/wasm/wasm-to-js.wasm: modules/application/wasm/wasm-to-js.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 modules/text/javascript/js-to-bmp.wasm: modules/text/javascript/js-to-bmp.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
