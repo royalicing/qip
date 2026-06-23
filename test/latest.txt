@@ -70,10 +70,43 @@ module: markdown-basic.wasm | html-page-wrap.wasm
 <header role="banner">
     <nav aria-label="Header links">
         <ul>
-            <li><a href="/">QIP</a></li>
+            <li>
+                <a href="/">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="48"
+                        height="48"
+                        viewBox="0 0 16 16"
+                        shape-rendering="crispEdges"
+                        aria-label="QIP"
+                    >
+                        <g fill="#0eafe0">
+                            <!-- q -->
+                            <rect x="1" y="6" width="4" height="1" />
+                            <rect x="1" y="7" width="1" height="2" />
+                            <rect x="4" y="7" width="1" height="2" />
+                            <rect x="1" y="9" width="4" height="1" />
+                            <rect x="4" y="10" width="1" height="2" />
+
+                            <!-- i -->
+                            <g fill="white">
+                                <rect x="7" y="4" width="1" height="1" />
+                            </g>
+                            <rect x="6" y="6" width="1" height="1" />
+                            <rect x="7" y="6" width="1" height="3" />
+                            <rect x="6" y="9" width="3" height="1" />
+
+                            <!-- p -->
+                            <rect x="10" y="6" width="1" height="6" />
+                            <rect x="11" y="6" width="3" height="1" />
+                            <rect x="13" y="7" width="1" height="2" />
+                            <rect x="11" y="9" width="3" height="1" />
+                        </g>
+                    </svg>
+                </a>
+            </li>
             <li role="none" style="margin: auto"></li>
             <li><a href="/docs">Docs</a></li>
-            <li><a href="/view-source">View Source</a></li>
             <li><a href="https://github.com/royalicing/qip">GitHub</a></li>
         </ul>
     </nav>
