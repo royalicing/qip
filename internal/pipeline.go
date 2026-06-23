@@ -142,7 +142,6 @@ type Encoding int
 const (
 	EncodingRawBytes Encoding = iota
 	EncodingUTF8
-	EncodingI32Array
 	EncodingBMP
 	EncodingRGBAF32
 )
@@ -153,8 +152,6 @@ func (e Encoding) String() string {
 		return "raw"
 	case EncodingUTF8:
 		return "utf8"
-	case EncodingI32Array:
-		return "i32array"
 	case EncodingBMP:
 		return "bmp"
 	case EncodingRGBAF32:
@@ -200,12 +197,6 @@ type RGBAF32Content interface {
 	Pixels() []float32
 }
 
-// I32ArrayContent is for modules that output arrays of 32-bit integers.
-type I32ArrayContent interface {
-	Content
-	RawBytes() []byte // Still stored as bytes for WASM memory compatibility
-}
-
 type contentTypeWrapper interface {
 	Content
 	unwrapContent() Content
@@ -249,16 +240,6 @@ type rgbaf32WithContentType struct {
 func (c *rgbaf32WithContentType) ContentType() string { return c.contentType }
 func (c *rgbaf32WithContentType) unwrapContent() Content {
 	return c.RGBAF32Content
-}
-
-type i32ArrayWithContentType struct {
-	I32ArrayContent
-	contentType string
-}
-
-func (c *i32ArrayWithContentType) ContentType() string { return c.contentType }
-func (c *i32ArrayWithContentType) unwrapContent() Content {
-	return c.I32ArrayContent
 }
 
 type contentWithContentType struct {
@@ -342,8 +323,6 @@ func WithContentType(content Content, contentType string) Content {
 		return &rgbaf32WithContentType{RGBAF32Content: c, contentType: contentType}
 	case StringContent:
 		return &stringWithContentType{StringContent: c, contentType: contentType}
-	case I32ArrayContent:
-		return &i32ArrayWithContentType{I32ArrayContent: c, contentType: contentType}
 	case RawBytesContent:
 		return &rawBytesWithContentType{RawBytesContent: c, contentType: contentType}
 	default:
@@ -435,25 +414,6 @@ func NewRGBAF32ContentWithType(pixels []float32, width, height int, contentType 
 	return NewRGBAF32Content(pixels, width, height)
 }
 
-type i32ArrayContent struct {
-	data []byte
-}
-
-func (c *i32ArrayContent) Encoding() Encoding { return EncodingI32Array }
-func (c *i32ArrayContent) RawBytes() []byte   { return c.data }
-
-func NewI32ArrayContent(data []byte) I32ArrayContent {
-	return &i32ArrayContent{data: data}
-}
-
-func NewI32ArrayContentWithType(data []byte, contentType string) I32ArrayContent {
-	content := WithContentType(NewI32ArrayContent(data), contentType)
-	if wrapped, ok := content.(I32ArrayContent); ok {
-		return wrapped
-	}
-	return NewI32ArrayContent(data)
-}
-
 // --- Coercion Helpers ---
 
 func AsRawBytes(c Content) ([]byte, error) {
@@ -462,9 +422,6 @@ func AsRawBytes(c Content) ([]byte, error) {
 	}
 	if s, ok := c.(StringContent); ok {
 		return []byte(s.String()), nil
-	}
-	if i, ok := c.(I32ArrayContent); ok {
-		return i.RawBytes(), nil
 	}
 	return nil, fmt.Errorf("cannot treat %s as raw bytes", c.Encoding())
 }

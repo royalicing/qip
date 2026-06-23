@@ -266,6 +266,8 @@ printf 'valid' | qip run modules/utf8/your-validator.wasm
 printf '\xff' | qip run modules/utf8/your-validator.wasm
 ```
 
+Also test recovery on a reused instance: feed a range of invalid inputs that trap, then feed valid input through the same instance and confirm the result is still correct. A WebAssembly trap stops the current call, but it does not reset memory or globals. This catches parsers that mutate persistent state before rejecting malformed input.
+
 Review the binary shape before trusting the source shape:
 
 ```bash
@@ -280,6 +282,7 @@ Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, a
 - Pick UTF-8 or bytes caps before writing parsing logic.
 - Keep input and output buffers sized from explicit constants.
 - Trap on invalid input, oversized input, and output overflow.
+- Test invalid input followed by valid input on the same instance.
 - Compile with `--max-memory`.
 - Run `wasm-objdump -x` and confirm `max=...` is present.
 - Check for accidental imports, indirect calls, tables, and recursion.

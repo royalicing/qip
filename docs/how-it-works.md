@@ -20,7 +20,7 @@ A text/binary QIP component exports a small ABI:
 - `input_utf8_cap` or `input_bytes_cap`
 - `render(input_size)`
 - `output_ptr`
-- `output_utf8_cap` or `output_bytes_cap` (or `output_i32_cap`)
+- `output_utf8_cap` or `output_bytes_cap`
 
 The host validates capacities and boundaries before writing/reading memory.
 

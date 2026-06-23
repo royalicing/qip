@@ -11,12 +11,11 @@ For validator-style components that should compose in pipelines, prefer assertio
 Use this quick mapping:
 
 - Validate and keep data flowing (preferred): assertion pass-through (`render` validates, returns input unchanged, traps on failure).
-- Validate and emit only pass/fail (terminal): scalar `render` result, no output buffer exports.
+- Validate and emit only pass/fail (terminal): return a small UTF-8 or byte status payload.
 - Normalize text: UTF-8 input/output buffers.
 - Transform binary: bytes input/output buffers.
-- Emit numeric rows: `output_i32_cap`.
 - Preferred: hard reject invalid input/overflow with trap.
-- Optional: soft reject invalid input by returning `0` output length (or a sentinel scalar value) when empty output is explicitly meaningful.
+- Optional: soft reject invalid input by returning `0` output length when empty output is explicitly meaningful.
 
 ## Pattern 1: Assertion Pass-through Validator (Preferred)
 
@@ -47,22 +46,22 @@ Good for:
 - schema/assertion checks that must preserve input for later stages
 - safety gates before expensive transforms
 
-## Pattern 2: Scalar Validator (No Output Buffer)
+## Pattern 2: Status Validator (Terminal Output)
 
-Use when you only need a status code.
+Use when you only need a small pass/fail or status value and do not intend to keep piping the original payload.
 
 Exports:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
-- `render(input_size) -> i32`
-
-Do not export `output_ptr` or output caps.
+- `output_ptr`
+- `output_utf8_cap` or `output_bytes_cap`
+- `render(input_size) -> output_size`
 
 Host behavior:
 
-- `qip` prints `Ran: <render_return_value>`.
-- In a chain, downstream modules receive empty bytes from this stage. Treat this as terminal unless that is intentional.
+- The returned status is ordinary UTF-8 text or bytes.
+- In a chain, downstream modules receive the status payload, not the original input. Treat this pattern as terminal unless that is intentional.
 
 Good for:
 
@@ -110,23 +109,6 @@ Good for:
 
 - image/container transforms
 - compression/decompression steps
-
-## Pattern 5: Numeric Stream (`i32` rows)
-
-Use when you want hex lines from 32-bit values.
-
-Exports:
-
-- `input_ptr`
-- `input_utf8_cap` or `input_bytes_cap`
-- `output_ptr`
-- `output_i32_cap`
-- `render(...) -> item_count`
-
-Semantics:
-
-- Return value is number of `i32` items, not bytes.
-- Host multiplies count by `4` for memory reads and bounds checks.
 
 ## Error Semantics (Merged)
 
@@ -191,8 +173,8 @@ Use return values to signal non-fatal failure when that behavior is intentional.
 
 Common options:
 
-- scalar pattern: return `0` or `-1` sentinel
-- buffered output pattern: return `0` bytes/items
+- return `0` bytes
+- return a small status payload such as `ok`, `invalid`, or an error code
 
 Host treats this as successful execution unless a bound/contract check failed.
 
@@ -225,8 +207,9 @@ Prefer soft failure when:
 ## Implementation Checklist
 
 - Pick one pattern first; do not mix semantics accidentally.
-- Keep pointer/cap units consistent (bytes vs `i32` items).
+- Keep pointer/cap units consistent; content input and output capacities are byte counts.
 - Validate input length and trap on overflow.
-- Ensure `render` return value unit matches exported output cap type.
+- Ensure `render` returns the number of output bytes.
 - For validator modules in chains, default to assertion pass-through (`output_ptr == input_ptr`, return unchanged size, trap on failure).
 - Add tests for malformed input and oversized input.
+- Reuse one instance in tests for an invalid render followed by a valid render. A trap does not reset Wasm memory or globals, so this catches components that leave persistent state poisoned after rejecting bad input.

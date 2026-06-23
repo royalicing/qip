@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -51,7 +50,6 @@ type dataEncoding uint8
 const (
 	dataEncodingRaw dataEncoding = iota
 	dataEncodingUTF8
-	dataEncodingArrayI32
 )
 
 const tileSize = 64
@@ -131,7 +129,7 @@ var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\
 var qipPreviewTagPattern = regexp.MustCompile(`(?is)<qip-preview\b[^>]*>`)
 var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap or output_i32_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]
 
 What qip comply does:
@@ -1044,8 +1042,6 @@ func encodingName(encoding dataEncoding) string {
 		return "raw"
 	case dataEncodingUTF8:
 		return "utf8"
-	case dataEncodingArrayI32:
-		return "i32[]"
 	default:
 		return fmt.Sprintf("unknown(%d)", encoding)
 	}
@@ -2074,12 +2070,6 @@ func executeModuleWithInput(
 		} else if ok {
 			outputCap = uint32(cap)
 			exec.output.encoding = dataEncodingUTF8
-		} else if cap, ok, err := getExportedValue(ctx, mod, "output_i32_cap"); err != nil {
-			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-			return
-		} else if ok {
-			outputCap = uint32(cap)
-			exec.output.encoding = dataEncodingArrayI32
 		} else if cap, ok, err := getExportedValue(ctx, mod, "output_bytes_cap"); err != nil {
 			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
 			return
@@ -2087,7 +2077,7 @@ func executeModuleWithInput(
 			outputCap = uint32(cap)
 			exec.output.encoding = dataEncodingRaw
 		} else {
-			returnErr = errors.New("Wasm module must export output_utf8_cap or output_i32_cap or output_bytes_cap as global or function")
+			returnErr = errors.New("Wasm module must export output_utf8_cap or output_bytes_cap as global or function")
 			return
 		}
 	}
@@ -2158,21 +2148,12 @@ func executeModuleWithInput(
 
 	outputCount := uint32(runResult[0])
 
-	var outputItemFactor uint32
-	if exec.output.encoding == dataEncodingArrayI32 {
-		outputItemFactor = 4
-	} else {
-		outputItemFactor = 1
-	}
-
-	outputCountBytes := outputItemFactor * outputCount
-
 	if outputCap > 0 {
 		if outputCount > outputCap {
 			returnErr = errors.New("Module returned more bytes than its stated capacity")
 			return
 		}
-		outputBytes, ok := mem.Read(outputPtr, uint32(outputCountBytes))
+		outputBytes, ok := mem.Read(outputPtr, outputCount)
 		if !ok {
 			returnErr = errors.New("Could not read output")
 			return
@@ -3645,11 +3626,6 @@ func inspectRunModuleOutputContract(
 	} else if ok {
 		return outputType, hasOutputType, dataEncodingRaw, true, nil
 	}
-	if _, ok, err := getExportedValue(ctx, mod, "output_i32_cap"); err != nil {
-		return "", false, 0, false, wasmruntime.HumanizeExecutionError(ctx, err)
-	} else if ok {
-		return outputType, hasOutputType, dataEncodingArrayI32, true, nil
-	}
 	return outputType, hasOutputType, 0, false, nil
 }
 
@@ -3802,8 +3778,6 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 	switch exec.output.encoding {
 	case dataEncodingUTF8:
 		return qinternal.NewStringContentWithType(string(exec.output.bytes), exec.outputContentType), nil
-	case dataEncodingArrayI32:
-		return qinternal.NewI32ArrayContentWithType(exec.output.bytes, exec.outputContentType), nil
 	default:
 		// Check if it's a BMP
 		if w, h, err := qinternal.GetBMPDimensions(exec.output.bytes); err == nil {
@@ -3934,19 +3908,6 @@ func formatOutputBytes(output qinternal.Content) ([]byte, error) {
 	switch output.Encoding() {
 	case qinternal.EncodingRawBytes, qinternal.EncodingUTF8, qinternal.EncodingBMP:
 		return qinternal.AsRawBytes(output)
-	case qinternal.EncodingI32Array:
-		data, err := qinternal.AsRawBytes(output)
-		if err != nil {
-			return nil, err
-		}
-		count := len(data) / 4
-		var buf bytes.Buffer
-		buf.Grow(count * 9)
-		for i := 0; i < count; i++ {
-			v := binary.LittleEndian.Uint32(data[i*4:])
-			fmt.Fprintf(&buf, "%08x\n", v)
-		}
-		return buf.Bytes(), nil
 	default:
 		return nil, errors.New("Unknown output encoding")
 	}
@@ -3972,32 +3933,6 @@ func writeRunOutputToStdout(result qinternal.Content, outputBytes []byte, opts o
 
 	if result.Encoding() == qinternal.EncodingUTF8 {
 		fmt.Printf("%s\n", outputBytes)
-		return nil
-	}
-
-	if result.Encoding() == qinternal.EncodingI32Array {
-		if opts.verbose {
-			fmt.Fprintln(os.Stderr, outputBytes)
-		}
-
-		count := len(outputBytes) / 4
-		if count < 1 {
-			return nil
-		}
-
-		bufSize := count * 9
-		writer := bufio.NewWriterSize(os.Stdout, bufSize)
-		defer writer.Flush()
-
-		for i := 0; i < count; i++ {
-			v := binary.LittleEndian.Uint32(outputBytes[i*4:])
-			if opts.verbose {
-				vlogf(opts, "u32: %d", v)
-			}
-			if _, err := fmt.Fprintf(writer, "%08x\n", v); err != nil {
-				return fmt.Errorf("error writing i32 output: %w", err)
-			}
-		}
 		return nil
 	}
 

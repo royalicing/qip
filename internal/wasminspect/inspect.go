@@ -97,7 +97,6 @@ var qipContractExports = []string{
 	"output_ptr",
 	"output_utf8_cap",
 	"output_bytes_cap",
-	"output_i32_cap",
 	"input_content_type_ptr",
 	"input_content_type_size",
 	"output_content_type_ptr",

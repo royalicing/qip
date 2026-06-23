@@ -377,16 +377,12 @@ function qipPreviewReadOutputBytes(exportsObj, outputLen) {
   }
 
   let capName = "";
-  let byteLen = outputLen;
   if ("output_utf8_cap" in exportsObj) {
     capName = "output_utf8_cap";
   } else if ("output_bytes_cap" in exportsObj) {
     capName = "output_bytes_cap";
-  } else if ("output_i32_cap" in exportsObj) {
-    capName = "output_i32_cap";
-    byteLen = outputLen * 4;
   } else {
-    throw new Error("preview module missing output_utf8_cap/output_bytes_cap/output_i32_cap");
+    throw new Error("preview module missing output_utf8_cap/output_bytes_cap");
   }
 
   const cap = qipPreviewReadI32Export(exportsObj, capName);
@@ -396,7 +392,7 @@ function qipPreviewReadOutputBytes(exportsObj, outputLen) {
   if (outputLen > cap) {
     throw new Error("render output size exceeds " + capName);
   }
-  return qipPreviewReadSlice(exportsObj.memory, outputPtr, byteLen, "output_ptr/" + capName);
+  return qipPreviewReadSlice(exportsObj.memory, outputPtr, outputLen, "output_ptr/" + capName);
 }
 
 async function qipPreviewRunStage(stage, input) {

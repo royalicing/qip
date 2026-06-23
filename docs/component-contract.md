@@ -85,13 +85,27 @@ Required input exports:
 Optional output exports:
 
 - `output_ptr`
-- one of `output_utf8_cap`, `output_bytes_cap`, or `output_i32_cap`
+- one of `output_utf8_cap` or `output_bytes_cap`
 
 Required function:
 
 - `render(input_size) -> output_size`
 
 If `output_ptr` + output cap are not exported, `QIP` falls back to printing `Ran: <render_return_value>`.
+
+### Content Render Lifecycle
+
+Hosts may call `render(...)` more than once on the same component instance. Each call is a new render request using the bytes currently written at `input_ptr()` and the component's current uniform state.
+
+Component authors should make repeated renders deliberate:
+
+- Treat `input_ptr()` memory as host-owned input for the duration of each call.
+- Return the byte length for the current output, not a cumulative length.
+- Expect `output_ptr()` to be read after each successful `render(...)`.
+- Keep any internal cache or scratch state consistent when input bytes or uniforms change between calls.
+- Trap on invalid input or output overflow rather than preserving a stale previous output.
+
+This allows browser hosts to keep one module instance alive and render many inputs through it. It also allows wrappers to set uniforms immediately before each render without reinstantiating the component.
 
 ### Optional Uniforms (`uniform_set_<key>`)
 
@@ -108,6 +122,9 @@ Uniform export contract:
 Host behavior:
 
 - Uniforms are applied after module instantiation and before `render(...)` (or before tile execution in image mode).
+- Hosts may call uniform setters again before later `render(...)` calls on the same instance.
+- A uniform setter updates the value used by subsequent renders until another setter call changes it.
+- If a host wants per-call uniforms, it should set every uniform it depends on immediately before calling `render(...)`.
 - If a query key is provided but the component does not export `uniform_set_<key>`, execution fails.
 - If parsing fails for the expected numeric type, execution fails.
 - Integer uniforms (`i32`, `i64`) parse decimal as signed values by default.
@@ -162,10 +179,11 @@ Rules:
 - Do not use media ranges (for example, `text/*` or `*/*`).
 - Do not use comma-separated MIME lists.
 - Omit input content type for components that accept any UTF-8 text regardless of media type (for example: plain text, HTML, XML).
-- Omit output content type for generic raw bytes and `i32[]` outputs unless the module guarantees a specific media type.
+- Omit output content type for generic raw bytes unless the module guarantees a specific media type.
 - Do not export `text/plain` for generic UTF-8 components; `input_utf8_cap` / `output_utf8_cap` already imply plain UTF-8 text.
 - Export content type when the module knows it exactly (for example: `text/javascript`, `text/html`, `image/bmp`).
-- Export only the media type value. Do not append `charset=utf-8`; UTF-8 is already implied by `input_utf8_cap` / `output_utf8_cap`.
+- Export only the lowercase media type value. Do not include whitespace, media ranges, comma-separated lists, or parameters such as `charset=utf-8`; UTF-8 is already implied by `input_utf8_cap` / `output_utf8_cap`.
+- Hosts compare content type strings exactly. They do not trim, lowercase, or strip parameters.
 - If the host/caller provides an initial content type, treat it as authoritative for composition.
 - For direct user ingress in `qip run` (stdin or `-i` file bytes), there is currently no separate content-type channel; trust user intent for the first stage.
 
@@ -279,15 +297,28 @@ Input:
 
 Output:
 
-- `render` return value is interpreted as element count.
-- For UTF-8 or raw bytes output, element size is `1` byte.
-- For `output_i32_cap`, element size is `4` bytes.
+- `render` return value is interpreted as output byte count.
 - `QIP` checks returned count does not exceed exported output cap.
 
 Capacity units:
 
 - `input_utf8_cap`, `input_bytes_cap`, `output_utf8_cap`, `output_bytes_cap`: bytes.
-- `output_i32_cap`: number of `i32` items.
+
+## Future Direction: Numeric Arrays And Tensors
+
+QIP used to expose `output_i32_cap`, but we removed it from the alpha contract until the numeric-output story is strong enough to carry its own weight. A scalar checksum can be printed as text or bytes; it does not prove that QIP needs a typed numeric ABI.
+
+The stronger case is array-shaped data: byte histograms, RGB histograms, line-offset tables, batched CRC results, image masks, label matrices, and quantized spectra. Those outputs are naturally numeric collections, not strings that happen to contain numbers.
+
+When we revisit this, we should separate three concerns:
+
+- Element type: `i32`, `u8`, `f32`, or a SIMD lane type.
+- Logical shape: rank and dimensions, such as `[256]`, `[3, 256]`, or `[height, width, bands]`.
+- Physical layout: dense row-major by default, with room for strides, row alignment, tiling, or planar/interleaved choices later.
+
+Mojo is useful prior art here because it treats scalar numerics as one-lane SIMD values while keeping tensor shape separate from memory layout. That points to a better QIP design than a one-off `i32[]`: start with SIMD-aware element types, then make shape and layout explicit enough for hosts and compilers to optimize without guessing.
+
+Do not use this future direction as current ABI guidance. Today, content components return UTF-8 or raw bytes.
 
 ## Memory Layout Recommendations
 
