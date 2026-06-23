@@ -1,4 +1,4 @@
-.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go site-static install score wasm-safety-report
+.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go test-js site-static install score wasm-safety-report
 
 default: qip compliance modules recipes
 
@@ -111,7 +111,12 @@ recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 
 modules: modules-wat-wasm modules-c-wasm modules-zig-wasm
 
-test: qip modules test-go test-zig test-snapshot
+test: qip modules test-go test-js test-zig test-snapshot
+
+test-js: modules
+	node --check site/qip-runner.js
+	node test/qip-runner-smoke.mjs
+	node --test test/wasm-trap-instance-continues.mjs
 
 test-snapshot: qip modules
 	@mkdir -p test

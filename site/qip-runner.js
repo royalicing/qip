@@ -1,350 +1,417 @@
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const mimeTypePattern =
+  /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
 
 function toI32(value, label) {
   const n = typeof value === "bigint" ? Number(value) : value;
   if (typeof n !== "number" || !Number.isFinite(n)) {
-    throw new Error(label + " returned non-finite numeric value");
+    throw Error(label + " returned non-finite numeric value");
   }
   return n | 0;
 }
 
-function normalizeMimeType(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed === "") {
-    return "";
-  }
-  const semi = trimmed.indexOf(";");
-  if (semi === -1) {
-    return trimmed;
-  }
-  return trimmed.slice(0, semi).trim();
+function isValidContentType(value) {
+  return mimeTypePattern.test(value);
 }
 
-function valueFromExport(exportsObj, name, required) {
+function optionalContractContentType(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw Error("contentType must be a string");
+  }
+  if (!isValidContentType(value)) {
+    throw Error(
+      "contentType must be a lowercase MIME type without parameters e.g. 'text/html'",
+    );
+  }
+  return value;
+}
+
+function sameContract(left, right) {
+  return (
+    left.encoding === right.encoding &&
+    (left.contentType === undefined ||
+      right.contentType === undefined ||
+      left.contentType === right.contentType)
+  );
+}
+
+function describeContract(contract) {
+  return (
+    contract.encoding + (contract.contentType ? " " + contract.contentType : "")
+  );
+}
+
+function isContentContract(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value.encoding === "utf-8" || value.encoding === "bytes") &&
+    (value.contentType === undefined ||
+      (typeof value.contentType === "string" &&
+        isValidContentType(value.contentType)))
+  );
+}
+
+function assertContractsMatch(actual, expected, label) {
+  if (!sameContract(actual, expected)) {
+    throw Error(
+      label +
+        " contract mismatch: expected " +
+        describeContract(expected) +
+        ", got " +
+        describeContract(actual),
+    );
+  }
+}
+
+function readI32Export(exportsObj, name) {
   const value = exportsObj[name];
-  if (typeof value === "function") {
-    return toI32(value(), name);
+  if (typeof value !== "function") {
+    throw Error("component export " + name + " must be a function");
   }
-  if (value instanceof WebAssembly.Global) {
-    return toI32(value.value, name);
-  }
-  if (typeof value === "number" || typeof value === "bigint") {
-    return toI32(value, name);
-  }
-  if (required) {
-    throw new Error("component missing export " + name);
-  }
-  return null;
+  return toI32(value(), name);
 }
 
 function readSlice(memory, ptr, len, label) {
   if (!(memory instanceof WebAssembly.Memory)) {
-    throw new Error("component export memory must be WebAssembly.Memory");
+    throw Error("component export memory must be WebAssembly.Memory");
   }
   if (ptr < 0 || len < 0) {
-    throw new Error(label + " returned negative pointer/size");
+    throw Error(label + " returned negative pointer/size");
   }
   const start = ptr >>> 0;
-  const size = len >>> 0;
-  const end = start + size;
-  if (end < start) {
-    throw new Error(label + " exceeds wasm memory bounds");
-  }
+  const end = start + (len >>> 0);
   const mem = new Uint8Array(memory.buffer);
-  if (end > mem.length) {
-    throw new Error(label + " exceeds wasm memory bounds");
+  if (end < start || end > mem.length) {
+    throw Error(label + " exceeds wasm memory bounds");
   }
   return mem.slice(start, end);
 }
 
 function writeSlice(memory, ptr, bytes, label) {
   if (!(memory instanceof WebAssembly.Memory)) {
-    throw new Error("component export memory must be WebAssembly.Memory");
+    throw Error("component export memory must be WebAssembly.Memory");
   }
   if (ptr < 0) {
-    throw new Error(label + " returned negative pointer");
+    throw Error(label + " returned negative pointer");
   }
   const start = ptr >>> 0;
   const end = start + bytes.length;
   const mem = new Uint8Array(memory.buffer);
   if (end < start || end > mem.length) {
-    throw new Error(label + " exceeds wasm memory bounds");
+    throw Error(label + " exceeds wasm memory bounds");
   }
   mem.set(bytes, start);
 }
 
-function readContentType(exportsObj, memory, ptrExport, sizeExport) {
-  if (!(ptrExport in exportsObj) || !(sizeExport in exportsObj)) {
-    return "";
+function optionalContentType(exportsObj, memory, ptrName, sizeName) {
+  if (exportsObj[ptrName] === undefined && exportsObj[sizeName] === undefined) {
+    return undefined;
   }
-  const size = valueFromExport(exportsObj, sizeExport, false);
-  if (size === null || size <= 0) {
-    return "";
+  if (
+    typeof exportsObj[ptrName] !== "function" ||
+    typeof exportsObj[sizeName] !== "function"
+  ) {
+    throw Error(
+      "content type exports " + ptrName + "/" + sizeName + " must be functions",
+    );
   }
-  const ptr = valueFromExport(exportsObj, ptrExport, true);
-  const raw = readSlice(memory, ptr, size, ptrExport + "/" + sizeExport);
-  return normalizeMimeType(textDecoder.decode(raw));
+  const size = readI32Export(exportsObj, sizeName);
+  if (size <= 0) {
+    return undefined;
+  }
+  const ptr = readI32Export(exportsObj, ptrName);
+  return optionalContractContentType(
+    textDecoder.decode(readSlice(memory, ptr, size, ptrName + "/" + sizeName)),
+  );
 }
 
-function toInputBytes(input) {
-  if (typeof input === "string") {
-    return {
-      bytes: textEncoder.encode(input),
-      encoding: "utf8",
-    };
+function requireExportedFunction(moduleExports, name) {
+  if (
+    !moduleExports.find((exp) => exp.name === name && exp.kind === "function")
+  ) {
+    throw Error("component must export " + name + " as function");
   }
-
-  if (input instanceof Uint8Array) {
-    return {
-      bytes: new Uint8Array(input),
-      encoding: "bytes",
-    };
-  }
-
-  if (input instanceof ArrayBuffer) {
-    return {
-      bytes: new Uint8Array(input),
-      encoding: "bytes",
-    };
-  }
-
-  if (ArrayBuffer.isView(input)) {
-    return {
-      bytes: new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
-      encoding: "bytes",
-    };
-  }
-
-  throw new Error("input must be a string, Uint8Array, ArrayBuffer, or TypedArray");
 }
 
-function instantiateComponent(component) {
-  if (!(component instanceof WebAssembly.Module)) {
-    throw new Error("component must be a WebAssembly.Module");
+function capName(contract, direction) {
+  if (contract.encoding === "utf-8") {
+    return direction + "_utf8_cap";
   }
-  return new WebAssembly.Instance(component, {});
+  return direction + "_bytes_cap";
 }
 
-function parseInputSignature(exportsObj) {
-  if (!("input_ptr" in exportsObj)) {
-    throw new Error("component missing export input_ptr");
+function bytesForInput(input, contract) {
+  if (contract.encoding === "utf-8") {
+    if (typeof input !== "string") {
+      throw Error(
+        "component input must be a string for " + describeContract(contract),
+      );
+    }
+    return textEncoder.encode(input);
   }
-
-  const inputPtr = valueFromExport(exportsObj, "input_ptr", true);
-  const utf8Cap = valueFromExport(exportsObj, "input_utf8_cap", false);
-  const bytesCap = valueFromExport(exportsObj, "input_bytes_cap", false);
-
-  if (utf8Cap !== null) {
-      return {
-        ptr: inputPtr,
-        cap: utf8Cap,
-        encoding: "utf8",
-      };
+  if (!(input instanceof Uint8Array)) {
+    throw Error(
+      "component input must be Uint8Array for " + describeContract(contract),
+    );
   }
-  if (bytesCap !== null) {
-      return {
-        ptr: inputPtr,
-        cap: bytesCap,
-        encoding: "bytes",
-      };
-  }
-
-  throw new Error("component must export input_utf8_cap or input_bytes_cap");
+  return input;
 }
 
-function parseOutputSignature(exportsObj) {
-  const outputPtr = valueFromExport(exportsObj, "output_ptr", false);
-  const utf8Cap = valueFromExport(exportsObj, "output_utf8_cap", false);
-  const bytesCap = valueFromExport(exportsObj, "output_bytes_cap", false);
-  const i32Cap = valueFromExport(exportsObj, "output_i32_cap", false);
-
-  if (outputPtr === null || (utf8Cap === null && bytesCap === null && i32Cap === null)) {
-    return {
-      encoding: "scalar",
-    };
+function outputForBytes(bytes, contract) {
+  if (contract.encoding === "utf-8") {
+    return textDecoder.decode(bytes);
   }
-
-  if (utf8Cap !== null) {
-    return {
-      encoding: "utf8",
-      ptr: outputPtr,
-      cap: utf8Cap,
-      itemSize: 1,
-    };
-  }
-
-  if (bytesCap !== null) {
-    return {
-      encoding: "bytes",
-      ptr: outputPtr,
-      cap: bytesCap,
-      itemSize: 1,
-    };
-  }
-
-  return {
-    encoding: "i32",
-    ptr: outputPtr,
-    cap: i32Cap,
-    itemSize: 4,
-  };
+  return bytes;
 }
 
-function renderComponent(component, input, inputContentType = "", options = {}) {
-  const instance = instantiateComponent(component);
-  const exportsObj = instance.exports;
+function assertJsOutput(value, contract) {
+  if (contract.encoding === "utf-8" && typeof value !== "string") {
+    throw Error(
+      "JavaScript component returned non-string output for " +
+        describeContract(contract),
+    );
+  }
+  if (contract.encoding === "bytes" && !(value instanceof Uint8Array)) {
+    throw Error(
+      "JavaScript component returned non-Uint8Array output for " +
+        describeContract(contract),
+    );
+  }
+}
 
-  if (!(exportsObj.memory instanceof WebAssembly.Memory)) {
-    throw new Error("component export memory must be WebAssembly.Memory");
+function freezeComponent(fn, input, output) {
+  Object.defineProperties(fn, {
+    input: { value: input, enumerable: true },
+    output: { value: output, enumerable: true },
+  });
+  return Object.freeze(fn);
+}
+
+function instantiate(module) {
+  return new WebAssembly.Instance(module, {});
+}
+
+function validateWasmComponent(input, module, output) {
+  if (!(module instanceof WebAssembly.Module)) {
+    throw Error(
+      "content component implementation must be a WebAssembly.Module or function",
+    );
   }
 
-  const renderExport = exportsObj.render;
-  if (typeof renderExport !== "function") {
-    throw new Error("component missing export render");
+  const moduleExports = WebAssembly.Module.exports(module);
+
+  if (!moduleExports.find((exp) => exp.name === "memory" && exp.kind === "memory")) {
+    throw Error("component must export memory");
   }
+  requireExportedFunction(moduleExports, "render");
+  requireExportedFunction(moduleExports, "input_ptr");
+  requireExportedFunction(moduleExports, capName(input, "input"));
+  requireExportedFunction(moduleExports, "output_ptr");
+  requireExportedFunction(moduleExports, capName(output, "output"));
 
-  const inputSignature = parseInputSignature(exportsObj);
-  const outputSignature = parseOutputSignature(exportsObj);
-
-  const declaredInputType = readContentType(
+  const exportsObj = instantiate(module).exports;
+  const declaredInput = optionalContentType(
     exportsObj,
     exportsObj.memory,
     "input_content_type_ptr",
     "input_content_type_size",
   );
-  const declaredOutputType = readContentType(
+  const declaredOutput = optionalContentType(
     exportsObj,
     exportsObj.memory,
     "output_content_type_ptr",
     "output_content_type_size",
   );
 
-  const normalizedInputType = normalizeMimeType(inputContentType);
-  if (declaredInputType !== "" && normalizedInputType === "" && options.strictInputContentType === true) {
-    throw new Error("input content type mismatch: expected " + declaredInputType + ", got unknown");
-  }
-  if (declaredInputType !== "" && normalizedInputType !== "" && declaredInputType !== normalizedInputType) {
-    throw new Error(
-      "input content type mismatch: expected " + declaredInputType + ", got " + normalizedInputType,
+  if (
+    declaredInput !== undefined &&
+    input.contentType !== undefined &&
+    declaredInput !== input.contentType
+  ) {
+    throw Error(
+      "component input content type mismatch: expected " +
+        input.contentType +
+        ", module declares " +
+        declaredInput,
     );
   }
-
-  const normalized = toInputBytes(input);
-  if (normalized.bytes.length > inputSignature.cap) {
-    throw new Error(
-      "input is too large for component: " + String(normalized.bytes.length) + " > " + String(inputSignature.cap),
+  if (
+    declaredOutput !== undefined &&
+    output.contentType !== undefined &&
+    declaredOutput !== output.contentType
+  ) {
+    throw Error(
+      "component output content type mismatch: expected " +
+        output.contentType +
+        ", module declares " +
+        declaredOutput,
     );
   }
+}
 
-  if (inputSignature.encoding === "utf8" && normalized.encoding !== "utf8") {
-    textDecoder.decode(normalized.bytes);
+function wasmComponent(input, module, output) {
+  validateWasmComponent(input, module, output);
+
+  return freezeComponent(
+    (value) => {
+      const exportsObj = instantiate(module).exports;
+      const render = exportsObj.render;
+      if (typeof render !== "function") {
+        throw Error("component export render must be a function");
+      }
+
+      const inputBytes = bytesForInput(value, input);
+      const inputPtr = readI32Export(exportsObj, "input_ptr");
+      const inputCap = readI32Export(exportsObj, capName(input, "input"));
+      if (inputBytes.length > inputCap) {
+        throw Error(
+          "input exceeds component capacity: " +
+            inputBytes.length +
+            " > " +
+            inputCap,
+        );
+      }
+
+      writeSlice(exportsObj.memory, inputPtr, inputBytes, "input_ptr");
+
+      const outputLen = toI32(render(inputBytes.length), "render");
+      if (outputLen < 0) {
+        throw Error("render returned negative output size");
+      }
+
+      const outputCap = readI32Export(exportsObj, capName(output, "output"));
+      if (outputLen > outputCap) {
+        throw Error(
+          "render output exceeds component capacity: " +
+            outputLen +
+            " > " +
+            outputCap,
+        );
+      }
+
+      const outputPtr = readI32Export(exportsObj, "output_ptr");
+      return outputForBytes(
+        readSlice(exportsObj.memory, outputPtr, outputLen, "output_ptr"),
+        output,
+      );
+    },
+    input,
+    output,
+  );
+}
+
+function jsComponent(input, fn, output) {
+  return freezeComponent(
+    (value) => {
+      bytesForInput(value, input);
+      const result = fn(value);
+      assertJsOutput(result, output);
+      return result;
+    },
+    input,
+    output,
+  );
+}
+
+function isContentComponent(value) {
+  return (
+    typeof value === "function" &&
+    value.input !== undefined &&
+    value.output !== undefined &&
+    typeof value.input.encoding === "string" &&
+    typeof value.output.encoding === "string"
+  );
+}
+
+export function contentContract(contract) {
+  if (contract === null || typeof contract !== "object") {
+    throw Error("contentContract requires an object");
   }
-
-  writeSlice(exportsObj.memory, inputSignature.ptr, normalized.bytes, "input_ptr");
-
-  const outputLen = toI32(renderExport(normalized.bytes.length), "render");
-  if (outputLen < 0) {
-    throw new Error("render returned negative output size");
+  if (contract.encoding !== "utf-8" && contract.encoding !== "bytes") {
+    throw Error('contentContract encoding must be "utf-8" or "bytes"');
   }
-
-  if (outputSignature.encoding === "scalar") {
-    return {
-      value: outputLen,
-      encoding: "scalar",
-      contentType: declaredOutputType,
-    };
-  }
-
-  if (outputLen > outputSignature.cap) {
-    throw new Error(
-      "render output exceeds component capacity: " + String(outputLen) + " > " + String(outputSignature.cap),
-    );
-  }
-
-  const byteLen = outputLen * outputSignature.itemSize;
-  const outputBytes = readSlice(exportsObj.memory, outputSignature.ptr, byteLen, "output_ptr");
-
-  if (outputSignature.encoding === "utf8") {
-    return {
-      value: textDecoder.decode(outputBytes),
-      bytes: outputBytes,
-      encoding: "utf8",
-      contentType: declaredOutputType,
-    };
-  }
-
-  if (outputSignature.encoding === "bytes") {
-    return {
-      value: outputBytes,
-      bytes: outputBytes,
-      encoding: "bytes",
-      contentType: declaredOutputType,
-    };
-  }
-
-  return {
-    value: new Int32Array(outputBytes.buffer, outputBytes.byteOffset, outputLen),
-    bytes: outputBytes,
-    encoding: "i32",
-    contentType: declaredOutputType,
+  const result = {
+    encoding: contract.encoding,
   };
-}
-
-export function render(component, input) {
-  return renderComponent(component, input, "");
-}
-
-export function createRecipe(inputMimeType, components) {
-  if (!Array.isArray(components) || components.length === 0) {
-    throw new Error("createRecipe requires a non-empty array of QIP components");
+  const contentType = optionalContractContentType(contract.contentType);
+  if (contentType !== undefined) {
+    result.contentType = contentType;
   }
-  for (let i = 0; i < components.length; i += 1) {
-    if (!(components[i] instanceof WebAssembly.Module)) {
-      throw new Error("recipe component at stage " + String(i + 1) + " must be a WebAssembly.Module");
+  return Object.freeze(result);
+}
+
+export function contentComponent(input, implementation, output) {
+  if (!isContentContract(input)) {
+    throw Error("contentComponent input must be a content contract");
+  }
+  if (!isContentContract(output)) {
+    throw Error("contentComponent output must be a content contract");
+  }
+  if (implementation instanceof WebAssembly.Module) {
+    return wasmComponent(input, implementation, output);
+  }
+  if (typeof implementation === "function") {
+    return jsComponent(input, implementation, output);
+  }
+  throw Error(
+    "content component implementation must be a WebAssembly.Module or function",
+  );
+}
+
+export function contentRecipe(input, components, output) {
+  if (!isContentContract(input)) {
+    throw Error("contentRecipe input must be a content contract");
+  }
+  if (!isContentContract(output)) {
+    throw Error("contentRecipe output must be a content contract");
+  }
+  if (!Array.isArray(components)) {
+    throw Error("contentRecipe components must be an array");
+  }
+
+  const steps = components.slice();
+  for (let i = 0; i < steps.length; i += 1) {
+    if (!isContentComponent(steps[i])) {
+      throw Error(
+        "contentRecipe step " + String(i + 1) + " must be a content component",
+      );
     }
   }
 
-  const recipeInputMimeType = normalizeMimeType(inputMimeType);
-  const recipeComponents = components.slice();
+  if (steps.length === 0) {
+    assertContractsMatch(input, output, "empty recipe");
+  } else {
+    assertContractsMatch(input, steps[0].input, "recipe input");
+    for (let i = 0; i < steps.length - 1; i += 1) {
+      assertContractsMatch(
+        steps[i].output,
+        steps[i + 1].input,
+        "recipe step " + String(i + 1),
+      );
+    }
+    assertContractsMatch(
+      steps[steps.length - 1].output,
+      output,
+      "recipe output",
+    );
+  }
 
-  return {
-    render(input) {
-      let current = input;
-      let currentMimeType = recipeInputMimeType;
-      let finalResult = null;
-
-      for (let i = 0; i < recipeComponents.length; i += 1) {
-        const isLast = i === recipeComponents.length - 1;
-        const result = renderComponent(recipeComponents[i], current, currentMimeType, {
-          strictInputContentType: true,
-        });
-
-        if (!isLast && (result.encoding === "scalar" || result.encoding === "i32")) {
-          throw new Error(
-            "component at stage " + String(i + 1) + " produced " + result.encoding + " output; only utf8/bytes can be piped",
-          );
-        }
-
-        current = result.value;
-
-        if (result.contentType !== "") {
-          currentMimeType = result.contentType;
-        }
-        finalResult = result;
+  return freezeComponent(
+    (value) => {
+      bytesForInput(value, input);
+      let current = value;
+      for (const step of steps) {
+        current = step(current);
       }
-
-      return resultWithContentType(finalResult, currentMimeType);
+      assertJsOutput(current, output);
+      return current;
     },
-  };
-}
-
-function resultWithContentType(result, contentType) {
-  return {
-    ...result,
-    contentType,
-  };
+    input,
+    output,
+  );
 }
