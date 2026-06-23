@@ -1,9 +1,9 @@
-<title>QIP: sandboxed components that run anywhere</title>
+<title>QIP: secure, cross-platform, fast — choose three</title>
 
 <style>
 .hero-left {
     padding-bottom: 1lh;
-    
+
     a {
         text-align: center;
         display: inline-block;
@@ -20,11 +20,11 @@
 
 @media (min-width: 940px) {
     .hero-left {
-        max-width: 50%;
+        max-width: 48%;
         float: left;
     }
     .hero-right {
-        max-width: 50%;
+        max-width: 48%;
         float: right;
     }
     hr { clear: both }
@@ -33,9 +33,9 @@
 
 <section class="hero-left">
 
-<h1>Vibe once, securely run everywhere</h1>
+<h1>Easy to write, fast to run, hard to break.</h1>
 
-<p>Quarantined. Immutable. Portable.</p>
+<p>QIP components are Quick, Isolated & Portable.</p>
 
 <a href="/docs">Read the docs</a>
 
@@ -45,20 +45,22 @@
 
 ## QIP components render identically across browser, server, cli, and native.
 
-They are quick for coding agents to create and quick for users to run. You can add them to existing applications or use QIP Router to create websites like this one.
+They are fast for you to create with coding agents and fast for users to run. You can add them to existing applications or use QIP Router to create websites just like this one.
 
-We use WebAssembly for its strong isolation with no filesystem, network, or secrets access. And strict-yet-simple component contracts work cross-platform, bringing determinism so everything renders predictably alike everywhere.
+WebAssembly provides strong isolation with no filesystem, network, or secrets access. Strict component contracts bring determinism that means everything renders predictably alike everywhere.
+
+It’s secure for users, cross-platform for developers, and fast for everyone.
 
 </section>
 
 ---
 
-## Render anything
+## Render any content
 
 ```bash
 du -h modules/text/markdown/commonmark.0.31.2.wasm
 # 48K    modules/text/markdown/commonmark.0.31.2.wasm
- 
+
 echo "# A Markdown renderer that works identically cross-platform!" \
 | qip run modules/text/markdown/commonmark.0.31.2.wasm
 # <h1>A Markdown renderer that works identically cross-platform!<h1>
@@ -68,7 +70,7 @@ QIP components can convert text, images, or any MIME type. A pipeline can turn M
 
 ## Browser rendering
 
-You can load the exact same Markdown component and run it in the browser with the `<qip-preview>` custom HTML element:
+Load the exact same Markdown component in the browser with the `<qip-preview>` custom HTML element:
 
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
     &lt;qip-preview&gt;
