@@ -27,6 +27,7 @@ More interactive pages:
 - [Palm webOS Card View](/play-webos-card-view)
 - [Game Boy Camera UI](/play-gameboy-camera)
 - [TextEdit (Plain Text)](/play-textedit)
+- [Organization Planner (Sandbox)](/play-org-planner)
 - [Vertical Shooter](/play-vertical-shooter)
 - [Moon phases](/play-moon-phases)
 - [Play Wasm From URL](/play-wasm)
