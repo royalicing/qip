@@ -23,7 +23,7 @@
     )
   )
 
-  ;; Returns: length of valid trimmed id, or 0 if invalid
+  ;; Returns: length of valid trimmed id; traps if invalid
   ;; Outputs the trimmed id to output buffer
   ;; Per HTML5: id must contain at least one character and no ASCII whitespace
   ;; This is more permissive than CSS - ids can start with digits, contain special chars, etc.
@@ -37,7 +37,7 @@
 
     ;; Empty id is invalid
     (if (i32.eq (local.get $input_size) (i32.const 0))
-      (then (return (i32.const 0)))
+      (then unreachable)
     )
 
     ;; Trim leading whitespace
@@ -66,7 +66,7 @@
 
     ;; If all whitespace or empty after trimming, invalid
     (if (i32.ge_u (local.get $start) (local.get $end))
-      (then (return (i32.const 0)))
+      (then unreachable)
     )
 
     ;; Check all characters in trimmed range - none can be ASCII whitespace
@@ -79,7 +79,7 @@
 
         ;; If character is whitespace, invalid
         (if (call $is_whitespace (local.get $current_char))
-          (then (return (i32.const 0)))
+          (then unreachable)
         )
 
         (local.set $i (i32.add (local.get $i) (i32.const 1)))

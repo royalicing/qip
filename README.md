@@ -455,7 +455,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Convert soft-failure validators to trap on invalid input, then add invalid-then-valid same-instance recovery tests:
   - [ ] `modules/text/css/css-class-validator.wasm`
-  - [ ] `modules/text/html/html-id-validator.wasm`
+  - [x] `modules/text/html/html-id-validator.wasm`
   - [ ] `modules/text/html/html-input-name-validator.wasm`
   - [ ] `modules/text/html/html-tag-validator.wasm`
   - [ ] `modules/utf8/tld-validator.wasm`

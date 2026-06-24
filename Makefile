@@ -116,6 +116,7 @@ test: qip modules test-go test-js test-zig test-snapshot
 test-js: modules
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
+	node --test test/html-id-validator.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
 test-snapshot: qip modules
