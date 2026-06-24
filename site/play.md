@@ -19,6 +19,7 @@ More interactive pages:
 - [Spreadsheet](/play-spreadsheet)
 - [Calculator](/play-calculator)
 - [Graph Calculator](/play-graph-calculator)
+- [IEEE 754 Floating Point](/play-ieee-754-floats)
 - [Windows 95 Desktop](/play-windows95-desktop)
 - [Mac OS 9 Desktop](/play-macos9-desktop)
 - [Mac OS X Leopard Desktop](/play-macosx-leopard-desktop)
