@@ -1,4 +1,4 @@
-<title>QIP: secure, cross-platform, fast — choose three</title>
+<title>QIP: secure cross-platform components</title>
 
 <style>
 .hero-left {
@@ -132,13 +132,13 @@ qip router warc ./site --view-source
 
 Recipes allow each MIME type to be processed by a series of QIP component steps. Each source file is transformed by the recipe and become a webpage route. The same components can be rendered in the browser via custom HTML elements.
 
-## Software today is continuously moving
+## Software today never stops
 
-Modern software depends on libraries, frameworks, and platforms that never stop changing.
+Modern software depends on libraries, frameworks, and platforms that are continuously changing.
 
-Docker can package that world, but it requires lots of moving pieces that require continual patches. We believe a small function to transform some data should not need a whole application environment to run.
+Docker can package that world, but it requires lots of moving pieces that require constant patches. We believe a small function to transform some data should not need a whole application environment to run.
 
-## Introducing components that are small, isolated, and deterministic across platforms
+## Components that are small, isolated, and deterministic across platforms
 
 **QIP component** are self-contained WebAssembly modules with strict input and output. The output of one then becomes the input of the next, allowing you to compose them together into deterministic pipelines. These will work identically across platforms and will not bitrot due to outdated dependencies.
 

@@ -50,6 +50,7 @@ const WARCRecord = struct {
 
 const HTTPResponse = struct {
     status: u16,
+    location: []const u8,
     body: []const u8,
 };
 
@@ -212,8 +213,30 @@ fn parseHTTPResponse(payload: []const u8) ?HTTPResponse {
         status_line = status_line[0 .. status_line.len - 1];
     }
     const status = parseStatusCode(status_line) orelse return null;
+    var location: []const u8 = "";
+
+    var line_start = first_nl + 1;
+    while (line_start < headers.len) {
+        const nl_rel = std.mem.indexOfPos(u8, headers, line_start, "\n") orelse headers.len;
+        var line = headers[line_start..nl_rel];
+        if (line.len > 0 and line[line.len - 1] == '\r') {
+            line = line[0 .. line.len - 1];
+        }
+        line = trimASCIIWhitespace(line);
+        line_start = if (nl_rel < headers.len) nl_rel + 1 else headers.len;
+        if (line.len == 0) break;
+
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const key = trimASCIIWhitespace(line[0..colon]);
+        const value = trimASCIIWhitespace(line[colon + 1 ..]);
+        if (eqlIgnoreCase(key, "Location")) {
+            location = value;
+        }
+    }
+
     return .{
         .status = status,
+        .location = location,
         .body = payload[head.end..],
     };
 }
@@ -266,8 +289,42 @@ fn isSafeRelativePath(rel: []const u8) bool {
     return true;
 }
 
+fn isRedirectStatus(status: u16) bool {
+    return status >= 300 and status <= 399;
+}
+
+fn hasRedirectsWhitespace(s: []const u8) bool {
+    for (s) |c| {
+        if (c == ' ' or c == '\t' or c == '\r' or c == '\n') return true;
+    }
+    return false;
+}
+
+fn appendStatus(out: *Output, status: u16) void {
+    var tmp: [5]u8 = undefined;
+    var value = status;
+    var i = tmp.len;
+    while (true) {
+        i -= 1;
+        tmp[i] = @as(u8, @intCast('0' + (value % 10)));
+        value /= 10;
+        if (value == 0) break;
+    }
+    out.writeSlice(tmp[i..]);
+}
+
+fn isRedirectsPath(request_path: []const u8) bool {
+    return std.mem.eql(u8, request_path, "/_redirects");
+}
+
 fn mapPathNoTrailingSlash(request_path: []const u8, buf: []u8) ?[]const u8 {
     if (request_path.len == 0 or request_path[0] != '/') return null;
+
+    if (isRedirectsPath(request_path)) {
+        if (buf.len < "_redirects".len) return null;
+        @memcpy(buf[0.."_redirects".len], "_redirects");
+        return buf[0.."_redirects".len];
+    }
 
     if (std.mem.eql(u8, request_path, "/")) {
         if (buf.len < "index.html".len) return null;
@@ -366,6 +423,57 @@ fn writeTarEntry(out: *Output, path: []const u8, body: []const u8) void {
     }
 }
 
+fn writeRedirectsBody(out: *Output, input: []const u8) void {
+    var cursor: usize = 0;
+
+    while (cursor < input.len) {
+        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
+        if (cursor >= input.len) break;
+
+        const rec = parseWARCRecord(input, cursor) orelse @trap();
+        cursor = rec.next;
+
+        if (!eqlIgnoreCase(rec.warc_type, "response")) continue;
+        if (rec.target_uri.len == 0) continue;
+
+        const http = parseHTTPResponse(rec.payload) orelse continue;
+        const req_path = pathFromTargetURI(rec.target_uri);
+
+        if (!isRedirectStatus(http.status) or http.location.len == 0) continue;
+        if (hasRedirectsWhitespace(req_path) or hasRedirectsWhitespace(http.location)) continue;
+        out.writeSlice(req_path);
+        out.writeByte(' ');
+        out.writeSlice(http.location);
+        out.writeByte(' ');
+        appendStatus(out, http.status);
+        out.writeByte('\n');
+    }
+}
+
+fn writeRedirectsTarEntry(out: *Output, input: []const u8) void {
+    const header_index = out.index;
+    out.writeZeros(TAR_BLOCK);
+    const body_start = out.index;
+    writeRedirectsBody(out, input);
+    if (out.overflow) return;
+
+    const body_len = out.index - body_start;
+    if (body_len == 0) {
+        out.index = header_index;
+        return;
+    }
+
+    var header: [TAR_BLOCK]u8 = undefined;
+    if (!buildTarHeader("_redirects", body_len, &header)) {
+        out.overflow = true;
+        return;
+    }
+    @memcpy(output_buf[header_index .. header_index + TAR_BLOCK], header[0..]);
+
+    const rem = body_len % TAR_BLOCK;
+    if (rem != 0) out.writeZeros(TAR_BLOCK - rem);
+}
+
 export fn render(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
@@ -389,10 +497,14 @@ export fn render(input_size_u32: u32) u32 {
         if (http.status != 200) continue;
 
         const req_path = pathFromTargetURI(rec.target_uri);
+        if (isRedirectsPath(req_path)) continue;
         const archive_path = mapPathNoTrailingSlash(req_path, path_buf[0..]) orelse continue;
         writeTarEntry(&out, archive_path, http.body);
         if (out.overflow) @trap();
     }
+
+    writeRedirectsTarEntry(&out, input);
+    if (out.overflow) @trap();
 
     out.writeZeros(TAR_BLOCK * 2);
     if (out.overflow) @trap();
@@ -404,4 +516,58 @@ test "path mapping no trailing slash" {
     try std.testing.expectEqualStrings("index.html", mapPathNoTrailingSlash("/", tmp[0..]).?);
     try std.testing.expectEqualStrings("about.html", mapPathNoTrailingSlash("/about", tmp[0..]).?);
     try std.testing.expectEqualStrings("img/logo.png", mapPathNoTrailingSlash("/img/logo.png", tmp[0..]).?);
+    try std.testing.expectEqualStrings("_redirects", mapPathNoTrailingSlash("/_redirects", tmp[0..]).?);
+}
+
+test "redirects body includes WARC redirects only" {
+    const warc =
+        "WARC/1.1\r\n" ++
+        "WARC-Type: response\r\n" ++
+        "WARC-Target-URI: http://example.test/_redirects\r\n" ++
+        "Content-Length: 39\r\n" ++
+        "\r\n" ++
+        "HTTP/1.1 200 OK\r\n\r\n" ++
+        "/old-docs /docs 301\n" ++
+        "\r\n\r\n" ++
+        "WARC/1.1\r\n" ++
+        "WARC-Type: response\r\n" ++
+        "WARC-Target-URI: http://example.test/start\r\n" ++
+        "Content-Length: 39\r\n" ++
+        "\r\n" ++
+        "HTTP/1.1 302 Found\r\n" ++
+        "Location: /docs\r\n" ++
+        "\r\n" ++
+        "\r\n\r\n";
+
+    var out = Output{};
+    writeRedirectsBody(&out, warc);
+    try std.testing.expectEqualStrings("/start /docs 302\n", output_buf[0..out.index]);
+}
+
+test "render writes redirects tar entry" {
+    const warc =
+        "WARC/1.1\r\n" ++
+        "WARC-Type: response\r\n" ++
+        "WARC-Target-URI: http://example.test/index.html\r\n" ++
+        "Content-Length: 27\r\n" ++
+        "\r\n" ++
+        "HTTP/1.1 200 OK\r\n\r\n" ++
+        "home" ++
+        "\r\n\r\n" ++
+        "WARC/1.1\r\n" ++
+        "WARC-Type: response\r\n" ++
+        "WARC-Target-URI: http://example.test/start\r\n" ++
+        "Content-Length: 39\r\n" ++
+        "\r\n" ++
+        "HTTP/1.1 302 Found\r\n" ++
+        "Location: /docs\r\n" ++
+        "\r\n" ++
+        "\r\n\r\n";
+
+    @memcpy(input_buf[0..warc.len], warc);
+    const size = render(@intCast(warc.len));
+    const tar = output_buf[0..size];
+    try std.testing.expect(std.mem.indexOf(u8, tar, "index.html") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tar, "_redirects") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tar, "/start /docs 302\n") != null);
 }
