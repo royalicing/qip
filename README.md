@@ -430,8 +430,9 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Add TypeScript-to-JavaScript type stripper.
 - [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
+- [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
 - [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
-- [ ] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
+- [x] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
 - [ ] Add tracing by modifying modules:
   - [ ] Trace unreachable by adding calls to memory reads of input so we can check last read which will likely be source reason for the trap.
   - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
