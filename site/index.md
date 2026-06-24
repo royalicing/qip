@@ -101,6 +101,24 @@ Interactive QIP Components receive keyboard & pointer events and render out pixe
 
 See [`/play`](/play) for more interactive examples.
 
+## Private utilities
+
+These pages run QIP components in your browser:
+
+- [Markdown to HTML](/markdown-to-html)
+- [JSON prettifier](/json-prettify)
+- [CSS minifier](/css-minifier)
+- [JPEG location stripper](/jpeg-location-stripper)
+- [Image color palette extractor](/image-color-palette)
+
+## Interactive explainers
+
+- [Cache-Control request chains](/cache-control)
+- [Flexbox and SwiftUI layout](/layout-systems)
+- [Browser security: CORS, CSRF, and XSS](/browser-security)
+- [Web mechanics: TLS, DNS, page loading, and cookies](/web-mechanics)
+- [Page load waterfall](/page-load-waterfall)
+
 ## Pluggable web router
 
 QIP can also take Markdown files and render a website:
