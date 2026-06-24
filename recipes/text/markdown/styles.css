@@ -130,6 +130,15 @@ main {
         font-size: 2rem;
         line-height: 2rlh;
     }
+    .heading-anchor {
+        opacity: 55%;
+        text-decoration: none;
+
+        &:hover {
+            opacity: 100%;
+            text-decoration: underline;
+        }
+    }
     h3 {
         font-size: 1.25rem;
         line-height: 1rlh;
