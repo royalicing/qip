@@ -50,6 +50,7 @@ For example, `qip router warc ./site` produces a Web Archive. Another component 
 <li><a href="/docs/zig-components">Writing QIP Components In Zig</a></li>
 <li><a href="/docs/interactive">Interactive ABI</a></li>
 <li><a href="/docs/events">Interactive Events</a></li>
+<li><a href="/docs/interactive-rendering-performance">Interactive Rendering Performance</a></li>
 <li><a href="/docs/formats">Formats and Encodings</a></li>
 <li><a href="/docs/esm-integration">WebAssembly ES Module Integration</a></li>
 <li><a href="/docs/security-model">Security Model</a></li>

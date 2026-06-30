@@ -108,6 +108,28 @@ Typical host flow:
 
 This gives low-latency input handling while keeping frame scheduling host-driven.
 
+## Browser Presentation
+
+The interactive ABI describes framebuffer pixels, not CSS layout. Browser hosts can scale a fixed framebuffer at presentation time.
+
+For `<qip-play>`, the page can set presentation attributes:
+
+- `canvas-width`: CSS width for the internal canvas.
+- `canvas-height`: CSS height for the internal canvas, default `auto`.
+
+The same sizing values can also come from CSS custom properties when a page wants layout to live in stylesheets:
+
+- `--qip-play-canvas-width`: CSS width for the internal canvas.
+- `--qip-play-canvas-height`: CSS height for the internal canvas, default `auto`.
+
+Attributes win over CSS custom properties.
+
+`<qip-play>` leaves `image-rendering` at the browser default. That is the better default for high-DPI downscaling, and 1:1 rendering is unaffected.
+
+Pointer events are still converted from the displayed canvas box into render-space pixels. This lets a component render a 2x backing buffer, while the page displays it at a 1x CSS size for high-DPI screens.
+
+For debug instrumentation, add `debug` to `<qip-play>`. In debug mode the host compares each rendered framebuffer with the previous frame, reports `unchanged renders`, and shows the latest exact-compare time. This is opt-in because scanning the framebuffer can be as expensive as, or more expensive than, drawing it to the canvas.
+
 ## Why This Shape
 
 Claim: this ABI is a better default than embedding a full protocol stream.
