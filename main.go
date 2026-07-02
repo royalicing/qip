@@ -467,6 +467,7 @@ type benchModuleKind uint8
 const (
 	benchModuleKindRun benchModuleKind = iota
 	benchModuleKindTile
+	benchModuleKindInteractive
 )
 
 type durationStats struct {
@@ -582,13 +583,22 @@ func benchCmd(args []string) {
 		funcs := cm.ExportedFunctions()
 		_, hasRun := funcs["render"]
 		_, hasTile := funcs["tile_rgba32float_64x64"]
+		hasInteractive := hasRun &&
+			funcs["tick"] != nil &&
+			funcs["key_event"] != nil &&
+			funcs["pointer_event"] != nil &&
+			funcs["render_width_px"] != nil &&
+			funcs["render_height_px"] != nil &&
+			funcs["output_rgba8_srgb_bytes"] != nil
 		switch {
 		case hasTile:
 			moduleKinds[i] = benchModuleKindTile
+		case hasInteractive:
+			moduleKinds[i] = benchModuleKindInteractive
 		case hasRun:
 			moduleKinds[i] = benchModuleKindRun
 		default:
-			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32 or tile_rgba32float_64x64(f32, f32)", modules[i])
+			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32, interactive render/tick exports, or tile_rgba32float_64x64(f32, f32)", modules[i])
 		}
 		compiled[i] = cm
 		defer compiled[i].Close(ctx)
@@ -759,9 +769,118 @@ func runBenchSampleByKind(
 		return runBenchSample(parent, runtime, compiled, inputBytes, opts, moduleName, timeout)
 	case benchModuleKindTile:
 		return runBenchTileSample(parent, runtime, compiled, inputBytes, moduleName, timeout)
+	case benchModuleKindInteractive:
+		return runBenchInteractiveSample(parent, runtime, compiled, moduleName, timeout)
 	default:
 		return benchSample{}, contentData{}, errors.New("unknown bench module kind")
 	}
+}
+
+func runBenchInteractiveSample(
+	parent context.Context,
+	runtime wazero.Runtime,
+	compiled wazero.CompiledModule,
+	moduleName string,
+	timeout time.Duration,
+) (sample benchSample, output contentData, returnErr error) {
+	ctx := parent
+	cancel := func() {}
+	if timeout > 0 {
+		ctxWithTimeout, cancelWithTimeout := wasmruntime.WithExecutionTimeout(parent, timeout)
+		ctx = ctxWithTimeout
+		cancel = cancelWithTimeout
+	}
+	defer cancel()
+
+	instStart := time.Now()
+	mod, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName(moduleName))
+	if err != nil {
+		returnErr = errors.New("Wasm module could not be instantiated")
+		return
+	}
+	defer mod.Close(ctx)
+	sample.instantiation = time.Since(instStart)
+
+	if mod.Memory() == nil {
+		returnErr = errors.New("interactive Wasm module must export memory")
+		return
+	}
+
+	renderWidthVal, _, err := getExportedValue(ctx, mod, "render_width_px")
+	if err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	}
+	renderHeightVal, _, err := getExportedValue(ctx, mod, "render_height_px")
+	if err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	}
+	renderWidth := int(int32(renderWidthVal))
+	renderHeight := int(int32(renderHeightVal))
+	if renderWidth <= 0 || renderHeight <= 0 {
+		returnErr = fmt.Errorf("interactive module reported invalid render size %dx%d", renderWidth, renderHeight)
+		return
+	}
+	expectedLen := renderWidth * renderHeight * 4
+
+	outputBytesValue, ok, err := getExportedValue(ctx, mod, "output_rgba8_srgb_bytes")
+	if err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	}
+	if !ok {
+		returnErr = errors.New("interactive module missing output_rgba8_srgb_bytes export")
+		return
+	}
+	if int(int32(outputBytesValue)) != expectedLen {
+		returnErr = fmt.Errorf("interactive module output_rgba8_srgb_bytes=%d, expected %d", int(int32(outputBytesValue)), expectedLen)
+		return
+	}
+
+	outputPtrValue, ok, err := getExportedValue(ctx, mod, "output_ptr")
+	if err != nil {
+		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
+		return
+	}
+	if !ok {
+		returnErr = errors.New("interactive module missing output_ptr export")
+		return
+	}
+	outputPtr := uint32(outputPtrValue)
+
+	tickFunc := mod.ExportedFunction("tick")
+	renderFunc := mod.ExportedFunction("render")
+	if _, err := tickFunc.Call(ctx, 0); err != nil {
+		returnErr = fmt.Errorf("tick(0) failed: %w", wasmruntime.HumanizeExecutionError(ctx, err))
+		return
+	}
+	runStart := time.Now()
+	renderResult, err := renderFunc.Call(ctx, 0)
+	if err != nil {
+		returnErr = fmt.Errorf("render(0) failed: %w", wasmruntime.HumanizeExecutionError(ctx, err))
+		return
+	}
+	sample.run = time.Since(runStart)
+	sample.total = sample.run
+	if len(renderResult) != 1 {
+		returnErr = fmt.Errorf("render(0) returned %d values, want 1", len(renderResult))
+		return
+	}
+	outputLen := int(int32(renderResult[0]))
+	if outputLen != expectedLen {
+		returnErr = fmt.Errorf("render(0) returned %d bytes, expected %d", outputLen, expectedLen)
+		return
+	}
+
+	outputRaw, ok := mod.Memory().Read(outputPtr, uint32(outputLen))
+	if !ok {
+		returnErr = errors.New("could not read interactive output frame")
+		return
+	}
+	sample.outputCapBytes = uint64(expectedLen)
+	sample.memoryBytes = uint64(mod.Memory().Size())
+	return sample, contentData{bytes: append([]byte(nil), outputRaw...), encoding: dataEncodingRaw}, nil
 }
 
 func runBenchTileSample(
