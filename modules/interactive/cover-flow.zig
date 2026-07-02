@@ -1,8 +1,12 @@
 const std = @import("std");
 const ui_font = @import("assets/dejavu_sans_mono_56_ascii_subset.zig");
 
-const RENDER_W: usize = 720;
-const RENDER_H: usize = 480;
+const DISPLAY_W: usize = 720;
+const DISPLAY_H: usize = 480;
+const RETINA_SCALE: i32 = 2;
+const RETINA_SCALE_USIZE: usize = 2;
+const RENDER_W: usize = DISPLAY_W * RETINA_SCALE_USIZE;
+const RENDER_H: usize = DISPLAY_H * RETINA_SCALE_USIZE;
 const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
@@ -12,14 +16,15 @@ const XK_RIGHT: i32 = 0xFF53;
 const XK_HOME: i32 = 0xFF50;
 const XK_END: i32 = 0xFF57;
 
-const COVER: i32 = 190;
+const COVER: i32 = 190 * RETINA_SCALE;
 const COVER_TEX_SIZE: usize = 256;
 const COVER_TEX_SHIFT: usize = 8;
 const COVER_TEX_COORD_MAX: i32 = @as(i32, @intCast(COVER_TEX_SIZE - 1));
 const COVER_TEXELS_PER_ALBUM: usize = COVER_TEX_SIZE * COVER_TEX_SIZE;
-const FLOOR_Y: i32 = 282;
+const FLOOR_Y: i32 = 282 * RETINA_SCALE;
 const CENTER_X: i32 = @divTrunc(@as(i32, @intCast(RENDER_W)), 2);
 const MAX_ALBUMS: usize = 10;
+const ROW_CLIP_NONE: u8 = 0xFF;
 
 const FEATURE_BILINEAR: u32 = 1 << 0;
 const FEATURE_ANTIALIAS: u32 = 1 << 1;
@@ -157,6 +162,13 @@ var pointer_x: i32 = -1000;
 var pointer_y: i32 = -1000;
 var pulse: i32 = 0;
 var feature_mask: u32 = FEATURE_RENDERING | FEATURE_ALL;
+var cover_edges: [MAX_ALBUMS]QuadEdges = undefined;
+var cover_clip_neighbor: [MAX_ALBUMS]u8 = undefined;
+var cover_clip_side: [MAX_ALBUMS]i8 = undefined;
+var project_u_f: [RENDER_W]f32 = undefined;
+var project_v_x: [RENDER_W]f32 = undefined;
+var project_inv_d: [RENDER_W]f32 = undefined;
+var project_u_mid: [RENDER_W]i32 = undefined;
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
@@ -216,13 +228,13 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
         const dx = x_px - press_x;
         last_dx = x_px - last_x;
         last_x = x_px;
-        selected_q8 = clampSelected(press_selected_q8 - @divTrunc(dx * 256, 129), true);
+        selected_q8 = clampSelected(press_selected_q8 - @divTrunc(dx * 256, 129 * RETINA_SCALE), true);
         target_q8 = selected_q8;
-        velocity_q8 = @divTrunc((-last_dx) * 256, 129);
+        velocity_q8 = @divTrunc((-last_dx) * 256, 129 * RETINA_SCALE);
         spring_velocity_q8 = 0;
         needs_redraw = true;
     } else if (!down and primary_down) {
-        if (absI32(x_px - press_x) < 5) {
+        if (absI32(x_px - press_x) < 5 * RETINA_SCALE) {
             const hit = hitAlbum(x_px, y_px);
             if (hit >= 0) setSelection(hit);
         }
@@ -362,22 +374,73 @@ fn drawFrame() void {
     var covers: [MAX_ALBUMS]FrameCover = undefined;
     var valid = [_]bool{false} ** MAX_ALBUMS;
     buildFrameCovers(nearest, &covers, &valid);
+    buildCoverRowVisibility(nearest, &covers, &valid);
     drawReflections(nearest, &covers, &valid);
     drawAlbums(nearest, &covers, &valid);
     drawChrome();
+}
+
+fn buildCoverRowVisibility(nearest: i32, covers: *const [MAX_ALBUMS]FrameCover, valid: *const [MAX_ALBUMS]bool) void {
+    @memset(cover_clip_neighbor[0..], ROW_CLIP_NONE);
+    @memset(cover_clip_side[0..], 0);
+
+    var i: usize = 0;
+    while (i < MAX_ALBUMS) : (i += 1) {
+        if (valid[i]) cover_edges[i] = makeQuadEdges(covers[i].q);
+    }
+
+    var pass: i32 = 1;
+    while (pass <= 5) : (pass += 1) {
+        const left = nearest - pass;
+        if (left >= 0) {
+            const slot = @as(usize, @intCast(left));
+            if (valid[slot]) {
+                cover_clip_neighbor[slot] = @as(u8, @intCast(slot + 1));
+                cover_clip_side[slot] = -1;
+            }
+        }
+        const right = nearest + pass;
+        if (right < @as(i32, @intCast(albums.len))) {
+            const slot = @as(usize, @intCast(right));
+            if (valid[slot]) {
+                cover_clip_neighbor[slot] = @as(u8, @intCast(slot - 1));
+                cover_clip_side[slot] = 1;
+            }
+        }
+    }
+}
+
+inline fn clipCoverRowToVisibleX(album_idx: usize, y: i32, row_min_x: *i32, row_max_x: *i32) void {
+    const side = cover_clip_side[album_idx];
+    if (side == 0) return;
+    const neighbor = cover_clip_neighbor[album_idx];
+    if (neighbor == ROW_CLIP_NONE) return;
+
+    const span = rowFullCoverageSpan(cover_edges[neighbor], y, 0, @as(i32, @intCast(RENDER_W)) - 1);
+    if (span.min_x > span.max_x) return;
+
+    if (side < 0) {
+        if (row_max_x.* >= span.min_x and row_max_x.* <= span.max_x) {
+            row_max_x.* = @min(row_max_x.*, span.min_x - 1);
+        }
+    } else {
+        if (row_min_x.* >= span.min_x and row_min_x.* <= span.max_x) {
+            row_min_x.* = @max(row_min_x.*, span.max_x + 1);
+        }
+    }
 }
 
 fn drawBackground() void {
     var y: i32 = 0;
     while (y < @as(i32, @intCast(RENDER_H))) : (y += 1) {
         const t = @divTrunc(y * 255, @as(i32, @intCast(RENDER_H - 1)));
-        const floor_fade = if (y >= FLOOR_Y) clampI32(170 - (y - FLOOR_Y) * 2, 0, 170) else 0;
+        const floor_fade = if (y >= FLOOR_Y) clampI32(170 - @divTrunc((y - FLOOR_Y) * 2, RETINA_SCALE), 0, 170) else 0;
         var x: i32 = 0;
         var out_idx = (@as(usize, @intCast(y)) * RENDER_W) * 4;
         while (x < @as(i32, @intCast(RENDER_W))) : (x += 1) {
             const cx = absI32(x - CENTER_X);
-            const vignette = clampI32(@divTrunc(cx * 85, CENTER_X) + @divTrunc(absI32(y - 198) * 34, 240), 0, 105);
-            const glow = clampI32(78 - @divTrunc(cx, 6) - @divTrunc(absI32(y - 156), 5), 0, 78);
+            const vignette = clampI32(@divTrunc(cx * 85, CENTER_X) + @divTrunc(absI32(y - 198 * RETINA_SCALE) * 34, 240 * RETINA_SCALE), 0, 105);
+            const glow = clampI32(78 - @divTrunc(cx, 6 * RETINA_SCALE) - @divTrunc(absI32(y - 156 * RETINA_SCALE), 5 * RETINA_SCALE), 0, 78);
             var r = clampI32(6 + @divTrunc(t, 18) + @divTrunc(glow, 5) - @divTrunc(vignette, 6), 0, 255);
             var g = clampI32(7 + @divTrunc(t, 20) + @divTrunc(glow, 4) - @divTrunc(vignette, 6), 0, 255);
             var b = clampI32(10 + @divTrunc(t, 12) + @divTrunc(glow, 2) - @divTrunc(vignette, 4), 0, 255);
@@ -395,18 +458,18 @@ fn drawBackground() void {
         }
     }
 
-    blendRect(0, FLOOR_Y - 1, @as(i32, @intCast(RENDER_W)), 1, .{ 0xC6, 0xD6, 0xEA, 0x30 });
+    blendRect(0, FLOOR_Y - RETINA_SCALE, @as(i32, @intCast(RENDER_W)), RETINA_SCALE, .{ 0xC6, 0xD6, 0xEA, 0x30 });
     drawFloorShine();
 }
 
 fn drawFloorShine() void {
     var y: i32 = FLOOR_Y;
-    while (y < FLOOR_Y + 64) : (y += 1) {
-        const row_alpha = clampI32(42 - (y - FLOOR_Y), 0, 42);
-        var x: i32 = 63;
-        while (x < @as(i32, @intCast(RENDER_W)) - 63) : (x += 1) {
+    while (y < FLOOR_Y + 64 * RETINA_SCALE) : (y += 1) {
+        const row_alpha = clampI32(42 - @divTrunc(y - FLOOR_Y, RETINA_SCALE), 0, 42);
+        var x: i32 = 63 * RETINA_SCALE;
+        while (x < @as(i32, @intCast(RENDER_W)) - 63 * RETINA_SCALE) : (x += 1) {
             const dx = absI32(x - CENTER_X);
-            const a = clampI32(row_alpha - @divTrunc(dx, 15), 0, 42);
+            const a = clampI32(row_alpha - @divTrunc(dx, 15 * RETINA_SCALE), 0, 42);
             if (a > 0) blendPixelUnchecked(x, y, .{ 0xD8, 0xE9, 0xFF, @as(u8, @intCast(a)) });
         }
     }
@@ -496,12 +559,12 @@ fn coverPose(index: i32) CoverPose {
     const yaw = sign * (turn * 1.08 + (1.0 - turn) * rel * 0.18);
     const cos_y = @cos(yaw);
     const sin_y = @sin(yaw);
-    const center_push = rel * 60.0;
-    const side_push = sign * (126.0 + (ad - 1.0) * 86.0);
+    const center_push = rel * 60.0 * @as(f32, @floatFromInt(RETINA_SCALE));
+    const side_push = sign * (126.0 + (ad - 1.0) * 86.0) * @as(f32, @floatFromInt(RETINA_SCALE));
     const x_push = lerpF32(center_push, side_push, turn);
-    const x_world = clampF32(x_push, -500.0, 500.0);
-    const z_world = clampF32(ad * 51.0, 0.0, 270.0);
-    const y_center = 171.0 + clampF32(ad * 6.0, 0.0, 36.0);
+    const x_world = clampF32(x_push, -500.0 * @as(f32, @floatFromInt(RETINA_SCALE)), 500.0 * @as(f32, @floatFromInt(RETINA_SCALE)));
+    const z_world = clampF32(ad * 51.0 * @as(f32, @floatFromInt(RETINA_SCALE)), 0.0, 270.0 * @as(f32, @floatFromInt(RETINA_SCALE)));
+    const y_center = 171.0 * @as(f32, @floatFromInt(RETINA_SCALE)) + clampF32(ad * 6.0 * @as(f32, @floatFromInt(RETINA_SCALE)), 0.0, 36.0 * @as(f32, @floatFromInt(RETINA_SCALE)));
     const half = @as(f32, @floatFromInt(COVER)) * (1.0 - clampF32(ad * 0.025, 0.0, 0.12)) * 0.5;
     return .{
         .q = .{
@@ -518,7 +581,7 @@ fn projectCoverCorner(local_x: f32, local_y: f32, x_world: f32, y_center: f32, z
     const rotated_x = local_x * cos_y;
     const rotated_z = -local_x * sin_y;
     const z = z_world + rotated_z;
-    const perspective = 780.0 / (780.0 + z);
+    const perspective = (780.0 * @as(f32, @floatFromInt(RETINA_SCALE))) / (780.0 * @as(f32, @floatFromInt(RETINA_SCALE)) + z);
     return .{
         .x = @as(i32, @intFromFloat(@round(@as(f32, @floatFromInt(CENTER_X)) + (x_world + rotated_x) * perspective))),
         .y = @as(i32, @intFromFloat(@round(y_center + local_y * perspective))),
@@ -526,7 +589,7 @@ fn projectCoverCorner(local_x: f32, local_y: f32, x_world: f32, y_center: f32, z
 }
 
 fn reflectQuad(q: Quad) Quad {
-    const gap = 4;
+    const gap = 4 * RETINA_SCALE;
     return .{
         .tl = .{ .x = q.bl.x, .y = FLOOR_Y + gap },
         .tr = .{ .x = q.br.x, .y = FLOOR_Y + gap },
@@ -552,6 +615,7 @@ fn drawTexturedQuadMode(comptime reflection: bool, comptime use_bilinear: bool, 
     const max_x = clampI32(max4(q.tl.x, q.tr.x, q.br.x, q.bl.x), 0, @as(i32, @intCast(RENDER_W)) - 1);
     const min_y = clampI32(min4(q.tl.y, q.tr.y, q.br.y, q.bl.y), 0, @as(i32, @intCast(RENDER_H)) - 1);
     const max_y = clampI32(max4(q.tl.y, q.tr.y, q.br.y, q.bl.y), 0, @as(i32, @intCast(RENDER_H)) - 1);
+    if (use_bilinear and use_antialias) buildProjectXCache(inv, min_x, max_x);
     var y = min_y;
     while (y <= max_y) : (y += 1) {
         const yf = @as(f32, @floatFromInt(y)) + 0.5;
@@ -560,23 +624,29 @@ fn drawTexturedQuadMode(comptime reflection: bool, comptime use_bilinear: bool, 
         const row_d_y = inv.m21 * yf;
         const row_fade = if (reflection) clampI32(@as(i32, alpha) - @divTrunc((y - FLOOR_Y) * 3, 2), 0, @as(i32, alpha)) else 0;
         if (reflection and row_fade <= 0) continue;
-        var x = min_x;
+        var row_min_x = min_x;
+        var row_max_x = max_x;
+        if (!reflection) {
+            clipCoverRowToVisibleX(album_idx, y, &row_min_x, &row_max_x);
+            if (row_min_x > row_max_x) continue;
+        }
+        var x = row_min_x;
         if (use_bilinear and use_antialias) {
-            const full_span = rowFullCoverageSpan(edges, y, min_x, max_x);
-            const full_start = firstBatchXAtOrAfter(min_x, full_span.min_x);
-            const full_end = lastBatchXAtOrBefore(min_x, @min(full_span.max_x - 3, max_x - 3));
+            const full_span = rowFullCoverageSpan(edges, y, row_min_x, row_max_x);
+            const full_start = firstBatchXAtOrAfter(row_min_x, full_span.min_x);
+            const full_end = lastBatchXAtOrBefore(row_min_x, @min(full_span.max_x - 3, row_max_x - 3));
 
-            while (x + 3 <= max_x and x < full_start) : (x += 4) {
+            while (x + 3 <= row_max_x and x < full_start) : (x += 4) {
                 drawTexturedQuadBatch4BilinearAA(reflection, edges, inv, row_u_y, row_v_y, row_d_y, x, y, album_idx, darken, light_boost, alpha, row_fade);
             }
             while (x <= full_end) : (x += 4) {
-                drawTexturedQuadBatch4BilinearFull(reflection, inv, row_u_y, row_v_y, row_d_y, x, y, album_idx, darken, light_boost, row_fade);
+                drawTexturedQuadBatch4BilinearFullCached(reflection, inv, row_v_y, x, y, album_idx, darken, light_boost, row_fade);
             }
-            while (x + 3 <= max_x) : (x += 4) {
+            while (x + 3 <= row_max_x) : (x += 4) {
                 drawTexturedQuadBatch4BilinearAA(reflection, edges, inv, row_u_y, row_v_y, row_d_y, x, y, album_idx, darken, light_boost, alpha, row_fade);
             }
         } else {
-            while (x + 3 <= max_x) : (x += 4) {
+            while (x + 3 <= row_max_x) : (x += 4) {
                 if (!reflection and use_bilinear and !use_antialias and alpha == 0xFF) {
                     drawTexturedQuadBatch4OpaqueNoAA(use_bilinear, inv, x, y, album_idx, darken, light_boost);
                 } else {
@@ -584,10 +654,25 @@ fn drawTexturedQuadMode(comptime reflection: bool, comptime use_bilinear: bool, 
                 }
             }
         }
-        while (x <= max_x) : (x += 1) {
+        while (x <= row_max_x) : (x += 1) {
             const uv = mapPoint(inv, @as(f32, @floatFromInt(x)) + 0.5, @as(f32, @floatFromInt(y)) + 0.5) orelse continue;
             drawTexturedQuadMappedPixel(reflection, use_bilinear, use_antialias, inv, x, y, uv, album_idx, darken, light_boost, alpha);
         }
+    }
+}
+
+fn buildProjectXCache(inv: Matrix3, min_x: i32, max_x: i32) void {
+    var x = min_x;
+    while (x <= max_x) : (x += 1) {
+        const xf = @as(f32, @floatFromInt(x)) + 0.5;
+        const denom = (inv.m20 * xf + 0.0) + inv.m22;
+        const u = ((inv.m00 * xf + 0.0) + inv.m02) / denom;
+        const u_f = clampF32(u, 0.0, 1.0) * 255.0;
+        const idx = @as(usize, @intCast(x));
+        project_u_f[idx] = u_f;
+        project_v_x[idx] = inv.m10 * xf;
+        project_inv_d[idx] = 1.0 / denom;
+        project_u_mid[idx] = @as(i32, @intFromFloat(@round(u_f)));
     }
 }
 
@@ -663,6 +748,50 @@ inline fn drawTexturedQuadBatch4BilinearFull(comptime reflection: bool, inv: Mat
     const v_f = if (reflection) tex_max - v_f_raw else v_f_raw;
     const colors = sampleCoverBilinearBatch4(album_idx, u_f, v_f);
     const u_mid: Vec4i = @intFromFloat(@round(u_f));
+
+    if (reflection) {
+        const fade = row_fade;
+        if (fade <= 0) return;
+        blendReflectionPackedBatch4(x, y, colors, u_mid, darken, fade);
+    } else {
+        const out = shadeAndBrightenPackedOpaqueBatch4(colors, u_mid, darken, light_boost);
+        setPixel4PackedOpaqueUnchecked(x, y, out);
+    }
+}
+
+inline fn drawTexturedQuadBatch4BilinearFullCached(comptime reflection: bool, inv: Matrix3, row_v_y: f32, x: i32, y: i32, album_idx: usize, darken: i32, light_boost: i32, row_fade: i32) void {
+    const idx = @as(usize, @intCast(x));
+    const u_f: Vec4f = .{
+        project_u_f[idx],
+        project_u_f[idx + 1],
+        project_u_f[idx + 2],
+        project_u_f[idx + 3],
+    };
+    const v_x: Vec4f = .{
+        project_v_x[idx],
+        project_v_x[idx + 1],
+        project_v_x[idx + 2],
+        project_v_x[idx + 3],
+    };
+    const inv_d: Vec4f = .{
+        project_inv_d[idx],
+        project_inv_d[idx + 1],
+        project_inv_d[idx + 2],
+        project_inv_d[idx + 3],
+    };
+    const vs = ((v_x + @as(Vec4f, @splat(row_v_y))) + @as(Vec4f, @splat(inv.m12))) * inv_d;
+    const zero: Vec4f = @splat(0.0);
+    const one: Vec4f = @splat(1.0);
+    const tex_max: Vec4f = @splat(255.0);
+    const v_f_raw = @min(@max(vs, zero), one) * tex_max;
+    const v_f = if (reflection) tex_max - v_f_raw else v_f_raw;
+    const colors = sampleCoverBilinearBatch4(album_idx, u_f, v_f);
+    const u_mid: Vec4i = .{
+        project_u_mid[idx],
+        project_u_mid[idx + 1],
+        project_u_mid[idx + 2],
+        project_u_mid[idx + 3],
+    };
 
     if (reflection) {
         const fade = row_fade;
@@ -1311,13 +1440,13 @@ fn drawSoftShadow(q: Quad) void {
     const x0 = min4(q.tl.x, q.tr.x, q.br.x, q.bl.x);
     const x1 = max4(q.tl.x, q.tr.x, q.br.x, q.bl.x);
     const y = FLOOR_Y - 1;
-    var yy: i32 = y - 10;
-    while (yy <= y + 10) : (yy += 1) {
-        var x: i32 = x0 - 12;
-        while (x <= x1 + 12) : (x += 1) {
+    var yy: i32 = y - 10 * RETINA_SCALE;
+    while (yy <= y + 10 * RETINA_SCALE) : (yy += 1) {
+        var x: i32 = x0 - 12 * RETINA_SCALE;
+        while (x <= x1 + 12 * RETINA_SCALE) : (x += 1) {
             const cx = if (x < x0) x0 - x else if (x > x1) x - x1 else 0;
             const cy = absI32(yy - y);
-            const a = clampI32(42 - cx * 2 - cy * 4, 0, 42);
+            const a = clampI32(42 - @divTrunc(cx * 2, RETINA_SCALE) - @divTrunc(cy * 4, RETINA_SCALE), 0, 42);
             if (a > 0) blendPixel(x, yy, .{ 0, 0, 0, @as(u8, @intCast(a)) });
         }
     }
@@ -1327,41 +1456,44 @@ fn drawSpecular(q: Quad, dist: i32) void {
     const a = @as(u8, @intCast(clampI32(84 - @divTrunc(dist, 5), 18, 84)));
     const y0 = lerpI32(q.tl.y, q.bl.y, 38);
     const y1 = lerpI32(q.tr.y, q.br.y, 38);
-    drawLine(q.tl.x + 8, y0, q.tr.x - 8, y1, .{ 0xFF, 0xFF, 0xFF, a });
+    drawLine(q.tl.x + 8 * RETINA_SCALE, y0, q.tr.x - 8 * RETINA_SCALE, y1, .{ 0xFF, 0xFF, 0xFF, a });
+    drawLine(q.tl.x + 8 * RETINA_SCALE, y0 + 1, q.tr.x - 8 * RETINA_SCALE, y1 + 1, .{ 0xFF, 0xFF, 0xFF, @as(u8, @intCast(@divTrunc(@as(i32, a), 2))) });
 }
 
 fn drawChrome() void {
-    blendRectUnchecked(0, 0, @as(i32, @intCast(RENDER_W)), 42, .{ 0x00, 0x00, 0x00, 0x8F });
-    drawText(27, 15, "COVER FLOW", .{ 0xEA, 0xF3, 0xFF, 0xFF }, 3);
-    drawText(@as(i32, @intCast(RENDER_W)) - 213, 18, "DRAG OR ARROWS", .{ 0xA7, 0xB7, 0xC8, 0xFF }, 2);
+    blendRectUnchecked(0, 0, @as(i32, @intCast(RENDER_W)), 42 * RETINA_SCALE, .{ 0x00, 0x00, 0x00, 0x8F });
+    drawText(27 * RETINA_SCALE, 15 * RETINA_SCALE, "COVER FLOW", .{ 0xEA, 0xF3, 0xFF, 0xFF }, 3);
+    drawText(@as(i32, @intCast(RENDER_W)) - 213 * RETINA_SCALE, 18 * RETINA_SCALE, "DRAG OR ARROWS", .{ 0xA7, 0xB7, 0xC8, 0xFF }, 2);
     drawFeatureFlags();
 
     const idx = @as(usize, @intCast(targetIndex()));
     const album = albums[idx];
     const title_w = textWidth(album.title, 3);
     const artist_w = textWidth(album.artist, 2);
-    drawText(CENTER_X - @divTrunc(title_w, 2), 378, album.title, .{ 0xF8, 0xFA, 0xFF, 0xFF }, 3);
-    drawText(CENTER_X - @divTrunc(artist_w, 2), 411, album.artist, .{ 0xA9, 0xB5, 0xC3, 0xFF }, 2);
+    drawText(CENTER_X - @divTrunc(title_w, 2), 378 * RETINA_SCALE, album.title, .{ 0xF8, 0xFA, 0xFF, 0xFF }, 3);
+    drawText(CENTER_X - @divTrunc(artist_w, 2), 411 * RETINA_SCALE, album.artist, .{ 0xA9, 0xB5, 0xC3, 0xFF }, 2);
 
-    const dots_w = @as(i32, @intCast(albums.len)) * 15 - 6;
+    const dots_w = @as(i32, @intCast(albums.len)) * 15 * RETINA_SCALE - 6 * RETINA_SCALE;
     var i: usize = 0;
     while (i < albums.len) : (i += 1) {
-        const x = CENTER_X - @divTrunc(dots_w, 2) + @as(i32, @intCast(i)) * 15;
+        const x = CENTER_X - @divTrunc(dots_w, 2) + @as(i32, @intCast(i)) * 15 * RETINA_SCALE;
         const active = i == idx;
-        fillCircle(x, 447, if (active) 5 else 3, if (active) .{ 0xF5, 0xF7, 0xFF, 0xFF } else .{ 0x78, 0x84, 0x92, 0xC8 });
+        const radius: i32 = if (active) 5 * RETINA_SCALE else 3 * RETINA_SCALE;
+        fillCircle(x, 447 * RETINA_SCALE, radius, if (active) .{ 0xF5, 0xF7, 0xFF, 0xFF } else .{ 0x78, 0x84, 0x92, 0xC8 });
     }
 }
 
 fn drawFeatureFlags() void {
-    drawFlagLabel(28, 54, "L LIGHT", featureEnabled(FEATURE_LIGHTING));
-    drawFlagLabel(126, 54, "S SPRING", featureEnabled(FEATURE_SPRING));
+    drawFlagLabel(28 * RETINA_SCALE, 54 * RETINA_SCALE, "L LIGHT", featureEnabled(FEATURE_LIGHTING));
+    drawFlagLabel(126 * RETINA_SCALE, 54 * RETINA_SCALE, "S SPRING", featureEnabled(FEATURE_SPRING));
 }
 
 fn drawFlagLabel(x: i32, y: i32, label: []const u8, enabled: bool) void {
-    const w = textWidth(label, 2) + 12;
-    blendRect(x, y, w, 18, if (enabled) .{ 0xE8, 0xF1, 0xFF, 0x22 } else .{ 0x00, 0x00, 0x00, 0x32 });
-    drawRect(x, y, w, 18, if (enabled) .{ 0xD8, 0xE8, 0xFF, 0x92 } else .{ 0x7A, 0x86, 0x95, 0x72 });
-    drawText(x + 6, y + 5, label, if (enabled) .{ 0xF2, 0xF7, 0xFF, 0xFF } else .{ 0x7D, 0x89, 0x97, 0xFF }, 2);
+    const w = textWidth(label, 2) + 12 * RETINA_SCALE;
+    const h = 18 * RETINA_SCALE;
+    blendRect(x, y, w, h, if (enabled) .{ 0xE8, 0xF1, 0xFF, 0x22 } else .{ 0x00, 0x00, 0x00, 0x32 });
+    drawRect(x, y, w, h, if (enabled) .{ 0xD8, 0xE8, 0xFF, 0x92 } else .{ 0x7A, 0x86, 0x95, 0x72 });
+    drawText(x + 6 * RETINA_SCALE, y + 5 * RETINA_SCALE, label, if (enabled) .{ 0xF2, 0xF7, 0xFF, 0xFF } else .{ 0x7D, 0x89, 0x97, 0xFF }, 2);
 }
 
 fn clear(c: Color) void {
@@ -1531,9 +1663,9 @@ fn textWidth(text: []const u8, scale: i32) i32 {
 
 fn textSizeForScale(scale: i32) i32 {
     return switch (scale) {
-        3 => 22,
-        2 => 14,
-        else => 10,
+        3 => 22 * RETINA_SCALE,
+        2 => 14 * RETINA_SCALE,
+        else => 10 * RETINA_SCALE,
     };
 }
 

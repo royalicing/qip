@@ -30,7 +30,7 @@ ZIG_WASM_MAX_MEMORY ?= 67108864
 
 MODULE_WAT_FILES := $(shell find modules -type f -name '*.wat')
 MODULE_C_FILES := $(shell find modules -type f -name '*.c')
-MODULE_ZIG_FILES := $(shell find modules -type f -name '*.zig')
+MODULE_ZIG_FILES := $(shell find modules -path 'modules/interactive/assets' -prune -o -type f -name '*.zig' -print)
 
 MODULE_WAT_TARGETS := $(patsubst %.wat,%.wasm,$(MODULE_WAT_FILES))
 MODULE_C_TARGETS := $(patsubst %.c,%.wasm,$(MODULE_C_FILES))
@@ -52,6 +52,9 @@ modules/image/bmp/bmp-double.wasm: modules/image/bmp/bmp-double.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 modules/image/bmp/bmp-double-simd.wasm: modules/image/bmp/bmp-double-simd.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -mcpu=generic+simd128 -femit-bin=$@
+
+modules/interactive/cover-flow.wasm: modules/interactive/cover-flow.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -mcpu=generic+simd128 -femit-bin=$@
 
 modules/application/wasm/wasm-safety-check.wasm: ZIG_WASM_MAX_MEMORY = 20971520
@@ -116,6 +119,7 @@ test: qip modules test-go test-node test-zig test-snapshot
 test-node: qip modules
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
+	node --test test/qip-play-debug-stats.mjs
 	node --test test/html-id-validator.mjs
 	node --test test/trace-with.mjs
 	node --test test/wasm-trap-instance-continues.mjs
@@ -123,7 +127,7 @@ test-node: qip modules
 test-deno: qip modules
 	deno check site/qip-runner.js
 	deno run --allow-read test/qip-runner-smoke.mjs
-	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/html-id-validator.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
+	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/html-id-validator.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-snapshot: qip modules
 	@mkdir -p test

@@ -17,7 +17,8 @@ const DETAIL_X: i32 = 24;
 const DETAIL_Y: i32 = 450;
 const DETAIL_W: i32 = 772;
 const DETAIL_H: i32 = 66;
-const BUTTON_Y: i32 = 58;
+const BUTTON_Y: i32 = 64;
+const BUTTON_H: i32 = 30;
 const OPENAI_BUTTON_X: i32 = 24;
 const OPENAI_BUTTON_W: i32 = 74;
 const ANTHROPIC_BUTTON_X: i32 = 108;
@@ -26,6 +27,7 @@ const LINEAR_BUTTON_X: i32 = 632;
 const LINEAR_BUTTON_W: i32 = 82;
 const LOG_BUTTON_X: i32 = 724;
 const LOG_BUTTON_W: i32 = 50;
+const FONT_SIZE_LOGICAL: i32 = 14;
 const BTN_PRIMARY: i32 = 1 << 0;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const XK_LEFT: i32 = 0xFF51;
@@ -136,10 +138,10 @@ export fn pointer_event(button_mask: i32, x: i32, y: i32, _: i64) i32 {
     var changed = false;
 
     if (down and !primary_down) {
-        if (hit(logical_x, logical_y, OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, 26)) changed = selectLatest(.openai);
-        if (hit(logical_x, logical_y, ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, 26)) changed = selectLatest(.anthropic);
-        if (hit(logical_x, logical_y, LINEAR_BUTTON_X, BUTTON_Y, LINEAR_BUTTON_W, 26)) changed = setScaleMode(.linear);
-        if (hit(logical_x, logical_y, LOG_BUTTON_X, BUTTON_Y, LOG_BUTTON_W, 26)) changed = setScaleMode(.log);
+        if (hit(logical_x, logical_y, OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, BUTTON_H)) changed = selectLatest(.openai);
+        if (hit(logical_x, logical_y, ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, BUTTON_H)) changed = selectLatest(.anthropic);
+        if (hit(logical_x, logical_y, LINEAR_BUTTON_X, BUTTON_Y, LINEAR_BUTTON_W, BUTTON_H)) changed = setScaleMode(.linear);
+        if (hit(logical_x, logical_y, LOG_BUTTON_X, BUTTON_Y, LOG_BUTTON_W, BUTTON_H)) changed = setScaleMode(.log);
     }
 
     if (nearestPoint(logical_x, logical_y)) |hit_point| {
@@ -354,9 +356,9 @@ fn logScaleT(arr_b: f64) f64 {
 }
 
 fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool, underline_idx: usize) void {
-    fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
-    drawBorder(x, y, w, 26, if (active) C_ACTIVE_EDGE else C_INK);
-    fillRect(x + 1, y + 1, 6, 24, accent);
+    fillRect(x, y, w, BUTTON_H, if (active) C_ACTIVE else C_PANEL);
+    drawBorder(x, y, w, BUTTON_H, if (active) C_ACTIVE_EDGE else C_INK);
+    fillRect(x + 1, y + 1, 6, BUTTON_H - 2, accent);
 
     const label_x = x + 12;
     const label_w = w - 14;
@@ -364,20 +366,20 @@ fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool
 }
 
 fn scaleButton(x: i32, y: i32, w: i32, label: []const u8, active: bool, underline_idx: usize) void {
-    fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
-    drawBorder(x, y, w, 26, if (active) C_ACTIVE_EDGE else C_INK);
+    fillRect(x, y, w, BUTTON_H, if (active) C_ACTIVE else C_PANEL);
+    drawBorder(x, y, w, BUTTON_H, if (active) C_ACTIVE_EDGE else C_INK);
     drawButtonLabel(x + @divTrunc(w - textWidth(label), 2), y, label, underline_idx);
 }
 
 fn drawButtonLabel(x: i32, button_y: i32, label: []const u8, underline_idx: usize) void {
-    drawText(x, button_y + 8, label, C_INK);
+    drawText(x, button_y + @divTrunc(BUTTON_H - FONT_SIZE_LOGICAL, 2), label, C_INK);
     drawAcceleratorUnderline(x, button_y, underline_idx);
 }
 
 fn drawAcceleratorUnderline(label_x: i32, button_y: i32, underline_idx: usize) void {
-    const advance = @divTrunc(fontAdvance(12 * RETINA_SCALE) + RETINA_SCALE - 1, RETINA_SCALE);
+    const advance = @divTrunc(fontAdvance(FONT_SIZE_LOGICAL * RETINA_SCALE) + RETINA_SCALE - 1, RETINA_SCALE);
     const x = label_x + @as(i32, @intCast(underline_idx)) * advance;
-    fillRect(x, button_y + 21, @max(1, advance - 2), 1, C_INK);
+    fillRect(x, button_y + @divTrunc(BUTTON_H - FONT_SIZE_LOGICAL, 2) + FONT_SIZE_LOGICAL + 1, @max(1, advance - 2), 1, C_INK);
 }
 
 fn hit(x: i32, y: i32, bx: i32, by: i32, bw: i32, bh: i32) bool {
@@ -395,7 +397,7 @@ fn absF64(value: f64) f64 {
 }
 
 fn drawText(x: i32, y: i32, text: []const u8, c: Color) void {
-    const size_px: i32 = 12 * RETINA_SCALE;
+    const size_px: i32 = FONT_SIZE_LOGICAL * RETINA_SCALE;
     var cursor_x = x * RETINA_SCALE;
     const text_y = y * RETINA_SCALE;
     var i: usize = 0;
@@ -406,7 +408,7 @@ fn drawText(x: i32, y: i32, text: []const u8, c: Color) void {
 }
 
 fn textWidth(text: []const u8) i32 {
-    const advance = fontAdvance(12 * RETINA_SCALE);
+    const advance = fontAdvance(FONT_SIZE_LOGICAL * RETINA_SCALE);
     return @divTrunc(@as(i32, @intCast(text.len)) * advance + RETINA_SCALE - 1, RETINA_SCALE);
 }
 
