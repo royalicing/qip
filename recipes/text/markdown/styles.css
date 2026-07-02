@@ -23,6 +23,10 @@
     }
 }
 
+:root[data-path="/"] {
+    --heading-anchor-display: none;
+}
+
 :root,
 header,
 footer,
@@ -131,6 +135,7 @@ main {
         line-height: 2rlh;
     }
     .heading-anchor {
+        display: var(--heading-anchor-display, inline-block);
         opacity: 55%;
         text-decoration: none;
 
