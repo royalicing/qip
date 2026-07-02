@@ -2,6 +2,8 @@
 
 Click the game area to focus it, then use arrow keys.
 
+For chart-focused components, see [Charts](/charts).
+
 More interactive pages:
 
 - [Liar's Dice](/play-liars-dice)

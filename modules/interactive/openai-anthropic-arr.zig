@@ -32,15 +32,16 @@ const XK_LEFT: i32 = 0xFF51;
 const XK_RIGHT: i32 = 0xFF53;
 
 const Color = [4]u8;
-const C_BG: Color = .{ 0xF6, 0xF5, 0xF1, 0xFF };
-const C_PANEL: Color = .{ 0xFF, 0xFE, 0xFA, 0xFF };
-const C_CHART: Color = .{ 0xFB, 0xFA, 0xF6, 0xFF };
-const C_INK: Color = .{ 0x18, 0x1B, 0x20, 0xFF };
-const C_MUTED: Color = .{ 0x66, 0x68, 0x6E, 0xFF };
-const C_GRID: Color = .{ 0xD7, 0xD0, 0xC4, 0xFF };
-const C_ACTIVE: Color = .{ 0xF1, 0xCF, 0x58, 0xFF };
-const C_OPENAI: Color = .{ 0x0C, 0x78, 0x66, 0xFF };
-const C_ANTHROPIC: Color = .{ 0xD1, 0x69, 0x2E, 0xFF };
+const C_BG: Color = .{ 0x08, 0x0A, 0x12, 0xFF };
+const C_PANEL: Color = .{ 0x10, 0x14, 0x22, 0xFF };
+const C_CHART: Color = .{ 0x0B, 0x0E, 0x18, 0xFF };
+const C_INK: Color = .{ 0xF4, 0xF7, 0xFB, 0xFF };
+const C_MUTED: Color = .{ 0xA4, 0xAE, 0xC0, 0xFF };
+const C_GRID: Color = .{ 0x32, 0x3A, 0x4C, 0xFF };
+const C_ACTIVE: Color = .{ 0x2B, 0x42, 0x78, 0xFF };
+const C_ACTIVE_EDGE: Color = .{ 0x8F, 0xB4, 0xFF, 0xFF };
+const C_OPENAI: Color = .{ 0x31, 0xD7, 0xB7, 0xFF };
+const C_ANTHROPIC: Color = .{ 0xFF, 0x8B, 0x52, 0xFF };
 
 const MIN_MONTH: i32 = 0; // 2023-12
 const MAX_MONTH: i32 = 29; // 2026-05
@@ -354,7 +355,7 @@ fn logScaleT(arr_b: f64) f64 {
 
 fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool, underline_idx: usize) void {
     fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
-    drawBorder(x, y, w, 26, C_INK);
+    drawBorder(x, y, w, 26, if (active) C_ACTIVE_EDGE else C_INK);
     fillRect(x + 1, y + 1, 6, 24, accent);
 
     const label_x = x + 12;
@@ -364,7 +365,7 @@ fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool
 
 fn scaleButton(x: i32, y: i32, w: i32, label: []const u8, active: bool, underline_idx: usize) void {
     fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
-    drawBorder(x, y, w, 26, C_INK);
+    drawBorder(x, y, w, 26, if (active) C_ACTIVE_EDGE else C_INK);
     drawButtonLabel(x + @divTrunc(w - textWidth(label), 2), y, label, underline_idx);
 }
 

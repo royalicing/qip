@@ -99,7 +99,7 @@ Interactive QIP Components receive keyboard & pointer events and render out pixe
   <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>
 
-See [`/play`](/play) for more interactive examples.
+See [`/play`](/play) for more interactive examples, or [`/charts`](/charts) for chart-focused components.
 
 ## Private utilities
 
