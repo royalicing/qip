@@ -1,4 +1,4 @@
-.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go test-node test-deno site-static install score wasm-safety-report
+.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go test-node test-deno test-comply site-static install score wasm-safety-report
 
 default: qip compliance modules recipes
 
@@ -115,20 +115,24 @@ recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 
 modules: modules-wat-wasm modules-c-wasm modules-zig-wasm
 
-test: qip modules test-go test-node test-zig test-snapshot
+test: qip modules test-go test-node test-zig test-snapshot test-comply
 
 test-node: qip modules
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/html-id-validator.mjs
+	node --test test/luhn.mjs
 	node --test test/trace-with.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
 test-deno: qip modules
 	deno check site/qip-runner.js
 	deno run --allow-read test/qip-runner-smoke.mjs
-	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/html-id-validator.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
+	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/html-id-validator.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
+
+test-comply: qip modules compliance
+	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm
 
 test-snapshot: qip modules
 	@mkdir -p test

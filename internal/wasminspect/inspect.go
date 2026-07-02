@@ -1072,6 +1072,8 @@ func parseFunctionBody(
 				return functionMetrics{}, err
 			}
 			switch op {
+			case 0x23:
+				// global.get is the expected shape for qip contract accessor functions.
 			case 0x25, 0x26:
 				fm.TableOps++
 			default:

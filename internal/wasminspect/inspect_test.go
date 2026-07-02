@@ -99,6 +99,32 @@ func TestEvaluateQIPContractChecksFailDynamicFunction(t *testing.T) {
 	}
 }
 
+func TestEvaluateQIPContractChecksPassGlobalGetFunction(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		Globals: []testGlobal{
+			{ValueType: 0x7f, InitExpr: []byte{0x41, 0x80, 0x80, 0x40}}, // i32.const 1048576
+		},
+		FunctionBodies: [][]byte{{0x23, 0x00, 0x0b}}, // global.get 0
+		Exports: []testExport{
+			{Name: "input_ptr", Kind: 0x00, Index: 0},
+		},
+	})
+	analysis, err := AnalyzeModule(module)
+	if err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
+	}
+	checks, fail := EvaluateQIPContractChecks(analysis)
+	if fail {
+		t.Fatalf("unexpected contract failure: %+v", checks)
+	}
+	if len(checks) != 1 {
+		t.Fatalf("checks=%d, want 1", len(checks))
+	}
+	if !checks[0].Pass || checks[0].Export != "input_ptr" || checks[0].Kind != "func" {
+		t.Fatalf("unexpected check result: %+v", checks[0])
+	}
+}
+
 func TestEvaluateQIPContractChecksPassConstantGlobal(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		Globals: []testGlobal{
