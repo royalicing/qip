@@ -22,6 +22,7 @@ More interactive pages:
 - [Calculator](/play-calculator)
 - [Graph Calculator](/play-graph-calculator)
 - [OpenAI vs Anthropic ARR](/chart-openai-anthropic-arr)
+- [Shadow Rendering Comparison](/play-shadow-rendering)
 - [IEEE 754 Floating Point](/play-ieee-754-floats)
 - [Windows 95 Desktop](/play-windows95-desktop)
 - [Mac OS 9 Desktop](/play-macos9-desktop)
