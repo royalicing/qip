@@ -107,6 +107,7 @@ type options struct {
 	contentTypeChecking    contentTypeCheckingMode
 	trustFirstStageContent bool
 	viewSource             bool
+	traceWith              string
 }
 
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  dev      Start a dev server for a content directory with optional recipes\n  router   Resolve routed paths and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
@@ -129,7 +130,7 @@ var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\
 var qipPreviewTagPattern = regexp.MustCompile(`(?is)<qip-preview\b[^>]*>`)
 var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [-v|--verbose] [--timeout-ms <ms>]
 
 What qip comply does:
@@ -350,6 +351,7 @@ func runCmd(args []string) {
 	fs.StringVar(&outputPath, "o", "-", "output file path ('-' for stdout)")
 	fs.StringVar(&outputPath, "output", "-", "output file path ('-' for stdout)")
 	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "per-run timeout in milliseconds")
+	fs.StringVar(&opts.traceWith, "trace-with", "", "application/wasm component used to instrument a module after a trap")
 	if err := fs.Parse(normalizeRunArgs(args)); err != nil {
 		gameOver("%s %v", usageRun, err)
 	}
@@ -3665,6 +3667,7 @@ func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts option
 
 	type moduleInfo struct {
 		path     string
+		body     []byte
 		cm       wazero.CompiledModule
 		kind     stageKind
 		uniforms map[string]string
@@ -3700,7 +3703,7 @@ func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts option
 		if _, ok := cm.ExportedFunctions()["tile_rgba32float_64x64"]; ok {
 			kind = stageKindTile
 		}
-		infos[i] = moduleInfo{path: spec.path, cm: cm, kind: kind, uniforms: spec.uniforms}
+		infos[i] = moduleInfo{path: spec.path, body: body, cm: cm, kind: kind, uniforms: spec.uniforms}
 	}
 
 	for i := 0; i < len(infos); {
@@ -3711,6 +3714,7 @@ func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts option
 				compiled:                     info.cm,
 				instanceName:                 fmt.Sprintf("stage-%d", i),
 				modulePath:                   info.path,
+				moduleBody:                   info.body,
 				opts:                         opts,
 				uniforms:                     info.uniforms,
 				allowMissingInputContentType: opts.trustFirstStageContent && i == 0,
@@ -3753,6 +3757,7 @@ type wasmRunDriver struct {
 	compiled                     wazero.CompiledModule
 	instanceName                 string
 	modulePath                   string
+	moduleBody                   []byte
 	opts                         options
 	uniforms                     map[string]string
 	allowMissingInputContentType bool
@@ -3781,6 +3786,14 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 		d.allowMissingInputContentType,
 	)
 	if err != nil {
+		if d.opts.traceWith != "" {
+			traceReport, traceErr := traceRunModuleAfterTrap(ctx, d.opts.traceWith, d.moduleBody, inputBytes, d.opts, d.instanceName+"-trace", d.uniforms, qinternal.ContentTypeOf(input), d.allowMissingInputContentType)
+			if traceErr != nil {
+				err = fmt.Errorf("%w\ntrace retry failed: %v", err, traceErr)
+			} else if traceReport != "" {
+				err = fmt.Errorf("%w\ntrace retry with %s:\n%s", err, d.opts.traceWith, traceReport)
+			}
+		}
 		return nil, fmt.Errorf("%s: %w", d.modulePath, err)
 	}
 
@@ -3802,6 +3815,182 @@ func (d *wasmRunDriver) Label() string {
 
 func (d *wasmRunDriver) Close(ctx context.Context) error {
 	return d.compiled.Close(ctx)
+}
+
+type traceEventKind string
+
+const (
+	traceEventBeforeLoad  traceEventKind = "before_load"
+	traceEventBeforeStore traceEventKind = "before_store"
+	traceEventAfterStore  traceEventKind = "after_store"
+)
+
+type traceEvent struct {
+	kind        traceEventKind
+	funcID      uint32
+	opID        uint32
+	memoryIndex uint32
+	addr        uint32
+	width       uint32
+	inBounds    bool
+	bytes       []byte
+}
+
+type wasmMemoryTrace struct {
+	events []traceEvent
+	limit  int
+}
+
+func (t *wasmMemoryTrace) record(kind traceEventKind, mod api.Module, funcID, opID, memoryIndex, addr, width uint32) {
+	if t.limit <= 0 {
+		t.limit = 256
+	}
+	event := traceEvent{
+		kind:        kind,
+		funcID:      funcID,
+		opID:        opID,
+		memoryIndex: memoryIndex,
+		addr:        addr,
+		width:       width,
+	}
+	if memoryIndex == 0 && width > 0 {
+		if mem := mod.Memory(); mem != nil {
+			if bytes, ok := mem.Read(addr, width); ok {
+				event.inBounds = true
+				event.bytes = append([]byte(nil), bytes...)
+			}
+		}
+	}
+	if len(t.events) >= t.limit {
+		copy(t.events, t.events[1:])
+		t.events[len(t.events)-1] = event
+		return
+	}
+	t.events = append(t.events, event)
+}
+
+func (t *wasmMemoryTrace) format(runErr error) string {
+	var b strings.Builder
+	if runErr != nil {
+		fmt.Fprintf(&b, "instrumented retry trapped: %v\n", runErr)
+	} else {
+		b.WriteString("instrumented retry completed without trapping\n")
+	}
+	if len(t.events) == 0 {
+		b.WriteString("  no memory trace events recorded")
+		return b.String()
+	}
+
+	const maxLines = 16
+	start := 0
+	if len(t.events) > maxLines {
+		start = len(t.events) - maxLines
+		fmt.Fprintf(&b, "  ... %d earlier memory events omitted\n", start)
+	}
+	for _, event := range t.events[start:] {
+		fmt.Fprintf(&b, "  %s func=%d op=%d mem=%d addr=0x%08x width=%d", event.kind, event.funcID, event.opID, event.memoryIndex, event.addr, event.width)
+		if event.inBounds {
+			fmt.Fprintf(&b, " bytes=%x", event.bytes)
+		} else {
+			b.WriteString(" bytes=<out-of-bounds>")
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func traceRunModuleAfterTrap(ctx context.Context, traceWith string, originalModule []byte, inputBytes []byte, opts options, moduleName string, uniforms map[string]string, incomingContentType string, allowMissingInputContentType bool) (string, error) {
+	instrumented, err := runTraceInstrumenter(ctx, traceWith, originalModule, opts)
+	if err != nil {
+		return "", err
+	}
+
+	traceRuntime := wasmruntime.New(ctx)
+	defer traceRuntime.Close(context.Background())
+
+	trace := &wasmMemoryTrace{limit: 256}
+	traceHost, err := instantiateTraceHost(ctx, traceRuntime, trace)
+	if err != nil {
+		return "", err
+	}
+	defer traceHost.Close(ctx)
+
+	compiled, err := traceRuntime.CompileModule(ctx, instrumented)
+	if err != nil {
+		return "", fmt.Errorf("instrumented Wasm could not be compiled: %w", err)
+	}
+	defer compiled.Close(ctx)
+
+	_, runErr := executeModuleWithInput(
+		ctx,
+		traceRuntime,
+		compiled,
+		inputBytes,
+		opts,
+		moduleName,
+		uniforms,
+		incomingContentType,
+		allowMissingInputContentType,
+	)
+	return trace.format(runErr), nil
+}
+
+func runTraceInstrumenter(ctx context.Context, traceWith string, originalModule []byte, opts options) ([]byte, error) {
+	body, err := readModulePath(traceWith, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	traceRuntime := wasmruntime.New(ctx)
+	defer traceRuntime.Close(context.Background())
+
+	compiled, err := traceRuntime.CompileModule(ctx, body)
+	if err != nil {
+		return nil, fmt.Errorf("trace instrumenter %q could not be compiled: %w", traceWith, err)
+	}
+	defer compiled.Close(ctx)
+
+	exec, err := executeModuleWithInput(
+		ctx,
+		traceRuntime,
+		compiled,
+		originalModule,
+		opts,
+		"trace-instrumenter",
+		nil,
+		"application/wasm",
+		false,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("trace instrumenter %q failed: %w", traceWith, err)
+	}
+	if exec.output.encoding != dataEncodingRaw {
+		return nil, fmt.Errorf("trace instrumenter %q must output application/wasm bytes", traceWith)
+	}
+	if exec.outputContentType != "" && exec.outputContentType != "application/wasm" {
+		return nil, fmt.Errorf("trace instrumenter %q output content type %q, want application/wasm", traceWith, exec.outputContentType)
+	}
+	return exec.output.bytes, nil
+}
+
+func instantiateTraceHost(ctx context.Context, runtime wazero.Runtime, trace *wasmMemoryTrace) (api.Module, error) {
+	return runtime.NewHostModuleBuilder("qip_trace").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, funcID, opID, memoryIndex, addr, width uint32) {
+			trace.record(traceEventBeforeLoad, mod, funcID, opID, memoryIndex, addr, width)
+		}).
+		Export("before_load").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, funcID, opID, memoryIndex, addr, width uint32) {
+			trace.record(traceEventBeforeStore, mod, funcID, opID, memoryIndex, addr, width)
+		}).
+		Export("before_store").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, mod api.Module, funcID, opID, memoryIndex, addr, width uint32) {
+			trace.record(traceEventAfterStore, mod, funcID, opID, memoryIndex, addr, width)
+		}).
+		Export("after_store").
+		Instantiate(ctx)
 }
 
 type wasmTileModuleDriver struct {

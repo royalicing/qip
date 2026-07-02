@@ -362,29 +362,54 @@ ls ./site
 
 ----
 
-## Required build tools
+## Required build and test tools
 
 If you are contributing modules or running the full `Makefile` in this repo, install these tools:
 
+- `make` and standard POSIX command-line tools such as `find`, `diff`, `tar`, `perl`, and `xxd`
 - Go (required for `qip` CLI): https://go.dev/doc/install
 - Zig (used for `.zig` and `.c` -> `.wasm` builds): https://ziglang.org/download/
 - `wat2wasm` from WABT (used for `.wat` -> `.wasm` builds): https://github.com/WebAssembly/wabt
+- Node.js 20+ (used by `make test-node` and the default `make test` path): https://nodejs.org/
+- Deno (optional, used by `make test-deno`): https://deno.com/
 
 Quick installs:
 
 ```bash
 # macOS (Homebrew)
-brew install go zig wabt
+brew install go zig wabt node
 
-# Ubuntu/Debian
+# Ubuntu/Debian (install Node.js 20+ from your preferred Node distribution)
 sudo apt-get update
-sudo apt-get install -y golang-go wabt
+sudo apt-get install -y build-essential golang-go wabt perl vim-common
 ```
 
 After installing dependencies, build in parallel:
 
 ```bash
 make -j modules recipes
+```
+
+Run the test targets through the Makefile:
+
+```bash
+make -j test-node
+make -j test-deno
+make -j test-go
+make -j test
+```
+
+`test/trace-with.mjs` is included in both `make -j test-node` and `make -j test-deno`. To run it directly with Node:
+
+```bash
+make -j qip modules/application/wasm/wasm-trace-instrument.wasm
+node --test test/trace-with.mjs
+```
+
+To run it directly with Deno, pass the same permissions used by `make test-deno`:
+
+```bash
+deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/trace-with.mjs
 ```
 
 You can clone this repo to use the modules that are provided in `./modules`.
