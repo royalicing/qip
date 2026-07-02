@@ -22,6 +22,10 @@ const OPENAI_BUTTON_X: i32 = 24;
 const OPENAI_BUTTON_W: i32 = 74;
 const ANTHROPIC_BUTTON_X: i32 = 108;
 const ANTHROPIC_BUTTON_W: i32 = 108;
+const LINEAR_BUTTON_X: i32 = 632;
+const LINEAR_BUTTON_W: i32 = 82;
+const LOG_BUTTON_X: i32 = 724;
+const LOG_BUTTON_W: i32 = 50;
 const BTN_PRIMARY: i32 = 1 << 0;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const XK_LEFT: i32 = 0xFF51;
@@ -39,12 +43,19 @@ const C_OPENAI: Color = .{ 0x0C, 0x78, 0x66, 0xFF };
 const C_ANTHROPIC: Color = .{ 0xD1, 0x69, 0x2E, 0xFF };
 
 const MIN_MONTH: i32 = 0; // 2023-12
-const MAX_MONTH: i32 = 28; // 2026-04
-const ARR_MAX_B: f64 = 32.0;
+const MAX_MONTH: i32 = 29; // 2026-05
+const ARR_LINEAR_MAX_B: f64 = 50.0;
+const ARR_LOG_MIN_B: f64 = 0.1;
+const ARR_LOG_MAX_B: f64 = 100.0;
 
 const Series = enum {
     openai,
     anthropic,
+};
+
+const ScaleMode = enum {
+    linear,
+    log,
 };
 
 const PointF = struct {
@@ -78,11 +89,13 @@ const ANTHROPIC_POINTS = [_]ARRPoint{
     .{ .month = 26, .label = "FEB 26", .arr_b = 14.0, .note = "GUARDIAN: ANNUALISED REVENUE REACHED $14B." },
     .{ .month = 27, .label = "MAR 26", .arr_b = 19.0, .note = "AXIOS: $19B RUN-RATE IN EARLY MARCH." },
     .{ .month = 28, .label = "APR 26", .arr_b = 30.0, .note = "ANTHROPIC: RUN-RATE REVENUE SURPASSED $30B." },
+    .{ .month = 29, .label = "MAY 26", .arr_b = 47.0, .note = "FT / MARKETWATCH: RUN-RATE REVENUE CROSSED $47B." },
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
 var selected_series: Series = .anthropic;
 var selected_idx: usize = ANTHROPIC_POINTS.len - 1;
+var scale_mode: ScaleMode = .log;
 var primary_down = false;
 
 export fn output_ptr() u32 {
@@ -109,6 +122,7 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
         XK_RIGHT => selectAdjacent(1),
         'o', 'O', '1' => selectLatest(.openai),
         'a', 'A', '2' => selectLatest(.anthropic),
+        'l', 'L' => toggleScaleMode(),
         else => false,
     };
     return if (changed) 1 else 0;
@@ -123,6 +137,8 @@ export fn pointer_event(button_mask: i32, x: i32, y: i32, _: i64) i32 {
     if (down and !primary_down) {
         if (hit(logical_x, logical_y, OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, 26)) changed = selectLatest(.openai);
         if (hit(logical_x, logical_y, ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, 26)) changed = selectLatest(.anthropic);
+        if (hit(logical_x, logical_y, LINEAR_BUTTON_X, BUTTON_Y, LINEAR_BUTTON_W, 26)) changed = setScaleMode(.linear);
+        if (hit(logical_x, logical_y, LOG_BUTTON_X, BUTTON_Y, LOG_BUTTON_W, 26)) changed = setScaleMode(.log);
     }
 
     if (nearestPoint(logical_x, logical_y)) |hit_point| {
@@ -156,6 +172,20 @@ fn selectLatest(series: Series) bool {
     return true;
 }
 
+fn setScaleMode(mode: ScaleMode) bool {
+    if (scale_mode == mode) return false;
+    scale_mode = mode;
+    return true;
+}
+
+fn toggleScaleMode() bool {
+    scale_mode = switch (scale_mode) {
+        .linear => .log,
+        .log => .linear,
+    };
+    return true;
+}
+
 fn selectAdjacent(delta: i32) bool {
     const len = selectedLen();
     if (delta < 0) {
@@ -178,10 +208,12 @@ fn selectedLen() usize {
 fn drawFrame() void {
     fillRect(0, 0, @as(i32, @intCast(DISPLAY_W)), @as(i32, @intCast(DISPLAY_H)), C_BG);
     drawText(24, 20, "OPENAI VS ANTHROPIC ARR RUN-RATE", C_INK);
-    drawText(24, 40, "REPORTED PRIVATE-COMPANY MILESTONES, USD BILLIONS.  HOVER OR USE ARROWS.", C_MUTED);
+    drawText(24, 40, "REPORTED PRIVATE-COMPANY MILESTONES, USD BILLIONS.  HOVER OR USE ARROWS.  L TOGGLE SCALE.", C_MUTED);
 
-    button(OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, "OPENAI", C_OPENAI, selected_series == .openai);
-    button(ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, "ANTHROPIC", C_ANTHROPIC, selected_series == .anthropic);
+    button(OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, "OPENAI", C_OPENAI, selected_series == .openai, 0);
+    button(ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, "ANTHROPIC", C_ANTHROPIC, selected_series == .anthropic, 0);
+    scaleButton(LINEAR_BUTTON_X, BUTTON_Y, LINEAR_BUTTON_W, "LINEAR", scale_mode == .linear, 0);
+    scaleButton(LOG_BUTTON_X, BUTTON_Y, LOG_BUTTON_W, "LOG", scale_mode == .log, 0);
 
     drawChart();
     drawDetail();
@@ -190,12 +222,6 @@ fn drawFrame() void {
 fn drawChart() void {
     fillRect(CHART_X, CHART_Y, CHART_W, CHART_H, C_CHART);
     drawBorder(CHART_X, CHART_Y, CHART_W, CHART_H, C_INK);
-
-    var grid: i32 = 1;
-    while (grid < 4) : (grid += 1) {
-        const y = CHART_Y + @divTrunc(CHART_H * grid, 4);
-        fillRect(CHART_X + 1, y, CHART_W - 2, 1, C_GRID);
-    }
 
     const year_ticks = [_]struct { month: i32, label: []const u8 }{
         .{ .month = 1, .label = "2024" },
@@ -215,11 +241,22 @@ fn drawChart() void {
 
 fn drawYAxis() void {
     var buf: [24]u8 = undefined;
-    const ticks = [_]f64{ 0, 10, 20, 30 };
+    const linear_ticks = [_]f64{ 0, 10, 20, 30, 40, 50 };
+    const log_ticks = [_]f64{ 0.1, 1, 10, 100 };
+    const ticks: []const f64 = switch (scale_mode) {
+        .linear => linear_ticks[0..],
+        .log => log_ticks[0..],
+    };
+
     for (ticks) |value| {
         const y = arrToY(value);
-        if (value != 0) fillRect(CHART_X + 1, y, CHART_W - 2, 1, C_GRID);
-        const label = std.fmt.bufPrint(&buf, "${d:.0}B", .{value}) catch "";
+        if (y > CHART_Y + 1 and y < CHART_Y + CHART_H - 1) fillRect(CHART_X + 1, y, CHART_W - 2, 1, C_GRID);
+        const label = if (value == 0)
+            std.fmt.bufPrint(&buf, "${d:.0}B", .{value}) catch ""
+        else if (value < 1)
+            std.fmt.bufPrint(&buf, "${d:.1}B", .{value}) catch ""
+        else
+            std.fmt.bufPrint(&buf, "${d:.0}B", .{value}) catch "";
         drawText(24, y - 6, label, C_MUTED);
     }
 }
@@ -301,18 +338,45 @@ fn monthToX(month: i32) i32 {
 }
 
 fn arrToY(arr_b: f64) i32 {
-    const t = clampF64(arr_b / ARR_MAX_B, 0, 1);
+    const t = switch (scale_mode) {
+        .linear => clampF64(arr_b / ARR_LINEAR_MAX_B, 0, 1),
+        .log => logScaleT(arr_b),
+    };
     return CHART_Y + CHART_H - @as(i32, @intFromFloat(@round(t * @as(f64, @floatFromInt(CHART_H)))));
 }
 
-fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool) void {
+fn logScaleT(arr_b: f64) f64 {
+    const value = clampF64(arr_b, ARR_LOG_MIN_B, ARR_LOG_MAX_B);
+    const min_log = std.math.log10(ARR_LOG_MIN_B);
+    const max_log = std.math.log10(ARR_LOG_MAX_B);
+    return clampF64((std.math.log10(value) - min_log) / (max_log - min_log), 0, 1);
+}
+
+fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool, underline_idx: usize) void {
     fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
     drawBorder(x, y, w, 26, C_INK);
     fillRect(x + 1, y + 1, 6, 24, accent);
 
     const label_x = x + 12;
     const label_w = w - 14;
-    drawText(label_x + @divTrunc(label_w - textWidth(label), 2), y + 8, label, C_INK);
+    drawButtonLabel(label_x + @divTrunc(label_w - textWidth(label), 2), y, label, underline_idx);
+}
+
+fn scaleButton(x: i32, y: i32, w: i32, label: []const u8, active: bool, underline_idx: usize) void {
+    fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
+    drawBorder(x, y, w, 26, C_INK);
+    drawButtonLabel(x + @divTrunc(w - textWidth(label), 2), y, label, underline_idx);
+}
+
+fn drawButtonLabel(x: i32, button_y: i32, label: []const u8, underline_idx: usize) void {
+    drawText(x, button_y + 8, label, C_INK);
+    drawAcceleratorUnderline(x, button_y, underline_idx);
+}
+
+fn drawAcceleratorUnderline(label_x: i32, button_y: i32, underline_idx: usize) void {
+    const advance = @divTrunc(fontAdvance(12 * RETINA_SCALE) + RETINA_SCALE - 1, RETINA_SCALE);
+    const x = label_x + @as(i32, @intCast(underline_idx)) * advance;
+    fillRect(x, button_y + 21, @max(1, advance - 2), 1, C_INK);
 }
 
 fn hit(x: i32, y: i32, bx: i32, by: i32, bw: i32, bh: i32) bool {

@@ -19,7 +19,7 @@ More interactive pages:
 - [Spreadsheet](/play-spreadsheet)
 - [Calculator](/play-calculator)
 - [Graph Calculator](/play-graph-calculator)
-- [OpenAI vs Anthropic ARR](/play-openai-anthropic-arr)
+- [OpenAI vs Anthropic ARR](/chart-openai-anthropic-arr)
 - [IEEE 754 Floating Point](/play-ieee-754-floats)
 - [Windows 95 Desktop](/play-windows95-desktop)
 - [Mac OS 9 Desktop](/play-macos9-desktop)
