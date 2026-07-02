@@ -1,0 +1,567 @@
+const std = @import("std");
+const ui_font = @import("assets/dejavu_sans_mono_56_ascii_subset.zig");
+
+const DISPLAY_W: usize = 820;
+const DISPLAY_H: usize = 540;
+const RETINA_SCALE: i32 = 2;
+const RETINA_SCALE_USIZE: usize = 2;
+const RENDER_W: usize = DISPLAY_W * RETINA_SCALE_USIZE;
+const RENDER_H: usize = DISPLAY_H * RETINA_SCALE_USIZE;
+const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+
+const CHART_X: i32 = 74;
+const CHART_Y: i32 = 116;
+const CHART_W: i32 = 680;
+const CHART_H: i32 = 304;
+const DETAIL_X: i32 = 24;
+const DETAIL_Y: i32 = 450;
+const DETAIL_W: i32 = 772;
+const DETAIL_H: i32 = 66;
+const BUTTON_Y: i32 = 58;
+const OPENAI_BUTTON_X: i32 = 24;
+const OPENAI_BUTTON_W: i32 = 74;
+const ANTHROPIC_BUTTON_X: i32 = 108;
+const ANTHROPIC_BUTTON_W: i32 = 108;
+const BTN_PRIMARY: i32 = 1 << 0;
+const FLAG_KEY_DOWN: i32 = 1 << 0;
+const XK_LEFT: i32 = 0xFF51;
+const XK_RIGHT: i32 = 0xFF53;
+
+const Color = [4]u8;
+const C_BG: Color = .{ 0xF6, 0xF5, 0xF1, 0xFF };
+const C_PANEL: Color = .{ 0xFF, 0xFE, 0xFA, 0xFF };
+const C_CHART: Color = .{ 0xFB, 0xFA, 0xF6, 0xFF };
+const C_INK: Color = .{ 0x18, 0x1B, 0x20, 0xFF };
+const C_MUTED: Color = .{ 0x66, 0x68, 0x6E, 0xFF };
+const C_GRID: Color = .{ 0xD7, 0xD0, 0xC4, 0xFF };
+const C_ACTIVE: Color = .{ 0xF1, 0xCF, 0x58, 0xFF };
+const C_OPENAI: Color = .{ 0x0C, 0x78, 0x66, 0xFF };
+const C_ANTHROPIC: Color = .{ 0xD1, 0x69, 0x2E, 0xFF };
+
+const MIN_MONTH: i32 = 0; // 2023-12
+const MAX_MONTH: i32 = 28; // 2026-04
+const ARR_MAX_B: f64 = 32.0;
+
+const Series = enum {
+    openai,
+    anthropic,
+};
+
+const PointF = struct {
+    x: f32,
+    y: f32,
+};
+
+const ARRPoint = struct {
+    month: i32,
+    label: []const u8,
+    arr_b: f64,
+    note: []const u8,
+};
+
+// Reported annualized revenue / ARR milestones. These are private-company
+// run-rate figures from public reporting, not audited revenue statements.
+const OPENAI_POINTS = [_]ARRPoint{
+    .{ .month = 0, .label = "2023", .arr_b = 2.0, .note = "OPENAI CFO: $2B ARR IN 2023." },
+    .{ .month = 12, .label = "2024", .arr_b = 6.0, .note = "OPENAI CFO: $6B ARR IN 2024." },
+    .{ .month = 18, .label = "JUN 25", .arr_b = 10.0, .note = "FT: OPENAI ARR NEARLY DOUBLED TO $10B." },
+    .{ .month = 19, .label = "JUL 25", .arr_b = 12.0, .note = "REUTERS / THE INFORMATION: $12B ANNUALIZED REVENUE." },
+    .{ .month = 24, .label = "2025", .arr_b = 20.0, .note = "OPENAI CFO: $20B+ ARR IN 2025." },
+    .{ .month = 27, .label = "MAR 26", .arr_b = 24.0, .note = "OPENAI UPDATE: $2B MONTHLY REVENUE, ABOUT $24B ANNUALIZED." },
+};
+
+const ANTHROPIC_POINTS = [_]ARRPoint{
+    .{ .month = 13, .label = "JAN 25", .arr_b = 1.0, .note = "FT IMPLIED: $3B IN MAY AFTER TRIPLING FROM JANUARY." },
+    .{ .month = 14, .label = "FEB 25", .arr_b = 1.2, .note = "WSJ: ANNUALIZED REVENUE ABOUT $1.2B." },
+    .{ .month = 17, .label = "MAY 25", .arr_b = 3.0, .note = "FT: ANTHROPIC ARR TRIPLED TO $3B BETWEEN JANUARY AND MAY." },
+    .{ .month = 24, .label = "2025", .arr_b = 9.0, .note = "ANTHROPIC / PRESS REPORTS: $9B RUN-RATE AT END 2025." },
+    .{ .month = 26, .label = "FEB 26", .arr_b = 14.0, .note = "GUARDIAN: ANNUALISED REVENUE REACHED $14B." },
+    .{ .month = 27, .label = "MAR 26", .arr_b = 19.0, .note = "AXIOS: $19B RUN-RATE IN EARLY MARCH." },
+    .{ .month = 28, .label = "APR 26", .arr_b = 30.0, .note = "ANTHROPIC: RUN-RATE REVENUE SURPASSED $30B." },
+};
+
+var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var selected_series: Series = .anthropic;
+var selected_idx: usize = ANTHROPIC_POINTS.len - 1;
+var primary_down = false;
+
+export fn output_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+}
+
+export fn output_rgba8_srgb_bytes() u32 {
+    return @as(u32, @intCast(OUTPUT_BYTES));
+}
+
+export fn render_width_px() i32 {
+    return @as(i32, @intCast(RENDER_W));
+}
+
+export fn render_height_px() i32 {
+    return @as(i32, @intCast(RENDER_H));
+}
+
+export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+    if ((flags & FLAG_KEY_DOWN) == 0) return 0;
+
+    const changed = switch (x11_key) {
+        XK_LEFT => selectAdjacent(-1),
+        XK_RIGHT => selectAdjacent(1),
+        'o', 'O', '1' => selectLatest(.openai),
+        'a', 'A', '2' => selectLatest(.anthropic),
+        else => false,
+    };
+    return if (changed) 1 else 0;
+}
+
+export fn pointer_event(button_mask: i32, x: i32, y: i32, _: i64) i32 {
+    const logical_x = @divTrunc(x, RETINA_SCALE);
+    const logical_y = @divTrunc(y, RETINA_SCALE);
+    const down = (button_mask & BTN_PRIMARY) != 0;
+    var changed = false;
+
+    if (down and !primary_down) {
+        if (hit(logical_x, logical_y, OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, 26)) changed = selectLatest(.openai);
+        if (hit(logical_x, logical_y, ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, 26)) changed = selectLatest(.anthropic);
+    }
+
+    if (nearestPoint(logical_x, logical_y)) |hit_point| {
+        if (selected_series != hit_point.series or selected_idx != hit_point.index) {
+            selected_series = hit_point.series;
+            selected_idx = hit_point.index;
+            changed = true;
+        }
+    }
+
+    primary_down = down;
+    return if (changed) 1 else 0;
+}
+
+export fn tick(_: i64) i64 {
+    return 0;
+}
+
+export fn render(input_size: i32) i32 {
+    _ = input_size;
+    drawFrame();
+    return @as(i32, @intCast(OUTPUT_BYTES));
+}
+
+fn selectLatest(series: Series) bool {
+    selected_series = series;
+    selected_idx = switch (series) {
+        .openai => OPENAI_POINTS.len - 1,
+        .anthropic => ANTHROPIC_POINTS.len - 1,
+    };
+    return true;
+}
+
+fn selectAdjacent(delta: i32) bool {
+    const len = selectedLen();
+    if (delta < 0) {
+        if (selected_idx == 0) return false;
+        selected_idx -= 1;
+        return true;
+    }
+    if (selected_idx + 1 >= len) return false;
+    selected_idx += 1;
+    return true;
+}
+
+fn selectedLen() usize {
+    return switch (selected_series) {
+        .openai => OPENAI_POINTS.len,
+        .anthropic => ANTHROPIC_POINTS.len,
+    };
+}
+
+fn drawFrame() void {
+    fillRect(0, 0, @as(i32, @intCast(DISPLAY_W)), @as(i32, @intCast(DISPLAY_H)), C_BG);
+    drawText(24, 20, "OPENAI VS ANTHROPIC ARR RUN-RATE", C_INK);
+    drawText(24, 40, "REPORTED PRIVATE-COMPANY MILESTONES, USD BILLIONS.  HOVER OR USE ARROWS.", C_MUTED);
+
+    button(OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, "OPENAI", C_OPENAI, selected_series == .openai);
+    button(ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, "ANTHROPIC", C_ANTHROPIC, selected_series == .anthropic);
+
+    drawChart();
+    drawDetail();
+}
+
+fn drawChart() void {
+    fillRect(CHART_X, CHART_Y, CHART_W, CHART_H, C_CHART);
+    drawBorder(CHART_X, CHART_Y, CHART_W, CHART_H, C_INK);
+
+    var grid: i32 = 1;
+    while (grid < 4) : (grid += 1) {
+        const y = CHART_Y + @divTrunc(CHART_H * grid, 4);
+        fillRect(CHART_X + 1, y, CHART_W - 2, 1, C_GRID);
+    }
+
+    const year_ticks = [_]struct { month: i32, label: []const u8 }{
+        .{ .month = 1, .label = "2024" },
+        .{ .month = 13, .label = "2025" },
+        .{ .month = 25, .label = "2026" },
+    };
+    for (year_ticks) |tick_mark| {
+        const x = monthToX(tick_mark.month);
+        fillRect(x, CHART_Y + 1, 1, CHART_H - 2, C_GRID);
+        drawText(x - 18, CHART_Y + CHART_H + 14, tick_mark.label, C_MUTED);
+    }
+
+    drawYAxis();
+    drawSeries(OPENAI_POINTS[0..], .openai, C_OPENAI);
+    drawSeries(ANTHROPIC_POINTS[0..], .anthropic, C_ANTHROPIC);
+}
+
+fn drawYAxis() void {
+    var buf: [24]u8 = undefined;
+    const ticks = [_]f64{ 0, 10, 20, 30 };
+    for (ticks) |value| {
+        const y = arrToY(value);
+        if (value != 0) fillRect(CHART_X + 1, y, CHART_W - 2, 1, C_GRID);
+        const label = std.fmt.bufPrint(&buf, "${d:.0}B", .{value}) catch "";
+        drawText(24, y - 6, label, C_MUTED);
+    }
+}
+
+fn drawSeries(points: []const ARRPoint, series: Series, color: Color) void {
+    var i: usize = 0;
+    while (i < points.len) : (i += 1) {
+        const x = monthToX(points[i].month);
+        const y = arrToY(points[i].arr_b);
+        if (i > 0) {
+            drawLineAA(monthToX(points[i - 1].month), arrToY(points[i - 1].arr_b), x, y, color, 1.9);
+        }
+        const selected = selected_series == series and selected_idx == i;
+        fillCircleAA(x, y, if (selected) 4.8 else 3.0, color);
+        if (selected) drawCircleAA(x, y, 7.0, 1.25, C_INK);
+    }
+}
+
+fn drawDetail() void {
+    const p = selectedPoint();
+    const series_name = switch (selected_series) {
+        .openai => "OPENAI",
+        .anthropic => "ANTHROPIC",
+    };
+    const color = switch (selected_series) {
+        .openai => C_OPENAI,
+        .anthropic => C_ANTHROPIC,
+    };
+
+    fillRect(DETAIL_X, DETAIL_Y, DETAIL_W, DETAIL_H, C_PANEL);
+    drawBorder(DETAIL_X, DETAIL_Y, DETAIL_W, DETAIL_H, C_INK);
+    fillRect(DETAIL_X + 14, DETAIL_Y + 17, 18, 4, color);
+
+    var line: [128]u8 = undefined;
+    const detail = std.fmt.bufPrint(&line, "{s}  {s}  ARR ${d:.1}B", .{ series_name, p.label, p.arr_b }) catch "";
+    drawText(DETAIL_X + 42, DETAIL_Y + 12, detail, C_INK);
+    drawText(DETAIL_X + 42, DETAIL_Y + 36, p.note, C_MUTED);
+}
+
+fn selectedPoint() ARRPoint {
+    return switch (selected_series) {
+        .openai => OPENAI_POINTS[selected_idx],
+        .anthropic => ANTHROPIC_POINTS[selected_idx],
+    };
+}
+
+const HitPoint = struct {
+    series: Series,
+    index: usize,
+};
+
+fn nearestPoint(x: i32, y: i32) ?HitPoint {
+    if (x < CHART_X - 12 or x > CHART_X + CHART_W + 12 or y < CHART_Y - 12 or y > CHART_Y + CHART_H + 12) return null;
+
+    var best = HitPoint{ .series = selected_series, .index = selected_idx };
+    var best_dist: i64 = 1 << 60;
+    scanNearest(OPENAI_POINTS[0..], .openai, x, y, &best, &best_dist);
+    scanNearest(ANTHROPIC_POINTS[0..], .anthropic, x, y, &best, &best_dist);
+    if (best_dist > 38 * 38) return null;
+    return best;
+}
+
+fn scanNearest(points: []const ARRPoint, series: Series, x: i32, y: i32, best: *HitPoint, best_dist: *i64) void {
+    var i: usize = 0;
+    while (i < points.len) : (i += 1) {
+        const dx = @as(i64, monthToX(points[i].month) - x);
+        const dy = @as(i64, arrToY(points[i].arr_b) - y);
+        const dist = dx * dx + dy * dy;
+        if (dist < best_dist.*) {
+            best.* = .{ .series = series, .index = i };
+            best_dist.* = dist;
+        }
+    }
+}
+
+fn monthToX(month: i32) i32 {
+    const span = MAX_MONTH - MIN_MONTH;
+    return CHART_X + @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(month - MIN_MONTH)) / @as(f64, @floatFromInt(span)) * @as(f64, @floatFromInt(CHART_W)))));
+}
+
+fn arrToY(arr_b: f64) i32 {
+    const t = clampF64(arr_b / ARR_MAX_B, 0, 1);
+    return CHART_Y + CHART_H - @as(i32, @intFromFloat(@round(t * @as(f64, @floatFromInt(CHART_H)))));
+}
+
+fn button(x: i32, y: i32, w: i32, label: []const u8, accent: Color, active: bool) void {
+    fillRect(x, y, w, 26, if (active) C_ACTIVE else C_PANEL);
+    drawBorder(x, y, w, 26, C_INK);
+    fillRect(x + 1, y + 1, 6, 24, accent);
+
+    const label_x = x + 12;
+    const label_w = w - 14;
+    drawText(label_x + @divTrunc(label_w - textWidth(label), 2), y + 8, label, C_INK);
+}
+
+fn hit(x: i32, y: i32, bx: i32, by: i32, bw: i32, bh: i32) bool {
+    return x >= bx and x < bx + bw and y >= by and y < by + bh;
+}
+
+fn clampF64(value: f64, min: f64, max: f64) f64 {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
+fn absF64(value: f64) f64 {
+    return if (value < 0) -value else value;
+}
+
+fn drawText(x: i32, y: i32, text: []const u8, c: Color) void {
+    const size_px: i32 = 12 * RETINA_SCALE;
+    var cursor_x = x * RETINA_SCALE;
+    const text_y = y * RETINA_SCALE;
+    var i: usize = 0;
+    while (i < text.len and i < 110) : (i += 1) {
+        drawFontChar(cursor_x, text_y, text[i], c, size_px);
+        cursor_x += fontAdvance(size_px);
+    }
+}
+
+fn textWidth(text: []const u8) i32 {
+    const advance = fontAdvance(12 * RETINA_SCALE);
+    return @divTrunc(@as(i32, @intCast(text.len)) * advance + RETINA_SCALE - 1, RETINA_SCALE);
+}
+
+fn fontAdvance(size_px: i32) i32 {
+    return @max(1, @as(i32, @intFromFloat(@ceil(@as(f32, @floatFromInt(ui_font.GLYPH_W)) * fontScale(size_px)))));
+}
+
+fn fontScale(size_px: i32) f32 {
+    return @as(f32, @floatFromInt(size_px)) / @as(f32, @floatFromInt(ui_font.GLYPH_H));
+}
+
+fn drawFontChar(x: i32, y: i32, ch: u8, c: Color, size_px: i32) void {
+    const glyph_index = glyphIndexForByte(ch) orelse return;
+    const scale = fontScale(size_px);
+    const w = fontAdvance(size_px);
+    const h = size_px;
+    var dy: i32 = 0;
+    while (dy < h) : (dy += 1) {
+        var dx: i32 = 0;
+        while (dx < w) : (dx += 1) {
+            const coverage = fontCoverage(glyph_index, dx, dy, scale);
+            if (coverage == 0) continue;
+            var cc = c;
+            cc[3] = @as(u8, @intCast(@divTrunc(@as(i32, c[3]) * coverage, 4)));
+            blendPixelPhysical(x + dx, y + dy, cc);
+        }
+    }
+}
+
+fn glyphIndexForByte(ch: u8) ?usize {
+    if (ch >= ui_font.ASCII_START and ch <= ui_font.ASCII_END) {
+        return @as(usize, @intCast(ch - ui_font.ASCII_START));
+    }
+    return null;
+}
+
+fn fontCoverage(glyph_index: usize, dx: i32, dy: i32, scale: f32) i32 {
+    const offsets = [_]PointF{
+        .{ .x = 0.25, .y = 0.25 },
+        .{ .x = 0.75, .y = 0.25 },
+        .{ .x = 0.25, .y = 0.75 },
+        .{ .x = 0.75, .y = 0.75 },
+    };
+
+    var covered: i32 = 0;
+    for (offsets) |off| {
+        const sx = @as(i32, @intFromFloat(@floor((@as(f32, @floatFromInt(dx)) + off.x) / scale)));
+        const sy = @as(i32, @intFromFloat(@floor((@as(f32, @floatFromInt(dy)) + off.y) / scale)));
+        if (fontBit(glyph_index, sx, sy)) covered += 1;
+    }
+    return covered;
+}
+
+fn fontBit(glyph_index: usize, sx: i32, sy: i32) bool {
+    if (sx < 0 or sy < 0 or sx >= @as(i32, @intCast(ui_font.GLYPH_W)) or sy >= @as(i32, @intCast(ui_font.GLYPH_H))) return false;
+    const row = ui_font.glyph_rows[glyph_index][@as(usize, @intCast(sy))];
+    return ((row >> @as(u6, @intCast(sx))) & 1) != 0;
+}
+
+fn drawLineAA(x0: i32, y0: i32, x1: i32, y1: i32, c: Color, width_logical: f64) void {
+    const ax = logicalCenterToPhysical(x0);
+    const ay = logicalCenterToPhysical(y0);
+    const bx = logicalCenterToPhysical(x1);
+    const by = logicalCenterToPhysical(y1);
+    const vx = bx - ax;
+    const vy = by - ay;
+    const len2 = vx * vx + vy * vy;
+    if (len2 <= 0.0001) {
+        fillCircleAA(x0, y0, width_logical * 0.5, c);
+        return;
+    }
+
+    const radius = width_logical * @as(f64, @floatFromInt(RETINA_SCALE)) * 0.5;
+    const pad = radius + 1.5;
+    const min_x = @max(0, @as(i32, @intFromFloat(@floor(@min(ax, bx) - pad))));
+    const max_x = @min(@as(i32, @intCast(RENDER_W)) - 1, @as(i32, @intFromFloat(@ceil(@max(ax, bx) + pad))));
+    const min_y = @max(0, @as(i32, @intFromFloat(@floor(@min(ay, by) - pad))));
+    const max_y = @min(@as(i32, @intCast(RENDER_H)) - 1, @as(i32, @intFromFloat(@ceil(@max(ay, by) + pad))));
+    if (min_x > max_x or min_y > max_y) return;
+
+    var py = min_y;
+    while (py <= max_y) : (py += 1) {
+        const fy = @as(f64, @floatFromInt(py)) + 0.5;
+        var px = min_x;
+        while (px <= max_x) : (px += 1) {
+            const fx = @as(f64, @floatFromInt(px)) + 0.5;
+            const wx = fx - ax;
+            const wy = fy - ay;
+            const t = clampF64((wx * vx + wy * vy) / len2, 0, 1);
+            const cx = ax + vx * t;
+            const cy = ay + vy * t;
+            const dx = fx - cx;
+            const dy = fy - cy;
+            const dist = std.math.sqrt(dx * dx + dy * dy);
+            const alpha = coverageAlpha(radius + 0.75 - dist);
+            if (alpha != 0) blendPixelPhysical(px, py, withAlpha(c, alpha));
+        }
+    }
+}
+
+fn fillCircleAA(cx: i32, cy: i32, radius_logical: f64, c: Color) void {
+    const pcx = logicalCenterToPhysical(cx);
+    const pcy = logicalCenterToPhysical(cy);
+    const radius = radius_logical * @as(f64, @floatFromInt(RETINA_SCALE));
+    const pad = radius + 1.5;
+    const min_x = @max(0, @as(i32, @intFromFloat(@floor(pcx - pad))));
+    const max_x = @min(@as(i32, @intCast(RENDER_W)) - 1, @as(i32, @intFromFloat(@ceil(pcx + pad))));
+    const min_y = @max(0, @as(i32, @intFromFloat(@floor(pcy - pad))));
+    const max_y = @min(@as(i32, @intCast(RENDER_H)) - 1, @as(i32, @intFromFloat(@ceil(pcy + pad))));
+    if (min_x > max_x or min_y > max_y) return;
+
+    var y = min_y;
+    while (y <= max_y) : (y += 1) {
+        const fy = @as(f64, @floatFromInt(y)) + 0.5;
+        var x = min_x;
+        while (x <= max_x) : (x += 1) {
+            const fx = @as(f64, @floatFromInt(x)) + 0.5;
+            const dx = fx - pcx;
+            const dy = fy - pcy;
+            const dist = std.math.sqrt(dx * dx + dy * dy);
+            const alpha = coverageAlpha(radius + 0.75 - dist);
+            if (alpha != 0) blendPixelPhysical(x, y, withAlpha(c, alpha));
+        }
+    }
+}
+
+fn drawCircleAA(cx: i32, cy: i32, radius_logical: f64, stroke_logical: f64, c: Color) void {
+    const pcx = logicalCenterToPhysical(cx);
+    const pcy = logicalCenterToPhysical(cy);
+    const radius = radius_logical * @as(f64, @floatFromInt(RETINA_SCALE));
+    const stroke_half = stroke_logical * @as(f64, @floatFromInt(RETINA_SCALE)) * 0.5;
+    const pad = radius + stroke_half + 1.5;
+    const min_x = @max(0, @as(i32, @intFromFloat(@floor(pcx - pad))));
+    const max_x = @min(@as(i32, @intCast(RENDER_W)) - 1, @as(i32, @intFromFloat(@ceil(pcx + pad))));
+    const min_y = @max(0, @as(i32, @intFromFloat(@floor(pcy - pad))));
+    const max_y = @min(@as(i32, @intCast(RENDER_H)) - 1, @as(i32, @intFromFloat(@ceil(pcy + pad))));
+    if (min_x > max_x or min_y > max_y) return;
+
+    var y = min_y;
+    while (y <= max_y) : (y += 1) {
+        const fy = @as(f64, @floatFromInt(y)) + 0.5;
+        var x = min_x;
+        while (x <= max_x) : (x += 1) {
+            const fx = @as(f64, @floatFromInt(x)) + 0.5;
+            const dx = fx - pcx;
+            const dy = fy - pcy;
+            const dist = std.math.sqrt(dx * dx + dy * dy);
+            const alpha = coverageAlpha(stroke_half + 0.75 - absF64(dist - radius));
+            if (alpha != 0) blendPixelPhysical(x, y, withAlpha(c, alpha));
+        }
+    }
+}
+
+fn logicalCenterToPhysical(value: i32) f64 {
+    return (@as(f64, @floatFromInt(value)) + 0.5) * @as(f64, @floatFromInt(RETINA_SCALE));
+}
+
+fn coverageAlpha(coverage: f64) u8 {
+    const clamped = clampF64(coverage, 0, 1);
+    return @as(u8, @intFromFloat(@round(clamped * 255.0)));
+}
+
+fn withAlpha(c: Color, alpha: u8) Color {
+    return .{
+        c[0],
+        c[1],
+        c[2],
+        @as(u8, @intCast(@divTrunc(@as(i32, c[3]) * @as(i32, alpha) + 127, 255))),
+    };
+}
+
+fn drawBorder(x: i32, y: i32, w: i32, h: i32, c: Color) void {
+    fillRect(x, y, w, 1, c);
+    fillRect(x, y, 1, h, c);
+    fillRect(x, y + h - 1, w, 1, c);
+    fillRect(x + w - 1, y, 1, h, c);
+}
+
+fn fillRect(x0: i32, y0: i32, w: i32, h: i32, c: Color) void {
+    if (w <= 0 or h <= 0) return;
+    const sx = @max(0, x0 * RETINA_SCALE);
+    const sy = @max(0, y0 * RETINA_SCALE);
+    const ex = @min(@as(i32, @intCast(RENDER_W)), (x0 + w) * RETINA_SCALE);
+    const ey = @min(@as(i32, @intCast(RENDER_H)), (y0 + h) * RETINA_SCALE);
+    if (sx >= ex or sy >= ey) return;
+
+    var y = sy;
+    while (y < ey) : (y += 1) {
+        var x = sx;
+        while (x < ex) : (x += 1) {
+            setPixelPhysical(x, y, c);
+        }
+    }
+}
+
+fn setPixelPhysical(x: i32, y: i32, c: Color) void {
+    if (x < 0 or y < 0 or x >= @as(i32, @intCast(RENDER_W)) or y >= @as(i32, @intCast(RENDER_H))) return;
+    const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
+    output_buf[idx + 0] = c[0];
+    output_buf[idx + 1] = c[1];
+    output_buf[idx + 2] = c[2];
+    output_buf[idx + 3] = c[3];
+}
+
+fn blendPixelPhysical(x: i32, y: i32, c: Color) void {
+    if (x < 0 or y < 0 or x >= @as(i32, @intCast(RENDER_W)) or y >= @as(i32, @intCast(RENDER_H))) return;
+    if (c[3] == 0xFF) {
+        setPixelPhysical(x, y, c);
+        return;
+    }
+
+    const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
+    const a = @as(i32, c[3]);
+    const inv = 255 - a;
+    output_buf[idx + 0] = @as(u8, @intCast(@divTrunc(@as(i32, c[0]) * a + @as(i32, output_buf[idx + 0]) * inv + 127, 255)));
+    output_buf[idx + 1] = @as(u8, @intCast(@divTrunc(@as(i32, c[1]) * a + @as(i32, output_buf[idx + 1]) * inv + 127, 255)));
+    output_buf[idx + 2] = @as(u8, @intCast(@divTrunc(@as(i32, c[2]) * a + @as(i32, output_buf[idx + 2]) * inv + 127, 255)));
+    output_buf[idx + 3] = 0xFF;
+}
+
+test "latest Anthropic ARR is above latest OpenAI run-rate milestone" {
+    try std.testing.expect(ANTHROPIC_POINTS[ANTHROPIC_POINTS.len - 1].arr_b > OPENAI_POINTS[OPENAI_POINTS.len - 1].arr_b);
+}
