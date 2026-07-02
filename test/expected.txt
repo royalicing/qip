@@ -138,7 +138,7 @@ hi
 module: utf8-must-be-valid.wasm
 hello
 module: wasm-to-js.wasm
-const wasmBytes = Uint8Array.from(atob("AGFzbQEAAAABBgFgAX8BfwMCAQAFBAEBAwMGHQR/AEGAgAQLfwBBgIAEC38AQYCACAt/AEGAgAQLB08GBm1lbW9yeQIACWlucHV0X3B0cgMADmlucHV0X3V0ZjhfY2FwAwEKb3V0cHV0X3B0cgMCD291dHB1dF91dGY4X2NhcAMDBnJlbmRlcgAACmcBZQECfyMCQsjKseP2jYuQ1wA3AwAjAkEIakHv5LGjBjYCAEEMIQIgAEEASwRAQQAhAUEHIQICQANAIAEgAE8NASMCIAJqIwAgAWotAAA6AAAgAUEBaiEBIAJBAWohAgwACwsLIAIL"), c => c.charCodeAt(0));
+const wasmBytes = Uint8Array.from(atob("AGFzbQEAAAABCgJgAAF/YAF/AX8DBgUAAAAAAQUEAQEDAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTwYGbWVtb3J5AgAJaW5wdXRfcHRyAAAOaW5wdXRfdXRmOF9jYXAAAQpvdXRwdXRfcHRyAAIPb3V0cHV0X3V0ZjhfY2FwAAMGcmVuZGVyAAQKewUEACMACwQAIwELBAAjAgsEACMDC2UBAn8jAkLIyrHj9o2LkNcANwMAIwJBCGpB7+SxowY2AgBBDCECIABBAEsEQEEAIQFBByECAkADQCABIABPDQEjAiACaiMAIAFqLQAAOgAAIAFBAWohASACQQFqIQIMAAsLCyACCw=="), c => c.charCodeAt(0));
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const wasmModule = await WebAssembly.compile(wasmBytes);
@@ -169,15 +169,15 @@ export function render(value) {
   assertMemory(e.memory);
   if (typeof value !== "string") throw new Error("input must be a string");
   const inputBytes = textEncoder.encode(value);
-  const inputPtr = i32(e.input_ptr.value, "input_ptr");
-  const inputCap = i32(e.input_utf8_cap.value, "input_utf8_cap");
+  const inputPtr = i32(e.input_ptr(), "input_ptr");
+  const inputCap = i32(e.input_utf8_cap(), "input_utf8_cap");
   if (inputBytes.length > inputCap) throw new Error("input exceeds component capacity: " + inputBytes.length + " > " + inputCap);
   new Uint8Array(e.memory.buffer).set(inputBytes, checkSlice(e.memory, inputPtr, inputBytes.length, "input_ptr"));
   const outputLen = i32(e.render(inputBytes.length), "render");
-  const outputCap = i32(e.output_utf8_cap.value, "output_utf8_cap");
+  const outputCap = i32(e.output_utf8_cap(), "output_utf8_cap");
   if (outputLen < 0) throw new Error("render returned negative output size");
   if (outputLen > outputCap) throw new Error("render output exceeds component capacity: " + outputLen + " > " + outputCap);
-  const outputPtr = i32(e.output_ptr.value, "output_ptr");
+  const outputPtr = i32(e.output_ptr(), "output_ptr");
   const outputStart = checkSlice(e.memory, outputPtr, outputLen, "output_ptr");
   const outputBytes = new Uint8Array(e.memory.buffer).slice(outputStart, outputStart + outputLen);
   return textDecoder.decode(outputBytes);

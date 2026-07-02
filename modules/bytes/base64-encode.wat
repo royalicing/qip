@@ -1,9 +1,18 @@
 (module $Base64Encode
   (memory (export "memory") 3 3)
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
-  (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
-  (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
-  (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
+  (global $input_ptr i32 (i32.const 0x10000))
+  (global $input_bytes_cap i32 (i32.const 0x10000))
+  (global $output_ptr i32 (i32.const 0x20000))
+  (global $output_utf8_cap i32 (i32.const 0x10000))
+
+  (func (export "input_ptr") (result i32)
+    (global.get $input_ptr))
+  (func (export "input_bytes_cap") (result i32)
+    (global.get $input_bytes_cap))
+  (func (export "output_ptr") (result i32)
+    (global.get $output_ptr))
+  (func (export "output_utf8_cap") (result i32)
+    (global.get $output_utf8_cap))
 
   ;; Base64 alphabet: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
   (func $get_base64_char (param $index i32) (result i32)

@@ -1,7 +1,11 @@
 (module $BrightnessRGBA
   (memory (export "memory") 1 1)
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0))
-  (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
+  (global $input_ptr i32 (i32.const 0))
+  (func (export "input_ptr") (result i32)
+    (global.get $input_ptr))
+  (global $input_bytes_cap i32 (i32.const 0x10000))
+  (func (export "input_bytes_cap") (result i32)
+    (global.get $input_bytes_cap))
 
   ;; Brightness in [-1, 1]. Positive pushes toward white, negative toward black.
   (global $uniform_brightness (mut f32) (f32.const 0.0))

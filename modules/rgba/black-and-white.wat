@@ -1,7 +1,11 @@
 (module $BlackWhiteRGBA
   (memory (export "memory") 1 1)
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0))
-  (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
+  (global $input_ptr i32 (i32.const 0))
+  (func (export "input_ptr") (result i32)
+    (global.get $input_ptr))
+  (global $input_bytes_cap i32 (i32.const 0x10000))
+  (func (export "input_bytes_cap") (result i32)
+    (global.get $input_bytes_cap))
 
   (func (export "tile_rgba32float_64x64") (param $x f32) (param $y f32)
     (local $p i32)

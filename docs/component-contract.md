@@ -145,7 +145,7 @@ See also: `IMAGE.md`.
 Export style notes:
 
 - Pointer/size values may be exported as zero-arg functions returning `i32` or as `i32` globals.
-- Function-style exports are common in Zig/C components; global-style is common in `.wat`.
+- Function-style exports are preferred, including in `.wat`; global-style remains supported for legacy components.
 
 ## Contract Detection
 

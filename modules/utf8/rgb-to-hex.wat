@@ -1,9 +1,17 @@
 (module $RGBToHex
   (memory (export "memory") 4 4)
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
-  (global $input_utf8_cap (export "input_utf8_cap") i32 (i32.const 0x10000))
-  (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
-  (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
+  (global $input_ptr i32 (i32.const 0x10000))
+  (func (export "input_ptr") (result i32)
+    (global.get $input_ptr))
+  (global $input_utf8_cap i32 (i32.const 0x10000))
+  (func (export "input_utf8_cap") (result i32)
+    (global.get $input_utf8_cap))
+  (global $output_ptr i32 (i32.const 0x20000))
+  (func (export "output_ptr") (result i32)
+    (global.get $output_ptr))
+  (global $output_utf8_cap i32 (i32.const 0x10000))
+  (func (export "output_utf8_cap") (result i32)
+    (global.get $output_utf8_cap))
 
   ;; Check if character is ASCII whitespace
   (func $is_whitespace (param $c i32) (result i32)

@@ -1,7 +1,11 @@
 (module $PosterizeRGBA
   (memory (export "memory") 1 1)
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0))
-  (global $input_bytes_cap (export "input_bytes_cap") i32 (i32.const 0x10000))
+  (global $input_ptr i32 (i32.const 0))
+  (func (export "input_ptr") (result i32)
+    (global.get $input_ptr))
+  (global $input_bytes_cap i32 (i32.const 0x10000))
+  (func (export "input_bytes_cap") (result i32)
+    (global.get $input_bytes_cap))
 
   (global $uniform_levels_count (mut i32) (i32.const 8))
   (func (export "uniform_set_levels_count") (param $v i32) (result i32)

@@ -270,11 +270,20 @@ You can also write raw WebAssembly text format which compiles directly to `.wasm
   ;; First page empty, input at 0x10000, output at 0x20000
   (memory (export "memory") 3)
 
-  ;; Required globals for qip integration
-  (global $input_ptr (export "input_ptr") i32 (i32.const 0x10000))
-  (global $input_utf8_cap (export "input_utf8_cap") i32 (i32.const 0x10000))
-  (global $output_ptr (export "output_ptr") i32 (i32.const 0x20000))
-  (global $output_utf8_cap (export "output_utf8_cap") i32 (i32.const 0x10000))
+  ;; Internal buffer constants with function exports for qip integration
+  (global $input_ptr i32 (i32.const 0x10000))
+  (global $input_utf8_cap i32 (i32.const 0x10000))
+  (global $output_ptr i32 (i32.const 0x20000))
+  (global $output_utf8_cap i32 (i32.const 0x10000))
+
+  (func (export "input_ptr") (result i32)
+    (global.get $input_ptr))
+  (func (export "input_utf8_cap") (result i32)
+    (global.get $input_utf8_cap))
+  (func (export "output_ptr") (result i32)
+    (global.get $output_ptr))
+  (func (export "output_utf8_cap") (result i32)
+    (global.get $output_utf8_cap))
 
   ;; Required export: render(input_size) -> output_size
   ;; Input is at input_ptr, output goes to output_ptr
