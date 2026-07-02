@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -71,9 +76,24 @@ func devCmd(args []string) {
 		gameOver("--view-source requires --recipes <recipes_dir>")
 	}
 
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	listener, devIdentity, err := listenOrReloadDevServer(addr, port)
+	if errors.Is(err, errDevServerReloaded) {
+		return
+	}
+	if err != nil {
+		gameOver("dev server error: %v", err)
+	}
+	defer func() {
+		_ = listener.Close()
+		removeDevServerIdentity(port, devIdentity)
+	}()
+
 	routeOptions := qinternal.DefaultRouteOptions()
 	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
 	if err != nil {
+		_ = listener.Close()
+		removeDevServerIdentity(port, devIdentity)
 		gameOver("%v", err)
 	}
 	var stateMu sync.RWMutex
@@ -155,10 +175,9 @@ func devCmd(args []string) {
 		log.Printf("dev: loaded %d browser components from %s", len(state.componentAssets), componentsRoot)
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	handlerTimeouts := routeHandlerTimeouts{
 		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
 	reloadStateIfHardRefresh := func(r *http.Request) {
 		if opts.mode != modeDev {
@@ -171,10 +190,18 @@ func devCmd(args []string) {
 	}
 
 	handler := newDevRequestHandler("dev", &stateMu, &state, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
+	handlerWithIdentity := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/.qip/dev-server" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(devIdentity)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
 
 	server := &http.Server{
 		Addr:    addr,
-		Handler: handler,
+		Handler: handlerWithIdentity,
 	}
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -209,7 +236,165 @@ func devCmd(args []string) {
 	log.Printf("dev: send SIGHUP to reload routes, recipes, forms, and components: `kill -HUP %d`", os.Getpid())
 	log.Printf("dev: browser hard reload (Cache-Control: no-cache/max-age=0) triggers full runtime reload")
 
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		gameOver("dev server error: %v", err)
 	}
+}
+
+var errDevServerReloaded = errors.New("existing qip dev server reloaded")
+
+type devServerIdentity struct {
+	PID   int    `json:"pid"`
+	Port  int    `json:"port"`
+	Addr  string `json:"addr"`
+	Token string `json:"token"`
+}
+
+func listenOrReloadDevServer(addr string, port int) (net.Listener, devServerIdentity, error) {
+	listener, err := net.Listen("tcp", addr)
+	if err == nil {
+		identity, err := newDevServerIdentity(addr, port)
+		if err != nil {
+			_ = listener.Close()
+			return nil, devServerIdentity{}, err
+		}
+		if err := writeDevServerIdentity(port, identity); err != nil {
+			log.Printf("dev: reload metadata unavailable: %v", err)
+		}
+		return listener, identity, nil
+	}
+
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return nil, devServerIdentity{}, err
+	}
+	reloaded, reloadErr := reloadExistingDevServer(addr, port)
+	if reloadErr != nil {
+		return nil, devServerIdentity{}, reloadErr
+	}
+	if reloaded {
+		return nil, devServerIdentity{}, errDevServerReloaded
+	}
+	return nil, devServerIdentity{}, err
+}
+
+func newDevServerIdentity(addr string, port int) (devServerIdentity, error) {
+	var tokenBytes [16]byte
+	if _, err := rand.Read(tokenBytes[:]); err != nil {
+		return devServerIdentity{}, fmt.Errorf("generate dev server token: %w", err)
+	}
+	return devServerIdentity{
+		PID:   os.Getpid(),
+		Port:  port,
+		Addr:  addr,
+		Token: hex.EncodeToString(tokenBytes[:]),
+	}, nil
+}
+
+func reloadExistingDevServer(addr string, port int) (bool, error) {
+	stored, err := readDevServerIdentity(port)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if stored.PID <= 0 || stored.Addr != addr || stored.Port != port || stored.Token == "" {
+		removeDevServerIdentity(port, stored)
+		return false, nil
+	}
+
+	live, err := fetchDevServerIdentity(addr)
+	if err != nil {
+		removeDevServerIdentity(port, stored)
+		return false, nil
+	}
+	if live.PID != stored.PID || live.Port != port || live.Addr != addr || live.Token != stored.Token {
+		return false, nil
+	}
+
+	process, err := os.FindProcess(live.PID)
+	if err != nil {
+		removeDevServerIdentity(port, stored)
+		return false, nil
+	}
+	if err := process.Signal(syscall.SIGHUP); err != nil {
+		return false, fmt.Errorf("send SIGHUP to existing qip dev server pid %d: %w", live.PID, err)
+	}
+	log.Printf("dev: reloaded existing qip dev server on http://%s with SIGHUP pid=%d", addr, live.PID)
+	return true, nil
+}
+
+func fetchDevServerIdentity(addr string) (devServerIdentity, error) {
+	client := http.Client{Timeout: 250 * time.Millisecond}
+	resp, err := client.Get("http://" + addr + "/.qip/dev-server")
+	if err != nil {
+		return devServerIdentity{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return devServerIdentity{}, fmt.Errorf("identity endpoint returned %s", resp.Status)
+	}
+
+	var identity devServerIdentity
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&identity); err != nil {
+		return devServerIdentity{}, err
+	}
+	return identity, nil
+}
+
+func writeDevServerIdentity(port int, identity devServerIdentity) error {
+	path, err := devServerIdentityPath(port)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(identity)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
+func readDevServerIdentity(port int) (devServerIdentity, error) {
+	path, err := devServerIdentityPath(port)
+	if err != nil {
+		return devServerIdentity{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return devServerIdentity{}, err
+	}
+	var identity devServerIdentity
+	if err := json.Unmarshal(data, &identity); err != nil {
+		return devServerIdentity{}, err
+	}
+	return identity, nil
+}
+
+func removeDevServerIdentity(port int, identity devServerIdentity) {
+	if identity.Token == "" {
+		return
+	}
+	current, err := readDevServerIdentity(port)
+	if err != nil {
+		return
+	}
+	if current.PID != identity.PID || current.Token != identity.Token {
+		return
+	}
+	path, err := devServerIdentityPath(port)
+	if err != nil {
+		return
+	}
+	_ = os.Remove(path)
+}
+
+func devServerIdentityPath(port int) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "qip", "dev", fmt.Sprintf("127.0.0.1-%d.json", port)), nil
 }
