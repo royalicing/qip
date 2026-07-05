@@ -2,11 +2,12 @@
 
 `qip comply` is for turning a QIP component contract into an executable conformance check.
 
-A comply module is closest to a small TCK: it is not the implementation's own unit
-test suite, and it is not a wrapper around `qip run`. It is a WebAssembly
+A comply module is a small conformance suite. It is not the implementation's own
+unit test suite, and it is not a wrapper around `qip run`. It is a WebAssembly
 component that imports the implementation as `impl`, drives the public QIP ABI,
-and reports whether the implementation obeys a reusable contract. That makes it
-a good fit for behavior that more than one component should be able to satisfy:
+and reports whether the implementation obeys a reusable contract.
+
+Use comply modules for behavior that more than one component may need to satisfy:
 "preserve empty input", "reject invalid UTF-8", "normalize phone numbers", or
 "accept exactly the Luhn-valid account numbers".
 
@@ -88,7 +89,7 @@ The usual render checker loop is:
 6. Compare actual output with the expected bytes.
 7. On mismatch, export failure detail pointers so the CLI can print the case.
 
-Keep scratch memory boring. For example, `compliance/luhn.comply.wat` writes input
+Keep scratch memory simple. For example, `compliance/luhn.comply.wat` writes input
 at `input_ptr` and expected output at `input_ptr + 256`, after first requiring at
 least 512 bytes of input capacity. We prefer this style because the memory
 contract is visible in three lines and failures are easy to reproduce.
@@ -159,12 +160,12 @@ Choose the smallest checker shape that teaches the contract.
 The tradeoff is complexity. A table check is easier to review, but it can miss
 whole classes of bugs. A generated checker covers more space, but it must contain
 an independent oracle that is simpler than the implementation under test. If the
-checker simply re-implements the same complicated algorithm, you have two places
+checker re-implements the same complicated algorithm, you have two places
 to hide the same mistake.
 
 ## Luhn As A Pattern
 
-The Luhn comply module is the best current model for an algorithmic checker:
+The Luhn comply module shows the current pattern for an algorithmic checker:
 
 - It makes the scratch contract explicit: require enough capacity, then split the
   implementation input buffer into input and expected-output regions.

@@ -41,7 +41,7 @@ qip run component-a.wasm component-b.wasm
 - passes output of stage N as input to stage N+1
 - preserves deterministic stage order
 
-No hidden dependency graph, no plugin magic.
+No hidden dependency graph.
 
 ## 3. Content + Recipes (Web Dev Mode)
 

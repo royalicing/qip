@@ -219,11 +219,7 @@ export fn uniform_set_color_rgba(v: u32) u32 {
 
 Use `Form` for prompt-driven workflows in `qip form`.
 
-Claim: form logic should stay explicit and host-cooperative.
-
-Reason:
-
-- It keeps prompt progression and validation behavior predictable across CLI and web hosts.
+Form logic should stay explicit and host-cooperative so prompt progression and validation behave predictably across CLI and web hosts.
 
 For required exports and flow details, see [docs/form_abi.md](/docs/form_abi).
 

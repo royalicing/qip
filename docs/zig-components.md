@@ -1,12 +1,12 @@
 # Writing QIP Components In Zig
 
-Zig is a strong default for QIP components because it can emit small freestanding WebAssembly without bringing a runtime, filesystem, or package graph along for the ride.
+Zig works well for QIP components because it can emit small freestanding WebAssembly without bringing a runtime, filesystem, or package graph along for the ride.
 
 The tradeoff is that you are responsible for being explicit about the WebAssembly shape you want. For QIP, that means exporting a small ABI, using fixed buffers, and compiling with a maximum memory size.
 
 ## Build With A Memory Maximum
 
-We prefer every Zig component to compile with `--max-memory` because it makes the component's worst-case linear memory visible in the Wasm binary.
+Compile Zig components with `--max-memory` so the component's worst-case linear memory is visible in the Wasm binary.
 
 Without this flag, Zig can emit a memory with an initial size but no declared maximum. That still runs in `qip`, but it is harder to inspect and it fails stricter safety checks that require fixed memory. A maximum also keeps review honest: if a component needs 20 MiB, the build command says so.
 
@@ -34,7 +34,7 @@ Even then, add the cap before checking in the module.
 
 ## Minimal Content Component
 
-This component accepts UTF-8 text and returns it unchanged. It is intentionally boring: the shape is the important part.
+This component accepts UTF-8 text and returns it unchanged. The example is simple so the ABI shape is visible.
 
 ```zig
 const INPUT_CAP: usize = 64 * 1024;
@@ -178,7 +178,7 @@ Use packed integer uniforms for compact settings like colors, flags, and modes. 
 
 ## Keep The Wasm Easy To Inspect
 
-The strongest QIP components are not only sandboxed; they are easy to audit.
+Sandboxing is not enough by itself. Keep the Wasm easy to audit.
 
 For safety-oriented modules, prefer:
 

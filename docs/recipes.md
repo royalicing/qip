@@ -31,7 +31,7 @@ Given MIME `type/subtype`, recipe directory is:
 
 ## Execution Context
 
-WARC recipes can run in two useful scopes. We prefer picking scope intentionally because it changes cost and feedback speed.
+WARC recipes can run in two useful scopes. Pick the scope based on the question you are answering.
 
 - Subset/path scope (faster iteration):
   - `qip dev` applies WARC recipe behavior on the currently resolved response.
@@ -39,9 +39,7 @@ WARC recipes can run in two useful scopes. We prefer picking scope intentionally
 - Whole-site scope (final archive behavior):
   - `qip router warc <site> ...` enumerates the full routed site, builds one WARC, then applies `_recipes/application/warc/*`.
 
-Claim: use subset scope while developing recipe logic, and whole-site scope before publishing.
-Reason: it shortens edit-test cycles without skipping the final archive semantics.
-Example:
+Use subset scope while developing recipe logic. Use whole-site scope before publishing so final archive semantics are still exercised.
 
 ```sh
 # Fast single-path iteration:

@@ -26,11 +26,11 @@ Put QIP around the steps that benefit from a strict content-in, content-out cont
 4. QIP validates or wraps the HTML.
 5. App code stores, serves, or caches the result.
 
-## AI Generated Code
+## AI-Generated Code
 
-QIP does not make AI generated code correct. It limits what AI generated code can access.
+QIP does not make AI-generated code correct. It limits what AI-generated code can access.
 
-A QIP component only sees the bytes written into its memory. It cannot scan your project directory, read environment variables, open sockets, call third-party APIs, inspect secrets, or reach into host process state. You still review and test the code know if it validates the input properly and outputs correctly, but it has far fewer ways to interfere the rest of the app.
+A QIP component only sees the bytes written into its memory. It cannot scan your project directory, read environment variables, open sockets, call third-party APIs, inspect secrets, or reach into host process state. You still review and test whether it validates input and returns the expected output, but it has fewer ways to interfere with the rest of the app.
 
 ## Performance
 

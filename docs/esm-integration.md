@@ -46,7 +46,7 @@ export function markdownToHtml(markdown) {
 console.log(markdownToHtml("# Hello\n\nThis came from QIP."));
 ```
 
-The important part is not the loader. It is the boundary:
+The loader is secondary. The QIP boundary is the same:
 
 - Encode JavaScript text as UTF-8 bytes.
 - Write those bytes at `input_ptr()`.

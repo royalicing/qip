@@ -132,10 +132,4 @@ For debug instrumentation, add `debug` to `<qip-play>`. In debug mode the host c
 
 ## Why This Shape
 
-Claim: this ABI is a better default than embedding a full protocol stream.
-
-Reason:
-
-- It keeps wasm modules free of packet parsing logic.
-- It aligns with familiar game/UI separation (tick then render).
-- It composes with multiple hosts (browser/native) by adapting input at the edge.
+This ABI keeps packet parsing out of the Wasm module. Hosts adapt browser or native input at the edge, then modules handle a familiar game/UI loop: receive input events, advance state with `tick`, and render the current frame.

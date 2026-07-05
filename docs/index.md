@@ -2,11 +2,11 @@
 
 ## The Problem With Software Today
 
-Much software is built as layers of frameworks, packages, platforms, and operating-system features. The result is often non-deterministic in practice: behavior can depend on installed packages, environment variables, filesystem layout, network services, clocks, and the exact shape of the runtime around it.
+Much software is built as layers of frameworks, packages, platforms, and operating-system features. The result is often non-deterministic in practice: behavior can depend on installed packages, environment variables, filesystem layout, network services, locale, clocks, and the exact setup of the machine around it.
 
-Containers help by packaging that environment, but they also preserve the assumption that a small piece of logic needs a large surrounding world. That can be the right tradeoff for full applications, but it is often more machinery than a content transform, validator, image filter, or small interactive tool needs.
+Containers can package that environment, which is useful for full applications. For a content transform, validator, image filter, or small interactive tool, it is often more machinery than the work needs.
 
-AI coding raises the stakes. Agents can generate useful code quickly, but generated code is easier to evaluate when the runtime boundary is small, explicit, and repeatable.
+AI coding raises the stakes. Agents can generate useful code quickly, but that code is easier to review and test when its inputs, outputs, memory, and host access are explicit.
 
 ## The QIP Values
 
@@ -22,7 +22,7 @@ WebAssembly gives QIP a compact, portable execution target.
 
 A QIP component is a WebAssembly binary with explicit imports and exports. By default, QIP gives it no filesystem, network, environment, clock, or secrets. The host writes input bytes into component memory, calls a known export such as `render(input_size)`, then reads output bytes back.
 
-That shape gives the host a deterministic execution boundary: the same component bytes and input bytes are guaranteed to produce the same output bytes. Components stay small enough to test, benchmark, and replace when better code appears.
+That shape gives the host a deterministic execution boundary: the same component bytes and input bytes are guaranteed produce the same output bytes. Components stay small enough to test, benchmark, and replace when better code appears.
 
 ## Why Not WASI
 

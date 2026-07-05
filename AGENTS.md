@@ -60,15 +60,15 @@ When implementing a common algorithm, benchmark against other implementations. F
 
 ## Docs Style Guide
 
-Write docs that are engaging, informed, opinionated, and friendly. Avoid rants and avoid dry spec-only prose. See `docs/formats.md` for an example.
+Write docs for software engineers and technical decision-makers who are short on time and skeptical of hype. Treat readers as capable of making their own tradeoff decisions. We want to feel engaging, informed, opinionated, and friendly. Avoid rants and avoid dry spec-only prose.
 
-- Open with a clear thesis sentence that states a position.
-- Use `claim -> reason -> example` structure for key sections.
-- Prefer concrete language and direct verbs over abstract wording.
-- Include tradeoffs when recommending a default.
-- Use practical examples from this repo (commands, module paths, pipelines).
-- Keep tone confident and helpful: say "we prefer X because Y".
+- Lead with what the thing does and how it works, not a slogan.
+- Prefer mechanics over claims: inputs, outputs, boundaries, commands, files, failure modes.
+- Explain tradeoffs directly. Say what QIP gives up as well as what it buys.
+- Keep pages short enough to scan. Use tight sections, short paragraphs, and bullets only when they reduce reading time.
+- Use practical examples from this repo: commands, module paths, recipes, ABI calls, and component pipelines.
+- Use `claim -> reason -> example` as an internal drafting tool, but do not label prose with `Claim:`, `Reason:`, or `Example:` in reader-facing docs.
+- Avoid sales language and fake confidence: no hype, no "X matters" filler, no "the important part is..." unless it is genuinely precise.
 - Avoid absolutist language unless it is a hard contract requirement.
-- Add short "when not to use this" guidance where appropriate.
-- Favor small decision rubrics/checklists for fast reader decisions.
-- Keep pages skimmable with short sections and tight bullets.
+- Include "when not to use this" guidance for adoption, architecture, and workflow pages.
+- Keep normal application concerns normal. Docs should be clear when QIP belongs inside an existing app rather than replacing the whole app architecture.

@@ -1,111 +1,95 @@
-# File Routing and Recipe Orchestration
+# File Routing And Recipe Orchestration
 
-QIP establishes a deterministic, dual-pass routing and pipeline model where file layouts map directly to canonical URLs and source MIME types determine linear recipe chains. By removing complex framework configuration files, we keep the server lightweight, easily auditable, and completely predictable.
+QIP routes files from a content tree and applies recipe components based on the source MIME type.
 
----
+Use this page as the operational summary. The normative route rules live in [Router](/docs/router), and recipe discovery/order is defined in [Recipes](/docs/recipes).
 
-## 📂 1. File Discovery & Path Rules
+## Content Discovery
 
-We require content to be stored in clean, well-defined directory structures that map directly to the website's URL hierarchy.
+The router walks the site root and builds routes from regular content files. It skips project directories that are not ordinary pages:
 
-### Skipping Project Directories
-* **Claim**: We skip directories named `_recipes`, `_forms`, and `_components` from ordinary content routes.
-* **Reason**: This prevents sensitive compiled WebAssembly modules, intermediate pipeline steps, and private layout configurations from being accidentally exposed or served as public static assets.
-* **Example**: If a file resides at `site/_recipes/text/markdown/10-render.wasm`, the recursive walk ignores the `_recipes` subtree entirely. A request for `/_recipes/text/markdown/10-render.wasm` will result in a standard `404 Not Found`.
+- `_recipes`
+- `_forms`
+- `_components`
 
-### Path Canonicalization & Safety
-To protect the host filesystem and ensure cross-platform compatibility, QIP enforces strict validation criteria during file walking:
+Those directories hold QIP components and host configuration. A file such as `site/_recipes/text/markdown/10-render.wasm` is not registered as a public content route, so `/_recipes/text/markdown/10-render.wasm` returns `404`.
 
-* **UTF-8 Integrity**: All relative paths must be valid UTF-8.
-* **No Backslashes**: Paths must use forward slashes `/`. Any path containing a backslash `\` is rejected during discovery.
-* **No Trailing Dot Segments**: Clean paths must not contain relative directory segments (`.` or `..`).
-* **Symlink Loop Protection**: QIP tracks visited absolute paths (`seenDirs`) during recursion to avoid infinite loops on circular symlinks.
+Relative content paths must be UTF-8, use `/` separators, and avoid `.` or `..` path segments. During local discovery, QIP tracks visited directories so symlink loops do not recurse forever.
 
----
+## Pretty Routes And Source Routes
 
-## 🌐 2. Request Resolution & Pretty Routes
+Document files get browser-friendly routes and extension-exact source routes.
 
-QIP balances user-friendly browser URLs with raw data accessibility by generating multiple routing aliases for specific content files.
+| Source file | Pretty route | Source route | Behavior |
+| --- | --- | --- | --- |
+| `site/index.md` | `/` | `/index.md` | pretty route runs markdown recipes |
+| `site/docs/index.md` | `/docs` | `/docs/index.md` | pretty route runs markdown recipes |
+| `site/contact.html` | `/contact` | `/contact.html` | pretty route serves HTML |
+| `site/images/logo.png` | none | `/images/logo.png` | served as image bytes |
+| `site/start.uri` | `/start` | `/start.uri` | pretty route redirects |
 
-### Pretty Routes vs. Raw Source Routes
-* **Claim**: We prefer serving pretty URLs (without extensions) for documents, while preserving extension-exact source URLs.
-* **Reason**: This gives users and search engines neat, clean page URLs while allowing tools, scrapers, and editors to easily fetch the raw markdown or HTML source for editing or auditing.
-* **Example**: A file named `site/about.md` is registered with two route aliases:
-  * `/about` (The pretty route, which executes the HTML-rendering recipe chain)
-  * `/about.md` (The source route, which bypasses the recipe chain and serves the raw markdown bytes)
+Request the source route when you want the raw file bytes. Request the pretty route when you want the routed response after applicable recipes.
 
-### Canonical Routing Table
+Route conflicts fail at load time. For example, `site/about.md` and `site/about.html` both want `/about`; QIP rejects that layout instead of choosing one at runtime.
 
-| Source File | Pretty Route (Processed) | Source Route (Raw) | Content-Type |
-| :--- | :--- | :--- | :--- |
-| `site/index.md` | `/` | `/index.md` | `text/html` (pretty) / `text/markdown` (raw) |
-| `site/docs/index.md` | `/docs` | `/docs/index.md` | `text/html` (pretty) / `text/markdown` (raw) |
-| `site/contact.html` | `/contact` | `/contact.html` | `text/html` |
-| `site/images/logo.png` | N/A | `/images/logo.png` | `image/png` |
-| `site/start.uri` | `/start` | `/start.uri` | `text/uri-list` (Redirect target) |
+## Recipe Execution
 
-### Strict Conflict Resolution
-* **Claim**: We reject duplicate route assignments at server startup.
-* **Reason**: If different source files attempt to register the exact same canonical path, runtime serving becomes non-deterministic. Failing early at build/load time ensures full determinism.
-* **Example**: If you have both `site/about.md` and `site/about.html` in the root, the router detects that both want to claim the pretty route `/about`. QIP immediately aborts startup with a compilation error:
-  `duplicate route path "/about" for "site/about.html" and "site/about.md"`.
+Recipes run by source MIME type. A Markdown page uses `_recipes/text/markdown/*.wasm`; an HTML page uses `_recipes/text/html/*.wasm`.
 
----
+Recipe filenames must use a numeric prefix:
 
-## 🧪 3. Recipe Execution Pipeline
+- `NN-name.wasm` for an active recipe
+- `-NN-name.wasm` for a disabled recipe
 
-Recipes are WebAssembly filters that automatically transform static source files into final webpage responses based on the file's **Source MIME Type**.
+QIP runs active recipes in ascending prefix order. Duplicate active prefixes in the same MIME directory are an error.
 
-### Numeric Order & Sorting
-* **Claim**: We execute content recipes sequentially in strict ascending order of their two-digit numeric filenames.
-* **Reason**: Sequential numeric ordering ensures deterministic pipeline state transitions without requiring complex dependency charts or external DAG configuration files.
-* **Example**: For `text/markdown`, if `site/_recipes/text/markdown/` contains `10-markdown-render.wasm` and `20-html-wrap.wasm`, the markdown-render module runs first (converting raw Markdown to HTML), followed by the wrap module (which wraps the HTML in a template header and footer).
+Example:
 
-```mermaid
-graph LR
-    Input[site/about.md] -->|Read Raw Bytes| Stage1[10-markdown-render.wasm]
-    Stage1 -->|Emits HTML Body| Stage2[20-html-wrap.wasm]
-    Stage2 -->|Emits Styled Webpage| Output[Final HTTP Response]
+```txt
+site/
+  about.md
+  _recipes/text/markdown/10-markdown-render.wasm
+  _recipes/text/markdown/20-html-wrap.wasm
 ```
 
-### Prefix Mismatch Prevention
-To prevent non-deterministic pipeline ordering, the recipe loader enforces strict filename formats:
+For `/about`, QIP reads `about.md`, runs `10-markdown-render.wasm`, then runs `20-html-wrap.wasm`. For `/about.md`, QIP serves the raw Markdown source route and does not run the markdown recipe chain.
 
-* **Format**: Filenames must match `NN-name.wasm` or `-NN-name.wasm` (where `NN` is a two-digit decimal string and `name` contains ASCII alphanumeric characters).
-* **Prefix Uniqueness**: No two active recipes within the same MIME directory are allowed to share the same prefix number. If a duplicate prefix is found (e.g., `10-render.wasm` and `10-minify.wasm`), route loading fails instantly.
-* **Disabling Recipes**: Prepend a hyphen (`-`) to the numeric prefix (e.g., `-10-render.wasm`) to fully disable the module and exclude it from the pipeline.
+## WARC Recipes
 
----
+Ordinary content recipes only see the current response. Use `application/warc` recipes for whole-site work such as link checks, sitemap generation, redirects, or export rewrites.
 
-## ⚡ 4. Dynamic Dev Server & Hot Reloading
+During development, use single-path commands for faster feedback:
 
-The `qip dev` workspace provides immediate feedback by reloading only the modified files without losing server state.
+```sh
+qip router get ./site /docs/router
+qip router head ./site /docs/router
+```
 
-* **Claim**: We scan file timestamps dynamically on browser hard refresh and reload via SIGHUP instead of running background directory pollers.
-* **Reason**: This provides absolute determinism and eliminates file-system CPU thrashing in idle states, ensuring we only recompile WASM components when actual, active changes occur.
-* **Example**: When the developer edits a recipe and presses `Cmd+Shift+R` (hard refresh), the dev server catches the cache-control headers, detects mismatching file stamps, compiles only the modified modules, and instantly swaps the state.
+Before publishing, run the whole-site path:
 
----
+```sh
+qip router warc ./site
+```
 
-## 📋 5. Decision Rubric & Troubleshooting Checklist
+## Dev Reload
 
-Use this quick checklist to resolve routing and recipe behavior:
+`qip dev` reloads route and recipe state on browser hard reload, recipe file changes, or `SIGHUP`. If a reload fails, the previous valid state keeps serving.
 
-- [ ] **My recipe is not running**: 
-  - Ensure the recipe file is inside `<recipe-root>/<type>/<subtype>/` where `type/subtype` matches the **Source MIME Type** (e.g., `_recipes/text/markdown/`).
-  - Verify the filename begins with a two-digit prefix (e.g., `10-my-recipe.wasm`).
-- [ ] **I want to serve raw markdown/HTML instead of running recipes**:
-  - Request the exact file path including extension (e.g., `/docs/router.md`).
-- [ ] **My pipeline fails with duplicate prefix error**:
-  - Check the recipe folder. Ensure no two files start with the same prefix number.
-  - Disable one of them by prefixing a hyphen (e.g., `-10-old-recipe.wasm`).
-- [ ] **My form component isn't rendering**:
-  - Verify that `<qip-form name="contact">` matches a compiled form at `_forms/contact.wasm`.
-  - QIP will abort the HTTP request with an error if a form is defined in HTML but is missing from the compiled `_forms` directory.
+This avoids background polling as the primary mental model: edit a file, reload the browser or send `SIGHUP`, and QIP rebuilds the relevant route state.
 
----
+## Troubleshooting
 
-## 🚫 When Not to Use This Model
+- Recipe is not running:
+  Check that the file is in `<recipe-root>/<type>/<subtype>/`, that the source file's MIME type matches that directory, and that the recipe filename starts with a two-digit prefix.
+- You are seeing rendered HTML but wanted raw Markdown:
+  Request the extension-exact source route, such as `/docs/router.md`.
+- Duplicate prefix error:
+  Two active recipe files in one MIME directory start with the same `NN`. Rename one or disable it with a leading `-`.
+- Form component is missing:
+  Check that `<qip-form name="contact">` has a matching `_forms/contact.wasm`.
 
-* Do not use individual content recipes to perform site-wide analytics or link checks. Because content recipes can only see the raw bytes of the current request, they lack global context. Use `application/warc` recipes instead, as they operate over the entire routed site archive.
-* Avoid using deep directory structures under `_recipes/` (e.g., `_recipes/text/markdown/subfolder/`). QIP only reads files directly residing in the immediate MIME folder. Nested directories are reserved for future path-scoped recipe selectors and are currently ignored.
+## When Not To Use This Model
+
+Do not use a per-content recipe for work that needs whole-site context. Link checks, sitemap generation, and route synthesis belong in `application/warc` recipes because they operate over the routed archive.
+
+Do not put nested recipe folders under `_recipes/<type>/<subtype>/` expecting path-scoped behavior. QIP currently reads only the immediate MIME directory; nested recipe roots are reserved for future routing rules.

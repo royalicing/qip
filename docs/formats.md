@@ -1,6 +1,6 @@
 # Formats and Encodings
 
-`qip` intentionally chooses old, boring, open formats:
+`qip` intentionally chooses old & boring open formats:
 
 - Simpler parsing and fewer edge cases.
 - Broad ecosystem of existing tooling.
