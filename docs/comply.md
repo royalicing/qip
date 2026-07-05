@@ -2,19 +2,26 @@
 
 `qip comply` is for turning a QIP component contract into an executable conformance check.
 
-A comply module is a small conformance suite. It is not the implementation's own
-unit test suite, and it is not a wrapper around `qip run`. It is a WebAssembly
-component that imports the implementation as `impl`, drives the public QIP ABI,
-and reports whether the implementation obeys a reusable contract.
+A comply module is a small conformance suite. It is not the implementation's own unit test suite, and it is not a wrapper around `qip run`. It is a WebAssembly component that imports the implementation component module as `impl`, drives the public QIP interface, and reports whether the implementation obeys a reusable contract.
 
-Use comply modules for behavior that more than one component may need to satisfy:
-"preserve empty input", "reject invalid UTF-8", "normalize phone numbers", or
-"accept exactly the Luhn-valid account numbers".
+Use comply modules for behavior that more than one component may need to satisfy: "preserve empty input", "reject invalid UTF-8", "normalize phone numbers", or "accept exactly the Luhn-valid account numbers".
 
-We usually write small comply modules in WebAssembly text (`.wat`) because the
-host contract is tiny and the memory layout is explicit. Larger spec suites can
-be written in a higher-level language when the checker needs parsing, embedded
-fixtures, or a large corpus.
+We usually write small comply modules in WebAssembly text (`.wat`) because the host contract is tiny and the memory layout is explicit. Larger spec suites can be written in a higher-level language when the checker needs parsing, embedded fixtures, or a large corpus.
+
+## Why A Separate Checker
+
+Think of `qip comply` as double-entry accounting for component behavior. The
+implementation and the comply module are written separately, then you check
+that the two agree.
+
+That separation is useful because it reduces implementation bias. When possible,
+derive the comply module from a trusted specification, published examples, or a
+small independent oracle. For new behavior, writing the comply module first can
+serve the same role as test-driven development: it forces the contract to exist
+before implementation details start shaping the tests.
+
+Note if both the implementation and the checker are copied from the
+same mistaken code path, they can still agree on wrong behavior.
 
 ## Command
 
