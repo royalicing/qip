@@ -40,10 +40,19 @@ That is why recipes are selected by MIME type, why Content components can conver
 
 For example, `qip router warc ./site` produces a Web Archive. Another component can turn that archive into a static tarball, check links, add derived metadata, or prepare it for a deployment target.
 
+## Adopting QIP In An Existing App
+
+QIP fits into existing apps when a small content transform should work the same across platforms, or when generated code should run without filesystem, network, environment, or secret access.
+
+Keep the app in charge of routing, auth, storage, and product workflow. Move a small deterministic transformation into a QIP component: render Markdown, validate HTML, normalize an identifier, transform an image, or generate a QR code. The component gets only the bytes the app passes in, and the app gets portable behavior it can test by comparing output bytes.
+
+See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checklist.
+
 
 <nav class="docs-sidebar" aria-label="Docs">
 <ol>
 <li><a href="/docs">Why QIP Exists</a></li>
+<li><a href="/docs/adopting-qip">Adopting QIP In Existing Apps</a></li>
 <li><a href="/docs/how-it-works">How QIP Works</a></li>
 <li><a href="/docs/component-contract">QIP Component Contract</a></li>
 <li><a href="/docs/module-patterns">QIP Component Patterns</a></li>

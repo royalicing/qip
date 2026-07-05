@@ -6,6 +6,7 @@ qip favors explicit contracts and simple pipelines. QIP components are sandboxed
 
 ## Core Docs
 
+- [Adopting QIP in existing apps](/docs/adopting-qip.md): Practical guidance for introducing QIP as narrow, portable components inside existing applications.
 - [How qip works](/docs/how-it-works.md): End-to-end runtime model for QIP components, routing, and recipes.
 - [Component contract](/docs/component-contract.md): Required exports, memory pointers, capacities, and host interaction rules.
 - [Module patterns](/docs/module-patterns.md): Practical implementation patterns for QIP components.

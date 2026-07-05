@@ -2,11 +2,19 @@
 
 QIP Components are Quick to run/make/maintain, Isolated from network/disk/dependencies, and Portable across browser/server/native.
 
-You write or vibe C/Zig, compile it to WebAssembly and have a deterministic puzzle piece that will run the same everywhere. These components can work with text, images, or any binary data, and then be composed into predictable recipes. Make a recipe you like? You can be confident it’ll work identically on mobile, in a browser, in your CI pipeline, on Windows, or whatever comes next.
+QIP Components are fast for you to create with coding agents and fast for users to run. Your users get small `.wasm` modules that load fast. You get small amounts of code that are easy to review.
 
-Because they are self-contained with no required dependencies they will keep working for years to come. This means you can worry less about supply-chain attacks, outdated libraries, remote-code-execution, and environment or file-system access.
+We believe small functions should not need a massive application environment to run. QIP is for small pieces of software. Write or vibe Zig/C then compile to WebAssembly, and you get a deterministic puzzle piece that runs the same everywhere.
 
-Your users get small `.wasm` modules that load fast, you get small amounts of code that is easy to review.
+Use it for text, images, documents, archives, interactive UI, or any format. Components pass content in and content out, with  an optional MIME type for each side. You can pipe component into another step-by-step like a recipe.
+
+Make a recipe you like? You can be confident it will work identically on mobile, in a browser, in your CI pipeline, on Windows, or whatever comes next. If it works here, it works there.
+
+Modern software never stops moving. QIP components are self-contained, so you can worry less about supply-chain attacks, outdated libraries, remote-code execution, and environment drift.
+
+QIP is built around a strict contract: same component, same input, same output. It does not read the clock, locale, filesystem, package graph, environment variables, OS, device, chipset, or network — unless you deliberately pass it in. Every input is explicit. This means if it works today, it’ll work tomorrow.
+
+Components, AI coding, security: you can pick all three.
 
 ## Install CLI
 
@@ -21,6 +29,7 @@ QIP does not use WASI or WIT, standards that have ballooned in complexity from s
 - `input_ptr()` / `input_bytes_cap()`: where the host writes input.
 - `output_ptr()` / `output_bytes_cap()`: where your module writes its output.
 - `render(input_size)`: function to transform input and return output length in bytes.
+- Optional `uniform_set_<key>(value)`: primitive integer or float parameters applied explicitly before rendering.
 
 You can read more about the [component contract in our docs](./docs/component-contract.md#qip-component-contract).
 
@@ -461,9 +470,17 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 
 ## TODO
 
+- [ ] Rename CLI command to `qip router dev`
+- [ ] Increase recipe order prefix from `nn` to `nnn`.
+- [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
+- [ ] Add optional field telemetry for deployed QIP components: user-experience metrics such as component hash, host/runtime/device class, time to first QIP paint p75/p95/p99, render-to-paint delay p75/p95/p99, interactive event-to-painted-frame p75/p95/p99, sampled pipeline render p95/p99, frame-budget miss rate, trap/timeout rate, and slowest device classes so production performance can be compared without changing the component contract.
+- [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
+- [ ] Box shadow renderer that compares how Chrome, Safari, Firefox, and Figma all render box shadows. Lets you see all of them together at once and change widths and colors.
+- [ ] Rename `<qip-preview>` to `<qip-run>` or `<qip-render>` or something more clear.
 - [ ] Add TypeScript-to-JavaScript type stripper.
 - [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
+- [ ] Add DOOM example.
 - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
 - [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
 - [x] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
@@ -476,6 +493,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
 - [ ] Add spreadsheet example.
 - [ ] Add bar charts.
+- [ ] Add scatter plot charts.
 - [ ] Add pixel editor.
 - [ ] Add Cover Flow example.
 - [ ] Add Figma vector networks example.
