@@ -63,7 +63,7 @@ Render Markdown locally with the same QIP component used by the router.
 </section>
 
 <script type="module">
-import { render } from "/qip-runner.js";
+import { contentComponent, contentContract } from "/qip-runner.js";
 
 const input = document.getElementById("markdown-input");
 const output = document.getElementById("html-output");
@@ -71,14 +71,17 @@ const preview = document.getElementById("markdown-preview");
 const renderButton = document.getElementById("markdown-render");
 const copyButton = document.getElementById("markdown-copy");
 const status = document.getElementById("markdown-status");
-const component = await WebAssembly.compileStreaming(fetch("/components/text/markdown/commonmark.0.31.2.wasm"));
+const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
+const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
+const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/markdown/commonmark.0.31.2.wasm"));
+const renderMarkdownComponent = contentComponent(markdown, componentModule, html);
 input.value = "# Hello from QIP\n\nThis Markdown is rendered by a browser-loaded WebAssembly component.";
 
 function renderMarkdown() {
   try {
-    const result = render(component, input.value);
-    output.value = result.value;
-    preview.innerHTML = result.value;
+    const result = renderMarkdownComponent(input.value);
+    output.value = result;
+    preview.innerHTML = result;
     status.textContent = "Rendered.";
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
