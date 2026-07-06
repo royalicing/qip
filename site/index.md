@@ -1,82 +1,78 @@
 <title>QIP: reproducible rendering</title>
 
 <style>
-.hero-left {
-    padding-bottom: 1lh;
+h1 + a, nav > a  {
+    text-align: center;
+    display: inline-block;
+    margin-bottom: var(--paragraph-leading);
+    padding: 0.5lh 1.5em;
+    border: 1px solid currentColor;
+    border-radius: 10000px;
+    text-decoration: none;
 
-    a {
-        text-align: center;
-        display: inline-block;
-        padding: 0.5lh 1.5em;
-        border: 1px solid currentColor;
-        border-radius: 10000px;
-        text-decoration: none;
-
-        &:hover {
-            background: rgba(255, 255, 255, 0.125);
-        }
+    &:hover {
+        background: rgba(255, 255, 255, 0.125);
     }
-}
-
-@media (min-width: 940px) {
-    .hero-left {
-        max-width: 48%;
-        float: left;
-    }
-    .hero-right {
-        max-width: 48%;
-        float: right;
-    }
-    hr { clear: both }
 }
 </style>
 
-<section class="hero-left">
-
-<h1>Easy to write, fast to run, hard to break.</h1>
-
-<p>QIP: quick, isolated & portable components.</p>
+<h1>Components that are<br> <em>Quick</em> to make/maintain/run, <em>Isolated</em> from net/disk/deps, <em>Portable</em> to web/server/native.</h1>
 
 <a href="/docs">Read the docs</a>
 
-</section>
+QIP components are fast to create with coding agents and fast for users to run.
 
-<section class="hero-right">
+Users get small `.wasm` modules that load quickly. You get code small enough to review.
 
-## Reproducible rendering across every platform.
-
-Same input, same output everywhere: browser, server, mobile, native, CLI, CI, and edge. If it renders today, QIP’s strict contract is designed so it renders the same tomorrow.
-
-QIP components are fast to create with coding agents and fast for users to run. Users get small `.wasm` modules that load quickly. You get code small enough to review.
-
-Use QIP components for text, images, documents, archives, interactive UI, or any format. Components pass content in and content out, with  an optional MIME type for each side. You can pipe component into another step-by-step like a recipe.
-
-Make a recipe you like? You can be confident it will work identically on mobile, in a browser, in your CI pipeline, on Windows, or whatever comes next. If it works here, it works there.
-
-Modern software never stops moving. QIP components are self-contained, so you can worry less about supply-chain attacks, outdated libraries, remote-code execution, and environment drift.
-
-QIP is built around a strict contract: same component, same input, same output. It does not read the clock, locale, filesystem, package graph, environment variables, OS, device, chipset, or network — unless you deliberately pass it in. Every input is explicit. This means if it works today, it’ll work tomorrow.
-
-QIP Components are Quick to run/make/maintain, Isolated from network/disk/dependencies, and Portable across browser/server/native.
-
-</section>
+Render across browser, server, mobile, native, CLI, and CI. Same input, same output everywhere.
 
 ---
 
-## Content-first components
+## Render any content
+
+Use QIP components for text, images, documents, archives, interactive UI, or any MIME type.
+
+Just like the web is `request -> response`, with QIP components are `input -> output`. But QIP components are not tied to HTML or JavaScript: they work with any content as input or as output.
+
+Your components can render Markdown into HTML, URLs into QR codes, SVG into bitmap images, or WARC archives into deployable websites. Missing something? Prompt a small component and add it to your collection.
 
 ```bash
-du -h modules/text/markdown/commonmark.0.31.2.wasm
-# 48K    modules/text/markdown/commonmark.0.31.2.wasm
-
-echo "# A Markdown renderer that works identically cross-platform!" \
+echo "# A Markdown renderer that works _identically_ on any platform" \
 | qip run modules/text/markdown/commonmark.0.31.2.wasm
-# <h1>A Markdown renderer that works identically cross-platform!<h1>
+# <h1>A Markdown renderer that works <em>identically</em> on any platform<h1>
 ```
 
-QIP components render content. Just like the web is request -> response, with QIP components you pass content in and get content out. But QIP components are not tied to HTML, JavaScript, Custom Elements, props, imports, or app schemas: they work with any content as input or as output.
+<nav>
+<a href="/markdown-to-html">Try Markdown renderer</a>
+</nav>
 
-Your component can turn one content type into another such as Markdown into HTML, URLs into QR codes, SVG into bitmap images, or WARC archives into deployable websites. Missing something? Prompt a small component and add it to your collection.
+## Repeatable recipes
+
+You can pipe one component into another step-by-step like a recipe.
+
+Make a recipe you like? It will work identically on mobile, in a browser, in your CI pipeline, or on Windows. You can be confident if it works here, it works there.
+
+For example, one component can render Markdown to HTML, then the next component can highlight TSX code blocks in that HTML.
+
+```bash
+printf '%s\n' \
+  '# Markdown with code snippet' \
+  '' \
+  '```tsx' \
+  'export function Button({ label }: { label: string }) {' \
+  '  return <button>{label}</button>;' \
+  '}' \
+  '```' \
+| qip run \
+  modules/text/markdown/commonmark.0.31.2.wasm \
+  modules/text/html/highlight-syntax-highlight-tsx.wasm
+
+# <h1>Markdown with code snippet</h1>
+# <pre><code class="language-tsx hljs"><span class="hljs-keyword">export</span> <span class="hljs-keyword">function</span> Button({ label }: { label: <span class="hljs-type">string</span> }) {
+#   <span class="hljs-keyword">return</span> <span class="hljs-tag">&lt;button&gt;</span>{label}&lt;/button&gt;;
+# }
+# </code></pre>
+```
 
 ## Browser rendering
 
@@ -85,9 +81,11 @@ Load the exact same Markdown component in the browser with the `<qip-preview>` c
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
     &lt;qip-preview&gt;
         &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-        &lt;textarea name=&quot;input&quot; rows=&quot;3&quot; placeholder=&quot;Write some Markdown&quot;
+        &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;textarea name=&quot;input&quot; rows=&quot;5&quot; placeholder=&quot;Write some Markdown&quot;
         &gt;# A Markdown renderer that works identically cross-platform! Try typing…&lt;/textarea&gt;
-        &lt;output name=&quot;output&quot;&gt;&lt;/output&gt;
+        &lt;output name=&quot;output&quot;&gt;&lt;pre&gt;&lt;code&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/output&gt;
+        &lt;output name=&quot;output&quot;&gt;&lt;iframe title=&quot;Rendered HTML preview&quot; sandbox&gt;&lt;/iframe&gt;&lt;/output&gt;
     &lt;/qip-preview&gt;
 &lt;/form&gt;
 </code></pre>
@@ -95,9 +93,11 @@ Load the exact same Markdown component in the browser with the `<qip-preview>` c
 <form aria-label="Markdown to HTML">
     <qip-preview>
         <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
-        <textarea name="input" rows="3" placeholder="Write some Markdown"
+        <source src="/components/text/html/highlight-syntax-highlight-tsx.wasm" type="application/wasm" />
+        <textarea name="input" rows="5" placeholder="Write some Markdown"
         ># A Markdown renderer that works identically cross-platform! Try typing…</textarea>
-        <output name="output"></output>
+        <output name="output" style="min-height: 5lh"><pre><code></code></pre></output>
+        <output name="output" style="min-height: 5lh"><iframe title="Rendered HTML preview" sandbox></iframe></output>
     </qip-preview>
 </form>
 
@@ -110,6 +110,12 @@ Interactive QIP Components receive keyboard & pointer events and render out pixe
 </qip-play>
 
 See [`/play`](/play) for more interactive examples, or [`/charts`](/charts) for chart-focused components.
+
+## Pick three: components, AI coding, security
+
+Modern software is tied to an ecosystem that never stops moving. QIP components are self-contained, so you can worry less about supply-chain attacks, outdated libraries, remote-code execution, and environment drift.
+
+QIP is built around a strict contract: same component, same input, same output. It does not read the clock, locale, filesystem, package graph, environment variables, OS, device, chipset, or network — unless you deliberately pass it in. Every input is explicit. This means if it works today, it’ll work tomorrow.
 
 ## Utilities that run cross-platform
 
@@ -190,6 +196,20 @@ Your users get small `.wasm` modules that load fast, and you get small amounts o
 A small function that transforms data should not need a whole application environment around it. Put the small, valuable transformations in QIP so they become portable, predictable, hard to break, and easy to test.
 
 Components, AI coding, security: you can pick all three.
+
+## FAQ
+
+### How is QIP different from Flutter?
+
+Flutter is a way to build an app. QIP is a way to package a small piece of deterministic work so it can run inside many apps.
+
+Flutter helps you write one app for many platforms. QIP helps you write one component for many apps.
+
+### How is QIP different from WASI?
+
+WASI is useful when a WebAssembly program needs operating-system-like capabilities. QIP is narrower. A QIP component gets bytes from the host, transforms them, and returns bytes. It does not get filesystem, network, environment, clock, or secrets by default.
+
+That smaller contract is the point. It makes components easier to run in browsers, mobile apps, servers, CI, and native hosts without giving them an operating-system-shaped API.
 
 ## Learn more
 
