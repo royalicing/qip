@@ -483,6 +483,8 @@ func detectSourceMIME(relPath string) string {
 		return "text/markdown"
 	case ".uri", ".uris":
 		return "text/uri-list"
+	case ".sqlite", ".sqlite3":
+		return "application/vnd.sqlite3"
 	}
 
 	mimeType := mime.TypeByExtension(ext)
