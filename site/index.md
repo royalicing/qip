@@ -126,6 +126,7 @@ We believe small functions should not need a massive application environment to 
 - [CSS minifier](/css-minifier)
 - [JPEG location stripper](/jpeg-location-stripper)
 - [Image color palette extractor](/image-color-palette)
+- [SQLite as a payload](/sqlite)
 
 ## Interactive explainers
 

@@ -1,0 +1,1 @@
+../../tools/sqlite-jswasm/sqlite3.mjs
