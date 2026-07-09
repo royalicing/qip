@@ -30,7 +30,7 @@ ZIG_WASM_MAX_MEMORY ?= 67108864
 
 MODULE_WAT_FILES := $(shell find modules -type f -name '*.wat')
 MODULE_C_FILES := $(shell find modules -type f -name '*.c')
-MODULE_ZIG_FILES := $(shell find modules -path 'modules/interactive/assets' -prune -o -type f -name '*.zig' -print)
+MODULE_ZIG_FILES := $(shell find modules \( -path 'modules/interactive/assets' -o -type d -name 'lib' \) -prune -o -type f -name '*.zig' -print)
 
 MODULE_WAT_TARGETS := $(patsubst %.wat,%.wasm,$(MODULE_WAT_FILES))
 MODULE_C_TARGETS := $(patsubst %.c,%.wasm,$(MODULE_C_FILES))
@@ -39,7 +39,10 @@ MODULE_ZIG_TARGETS := $(patsubst %.zig,%.wasm,$(MODULE_ZIG_FILES))
 modules/%.wasm: modules/%.wat
 	wat2wasm $< -o $@
 
-modules/bytes/sqlite-table-names.wasm: modules/bytes/sqlite-table-names.c
+SQLITE3_ZIG_MODULES := sqlite-first-table-dump sqlite-schema sqlite-table-dump sqlite-table-csv sqlite-row-lookup sqlite-table-count
+$(foreach m,$(SQLITE3_ZIG_MODULES),modules/application/vnd.sqlite3/$(m).wasm): modules/application/vnd.sqlite3/lib/sqlite.zig
+
+modules/application/vnd.sqlite3/sqlite-table-names.wasm: modules/application/vnd.sqlite3/sqlite-table-names.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 modules/utf8/text-to-bmp.wasm: modules/utf8/text-to-bmp.c
@@ -124,6 +127,7 @@ test-node: qip modules
 	node --test test/html-id-validator.mjs
 	node --test test/luhn.mjs
 	node --test test/trace-with.mjs
+	node --test test/sqlite-modules.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
 test-deno: qip modules
