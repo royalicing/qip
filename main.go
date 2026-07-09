@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 	"unsafe"
@@ -3882,6 +3883,11 @@ type wasmRunDriver struct {
 	allowMissingInputContentType bool
 }
 
+// Instance names must be unique among live modules within a wazero runtime,
+// and pipelines are shared across concurrent requests, so each execution gets
+// its own name.
+var wasmRunInstanceCounter atomic.Uint64
+
 func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, requestID uint64) (qinternal.Content, error) {
 	inputBytes, err := qinternal.AsRawBytes(input)
 	if err != nil {
@@ -3892,6 +3898,8 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 		inputBytes = bmp.RawBytes()
 	}
 
+	instanceName := fmt.Sprintf("%s-r%d-e%d", d.instanceName, requestID, wasmRunInstanceCounter.Add(1))
+
 	// Implementation of executeModuleWithInput logic adapted to Content
 	exec, err := executeModuleWithInput(
 		ctx,
@@ -3899,14 +3907,14 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 		d.compiled,
 		inputBytes,
 		d.opts,
-		d.instanceName,
+		instanceName,
 		d.uniforms,
 		qinternal.ContentTypeOf(input),
 		d.allowMissingInputContentType,
 	)
 	if err != nil {
 		if d.opts.traceWith != "" {
-			traceReport, traceErr := traceRunModuleAfterTrap(ctx, d.opts.traceWith, d.moduleBody, inputBytes, d.opts, d.instanceName+"-trace", d.uniforms, qinternal.ContentTypeOf(input), d.allowMissingInputContentType)
+			traceReport, traceErr := traceRunModuleAfterTrap(ctx, d.opts.traceWith, d.moduleBody, inputBytes, d.opts, instanceName+"-trace", d.uniforms, qinternal.ContentTypeOf(input), d.allowMissingInputContentType)
 			if traceErr != nil {
 				err = fmt.Errorf("%w\ntrace retry failed: %v", err, traceErr)
 			} else if traceReport != "" {
