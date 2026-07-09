@@ -126,7 +126,9 @@ test-node: qip modules
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/html-id-validator.mjs
 	node --test test/luhn.mjs
+	node --test test/qip-wasm-safety-check.mjs
 	node --test test/trace-with.mjs
+	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
