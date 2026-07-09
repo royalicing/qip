@@ -2234,6 +2234,10 @@ func executeModuleWithInput(
 	switch {
 	case hasDeclaredOutputContentType:
 		exec.outputContentType = declaredOutputContentType
+	case exec.output.encoding == dataEncodingUTF8 && input.encoding != dataEncodingUTF8:
+		// A bytes-in, UTF-8-out component produces new text; the incoming
+		// (binary) pipeline content type does not describe its output.
+		exec.outputContentType = ""
 	case exec.output.encoding == dataEncodingUTF8 || exec.output.encoding == dataEncodingRaw:
 		exec.outputContentType = effectiveIncomingContentType
 	default:

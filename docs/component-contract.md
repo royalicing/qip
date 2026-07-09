@@ -64,7 +64,7 @@ These are the composition rules for QIP component pipelines:
 - If a component does not export input content type and uses `input_utf8_cap`, it is treated as a generic UTF-8 transform and may compose with any UTF-8 pipeline input.
 - If a component does not export input content type and uses `input_bytes_cap`, it is treated as a generic bytes transform and may compose with any bytes pipeline input.
 - If a component exports `output_content_type_ptr`/`output_content_type_size`, that MIME type becomes the pipeline content type for downstream stages.
-- If a component does not export output content type and uses `output_utf8_cap`, the existing pipeline content type is preserved.
+- If a component does not export output content type and uses `output_utf8_cap`, the existing pipeline content type is preserved when the component also reads UTF-8 input (`input_utf8_cap`). When it reads bytes (`input_bytes_cap`), its output is new text and the pipeline content type becomes unspecified.
 - If a component does not export output content type and uses `output_bytes_cap`, the existing pipeline content type is preserved.
 
 ### Memory Recommendations
