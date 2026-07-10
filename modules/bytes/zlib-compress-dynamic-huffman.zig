@@ -213,6 +213,12 @@ fn findMatch(input: []const u8, pos: usize) Match {
 }
 
 fn encodeLength(length: usize) LengthEncoding {
+    // Symbol 284 covers lengths 227-257 per RFC 1951 even though its 5 extra
+    // bits could reach 258; length 258 is exactly symbol 285.
+    if (length == MAX_MATCH) {
+        return .{ .symbol = 285, .extra_bits = 0, .extra_value = 0 };
+    }
+
     var i: usize = 0;
     while (i < LENGTH_BASE.len) : (i += 1) {
         const base = LENGTH_BASE[i];
