@@ -91,6 +91,7 @@ modules/text/html/html-page-wrap.wasm: recipes/text/markdown/80-html-page-wrap.w
 	cp $< $@
 
 modules/application/warc/warc-check-broken-links.wasm: ZIG_WASM_MAX_MEMORY = 167772160
+modules/application/warc/warc-check-broken-module-imports.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 modules/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
@@ -306,7 +307,7 @@ wasm-safety-report: qip modules
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
 site-static: qip
-	$(QIP_BIN) router warc ./site --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
+	$(QIP_BIN) router warc ./site --view-source | $(QIP_BIN) run modules/application/warc/warc-check-broken-links.wasm modules/application/warc/warc-check-broken-module-imports.wasm modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
 
