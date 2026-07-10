@@ -156,7 +156,7 @@ Use `<qip-play>` to render them in the browser, or use our SDK to render them in
 
 ---
 
-<qip-play canvas-width="min(780px, 100%)" canvas-height="auto">
+<qip-play canvas-width="min(762px, 100%)" canvas-height="auto">
   <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>
 

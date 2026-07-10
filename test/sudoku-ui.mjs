@@ -2,46 +2,46 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const WIDTH = 762;
+const HEIGHT = 522;
 const BOARD_X = 18;
 const BOARD_Y = 18;
-const CELL_PX = 56;
-const NUMBER_PAD_X = 562;
-const NUMBER_PAD_Y = 142;
-const CLEAR_X = 562;
-const NEW_X = 658;
-const ACTION_Y = 342;
+const CELL_PX = 54;
+const NUMBER_PAD_X = 544;
+const NUMBER_PAD_Y = 137;
+const CLEAR_X = 608;
+const CLEAR_Y = 329;
+const NEW_X = 592;
+const NEW_Y = 448;
 
 async function makeGame() {
-  const moduleBytes = await readFile("modules/interactive/sudoku.wasm");
-  const { instance } = await WebAssembly.instantiate(moduleBytes, {});
-  return instance.exports;
+  const bytes = await readFile("modules/interactive/sudoku.wasm");
+  return (await WebAssembly.instantiate(bytes, {})).instance.exports;
 }
 
-function press(exportsObj, x, y) {
-  const changed = exportsObj.pointer_event(1, x, y, 0n);
-  exportsObj.pointer_event(0, x, y, 0n);
-  return changed;
-}
-
-function renderCopy(exportsObj) {
-  const outputLen = exportsObj.render(0);
+function render(game) {
+  const length = game.render(0);
   return new Uint8Array(
-    new Uint8Array(exportsObj.memory.buffer, exportsObj.output_ptr(), outputLen),
+    new Uint8Array(game.memory.buffer, game.output_ptr(), length),
   );
 }
 
-function countColorInCell(bytes, renderWidth, idx, color) {
-  const cellX = BOARD_X + (idx % 9) * CELL_PX;
-  const cellY = BOARD_Y + Math.floor(idx / 9) * CELL_PX;
+function press(game, x, y) {
+  const accepted = game.pointer_event(1, x, y, 0n);
+  game.pointer_event(0, x, y, 0n);
+  return accepted;
+}
+
+function countColor(frame, x0, y0, width, height, color) {
   let count = 0;
-  for (let y = cellY + 2; y < cellY + CELL_PX - 2; y++) {
-    for (let x = cellX + 2; x < cellX + CELL_PX - 2; x++) {
-      const off = (y * renderWidth + x) * 4;
+  for (let y = y0; y < y0 + height; y++) {
+    for (let x = x0; x < x0 + width; x++) {
+      const offset = (y * WIDTH + x) * 4;
       if (
-        bytes[off] === color[0] &&
-        bytes[off + 1] === color[1] &&
-        bytes[off + 2] === color[2] &&
-        bytes[off + 3] === color[3]
+        frame[offset] === color[0] &&
+        frame[offset + 1] === color[1] &&
+        frame[offset + 2] === color[2] &&
+        frame[offset + 3] === color[3]
       ) {
         count++;
       }
@@ -50,86 +50,82 @@ function countColorInCell(bytes, renderWidth, idx, color) {
   return count;
 }
 
-function findCellWithColor(bytes, renderWidth, color, minimumPixels) {
-  for (let idx = 0; idx < 81; idx++) {
-    if (countColorInCell(bytes, renderWidth, idx, color) >= minimumPixels) {
-      return idx;
+function findCell(frame, color, minimumPixels) {
+  for (let index = 0; index < 81; index++) {
+    const x = BOARD_X + (index % 9) * CELL_PX;
+    const y = BOARD_Y + Math.floor(index / 9) * CELL_PX;
+    if (countColor(frame, x + 2, y + 2, 50, 50, color) >= minimumPixels) {
+      return index;
     }
   }
   return -1;
 }
 
-function hashBytes(bytes) {
-  let hash = 2166136261;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 16777619);
+function hash(frame) {
+  let value = 2166136261;
+  for (const byte of frame) {
+    value = Math.imul(value ^ byte, 16777619);
   }
-  return hash >>> 0;
+  return value >>> 0;
 }
 
-test("sudoku exposes a wide pointer-operated number pad", async () => {
+test("sudoku supports its primary pointer workflow", async () => {
   const game = await makeGame();
-  assert.equal(game.render_width_px(), 780);
-  assert.equal(game.render_height_px(), 540);
-  const initialFrame = renderCopy(game);
-  const editableIdx = findCellWithColor(
-    initialFrame,
-    780,
-    [242, 201, 76, 255],
-    2000,
-  );
-  assert.notEqual(editableIdx, -1, "expected at least one editable cell");
+  assert.equal(game.render_width_px(), WIDTH);
+  assert.equal(game.render_height_px(), HEIGHT);
 
-  let frame = null;
-  let readableDigitPixels = 0;
+  const initial = render(game);
+  const selected = findCell(initial, [242, 201, 76, 255], 2000);
+  const given = findCell(initial, [255, 255, 255, 255], 1);
+  assert.notEqual(selected, -1);
+  assert.notEqual(given, -1);
+
+  const givenX = BOARD_X + (given % 9) * CELL_PX + 27;
+  const givenY = BOARD_Y + Math.floor(given / 9) * CELL_PX + 27;
+  assert.equal(press(game, givenX, givenY), 0);
+  assert.equal(hash(render(game)), hash(initial));
+
+  assert.equal(press(game, NUMBER_PAD_X + 92, NUMBER_PAD_Y + 92), 1);
+  const selectedX = BOARD_X + (selected % 9) * CELL_PX;
+  const selectedY = BOARD_Y + Math.floor(selected / 9) * CELL_PX;
+  assert.ok(countColor(render(game), selectedX, selectedY, CELL_PX, CELL_PX, [15, 15, 14, 255]) > 0);
+
+  assert.equal(press(game, CLEAR_X + 28, CLEAR_Y + 28), 1);
+  assert.equal(countColor(render(game), selectedX + 2, selectedY + 2, 50, 50, [15, 15, 14, 255]), 0);
+
+  const beforeNew = render(game);
+  assert.equal(press(game, NEW_X + 44, NEW_Y + 28), 1);
+  assert.notEqual(hash(render(game)), hash(beforeNew));
+});
+
+test("sudoku candidate targets are row-major and ignore identical pointer moves", async () => {
+  const game = await makeGame();
+  const initial = render(game);
+  const selected = findCell(initial, [242, 201, 76, 255], 2000);
+  const cellX = BOARD_X + (selected % 9) * CELL_PX;
+  const cellY = BOARD_Y + Math.floor(selected / 9) * CELL_PX;
+
+  let lastX = 0;
+  let lastY = 0;
   for (let digit = 1; digit <= 9; digit++) {
-    const col = (digit - 1) % 3;
-    const row = Math.floor((digit - 1) / 3);
-    press(
-      game,
-      NUMBER_PAD_X + col * 64 + 28,
-      NUMBER_PAD_Y + row * 64 + 28,
+    const slot = digit - 1;
+    const column = slot % 3;
+    const row = Math.floor(slot / 3);
+    lastX = cellX + column * 18 + 9;
+    lastY = cellY + row * 18 + 9;
+
+    assert.equal(game.pointer_event(0, lastX, lastY, 0n), 1);
+    const preview = render(game);
+    assert.ok(
+      countColor(preview, cellX + column * 18, cellY + row * 18, 18, 18, [210, 173, 67, 255]) > 200,
+      `candidate ${digit} did not preview in its row-major slot`,
     );
-    frame = renderCopy(game);
-    readableDigitPixels = countColorInCell(
-      frame,
-      780,
-      editableIdx,
-      [15, 15, 14, 255],
-    );
-    if (readableDigitPixels > 0) break;
+
+    assert.equal(game.pointer_event(0, lastX + 1, lastY + 1, 0n), 0);
+    assert.equal(hash(render(game)), hash(preview));
   }
-  assert.ok(
-    readableDigitPixels > 0,
-    "number-pad input should draw a dark digit on the selected yellow cell",
-  );
 
-  assert.equal(press(game, CLEAR_X + 44, ACTION_Y + 28), 1);
-  frame = renderCopy(game);
-  assert.equal(countColorInCell(frame, 780, editableIdx, [15, 15, 14, 255]), 0);
-});
-
-test("sudoku puzzle givens cannot be selected", async () => {
-  const game = await makeGame();
-  const before = renderCopy(game);
-  const givenIdx = findCellWithColor(before, 780, [255, 255, 255, 255], 1);
-  assert.notEqual(givenIdx, -1, "expected at least one puzzle given");
-
-  const x = BOARD_X + (givenIdx % 9) * CELL_PX + Math.floor(CELL_PX / 2);
-  const y = BOARD_Y + Math.floor(givenIdx / 9) * CELL_PX + Math.floor(CELL_PX / 2);
-  assert.equal(press(game, x, y), 0);
-
-  const after = renderCopy(game);
-  assert.equal(hashBytes(after), hashBytes(before));
-});
-
-test("sudoku can generate a new puzzle from the pointer controls", async () => {
-  const game = await makeGame();
-  const before = renderCopy(game);
-
-  assert.equal(press(game, NEW_X + 44, ACTION_Y + 28), 1);
-  const after = renderCopy(game);
-
-  assert.notEqual(hashBytes(after), hashBytes(before));
+  assert.equal(game.pointer_event(4, lastX, lastY, 0n), 0);
+  assert.equal(press(game, lastX, lastY), 1);
+  assert.ok(countColor(render(game), cellX + 40, cellY + 38, 10, 14, [15, 15, 14, 255]) > 0);
 });

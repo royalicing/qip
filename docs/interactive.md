@@ -58,8 +58,11 @@ We chose `rgba8_srgb` with `stride = width * 4` for direct compatibility with br
 
 - `button_mask` uses only the low 3 bits: primary=`1`, middle=`2`, secondary=`4`.
 - `x_px` and `y_px` are integer pixel coordinates in current render space.
+- When the pointer leaves the rendering surface, the host sends `button_mask=0`, `x_px=-1`, and `y_px=-1`.
 - `now_ms` is monotonic elapsed milliseconds (`i64`) from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
+
+Track pointer state at the same granularity as the interaction. Normalize pointer coordinates once into a semantic hit target, such as `{ cell_index, subcell_index }`, and use that result for both hover and click handling. Compare the proposed hover target with the current one and ignore moves that would render identical pixels. Entering a different target or leaving it is accepted. This avoids calling `tick` for every raw pointer coordinate while preserving responsive hover feedback.
 
 ### Tick + Render Flow
 
@@ -102,7 +105,7 @@ Rules:
 Typical host flow:
 
 1. Deliver input as it arrives via `key_event(...)` / `pointer_event(...)`.
-2. Call `tick(now_ms)` when input is ready to apply, or when host time reaches `next_wake_at_ms`.
+2. Call `tick(now_ms)` when at least one event is accepted, or when host time reaches `next_wake_at_ms`. Do not tick a batch containing only ignored events.
 3. Call `render(0)` after each tick that was run, then read `output_ptr()` bytes.
 4. Schedule the next host wake from the returned `next_wake_at_ms` (if non-zero) and pending input times.
 
@@ -148,3 +151,5 @@ For debug instrumentation, add `debug` to `<qip-play>`. In debug mode the host c
 ## Why This Shape
 
 This ABI keeps packet parsing out of the Wasm module. Hosts adapt browser or native input at the edge, then modules handle a familiar game/UI loop: receive input events, advance state with `tick`, and render the current frame.
+
+See [Testing Interactive Components](/docs/testing-interactive-components) for direct Wasm, host-loop, framebuffer, and browser testing approaches.

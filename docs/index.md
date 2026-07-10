@@ -77,7 +77,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 
 <nav class="docs-sidebar" aria-label="Docs">
 <ol>
-<li><span class="docs-section">Start</span>
+<li><span class="docs-section">Getting Started</span>
 <ol>
 <li><a href="/docs">Why QIP Exists</a></li>
 <li><a href="/docs/how-it-works">How QIP Works</a></li>
@@ -103,6 +103,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/esm-integration">WebAssembly ES Module Integration</a></li>
 <li><a href="/docs/tracing">Tracing</a></li>
 <li><a href="/docs/interactive-rendering-performance">Interactive Rendering Performance</a></li>
+<li><a href="/docs/testing-interactive-components">Testing Interactive Components</a></li>
 </ol>
 </li>
 <li><span class="docs-section">Runtimes</span>

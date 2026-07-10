@@ -5,7 +5,7 @@ Pointer controls:
 - Click a cell to select it.
 - Click `1`-`9` on the number pad to fill the selected editable cell.
 - Use the X button to clear the selected cell or the die button to generate a new puzzle.
-- Click the same empty selected cell again to toggle candidates by 3x3 mini-position.
+- In the selected empty cell, hover a 3x3 mini-position to preview its candidate, then click to toggle it.
 
 Optional keyboard shortcuts:
 
@@ -15,6 +15,6 @@ Optional keyboard shortcuts:
 - Arrow keys: move selection.
 - `R`, `N`, or Enter: generate a new random puzzle.
 
-<qip-play canvas-width="min(780px, 100%)" canvas-height="auto">
+<qip-play canvas-width="min(762px, 100%)" canvas-height="auto">
   <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>

@@ -2,7 +2,7 @@ const GRID: usize = 9;
 const CELLS: usize = GRID * GRID;
 const BOX: usize = 3;
 
-const CELL_PX: usize = 56;
+const CELL_PX: usize = 54;
 const BOARD_PX: usize = GRID * CELL_PX;
 
 const OUTER_X: usize = 18;
@@ -21,21 +21,20 @@ const NUMBER_BUTTON_GAP: usize = 8;
 const NUMBER_GRID_PX: usize = NUMBER_BUTTON_PX * 3 + NUMBER_BUTTON_GAP * 2;
 const NUMBER_PAD_X: usize = CONTROLS_X + (CONTROLS_W - NUMBER_GRID_PX) / 2;
 
-const ACTION_GAP: usize = 16;
 const ACTION_BUTTON_H: usize = 56;
 const ACTION_BUTTON_W: usize = (NUMBER_GRID_PX - NUMBER_BUTTON_GAP) / 2;
-const CONTROL_GROUP_H: usize = NUMBER_GRID_PX + ACTION_GAP + ACTION_BUTTON_H;
+const CONTROL_GROUP_H: usize = NUMBER_GRID_PX + NUMBER_BUTTON_GAP + NUMBER_BUTTON_PX;
 const NUMBER_PAD_Y: usize = BOARD_Y + (BOARD_PX - CONTROL_GROUP_H) / 2;
-const ACTION_Y: usize = NUMBER_PAD_Y + NUMBER_GRID_PX + ACTION_GAP;
-const CLEAR_X: usize = NUMBER_PAD_X;
-const NEW_X: usize = CLEAR_X + ACTION_BUTTON_W + NUMBER_BUTTON_GAP;
+const CLEAR_X: usize = NUMBER_PAD_X + (NUMBER_GRID_PX - NUMBER_BUTTON_PX) / 2;
+const CLEAR_Y: usize = NUMBER_PAD_Y + NUMBER_GRID_PX + NUMBER_BUTTON_GAP;
+const NEW_X: usize = NUMBER_PAD_X + (NUMBER_GRID_PX - ACTION_BUTTON_W) / 2;
+const NEW_Y: usize = BOARD_Y + BOARD_PX - ACTION_BUTTON_H;
 
 const RENDER_W: usize = CONTROLS_X + CONTROLS_W + OUTER_X;
 const RENDER_H: usize = OUTER_TOP + BOARD_PX + OUTER_BOTTOM;
 const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
 
 const BTN_PRIMARY: i32 = 1 << 0;
-const BTN_SECONDARY: i32 = 1 << 2;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const FLAG_SHIFT: i32 = 1 << 2;
@@ -57,6 +56,13 @@ const XK_KP_9: i32 = 0xFFB9;
 
 const LARGE_SCALE: usize = 6;
 const SMALL_SCALE: usize = 2;
+const CANDIDATE_SLOT_PX: usize = CELL_PX / 3;
+
+comptime {
+    if (CELL_PX % 3 != 0 or CELL_PX % LARGE_SCALE != 0) {
+        @compileError("Sudoku cells must align to candidate thirds and large glyph pixels");
+    }
+}
 
 const Color = [4]u8;
 
@@ -68,12 +74,16 @@ const COLOR_GRID_THIN: Color = .{ 0x4A, 0x4A, 0x46, 0xFF };
 const COLOR_GRID_BOLD: Color = .{ 0xF5, 0xF5, 0xF0, 0xFF };
 const COLOR_SELECTED: Color = .{ 0xF2, 0xC9, 0x4C, 0xFF };
 const COLOR_SELECTED_INK: Color = .{ 0x0F, 0x0F, 0x0E, 0xFF };
+const COLOR_HOVER: Color = .{ 0x35, 0x2C, 0x11, 0xFF };
+const COLOR_CANDIDATE_HOVER: Color = .{ 0xD2, 0xAD, 0x43, 0xFF };
+const COLOR_CANDIDATE_HOVER_INK: Color = .{ 0x80, 0x6B, 0x2D, 0xFF };
 const COLOR_SELECTED_CONFLICT: Color = .{ 0x78, 0x18, 0x0C, 0xFF };
 const COLOR_GIVEN: Color = .{ 0xFF, 0xFF, 0xFF, 0xFF };
 const COLOR_VALUE: Color = COLOR_SELECTED;
 const COLOR_CONFLICT: Color = .{ 0xFF, 0x6B, 0x57, 0xFF };
 const COLOR_CAND: Color = .{ 0xA8, 0xA8, 0xA0, 0xFF };
 const COLOR_CONTROL_BG: Color = .{ 0x1C, 0x20, 0x24, 0xFF };
+const COLOR_CONTROL_HOVER: Color = .{ 0x3C, 0x39, 0x2A, 0xFF };
 const COLOR_CONTROL_BORDER: Color = .{ 0x82, 0x8B, 0x94, 0xFF };
 
 const DIGIT_BITMAPS = [10][7]u8{
@@ -88,6 +98,15 @@ const DIGIT_BITMAPS = [10][7]u8{
     .{ 0b11111, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b11111 },
     .{ 0b11111, 0b10001, 0b10001, 0b11111, 0b00001, 0b00001, 0b11111 },
 };
+const X_BITMAP = [7]u8{
+    0b00000,
+    0b10001,
+    0b01010,
+    0b00100,
+    0b01010,
+    0b10001,
+    0b00000,
+};
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
 
@@ -96,12 +115,14 @@ var values: [CELLS]u8 = [_]u8{0} ** CELLS;
 var cands: [CELLS]u16 = [_]u16{0} ** CELLS;
 
 var selected_idx: usize = 0;
+var hovered_idx: usize = CELLS;
+var hovered_candidate: usize = 0;
+var hovered_control: u8 = 0;
 
 var rng_state: u32 = 0xC13FA9A9;
 var game_counter: u32 = 0;
 
 var primary_down: bool = false;
-var secondary_down: bool = false;
 var initialized: bool = false;
 var needs_redraw: bool = true;
 
@@ -175,20 +196,14 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     if (!initialized) resetPuzzle();
 
     const is_primary = (button_mask & BTN_PRIMARY) != 0;
-    const is_secondary = (button_mask & BTN_SECONDARY) != 0;
 
-    var changed = false;
+    var changed = updateHover(x_px, y_px);
 
     if (is_primary and !primary_down) {
         changed = handlePrimaryPress(x_px, y_px) or changed;
     }
 
-    if (is_secondary and !secondary_down) {
-        changed = handleSecondaryPress(x_px, y_px) or changed;
-    }
-
     primary_down = is_primary;
-    secondary_down = is_secondary;
 
     return if (changed) 1 else 0;
 }
@@ -209,7 +224,9 @@ export fn render(input_size: i32) i32 {
 fn resetPuzzle() void {
     initialized = true;
     primary_down = false;
-    secondary_down = false;
+    hovered_idx = CELLS;
+    hovered_candidate = 0;
+    hovered_control = 0;
     game_counter +%= 1;
     rng_state +%= 0x9E3779B9 + game_counter *% 0x85EBCA6B;
 
@@ -368,20 +385,20 @@ fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
     const digit = numberPadDigitAt(x_px, y_px);
     if (digit != 0) return setSelectedCellValue(digit);
 
-    if (pointInRect(x_px, y_px, CLEAR_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H)) {
+    if (pointInRect(x_px, y_px, CLEAR_X, CLEAR_Y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX)) {
         return clearSelectedCell();
     }
 
-    if (pointInRect(x_px, y_px, NEW_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H)) {
+    if (pointInRect(x_px, y_px, NEW_X, NEW_Y, ACTION_BUTTON_W, ACTION_BUTTON_H)) {
         resetPuzzle();
         return true;
     }
 
-    const maybe_hit = locateCell(x_px, y_px);
+    const maybe_hit = locateGrid(x_px, y_px);
     if (maybe_hit == null) return false;
 
     const hit = maybe_hit.?;
-    const idx = hit.idx;
+    const idx = hit.cell_idx;
     if (givens[idx] != 0) return false;
 
     if (idx != selected_idx) {
@@ -392,50 +409,15 @@ fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
 
     if (values[idx] != 0) return false;
 
-    const maybe_digit = candidateAtLocalPoint(hit.local_x, hit.local_y);
-    if (maybe_digit == 0) return false;
-
-    return toggleCandidateAtCell(idx, maybe_digit);
+    return toggleCandidateSelectedCell(@intCast(hit.placeholder_idx + @as(usize, 1)));
 }
 
-fn handleSecondaryPress(x_px: i32, y_px: i32) bool {
-    const maybe_hit = locateCell(x_px, y_px);
-    if (maybe_hit == null) return false;
-
-    const hit = maybe_hit.?;
-    const idx = hit.idx;
-
-    if (givens[idx] != 0) return false;
-
-    selected_idx = idx;
-
-    const maybe_digit = candidateAtLocalPoint(hit.local_x, hit.local_y);
-    if (maybe_digit == 0) {
-        needs_redraw = true;
-        return true;
-    }
-
-    return toggleCandidateAtCell(idx, maybe_digit);
-}
-
-fn toggleCandidateAtCell(idx: usize, digit: u8) bool {
-    if (digit < 1 or digit > 9) return false;
-    if (givens[idx] != 0) return false;
-
-    values[idx] = 0;
-    const bit: u16 = @as(u16, 1) << @as(u4, @intCast(digit - 1));
-    cands[idx] ^= bit;
-    needs_redraw = true;
-    return true;
-}
-
-const CellHit = struct {
-    idx: usize,
-    local_x: usize,
-    local_y: usize,
+const GridHit = struct {
+    cell_idx: usize,
+    placeholder_idx: usize,
 };
 
-fn locateCell(x_px: i32, y_px: i32) ?CellHit {
+fn locateGrid(x_px: i32, y_px: i32) ?GridHit {
     const bx: i32 = @intCast(BOARD_X);
     const by: i32 = @intCast(BOARD_Y);
     const board_px_i32: i32 = @intCast(BOARD_PX);
@@ -452,10 +434,15 @@ fn locateCell(x_px: i32, y_px: i32) ?CellHit {
     const cx = lx / CELL_PX;
     const cy = ly / CELL_PX;
 
-    return CellHit{
-        .idx = cy * GRID + cx,
-        .local_x = lx % CELL_PX,
-        .local_y = ly % CELL_PX,
+    const cell_x = lx % CELL_PX;
+    const cell_y = ly % CELL_PX;
+    const placeholder_x: usize = @min(cell_x / CANDIDATE_SLOT_PX, @as(usize, 2));
+    const placeholder_y: usize = @min(cell_y / CANDIDATE_SLOT_PX, @as(usize, 2));
+    const placeholder_idx: usize = placeholder_y * @as(usize, 3) + placeholder_x;
+
+    return GridHit{
+        .cell_idx = cy * GRID + cx,
+        .placeholder_idx = placeholder_idx,
     };
 }
 
@@ -480,14 +467,47 @@ fn pointInRect(x_px: i32, y_px: i32, x: usize, y: usize, w: usize, h: usize) boo
     return px >= x and px < x + w and py >= y and py < y + h;
 }
 
-fn candidateAtLocalPoint(local_x: usize, local_y: usize) u8 {
-    // Map click position proportionally across the full cell instead of
-    // using CELL_PX/3 buckets. This avoids rounding drift when CELL_PX
-    // is not divisible by 3 and keeps all 9 candidate hit targets stable.
-    const sx = @min((local_x * 3) / CELL_PX, 2);
-    const sy = @min((local_y * 3) / CELL_PX, 2);
+fn updateHover(x_px: i32, y_px: i32) bool {
+    const previous_cell = visibleHoveredCell();
+    const previous_candidate = visibleHoveredCandidate();
+    const previous_control = visibleHoveredControl();
+    const maybe_hit = locateGrid(x_px, y_px);
+    hovered_idx = if (maybe_hit != null and givens[maybe_hit.?.cell_idx] == 0)
+        maybe_hit.?.cell_idx
+    else
+        CELLS;
+    hovered_candidate = if (maybe_hit != null and
+        maybe_hit.?.cell_idx == selected_idx and
+        givens[selected_idx] == 0 and
+        values[selected_idx] == 0)
+        maybe_hit.?.placeholder_idx + @as(usize, 1)
+    else
+        0;
+    hovered_control = numberPadDigitAt(x_px, y_px);
+    if (hovered_control == 0 and pointInRect(x_px, y_px, CLEAR_X, CLEAR_Y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX)) {
+        hovered_control = 10;
+    } else if (hovered_control == 0 and pointInRect(x_px, y_px, NEW_X, NEW_Y, ACTION_BUTTON_W, ACTION_BUTTON_H)) {
+        hovered_control = 11;
+    }
+    return previous_cell != visibleHoveredCell() or
+        previous_candidate != visibleHoveredCandidate() or
+        previous_control != visibleHoveredControl();
+}
 
-    return @as(u8, @intCast(sy * 3 + sx + 1));
+fn visibleHoveredCell() usize {
+    if (hovered_idx >= CELLS or hovered_idx == selected_idx) return CELLS;
+    return hovered_idx;
+}
+
+fn visibleHoveredCandidate() usize {
+    if (hovered_idx != selected_idx or givens[selected_idx] != 0 or values[selected_idx] != 0) return 0;
+    return hovered_candidate;
+}
+
+fn visibleHoveredControl() u8 {
+    if (hovered_control == values[selected_idx]) return 0;
+    if (hovered_control == 10 and values[selected_idx] == 0 and cands[selected_idx] == 0) return 0;
+    return hovered_control;
 }
 
 fn solutionCountUpTo(puzzle: [CELLS]u8, limit: u8) u8 {
@@ -581,10 +601,42 @@ fn candidateMask(grid: [CELLS]u8, idx: usize) u16 {
 fn drawFrame() void {
     fillRect(0, 0, RENDER_W, RENDER_H, COLOR_BG);
     drawBoardBackground();
+    drawHover();
     drawSelection();
+    drawCandidateHover();
     drawGrid();
     drawValuesAndCandidates();
     drawControls();
+}
+
+fn drawHover() void {
+    const idx = visibleHoveredCell();
+    if (idx >= CELLS) return;
+    const px = BOARD_X + (idx % GRID) * CELL_PX;
+    const py = BOARD_Y + (idx / GRID) * CELL_PX;
+    fillRect(px, py, CELL_PX, CELL_PX, COLOR_HOVER);
+}
+
+fn drawCandidateHover() void {
+    const digit = visibleHoveredCandidate();
+    if (digit < 1 or digit > 9) return;
+
+    const pos: usize = digit - 1;
+    const sx = pos % 3;
+    const sy = pos / 3;
+    const cell_x = BOARD_X + (selected_idx % GRID) * CELL_PX;
+    const cell_y = BOARD_Y + (selected_idx / GRID) * CELL_PX;
+    const slot_x = cell_x + sx * CANDIDATE_SLOT_PX;
+    const slot_y = cell_y + sy * CANDIDATE_SLOT_PX;
+    fillRect(slot_x, slot_y, CANDIDATE_SLOT_PX, CANDIDATE_SLOT_PX, COLOR_CANDIDATE_HOVER);
+
+    const bit: u16 = @as(u16, 1) << @as(u4, @intCast(digit - 1));
+    if ((cands[selected_idx] & bit) != 0) return;
+    const gw = 5 * SMALL_SCALE;
+    const gh = 7 * SMALL_SCALE;
+    const x = slot_x + (CANDIDATE_SLOT_PX - gw) / 2;
+    const y = slot_y + (CANDIDATE_SLOT_PX - gh) / 2;
+    drawDigitGlyph(@intCast(digit), x, y, SMALL_SCALE, COLOR_CANDIDATE_HOVER_INK);
 }
 
 fn drawBoardBackground() void {
@@ -611,7 +663,7 @@ fn drawSelection() void {
     const sy = selected_idx / GRID;
     const px = BOARD_X + sx * CELL_PX;
     const py = BOARD_Y + sy * CELL_PX;
-    fillRect(px + 1, py + 1, CELL_PX - 2, CELL_PX - 2, COLOR_SELECTED);
+    fillRect(px, py, CELL_PX, CELL_PX, COLOR_SELECTED);
 }
 
 fn drawGrid() void {
@@ -670,9 +722,6 @@ fn drawCandidateDigits(mask: u16, cell_x: usize, cell_y: usize, color: Color) vo
 
     const gw = 5 * SMALL_SCALE;
     const gh = 7 * SMALL_SCALE;
-    const sub_w = CELL_PX / 3;
-    const sub_h = CELL_PX / 3;
-
     var d: u8 = 1;
     while (d <= 9) : (d += 1) {
         const bit: u16 = @as(u16, 1) << @as(u4, @intCast(d - 1));
@@ -682,8 +731,8 @@ fn drawCandidateDigits(mask: u16, cell_x: usize, cell_y: usize, color: Color) vo
         const sx = pos % 3;
         const sy = pos / 3;
 
-        const x = cell_x + sx * sub_w + (sub_w - gw) / 2;
-        const y = cell_y + sy * sub_h + (sub_h - gh) / 2;
+        const x = cell_x + sx * CANDIDATE_SLOT_PX + (CANDIDATE_SLOT_PX - gw) / 2;
+        const y = cell_y + sy * CANDIDATE_SLOT_PX + (CANDIDATE_SLOT_PX - gh) / 2;
 
         drawDigitGlyph(d, x, y, SMALL_SCALE, color);
     }
@@ -701,8 +750,9 @@ fn drawControls() void {
         const x = NUMBER_PAD_X + col * (NUMBER_BUTTON_PX + NUMBER_BUTTON_GAP);
         const y = NUMBER_PAD_Y + row * (NUMBER_BUTTON_PX + NUMBER_BUTTON_GAP);
         const active = selected_value == digit;
+        const hovered = visibleHoveredControl() == digit;
         const border = if (active) COLOR_SELECTED else if (editable) COLOR_CONTROL_BORDER else COLOR_GRID_THIN;
-        const fill = if (active) COLOR_SELECTED else COLOR_CONTROL_BG;
+        const fill = if (active) COLOR_SELECTED else if (hovered) COLOR_CONTROL_HOVER else COLOR_CONTROL_BG;
         const ink = if (active) COLOR_SELECTED_INK else if (editable) COLOR_GIVEN else COLOR_GRID_THIN;
 
         fillRect(x, y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX, fill);
@@ -710,29 +760,31 @@ fn drawControls() void {
         drawLargeDigit(digit, x, y, ink);
     }
 
-    const can_clear = editable and (values[selected_idx] != 0 or cands[selected_idx] != 0);
-    drawActionButton(CLEAR_X, can_clear);
-    drawXIcon(CLEAR_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, if (can_clear) COLOR_GIVEN else COLOR_GRID_THIN);
+    const clear_active = editable and values[selected_idx] == 0 and cands[selected_idx] == 0;
+    const clear_hovered = visibleHoveredControl() == 10;
+    const clear_fill = if (clear_active) COLOR_SELECTED else if (clear_hovered) COLOR_CONTROL_HOVER else COLOR_CONTROL_BG;
+    const clear_border = if (clear_active) COLOR_SELECTED else COLOR_CONTROL_BORDER;
+    const clear_ink = if (clear_active) COLOR_SELECTED_INK else COLOR_GIVEN;
+    fillRect(CLEAR_X, CLEAR_Y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX, clear_fill);
+    drawRectOutline(CLEAR_X, CLEAR_Y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX, 2, clear_border);
+    drawXIcon(CLEAR_X, CLEAR_Y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX, clear_ink);
 
-    drawActionButton(NEW_X, true);
-    drawDiceIcon(NEW_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, COLOR_GIVEN);
+    drawActionButton(NEW_X, NEW_Y, visibleHoveredControl() == 11);
+    drawDiceIcon(NEW_X, NEW_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, COLOR_GIVEN);
 }
 
-fn drawActionButton(x: usize, enabled: bool) void {
-    const color = if (enabled) COLOR_CONTROL_BORDER else COLOR_GRID_THIN;
-    fillRect(x, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, COLOR_CONTROL_BG);
-    drawRectOutline(x, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, 2, color);
+fn drawActionButton(x: usize, y: usize, hovered: bool) void {
+    const fill = if (hovered) COLOR_CONTROL_HOVER else COLOR_CONTROL_BG;
+    fillRect(x, y, ACTION_BUTTON_W, ACTION_BUTTON_H, fill);
+    drawRectOutline(x, y, ACTION_BUTTON_W, ACTION_BUTTON_H, 2, COLOR_CONTROL_BORDER);
 }
 
 fn drawXIcon(button_x: usize, button_y: usize, button_w: usize, button_h: usize, color: Color) void {
-    const size: usize = 20;
-    const x0 = button_x + (button_w - size) / 2;
-    const y0 = button_y + (button_h - size) / 2;
-    var i: usize = 0;
-    while (i < size) : (i += 1) {
-        fillRect(x0 + i, y0 + i, 2, 2, color);
-        fillRect(x0 + size - 1 - i, y0 + i, 2, 2, color);
-    }
+    const glyph_w = 5 * LARGE_SCALE;
+    const glyph_h = 7 * LARGE_SCALE;
+    const x0 = button_x + (button_w - glyph_w) / 2;
+    const y0 = button_y + (button_h - glyph_h) / 2;
+    drawBitmapGlyph(X_BITMAP, x0, y0, LARGE_SCALE, color);
 }
 
 fn drawDiceIcon(button_x: usize, button_y: usize, button_w: usize, button_h: usize, color: Color) void {
@@ -749,8 +801,10 @@ fn drawDiceIcon(button_x: usize, button_y: usize, button_w: usize, button_h: usi
 
 fn drawDigitGlyph(digit: u8, x0: usize, y0: usize, scale: usize, color: Color) void {
     if (digit < 1 or digit > 9) return;
+    drawBitmapGlyph(DIGIT_BITMAPS[digit], x0, y0, scale, color);
+}
 
-    const glyph = DIGIT_BITMAPS[digit];
+fn drawBitmapGlyph(glyph: [7]u8, x0: usize, y0: usize, scale: usize, color: Color) void {
     var row: usize = 0;
     while (row < 7) : (row += 1) {
         var col: usize = 0;

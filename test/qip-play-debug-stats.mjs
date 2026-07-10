@@ -224,3 +224,59 @@ test("qip-play scopes keyboard focus to the canvas", () => {
 
   element._detachInputHandlers();
 });
+
+test("qip-play reports pointer leave outside the render surface", () => {
+  const element = new QIPPlayElement();
+  element._exports = { pointer_event() {} };
+  element._canvas = makeEventTarget();
+  element._eventNowMS = () => 17;
+  element._resumeLoop = () => {};
+  let queued = null;
+  element._queuePointerEvent = (...args) => {
+    queued = args;
+  };
+
+  element._attachInputHandlers();
+  const pointerLeave = element._canvas.listeners.find(
+    (entry) => entry.type === "pointerleave",
+  );
+  pointerLeave.listener();
+
+  assert.deepEqual(queued, [0, -1, -1, 17]);
+  element._detachInputHandlers();
+});
+
+test("qip-play ticks accepted events but skips ignored events", () => {
+  const element = new QIPPlayElement();
+  let eventResult = 0;
+  let tickN = 0;
+  let renderN = 0;
+  element._exports = {
+    pointer_event() {
+      return eventResult;
+    },
+    tick() {
+      return 0n;
+    },
+  };
+  element._elapsedFromPerfNow = () => 0;
+  element._runTick = () => {
+    tickN++;
+    return { nextWakeAtMS: 0, tickMS: 0 };
+  };
+  element._renderFrame = () => {
+    renderN++;
+    return { renderMS: 0, compareMS: 0, drawMS: 0, unchanged: false };
+  };
+
+  element._queuePointerEvent(0, 1, 1, 0);
+  element._frame(0);
+  assert.equal(tickN, 0);
+  assert.equal(renderN, 0);
+
+  eventResult = 1;
+  element._queuePointerEvent(0, 2, 2, 0);
+  element._frame(0);
+  assert.equal(tickN, 1);
+  assert.equal(renderN, 1);
+});

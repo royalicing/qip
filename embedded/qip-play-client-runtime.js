@@ -778,6 +778,7 @@ class QIPPlayElement extends HTMLElement {
     this._boundKeyUp = null;
     this._boundPointer = null;
     this._boundPointerUp = null;
+    this._boundPointerLeave = null;
     this._boundContextMenu = null;
     this._boundClickFocus = null;
     this._boundFrame = null;
@@ -1044,6 +1045,13 @@ class QIPPlayElement extends HTMLElement {
     this._boundPointerUp = (event) => {
       this._dispatchPointer(event);
     };
+    this._boundPointerLeave = () => {
+      if (!this._exports || typeof this._exports.pointer_event !== "function") {
+        return;
+      }
+      this._queuePointerEvent(0, -1, -1, this._eventNowMS());
+      this._resumeLoop();
+    };
     this._boundContextMenu = (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1062,6 +1070,7 @@ class QIPPlayElement extends HTMLElement {
     this._canvas.addEventListener("pointermove", this._boundPointer);
     this._canvas.addEventListener("pointerup", this._boundPointerUp);
     this._canvas.addEventListener("pointercancel", this._boundPointerUp);
+    this._canvas.addEventListener("pointerleave", this._boundPointerLeave);
     this._canvas.addEventListener("contextmenu", this._boundContextMenu, true);
     this._canvas.addEventListener("click", this._boundClickFocus);
     this._canvas.addEventListener("blur", this._boundBlur);
@@ -1083,6 +1092,9 @@ class QIPPlayElement extends HTMLElement {
         this._canvas.removeEventListener("pointerup", this._boundPointerUp);
         this._canvas.removeEventListener("pointercancel", this._boundPointerUp);
       }
+      if (this._boundPointerLeave) {
+        this._canvas.removeEventListener("pointerleave", this._boundPointerLeave);
+      }
       if (this._boundContextMenu) {
         this._canvas.removeEventListener(
           "contextmenu",
@@ -1102,6 +1114,7 @@ class QIPPlayElement extends HTMLElement {
     this._boundKeyUp = null;
     this._boundPointer = null;
     this._boundPointerUp = null;
+    this._boundPointerLeave = null;
     this._boundContextMenu = null;
     this._boundClickFocus = null;
     this._boundBlur = null;
@@ -1257,10 +1270,10 @@ class QIPPlayElement extends HTMLElement {
   _flushPendingKeyEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.key_event !== "function") {
       this._pendingKeyEvents.length = 0;
-      return { count: 0, redrawRequested: false };
+      return { count: 0, accepted: false };
     }
     let flushed = 0;
-    let redrawRequested = false;
+    let accepted = false;
     while (this._pendingKeyEvents.length > 0) {
       const evt = this._pendingKeyEvents[0];
       if (evt.timeMS > tickNowMS) break;
@@ -1270,19 +1283,19 @@ class QIPPlayElement extends HTMLElement {
         evt.flags,
         qipPlayNowMSArg(evt.timeMS),
       );
-      if (Number(result) !== 0) redrawRequested = true;
+      if (Number(result) !== 0) accepted = true;
       flushed += 1;
     }
-    return { count: flushed, redrawRequested };
+    return { count: flushed, accepted };
   }
 
   _flushPendingPointerEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.pointer_event !== "function") {
       this._pendingPointerEvents.length = 0;
-      return { count: 0, redrawRequested: false };
+      return { count: 0, accepted: false };
     }
     let flushed = 0;
-    let redrawRequested = false;
+    let accepted = false;
     while (this._pendingPointerEvents.length > 0) {
       const evt = this._pendingPointerEvents[0];
       if (evt.timeMS > tickNowMS) break;
@@ -1293,18 +1306,18 @@ class QIPPlayElement extends HTMLElement {
         evt.y,
         qipPlayNowMSArg(evt.timeMS),
       );
-      if (Number(result) !== 0) redrawRequested = true;
+      if (Number(result) !== 0) accepted = true;
       flushed += 1;
     }
-    return { count: flushed, redrawRequested };
+    return { count: flushed, accepted };
   }
 
   _flushRepeatKeyEvents(tickNowMS) {
     if (!this._exports || typeof this._exports.key_event !== "function") {
-      return { count: 0, redrawRequested: false };
+      return { count: 0, accepted: false };
     }
     let flushed = 0;
-    let redrawRequested = false;
+    let accepted = false;
     for (const repeatState of this._activeKeyRepeats.values()) {
       if (!repeatState.pending) {
         continue;
@@ -1318,10 +1331,10 @@ class QIPPlayElement extends HTMLElement {
         repeatState.flags,
         qipPlayNowMSArg(repeatState.pendingTimeMS),
       );
-      if (Number(result) !== 0) redrawRequested = true;
+      if (Number(result) !== 0) accepted = true;
       flushed += 1;
     }
-    return { count: flushed, redrawRequested };
+    return { count: flushed, accepted };
   }
 
   _resumeLoop() {
@@ -1390,7 +1403,7 @@ class QIPPlayElement extends HTMLElement {
     if (eventCount <= 0 && !wakeDue) {
       return;
     }
-    if (!wakeDue && !eventResult.redrawRequested) {
+    if (!wakeDue && !eventResult.accepted) {
       if (this._logTimings) {
         console.log(
           "[qip-play] now_ms=%d events=%d next_wake_at_ms=%d tick_ms=%s render_ms=%s draw_ms=%s frame_ms=%s",
@@ -1408,7 +1421,7 @@ class QIPPlayElement extends HTMLElement {
 
     const tickResult = this._runTick(tickNowMS);
     this._nextWakeAtMS = tickResult.nextWakeAtMS;
-    const renderResult = wakeDue || eventResult.redrawRequested
+    const renderResult = wakeDue || eventResult.accepted
       ? this._renderFrame()
       : { renderMS: 0, compareMS: 0, drawMS: 0, unchanged: false };
     if (this._logTimings) {
@@ -1446,10 +1459,8 @@ class QIPPlayElement extends HTMLElement {
     const repeatResult = this._flushRepeatKeyEvents(tickNowMS);
     return {
       eventCount: keyResult.count + pointerResult.count + repeatResult.count,
-      redrawRequested:
-        keyResult.redrawRequested ||
-        pointerResult.redrawRequested ||
-        repeatResult.redrawRequested,
+      accepted:
+        keyResult.accepted || pointerResult.accepted || repeatResult.accepted,
     };
   }
 
