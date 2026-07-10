@@ -4268,10 +4268,27 @@ func writeRunOutputToStdout(result qinternal.Content, outputBytes []byte, opts o
 	return fmt.Errorf("unknown output encoding %v", result.Encoding())
 }
 
+// Image outputs already in the format the output path asks for are written
+// as-is; re-encoding would only churn bytes (and Go's png encoder is used
+// with NoCompression, inflating sizes).
+func outputMatchesImagePath(result qinternal.Content, outputPath string) bool {
+	contentType := normalizeIncomingContentType(qinternal.ContentTypeOf(result))
+	switch strings.ToLower(filepath.Ext(outputPath)) {
+	case ".png":
+		return contentType == "image/png"
+	case ".jpg", ".jpeg":
+		return contentType == "image/jpeg"
+	case ".bmp":
+		return contentType == "image/bmp"
+	default:
+		return false
+	}
+}
+
 func writeRunOutputToFile(result qinternal.Content, outputPath string) error {
 	var data []byte
 
-	if wantsImageReencode(outputPath) {
+	if wantsImageReencode(outputPath) && !outputMatchesImagePath(result, outputPath) {
 		decodedImage, err := decodeRunOutputImage(result)
 		if err != nil {
 			return err
