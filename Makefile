@@ -90,8 +90,10 @@ modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX
 modules/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 modules/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
+modules/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 
 modules/bytes/zlib-compress-dynamic-huffman-opt.wasm: modules/bytes/lib/deflate.zig
+modules/image/bmp/bmp-to-png.wasm: modules/image/bmp/lib/deflate.zig
 modules/bytes/zlib-decompress.wasm: modules/bytes/lib/inflate.zig modules/bytes/lib/deflate.zig
 
 modules/%.wasm: modules/%.c
