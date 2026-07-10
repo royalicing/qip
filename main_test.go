@@ -1675,14 +1675,14 @@ func TestInjectQIPFormRuntimeMissingModule(t *testing.T) {
 	}
 }
 
-func TestInjectQIPPreviewRuntime(t *testing.T) {
-	htmlBody := []byte(`<html><body><h1>Page</h1><qip-preview><source src="/components/utf8/hello.wasm" type="application/wasm"></source><textarea name="input"></textarea><output name="output"></output></qip-preview></body></html>`)
-	out := injectQIPPreviewRuntime(htmlBody)
+func TestInjectQIPEditRuntime(t *testing.T) {
+	htmlBody := []byte(`<html><body><h1>Page</h1><qip-edit><source src="/components/utf8/hello.wasm" type="application/wasm"></source><textarea name="input"></textarea><output name="output"></output></qip-edit></body></html>`)
+	out := injectQIPEditRuntime(htmlBody)
 	if !bytes.Contains(out, []byte(`<script type="module">`)) {
 		t.Fatalf("expected inline module script injection")
 	}
-	if !bytes.Contains(out, []byte(`customElements.define("qip-preview"`)) {
-		t.Fatalf("expected qip-preview custom element runtime")
+	if !bytes.Contains(out, []byte(`customElements.define("qip-edit"`)) {
+		t.Fatalf("expected qip-edit custom element runtime")
 	}
 	scriptIdx := strings.Index(string(out), `<script type="module">`)
 	bodyCloseIdx := strings.Index(strings.ToLower(string(out)), `</body>`)
@@ -1691,11 +1691,11 @@ func TestInjectQIPPreviewRuntime(t *testing.T) {
 	}
 }
 
-func TestInjectQIPPreviewRuntimeNoTag(t *testing.T) {
+func TestInjectQIPEditRuntimeNoTag(t *testing.T) {
 	htmlBody := []byte(`<html><body><h1>Page</h1><p>No preview.</p></body></html>`)
-	out := injectQIPPreviewRuntime(htmlBody)
+	out := injectQIPEditRuntime(htmlBody)
 	if !bytes.Equal(out, htmlBody) {
-		t.Fatalf("expected html body to remain unchanged when no qip-preview tags are present")
+		t.Fatalf("expected html body to remain unchanged when no qip-edit tags are present")
 	}
 }
 

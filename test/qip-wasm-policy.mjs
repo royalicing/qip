@@ -12,9 +12,9 @@ globalThis.customElements = {
 };
 
 vm.runInThisContext(
-  readFileSync("embedded/qip-preview-client-runtime.js", "utf8") +
-    "\nglobalThis.__qipPreviewValidateWasmModulePolicy = qipPreviewValidateWasmModulePolicy;",
-  { filename: "embedded/qip-preview-client-runtime.js" },
+  readFileSync("embedded/qip-edit-client-runtime.js", "utf8") +
+    "\nglobalThis.__qipEditValidateWasmModulePolicy = qipEditValidateWasmModulePolicy;",
+  { filename: "embedded/qip-edit-client-runtime.js" },
 );
 vm.runInThisContext(
   readFileSync("embedded/qip-play-client-runtime.js", "utf8") +
@@ -66,7 +66,7 @@ function buildModule({ ops, memory }) {
 }
 
 function validateWithBoth(moduleBytes, policy) {
-  __qipPreviewValidateWasmModulePolicy(moduleBytes.buffer, policy, "test.wasm");
+  __qipEditValidateWasmModulePolicy(moduleBytes.buffer, policy, "test.wasm");
   __qipPlayValidateWasmModulePolicy(moduleBytes.buffer, policy, "test.wasm");
 }
 

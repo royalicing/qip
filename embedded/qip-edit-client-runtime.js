@@ -1,14 +1,14 @@
-const qipPreviewTextEncoder = new TextEncoder();
-const qipPreviewTextDecoder = new TextDecoder("utf-8", { fatal: true });
+const qipEditTextEncoder = new TextEncoder();
+const qipEditTextDecoder = new TextDecoder("utf-8", { fatal: true });
 
-function qipPreviewNowMS() {
+function qipEditNowMS() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
     return performance.now();
   }
   return Date.now();
 }
 
-function qipPreviewFormatByteSize(byteLength) {
+function qipEditFormatByteSize(byteLength) {
   if (byteLength < 1000) {
     return String(byteLength) + " B";
   }
@@ -26,14 +26,14 @@ function qipPreviewFormatByteSize(byteLength) {
   return megabytes.toFixed(0) + " MB";
 }
 
-function qipPreviewFormatMS(ms) {
+function qipEditFormatMS(ms) {
   return ms.toFixed(1) + " ms";
 }
 
-const QIP_PREVIEW_WASM_PAGE_SIZE_BYTES = 65536;
-const QIP_PREVIEW_OPCODE_MEMORY_GROW = 0x40;
+const QIP_EDIT_WASM_PAGE_SIZE_BYTES = 65536;
+const QIP_EDIT_OPCODE_MEMORY_GROW = 0x40;
 
-class QIPPreviewWasmReader {
+class QIPEditWasmReader {
   constructor(bytes) {
     this.bytes = bytes;
     this.off = 0;
@@ -135,21 +135,21 @@ class QIPPreviewWasmReader {
   readName() {
     const len = this.readVarU32();
     const bytes = this.readBytes(len);
-    return qipPreviewTextDecoder.decode(bytes);
+    return qipEditTextDecoder.decode(bytes);
   }
 }
 
-function qipPreviewReadModulePolicy(rootElement) {
+function qipEditReadModulePolicy(rootElement) {
   const maxMemoryRaw = rootElement.getAttribute("max-memory");
-  const maxMemoryBytes = maxMemoryRaw === null ? 0 : qipPreviewParsePolicyBytes(maxMemoryRaw, "max-memory");
+  const maxMemoryBytes = maxMemoryRaw === null ? 0 : qipEditParsePolicyBytes(maxMemoryRaw, "max-memory");
   const rejectOpcodes = [];
   if (rootElement.hasAttribute("fixed-memory")) {
-    rejectOpcodes.push(QIP_PREVIEW_OPCODE_MEMORY_GROW);
+    rejectOpcodes.push(QIP_EDIT_OPCODE_MEMORY_GROW);
   }
   return { maxMemoryBytes, rejectOpcodes };
 }
 
-function qipPreviewParsePolicyBytes(rawValue, attrName) {
+function qipEditParsePolicyBytes(rawValue, attrName) {
   const value = String(rawValue).trim();
   if (!/^\d+$/.test(value)) {
     throw new Error(attrName + " must be an integer byte count");
@@ -161,12 +161,12 @@ function qipPreviewParsePolicyBytes(rawValue, attrName) {
   return parsed;
 }
 
-function qipPreviewValidateWasmModulePolicy(moduleBytes, policy, label) {
+function qipEditValidateWasmModulePolicy(moduleBytes, policy, label) {
   if (!policy || (policy.maxMemoryBytes === 0 && policy.rejectOpcodes.length === 0)) {
     return;
   }
   const failures = [];
-  const rejectMemoryGrow = policy.rejectOpcodes.includes(QIP_PREVIEW_OPCODE_MEMORY_GROW);
+  const rejectMemoryGrow = policy.rejectOpcodes.includes(QIP_EDIT_OPCODE_MEMORY_GROW);
   const bytes = new Uint8Array(moduleBytes);
   if (
     bytes.length < 8 ||
@@ -182,19 +182,19 @@ function qipPreviewValidateWasmModulePolicy(moduleBytes, policy, label) {
     throw new Error("invalid wasm module header");
   }
 
-  const r = new QIPPreviewWasmReader(bytes.subarray(8));
+  const r = new QIPEditWasmReader(bytes.subarray(8));
   let memoryIndex = 0;
   while (r.remaining() > 0) {
     const sectionID = r.readByte();
     const sectionSize = r.readVarU32();
     const payload = r.readBytes(sectionSize);
-    const section = new QIPPreviewWasmReader(payload);
+    const section = new QIPEditWasmReader(payload);
     if (sectionID === 2) {
-      memoryIndex = qipPreviewScanImportSectionForPolicy(section, policy, failures, memoryIndex);
+      memoryIndex = qipEditScanImportSectionForPolicy(section, policy, failures, memoryIndex);
     } else if (sectionID === 5) {
-      memoryIndex = qipPreviewScanMemorySectionForPolicy(section, policy, failures, memoryIndex);
+      memoryIndex = qipEditScanMemorySectionForPolicy(section, policy, failures, memoryIndex);
     } else if (sectionID === 10 && rejectMemoryGrow) {
-      qipPreviewScanCodeSectionForPolicy(section, failures);
+      qipEditScanCodeSectionForPolicy(section, failures);
     }
   }
 
@@ -203,7 +203,7 @@ function qipPreviewValidateWasmModulePolicy(moduleBytes, policy, label) {
   }
 }
 
-function qipPreviewScanImportSectionForPolicy(r, policy, failures, memoryIndex) {
+function qipEditScanImportSectionForPolicy(r, policy, failures, memoryIndex) {
   const count = r.readVarU32();
   for (let i = 0; i < count; i++) {
     r.readName();
@@ -212,13 +212,13 @@ function qipPreviewScanImportSectionForPolicy(r, policy, failures, memoryIndex) 
     if (kind === 0x00) {
       r.readVarU32();
     } else if (kind === 0x01) {
-      qipPreviewSkipTableType(r);
+      qipEditSkipTableType(r);
     } else if (kind === 0x02) {
-      const limit = qipPreviewReadLimits(r);
-      qipPreviewCheckMemoryLimit(limit, memoryIndex, policy, failures);
+      const limit = qipEditReadLimits(r);
+      qipEditCheckMemoryLimit(limit, memoryIndex, policy, failures);
       memoryIndex++;
     } else if (kind === 0x03) {
-      qipPreviewSkipGlobalType(r);
+      qipEditSkipGlobalType(r);
     } else if (kind === 0x04) {
       r.readByte();
       r.readVarU32();
@@ -229,17 +229,17 @@ function qipPreviewScanImportSectionForPolicy(r, policy, failures, memoryIndex) 
   return memoryIndex;
 }
 
-function qipPreviewScanMemorySectionForPolicy(r, policy, failures, memoryIndex) {
+function qipEditScanMemorySectionForPolicy(r, policy, failures, memoryIndex) {
   const count = r.readVarU32();
   for (let i = 0; i < count; i++) {
-    const limit = qipPreviewReadLimits(r);
-    qipPreviewCheckMemoryLimit(limit, memoryIndex, policy, failures);
+    const limit = qipEditReadLimits(r);
+    qipEditCheckMemoryLimit(limit, memoryIndex, policy, failures);
     memoryIndex++;
   }
   return memoryIndex;
 }
 
-function qipPreviewReadLimits(r) {
+function qipEditReadLimits(r) {
   const flags = r.readByte();
   const memory64 = (flags & 0x04) !== 0;
   const minPages = memory64 ? r.readVarU64Number() : r.readVarU32();
@@ -252,38 +252,38 @@ function qipPreviewReadLimits(r) {
   return { minPages, hasMax, maxPages };
 }
 
-function qipPreviewCheckMemoryLimit(limit, memoryIndex, policy, failures) {
+function qipEditCheckMemoryLimit(limit, memoryIndex, policy, failures) {
   if (policy.maxMemoryBytes === 0) {
     return;
   }
-  if (qipPreviewPagesToBytes(limit.minPages) > policy.maxMemoryBytes) {
+  if (qipEditPagesToBytes(limit.minPages) > policy.maxMemoryBytes) {
     failures.push("memory[" + memoryIndex + "] initial size " + String(limit.minPages) + " pages exceeds max-memory " + String(policy.maxMemoryBytes) + " bytes");
   }
   if (!limit.hasMax) {
     failures.push("memory[" + memoryIndex + "] has no declared maximum");
     return;
   }
-  if (qipPreviewPagesToBytes(limit.maxPages) > policy.maxMemoryBytes) {
+  if (qipEditPagesToBytes(limit.maxPages) > policy.maxMemoryBytes) {
     failures.push("memory[" + memoryIndex + "] maximum " + String(limit.maxPages) + " pages exceeds max-memory " + String(policy.maxMemoryBytes) + " bytes");
   }
 }
 
-function qipPreviewPagesToBytes(pages) {
-  if (!Number.isFinite(pages) || pages > Number.MAX_SAFE_INTEGER / QIP_PREVIEW_WASM_PAGE_SIZE_BYTES) {
+function qipEditPagesToBytes(pages) {
+  if (!Number.isFinite(pages) || pages > Number.MAX_SAFE_INTEGER / QIP_EDIT_WASM_PAGE_SIZE_BYTES) {
     return Number.POSITIVE_INFINITY;
   }
-  return pages * QIP_PREVIEW_WASM_PAGE_SIZE_BYTES;
+  return pages * QIP_EDIT_WASM_PAGE_SIZE_BYTES;
 }
 
-function qipPreviewScanCodeSectionForPolicy(r, failures) {
+function qipEditScanCodeSectionForPolicy(r, failures) {
   const count = r.readVarU32();
   for (let i = 0; i < count; i++) {
     const bodySize = r.readVarU32();
-    qipPreviewScanFunctionBodyForPolicy(new QIPPreviewWasmReader(r.readBytes(bodySize)), failures);
+    qipEditScanFunctionBodyForPolicy(new QIPEditWasmReader(r.readBytes(bodySize)), failures);
   }
 }
 
-function qipPreviewScanFunctionBodyForPolicy(r, failures) {
+function qipEditScanFunctionBodyForPolicy(r, failures) {
   const localDecls = r.readVarU32();
   for (let i = 0; i < localDecls; i++) {
     r.readVarU32();
@@ -303,7 +303,7 @@ function qipPreviewScanFunctionBodyForPolicy(r, failures) {
       case 0x02:
       case 0x03:
       case 0x04:
-        qipPreviewReadBlockType(r);
+        qipEditReadBlockType(r);
         break;
       case 0x0c:
       case 0x0d:
@@ -361,7 +361,7 @@ function qipPreviewScanFunctionBodyForPolicy(r, failures) {
       case 0x3c:
       case 0x3d:
       case 0x3e:
-        qipPreviewReadMemArg(r);
+        qipEditReadMemArg(r);
         break;
       case 0x3f:
         r.readVarU32();
@@ -386,13 +386,13 @@ function qipPreviewScanFunctionBodyForPolicy(r, failures) {
         r.readByte();
         break;
       case 0xfc:
-        qipPreviewReadFCImmediate(r);
+        qipEditReadFCImmediate(r);
         break;
       case 0xfd:
-        qipPreviewReadFDImmediate(r);
+        qipEditReadFDImmediate(r);
         break;
       case 0xfe:
-        qipPreviewReadFEImmediate(r);
+        qipEditReadFEImmediate(r);
         break;
       default:
         break;
@@ -400,7 +400,7 @@ function qipPreviewScanFunctionBodyForPolicy(r, failures) {
   }
 }
 
-function qipPreviewReadBlockType(r) {
+function qipEditReadBlockType(r) {
   const b = r.peekByte();
   if (b === 0x40 || b === 0x7f || b === 0x7e || b === 0x7d || b === 0x7c || b === 0x7b || b === 0x70 || b === 0x6f) {
     r.readByte();
@@ -409,12 +409,12 @@ function qipPreviewReadBlockType(r) {
   r.readVarS64(5);
 }
 
-function qipPreviewReadMemArg(r) {
+function qipEditReadMemArg(r) {
   r.readVarU32();
   r.readVarU32();
 }
 
-function qipPreviewReadFCImmediate(r) {
+function qipEditReadFCImmediate(r) {
   const sub = r.readVarU32();
   if (sub === 8) {
     r.readVarU32();
@@ -439,40 +439,40 @@ function qipPreviewReadFCImmediate(r) {
   }
 }
 
-function qipPreviewReadFDImmediate(r) {
+function qipEditReadFDImmediate(r) {
   const sub = r.readVarU32();
   if (sub <= 11 || sub === 92 || sub === 93) {
-    qipPreviewReadMemArg(r);
+    qipEditReadMemArg(r);
   } else if (sub === 12 || sub === 13) {
     r.readBytes(16);
   } else if (sub >= 21 && sub <= 34) {
     r.readByte();
   } else if (sub >= 84 && sub <= 91) {
-    qipPreviewReadMemArg(r);
+    qipEditReadMemArg(r);
     r.readByte();
   }
 }
 
-function qipPreviewReadFEImmediate(r) {
+function qipEditReadFEImmediate(r) {
   const sub = r.readVarU32();
   if (sub === 3) {
     r.readByte();
     return;
   }
-  qipPreviewReadMemArg(r);
+  qipEditReadMemArg(r);
 }
 
-function qipPreviewSkipTableType(r) {
+function qipEditSkipTableType(r) {
   r.readByte();
-  qipPreviewReadLimits(r);
+  qipEditReadLimits(r);
 }
 
-function qipPreviewSkipGlobalType(r) {
+function qipEditSkipGlobalType(r) {
   r.readByte();
   r.readByte();
 }
 
-function qipPreviewToI32(value, label) {
+function qipEditToI32(value, label) {
   if (typeof value === "number") {
     return value | 0;
   }
@@ -486,18 +486,18 @@ function qipPreviewToI32(value, label) {
   throw new Error(label + " returned unsupported numeric value");
 }
 
-function qipPreviewReadI32Export(exportsObj, exportName) {
+function qipEditReadI32Export(exportsObj, exportName) {
   const value = exportsObj[exportName];
   if (typeof value === "function") {
-    return qipPreviewToI32(value(), exportName);
+    return qipEditToI32(value(), exportName);
   }
   if (value instanceof WebAssembly.Global) {
-    return qipPreviewToI32(value.value, exportName);
+    return qipEditToI32(value.value, exportName);
   }
-  throw new Error("preview module missing export " + exportName);
+  throw new Error("edit module missing export " + exportName);
 }
 
-function qipPreviewReadSlice(memory, ptr, len, label) {
+function qipEditReadSlice(memory, ptr, len, label) {
   if (ptr < 0 || len < 0) {
     throw new Error(label + " returned negative pointer/size");
   }
@@ -514,7 +514,7 @@ function qipPreviewReadSlice(memory, ptr, len, label) {
   return mem.slice(start, end);
 }
 
-function qipPreviewNormalizeContentType(value) {
+function qipEditNormalizeContentType(value) {
   if (typeof value !== "string") {
     return "";
   }
@@ -529,27 +529,27 @@ function qipPreviewNormalizeContentType(value) {
   return trimmed.slice(0, semi).trim();
 }
 
-function qipPreviewReadDeclaredContentType(exportsObj, ptrExport, sizeExport) {
+function qipEditReadDeclaredContentType(exportsObj, ptrExport, sizeExport) {
   if (!(ptrExport in exportsObj) || !(sizeExport in exportsObj)) {
     return "";
   }
-  const size = qipPreviewReadI32Export(exportsObj, sizeExport);
+  const size = qipEditReadI32Export(exportsObj, sizeExport);
   if (size <= 0) {
     return "";
   }
-  const ptr = qipPreviewReadI32Export(exportsObj, ptrExport);
-  const bytes = qipPreviewReadSlice(exportsObj.memory, ptr, size, ptrExport + "/" + sizeExport);
-  const text = qipPreviewTextDecoder.decode(bytes);
-  return qipPreviewNormalizeContentType(text);
+  const ptr = qipEditReadI32Export(exportsObj, ptrExport);
+  const bytes = qipEditReadSlice(exportsObj.memory, ptr, size, ptrExport + "/" + sizeExport);
+  const text = qipEditTextDecoder.decode(bytes);
+  return qipEditNormalizeContentType(text);
 }
 
-function qipPreviewParseUniformAttempts(rawValue) {
+function qipEditParseUniformAttempts(rawValue) {
   const value = String(rawValue).trim();
   if (value === "") {
     throw new Error("uniform value must not be empty");
   }
 
-  const parsedColor = qipPreviewParseColorInputValue(value);
+  const parsedColor = qipEditParseColorInputValue(value);
   if (parsedColor !== null) {
     return [parsedColor, BigInt(parsedColor)];
   }
@@ -570,18 +570,18 @@ function qipPreviewParseUniformAttempts(rawValue) {
   return [floatValue];
 }
 
-function qipPreviewApplyUniform(exportsObj, key, rawValue) {
+function qipEditApplyUniform(exportsObj, key, rawValue) {
   const setterName = "uniform_set_" + key;
   const setter = exportsObj[setterName];
   if (typeof setter !== "function") {
-    throw new Error("preview module missing export " + setterName);
+    throw new Error("edit module missing export " + setterName);
   }
   let attempts;
   try {
-    attempts = qipPreviewParseUniformAttempts(rawValue);
+    attempts = qipEditParseUniformAttempts(rawValue);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    console.error("qip-preview uniform parse error", {
+    console.error("qip-edit uniform parse error", {
       key,
       value: rawValue,
       valueType: typeof rawValue,
@@ -601,7 +601,7 @@ function qipPreviewApplyUniform(exportsObj, key, rawValue) {
   }
 
   const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
-  console.error("qip-preview uniform set error", {
+  console.error("qip-edit uniform set error", {
     key,
     value: rawValue,
     valueType: typeof rawValue,
@@ -611,7 +611,7 @@ function qipPreviewApplyUniform(exportsObj, key, rawValue) {
   throw new Error("failed to set uniform " + key + ": " + detail);
 }
 
-function qipPreviewIsTextContentType(contentType) {
+function qipEditIsTextContentType(contentType) {
   return contentType.startsWith("text/") ||
     contentType === "application/json" ||
     contentType === "application/javascript" ||
@@ -620,11 +620,11 @@ function qipPreviewIsTextContentType(contentType) {
     contentType.endsWith("+xml");
 }
 
-function qipPreviewIsHTMLContentType(contentType) {
+function qipEditIsHTMLContentType(contentType) {
   return contentType === "text/html";
 }
 
-function qipPreviewGuessImageContentType(bytes) {
+function qipEditGuessImageContentType(bytes) {
   if (bytes.length >= 8 &&
       bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
       bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) {
@@ -652,24 +652,24 @@ function qipPreviewGuessImageContentType(bytes) {
   return "";
 }
 
-function qipPreviewGuessDisplayContentType(bytes, declared) {
-  const normalized = qipPreviewNormalizeContentType(declared);
+function qipEditGuessDisplayContentType(bytes, declared) {
+  const normalized = qipEditNormalizeContentType(declared);
   if (normalized !== "") {
     return normalized;
   }
-  const guessedImage = qipPreviewGuessImageContentType(bytes);
+  const guessedImage = qipEditGuessImageContentType(bytes);
   if (guessedImage !== "") {
     return guessedImage;
   }
   try {
-    qipPreviewTextDecoder.decode(bytes);
+    qipEditTextDecoder.decode(bytes);
     return "text/plain";
   } catch (_) {
     return "";
   }
 }
 
-function qipPreviewFormatBinary(bytes) {
+function qipEditFormatBinary(bytes) {
   const max = Math.min(bytes.length, 256);
   let hex = "";
   for (let i = 0; i < max; i += 1) {
@@ -687,7 +687,7 @@ function qipPreviewFormatBinary(bytes) {
   return "Binary output (" + String(bytes.length) + " bytes)\n" + hex;
 }
 
-function qipPreviewExtractUniforms(sourceElement) {
+function qipEditExtractUniforms(sourceElement) {
   const pairs = [];
   const names = sourceElement.getAttributeNames();
   for (const attrName of names) {
@@ -711,10 +711,10 @@ function qipPreviewExtractUniforms(sourceElement) {
       });
       continue;
     }
-    const inputElement = qipPreviewFindUniformInputElement(sourceElement, key);
+    const inputElement = qipEditFindUniformInputElement(sourceElement, key);
     if (!inputElement) {
       throw new Error(
-        "<source> uniform " + key + " requires an input with name=\"uniform-" + key + "\" in the same <qip-preview> when " + attrName + " is empty",
+        "<source> uniform " + key + " requires an input with name=\"uniform-" + key + "\" in the same <qip-edit> when " + attrName + " is empty",
       );
     }
     pairs.push({
@@ -727,9 +727,9 @@ function qipPreviewExtractUniforms(sourceElement) {
   return pairs;
 }
 
-function qipPreviewFindUniformInputElement(sourceElement, key) {
+function qipEditFindUniformInputElement(sourceElement, key) {
   const name = "uniform-" + key;
-  const root = sourceElement.closest("qip-preview");
+  const root = sourceElement.closest("qip-edit");
   if (root) {
     const named = root.querySelectorAll("[name]");
     for (const candidate of named) {
@@ -741,14 +741,14 @@ function qipPreviewFindUniformInputElement(sourceElement, key) {
   return null;
 }
 
-function qipPreviewReadUniformValue(uniform) {
+function qipEditReadUniformValue(uniform) {
   if (uniform.inputElement) {
     const element = uniform.inputElement;
     if (element instanceof HTMLInputElement) {
       const inputType = (element.type || "").toLowerCase();
       const declaredType = (element.getAttribute("type") || "").toLowerCase();
       if (inputType === "color" || declaredType === "color") {
-        const parsedColor = qipPreviewParseColorInputValue(element.value || "");
+        const parsedColor = qipEditParseColorInputValue(element.value || "");
         if (parsedColor === null) {
           throw new Error("color uniform input must be a hex color (#rgb, #rrggbb, #rgba, #rrggbbaa)");
         }
@@ -764,7 +764,7 @@ function qipPreviewReadUniformValue(uniform) {
   return uniform.staticValue || "";
 }
 
-function qipPreviewParseColorInputValue(rawValue) {
+function qipEditParseColorInputValue(rawValue) {
   const value = String(rawValue).trim();
   let hex = "";
   if (/^#[0-9a-f]{3}$/i.test(value)) {
@@ -792,20 +792,20 @@ function qipPreviewParseColorInputValue(rawValue) {
   return parsed >>> 0;
 }
 
-function qipPreviewSourceType(sourceElement) {
+function qipEditSourceType(sourceElement) {
   return (sourceElement.getAttribute("type") || "application/wasm").trim().toLowerCase();
 }
 
 // A <source name="input"> is the input; every other <source> is a pipeline
 // stage. Because the name carries the meaning, the input may itself be wasm.
-function qipPreviewIsDataSource(sourceElement) {
+function qipEditIsDataSource(sourceElement) {
   return sourceElement.getAttribute("name") === "input";
 }
 
-async function qipPreviewFetchSourceBytes(sourceElement, label) {
+async function qipEditFetchSourceBytes(sourceElement, label) {
   const srcRaw = (sourceElement.getAttribute("src") || "").trim();
   if (srcRaw === "") {
-    throw new Error("<source> inside <qip-preview> requires a non-empty src");
+    throw new Error("<source> inside <qip-edit> requires a non-empty src");
   }
   const sourceURL = new URL(srcRaw, document.baseURI).toString();
   const response = await fetch(sourceURL);
@@ -816,34 +816,34 @@ async function qipPreviewFetchSourceBytes(sourceElement, label) {
   return { sourceURL, bytes };
 }
 
-async function qipPreviewLoadStage(sourceElement, policy) {
-  const { sourceURL, bytes } = await qipPreviewFetchSourceBytes(sourceElement, "module");
-  qipPreviewValidateWasmModulePolicy(bytes, policy, sourceURL);
+async function qipEditLoadStage(sourceElement, policy) {
+  const { sourceURL, bytes } = await qipEditFetchSourceBytes(sourceElement, "module");
+  qipEditValidateWasmModulePolicy(bytes, policy, sourceURL);
   const module = await WebAssembly.compile(bytes);
   return {
     src: sourceURL,
     module,
     moduleBytes: bytes.byteLength,
-    uniforms: qipPreviewExtractUniforms(sourceElement),
+    uniforms: qipEditExtractUniforms(sourceElement),
     exports: null,
   };
 }
 
 // Fetches the <source name="input"> payload. Its type attribute becomes the
 // pipeline's initial content type.
-async function qipPreviewLoadDataSource(sourceElement) {
-  const { sourceURL, bytes } = await qipPreviewFetchSourceBytes(sourceElement, "input payload");
+async function qipEditLoadDataSource(sourceElement) {
+  const { sourceURL, bytes } = await qipEditFetchSourceBytes(sourceElement, "input payload");
   return {
     src: sourceURL,
     bytes: new Uint8Array(bytes),
-    contentType: qipPreviewNormalizeContentType(qipPreviewSourceType(sourceElement)),
+    contentType: qipEditNormalizeContentType(qipEditSourceType(sourceElement)),
   };
 }
 
-function qipPreviewWriteInput(exportsObj, inputBytes) {
-  const inputPtr = qipPreviewReadI32Export(exportsObj, "input_ptr");
+function qipEditWriteInput(exportsObj, inputBytes) {
+  const inputPtr = qipEditReadI32Export(exportsObj, "input_ptr");
   const inputCapName = ("input_utf8_cap" in exportsObj) ? "input_utf8_cap" : "input_bytes_cap";
-  const inputCap = qipPreviewReadI32Export(exportsObj, inputCapName);
+  const inputCap = qipEditReadI32Export(exportsObj, inputCapName);
   if (inputPtr < 0 || inputCap < 0) {
     throw new Error("module returned invalid input pointer/capacity");
   }
@@ -859,11 +859,11 @@ function qipPreviewWriteInput(exportsObj, inputBytes) {
   mem.set(inputBytes, start);
 }
 
-function qipPreviewReadOutputBytes(exportsObj, outputLen) {
+function qipEditReadOutputBytes(exportsObj, outputLen) {
   if (outputLen < 0) {
     throw new Error("render returned negative output size");
   }
-  const outputPtr = qipPreviewReadI32Export(exportsObj, "output_ptr");
+  const outputPtr = qipEditReadI32Export(exportsObj, "output_ptr");
   if (outputPtr < 0) {
     throw new Error("module returned invalid output pointer");
   }
@@ -874,20 +874,20 @@ function qipPreviewReadOutputBytes(exportsObj, outputLen) {
   } else if ("output_bytes_cap" in exportsObj) {
     capName = "output_bytes_cap";
   } else {
-    throw new Error("preview module missing output_utf8_cap/output_bytes_cap");
+    throw new Error("edit module missing output_utf8_cap/output_bytes_cap");
   }
 
-  const cap = qipPreviewReadI32Export(exportsObj, capName);
+  const cap = qipEditReadI32Export(exportsObj, capName);
   if (cap < 0) {
     throw new Error("module returned invalid " + capName);
   }
   if (outputLen > cap) {
     throw new Error("render output size exceeds " + capName);
   }
-  return qipPreviewReadSlice(exportsObj.memory, outputPtr, outputLen, "output_ptr/" + capName);
+  return qipEditReadSlice(exportsObj.memory, outputPtr, outputLen, "output_ptr/" + capName);
 }
 
-async function qipPreviewStageExports(stage) {
+async function qipEditStageExports(stage) {
   if (stage.exports) {
     return stage.exports;
   }
@@ -896,37 +896,37 @@ async function qipPreviewStageExports(stage) {
     (instantiated && instantiated.exports) ||
     null;
   if (!exportsObj) {
-    throw new Error("failed to access wasm exports for preview module");
+    throw new Error("failed to access wasm exports for edit module");
   }
   if (!(exportsObj.memory instanceof WebAssembly.Memory)) {
-    throw new Error("preview module must export memory");
+    throw new Error("edit module must export memory");
   }
   if (typeof exportsObj.render !== "function") {
-    throw new Error("preview module missing export render");
+    throw new Error("edit module missing export render");
   }
   stage.exports = exportsObj;
   return exportsObj;
 }
 
-async function qipPreviewRunStage(stage, input) {
+async function qipEditRunStage(stage, input) {
   // One instance is kept per stage and re-rendered, as the component contract
   // intends; re-instantiating per render churns linear memory allocations. A
   // failed render drops the instance so the next run starts fresh.
-  const exportsObj = await qipPreviewStageExports(stage);
+  const exportsObj = await qipEditStageExports(stage);
   try {
-    const expectedInputType = qipPreviewReadDeclaredContentType(exportsObj, "input_content_type_ptr", "input_content_type_size");
+    const expectedInputType = qipEditReadDeclaredContentType(exportsObj, "input_content_type_ptr", "input_content_type_size");
     if (expectedInputType !== "" && input.contentType !== "" && expectedInputType !== input.contentType) {
       throw new Error("input content type mismatch: expected " + expectedInputType + ", got " + input.contentType);
     }
 
-    qipPreviewWriteInput(exportsObj, input.bytes);
+    qipEditWriteInput(exportsObj, input.bytes);
     for (const uniform of stage.uniforms) {
-      qipPreviewApplyUniform(exportsObj, uniform.key, qipPreviewReadUniformValue(uniform));
+      qipEditApplyUniform(exportsObj, uniform.key, qipEditReadUniformValue(uniform));
     }
 
-    const outputLen = qipPreviewToI32(exportsObj.render(input.bytes.length), "render");
-    const outputBytes = qipPreviewReadOutputBytes(exportsObj, outputLen);
-    let outputContentType = qipPreviewReadDeclaredContentType(exportsObj, "output_content_type_ptr", "output_content_type_size");
+    const outputLen = qipEditToI32(exportsObj.render(input.bytes.length), "render");
+    const outputBytes = qipEditReadOutputBytes(exportsObj, outputLen);
+    let outputContentType = qipEditReadDeclaredContentType(exportsObj, "output_content_type_ptr", "output_content_type_size");
     if (outputContentType === "") {
       // A bytes-in, UTF-8-out component produces new text; the incoming
       // (binary) pipeline content type does not describe its output.
@@ -946,21 +946,21 @@ async function qipPreviewRunStage(stage, input) {
   }
 }
 
-function qipPreviewIsFileInput(inputElement) {
+function qipEditIsFileInput(inputElement) {
   return inputElement instanceof HTMLInputElement &&
     (inputElement.type || "").toLowerCase() === "file";
 }
 
 // Resolves the pipeline's initial bytes and content type. A chosen file wins,
 // then the input <source>, then the input element's text.
-async function qipPreviewReadInput(inputElement, payload) {
-  if (inputElement && qipPreviewIsFileInput(inputElement)) {
+async function qipEditReadInput(inputElement, payload) {
+  if (inputElement && qipEditIsFileInput(inputElement)) {
     const file = inputElement.files && inputElement.files[0];
     if (file) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       return {
         bytes,
-        contentType: qipPreviewNormalizeContentType(file.type || ""),
+        contentType: qipEditNormalizeContentType(file.type || ""),
       };
     }
     if (payload) {
@@ -976,17 +976,17 @@ async function qipPreviewReadInput(inputElement, payload) {
   }
   if (inputElement instanceof HTMLTextAreaElement || inputElement instanceof HTMLInputElement) {
     return {
-      bytes: qipPreviewTextEncoder.encode(inputElement.value || ""),
+      bytes: qipEditTextEncoder.encode(inputElement.value || ""),
       contentType: "",
     };
   }
   return {
-    bytes: qipPreviewTextEncoder.encode((inputElement.textContent || "").trim()),
+    bytes: qipEditTextEncoder.encode((inputElement.textContent || "").trim()),
     contentType: "",
   };
 }
 
-function qipPreviewEscapeHTML(text) {
+function qipEditEscapeHTML(text) {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -994,47 +994,47 @@ function qipPreviewEscapeHTML(text) {
     .replace(/"/g, "&quot;");
 }
 
-function qipPreviewFindTextOutputTarget(outputElement) {
+function qipEditFindTextOutputTarget(outputElement) {
   return outputElement.querySelector("pre > code, iframe");
 }
 
-function qipPreviewIsElementNamed(element, localName) {
+function qipEditIsElementNamed(element, localName) {
   return element && typeof element.localName === "string" && element.localName.toLowerCase() === localName;
 }
 
-function qipPreviewSetGeneratedAlertRole(outputElement) {
+function qipEditSetGeneratedAlertRole(outputElement) {
   if (!outputElement.hasAttribute("role")) {
     outputElement.setAttribute("role", "alert");
     outputElement.setAttribute("data-qip-generated-alert-role", "true");
   }
 }
 
-function qipPreviewClearGeneratedAlertRole(outputElement) {
+function qipEditClearGeneratedAlertRole(outputElement) {
   if (outputElement.getAttribute("data-qip-generated-alert-role") === "true") {
     outputElement.removeAttribute("role");
     outputElement.removeAttribute("data-qip-generated-alert-role");
   }
 }
 
-const QIP_PREVIEW_IFRAME_STYLE = "\n<style>:where(body){font-family:sans-serif}</style>";
+const QIP_EDIT_IFRAME_STYLE = "\n<style>:where(body){font-family:sans-serif}</style>";
 
-function qipPreviewSetIframeSrcdoc(iframeElement, html, includePreviewStyle) {
-  const srcdoc = includePreviewStyle ? html + QIP_PREVIEW_IFRAME_STYLE : html;
+function qipEditSetIframeSrcdoc(iframeElement, html, includePreviewStyle) {
+  const srcdoc = includePreviewStyle ? html + QIP_EDIT_IFRAME_STYLE : html;
   iframeElement.srcdoc = srcdoc;
   iframeElement.setAttribute("srcdoc", srcdoc);
 }
 
-function qipPreviewRenderTextOutput(outputElement, text, contentType, isError) {
-  const target = qipPreviewFindTextOutputTarget(outputElement);
-  if (qipPreviewIsElementNamed(target, "iframe")) {
+function qipEditRenderTextOutput(outputElement, text, contentType, isError) {
+  const target = qipEditFindTextOutputTarget(outputElement);
+  if (qipEditIsElementNamed(target, "iframe")) {
     if (!target.hasAttribute("sandbox")) {
       target.setAttribute("sandbox", "");
     }
     if (isError) {
-      qipPreviewSetIframeSrcdoc(target, "<pre role=\"alert\">" + qipPreviewEscapeHTML(text) + "</pre>", false);
+      qipEditSetIframeSrcdoc(target, "<pre role=\"alert\">" + qipEditEscapeHTML(text) + "</pre>", false);
       return;
     }
-    qipPreviewSetIframeSrcdoc(target, text, qipPreviewIsHTMLContentType(contentType));
+    qipEditSetIframeSrcdoc(target, text, qipEditIsHTMLContentType(contentType));
     return;
   }
   if (target) {
@@ -1045,7 +1045,7 @@ function qipPreviewRenderTextOutput(outputElement, text, contentType, isError) {
 }
 
 /**
- * <qip-preview> is a light-DOM browser host for Content components.
+ * <qip-edit> is a light-DOM browser host for Content components.
  *
  * The element reads input from the first child with name="input", runs each
  * <source type="application/wasm"> as a QIP pipeline stage, then writes the same
@@ -1079,7 +1079,7 @@ function qipPreviewRenderTextOutput(outputElement, text, contentType, isError) {
  *   is rejected when this attribute is set.
  * - fixed-memory rejects modules that can grow linear memory while they run.
  */
-class QIPPreviewElement extends HTMLElement {
+class QIPEditElement extends HTMLElement {
   constructor() {
     super();
     this._started = false;
@@ -1126,11 +1126,11 @@ class QIPPreviewElement extends HTMLElement {
     const moduleSourceElements = [];
     const dataSourceElements = [];
     for (const sourceElement of sourceElements) {
-      if (qipPreviewIsDataSource(sourceElement)) {
+      if (qipEditIsDataSource(sourceElement)) {
         dataSourceElements.push(sourceElement);
         continue;
       }
-      const sourceType = qipPreviewSourceType(sourceElement);
+      const sourceType = qipEditSourceType(sourceElement);
       if (sourceType !== "application/wasm") {
         throw new Error(
           "pipeline <source> must be application/wasm, got " + sourceType + "; use name=\"input\" for the input",
@@ -1139,41 +1139,41 @@ class QIPPreviewElement extends HTMLElement {
       moduleSourceElements.push(sourceElement);
     }
     if (moduleSourceElements.length === 0) {
-      throw new Error("<qip-preview> requires at least one <source> module");
+      throw new Error("<qip-edit> requires at least one <source> module");
     }
     if (dataSourceElements.length > 1) {
-      throw new Error("<qip-preview> allows at most one non-wasm data <source>");
+      throw new Error("<qip-edit> allows at most one non-wasm data <source>");
     }
 
-    const policy = qipPreviewReadModulePolicy(this);
+    const policy = qipEditReadModulePolicy(this);
     this._stages = [];
     this._moduleBytesTotal = 0;
     for (const sourceElement of moduleSourceElements) {
-      const stage = await qipPreviewLoadStage(sourceElement, policy);
+      const stage = await qipEditLoadStage(sourceElement, policy);
       this._stages.push(stage);
       this._moduleBytesTotal += stage.moduleBytes;
     }
     this.dataset.moduleBytesTotal = String(this._moduleBytesTotal);
-    this.dataset.wasmSize = qipPreviewFormatByteSize(this._moduleBytesTotal);
+    this.dataset.wasmSize = qipEditFormatByteSize(this._moduleBytesTotal);
 
     this._payload = null;
     if (dataSourceElements.length === 1) {
-      this._payload = await qipPreviewLoadDataSource(dataSourceElements[0]);
+      this._payload = await qipEditLoadDataSource(dataSourceElements[0]);
     }
 
     this._inputElement = null;
     for (const candidate of this.querySelectorAll("[name='input']")) {
-      if (!qipPreviewIsElementNamed(candidate, "source")) {
+      if (!qipEditIsElementNamed(candidate, "source")) {
         this._inputElement = candidate;
         break;
       }
     }
     if (!this._inputElement && !this._payload) {
-      throw new Error("<qip-preview> requires a child input with name=\"input\" or a data <source>");
+      throw new Error("<qip-edit> requires a child input with name=\"input\" or a data <source>");
     }
     this._outputElements = Array.from(this.querySelectorAll("output[name='output']"));
     if (this._outputElements.length === 0) {
-      throw new Error("<qip-preview> requires a child output with name=\"output\"");
+      throw new Error("<qip-edit> requires a child output with name=\"output\"");
     }
 
     this._boundControlListener = () => {
@@ -1207,16 +1207,16 @@ class QIPPreviewElement extends HTMLElement {
 
   async _runPipeline(token) {
     if ((!this._inputElement && !this._payload) || this._outputElements.length === 0) {
-      throw new Error("qip-preview is not initialized");
+      throw new Error("qip-edit is not initialized");
     }
-    const startedMS = qipPreviewNowMS();
+    const startedMS = qipEditNowMS();
     try {
-      let current = await qipPreviewReadInput(this._inputElement, this._payload);
+      let current = await qipEditReadInput(this._inputElement, this._payload);
       if (token !== this._runToken) {
         return;
       }
       for (const stage of this._stages) {
-        current = await qipPreviewRunStage(stage, current);
+        current = await qipEditRunStage(stage, current);
         if (token !== this._runToken) {
           return;
         }
@@ -1227,7 +1227,7 @@ class QIPPreviewElement extends HTMLElement {
       this._renderResult(current);
     } finally {
       if (token === this._runToken) {
-        const elapsedMS = Math.max(0, qipPreviewNowMS() - startedMS);
+        const elapsedMS = Math.max(0, qipEditNowMS() - startedMS);
         this.dataset.runMs = String(Math.round(elapsedMS));
         this._updateStats(elapsedMS);
       }
@@ -1241,10 +1241,10 @@ class QIPPreviewElement extends HTMLElement {
         memoryBytesTotal += stage.exports.memory.buffer.byteLength;
       }
     }
-    this.dataset.wasmSize = qipPreviewFormatByteSize(this._moduleBytesTotal);
+    this.dataset.wasmSize = qipEditFormatByteSize(this._moduleBytesTotal);
     this.dataset.memoryBytesTotal = String(memoryBytesTotal);
-    this.dataset.memorySize = qipPreviewFormatByteSize(memoryBytesTotal);
-    this.dataset.renderTime = qipPreviewFormatMS(elapsedMS);
+    this.dataset.memorySize = qipEditFormatByteSize(memoryBytesTotal);
+    this.dataset.renderTime = qipEditFormatMS(elapsedMS);
   }
 
   _renderResult(result) {
@@ -1252,23 +1252,23 @@ class QIPPreviewElement extends HTMLElement {
       return;
     }
     this._revokeObjectURLs();
-    const contentType = qipPreviewGuessDisplayContentType(result.bytes, result.contentType);
+    const contentType = qipEditGuessDisplayContentType(result.bytes, result.contentType);
     const isImage = contentType.startsWith("image/");
     let decodedText = null;
     let fallbackText = null;
-    if (contentType === "" || qipPreviewIsTextContentType(contentType)) {
+    if (contentType === "" || qipEditIsTextContentType(contentType)) {
       try {
-        decodedText = qipPreviewTextDecoder.decode(result.bytes);
+        decodedText = qipEditTextDecoder.decode(result.bytes);
       } catch (_) {
-        fallbackText = qipPreviewFormatBinary(result.bytes);
+        fallbackText = qipEditFormatBinary(result.bytes);
       }
     } else if (!isImage) {
-      fallbackText = qipPreviewFormatBinary(result.bytes);
+      fallbackText = qipEditFormatBinary(result.bytes);
     }
 
     let imageURL = "";
     for (const outputElement of this._outputElements) {
-      qipPreviewClearGeneratedAlertRole(outputElement);
+      qipEditClearGeneratedAlertRole(outputElement);
       if (isImage) {
         const imageElement = outputElement.querySelector("img");
         if (imageElement) {
@@ -1277,16 +1277,16 @@ class QIPPreviewElement extends HTMLElement {
             imageURL = URL.createObjectURL(blob);
           }
           if (!imageElement.hasAttribute("alt")) {
-            imageElement.alt = "qip-preview output";
+            imageElement.alt = "qip-edit output";
           }
           imageElement.src = imageURL;
           continue;
         }
       }
       if (decodedText !== null) {
-        qipPreviewRenderTextOutput(outputElement, decodedText, contentType, false);
+        qipEditRenderTextOutput(outputElement, decodedText, contentType, false);
       } else {
-        outputElement.textContent = fallbackText || qipPreviewFormatBinary(result.bytes);
+        outputElement.textContent = fallbackText || qipEditFormatBinary(result.bytes);
       }
     }
     if (imageURL !== "") {
@@ -1306,8 +1306,8 @@ class QIPPreviewElement extends HTMLElement {
     this._revokeObjectURLs();
     const message = err instanceof Error ? err.message : String(err);
     for (const outputElement of this._outputElements) {
-      qipPreviewSetGeneratedAlertRole(outputElement);
-      qipPreviewRenderTextOutput(outputElement, "Preview error: " + message, "text/plain", true);
+      qipEditSetGeneratedAlertRole(outputElement);
+      qipEditRenderTextOutput(outputElement, "Preview error: " + message, "text/plain", true);
     }
   }
 
@@ -1319,6 +1319,6 @@ class QIPPreviewElement extends HTMLElement {
   }
 }
 
-if (!customElements.get("qip-preview")) {
-  customElements.define("qip-preview", QIPPreviewElement);
+if (!customElements.get("qip-edit")) {
+  customElements.define("qip-edit", QIPEditElement);
 }

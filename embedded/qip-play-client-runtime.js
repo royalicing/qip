@@ -912,7 +912,7 @@ class QIPPlayElement extends HTMLElement {
     this._debugStats = this.hasAttribute("debug");
     this._logTimings = this.hasAttribute("log");
 
-    // TODO: Support <source data-uniform-*> for qip-play, matching qip-preview.
+    // TODO: Support <source data-uniform-*> for qip-play, matching qip-edit.
 
     this._setupInputBinding(inputElement);
 

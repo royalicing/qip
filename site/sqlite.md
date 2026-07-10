@@ -11,19 +11,19 @@ The same bytes stay compatible with the official `sqlite3.wasm`, so an app can r
 This lists every table with its columns and declared types. The database arrives like any other asset: a `<source>` element pointing at [/data/countries.sqlite](/data/countries.sqlite) (48 KB).
 
 <form aria-label="SQLite schema preview">
-  <qip-preview>
+  <qip-edit>
     <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
     <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
     <output name="output"><pre><code></code></pre></output>
-  </qip-preview>
+  </qip-edit>
 </form>
 
 ```html
-<qip-preview>
+<qip-edit>
   <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
   <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
   <output name="output"><pre><code></code></pre></output>
-</qip-preview>
+</qip-edit>
 ```
 
 The `<source name="input">` element is the input and the wasm `<source>` is the pipeline. The input's `type` attribute must match the component's declared `application/vnd.sqlite3` input type.
@@ -33,7 +33,7 @@ The `<source name="input">` element is the input and the wasm `<source>` is the 
 The [Titanic dataset](/data/titanic.sqlite) (68 KB) holds eight tables. Pick one and `sqlite-table-csv.wasm` (19 KB) converts it to CSV, entirely in your browser.
 
 <form aria-label="SQLite table to CSV">
-  <qip-preview>
+  <qip-edit>
     <source name="input" src="/data/titanic.sqlite" type="application/vnd.sqlite3" />
     <source src="/components/application/vnd.sqlite3/sqlite-table-csv.wasm" type="application/wasm" data-uniform-table="" />
     <p>
@@ -51,7 +51,7 @@ The [Titanic dataset](/data/titanic.sqlite) (68 KB) holds eight tables. Pick one
       </label>
     </p>
     <output name="output" style="display: block; max-height: 20rem; overflow: auto;"><pre><code></code></pre></output>
-  </qip-preview>
+  </qip-edit>
 </form>
 
 Uniforms come from ordinary form controls: the `<select name="uniform-table">` feeds the component's `uniform_set_table` export, exactly like `?table=N` on the CLI.
@@ -61,7 +61,7 @@ Uniforms come from ordinary form controls: the `<select name="uniform-table">` f
 `sqlite-row-lookup.wasm` (21 KB) descends the table's b-tree instead of scanning it — it touches a handful of pages to fetch one row out of 891.
 
 <form aria-label="SQLite row lookup">
-  <qip-preview>
+  <qip-edit>
     <source name="input" src="/data/titanic.sqlite" type="application/vnd.sqlite3" />
     <source src="/components/application/vnd.sqlite3/sqlite-row-lookup.wasm" type="application/wasm" data-uniform-table="0" data-uniform-rowid="" />
     <p>
@@ -70,7 +70,7 @@ Uniforms come from ordinary form controls: the `<select name="uniform-table">` f
       </label>
     </p>
     <output name="output"><pre><code></code></pre></output>
-  </qip-preview>
+  </qip-edit>
 </form>
 
 ## Bring your own database
@@ -78,12 +78,12 @@ Uniforms come from ordinary form controls: the `<select name="uniform-table">` f
 Drop any SQLite file here and browse its schema. Nothing is uploaded: the file is read locally into the component's memory. Until you choose a file, the preview falls back to the countries database.
 
 <form aria-label="Inspect your own SQLite database">
-  <qip-preview>
+  <qip-edit>
     <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
     <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
     <p><input type="file" name="input" accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3" /></p>
     <output name="output"><pre><code></code></pre></output>
-  </qip-preview>
+  </qip-edit>
 </form>
 
 Databases should be published with `VACUUM INTO 'payload.sqlite'` — that guarantees a single clean UTF-8 file with no WAL sidecar and no freelist bloat. The readers deliberately reject WAL-mode and UTF-16 files with a clear error rather than risk stale or garbled reads.

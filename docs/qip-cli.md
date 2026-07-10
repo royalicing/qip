@@ -2,7 +2,7 @@
 
 `qip` is the command-line host in this repo. QIP is the broader standard: the component contract, execution shape, and architecture.
 
-This page is about CLI behavior: commands, file and network access by the host process, runtime guardrails, and implementation details that should not be mistaken for the whole QIP standard. This repo also contains browser JavaScript hosts such as `<qip-preview>` and `<qip-play>`. Native hosts such as the Swift implementation should follow the same component contract but may expose different application APIs.
+This page is about CLI behavior: commands, file and network access by the host process, runtime guardrails, and implementation details that should not be mistaken for the whole QIP standard. This repo also contains browser JavaScript hosts such as `<qip-edit>` and `<qip-play>`. Native hosts such as the Swift implementation should follow the same component contract but may expose different application APIs.
 
 ## Names
 
@@ -12,7 +12,7 @@ Use these names consistently:
 - **`qip`**: the CLI executable implemented in this repo.
 - **QIP component**: a WebAssembly module that follows the QIP contract.
 - **QIP host**: any implementation that loads a component, writes input bytes, calls exports, and reads output bytes.
-- **Browser hosts**: this repo's `<qip-preview>` and `<qip-play>` JavaScript runtimes.
+- **Browser hosts**: this repo's `<qip-edit>` and `<qip-play>` JavaScript runtimes.
 
 ## Commands
 
@@ -84,7 +84,7 @@ Current CLI guardrails:
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
 - `modules/application/wasm/wasm-safety-check.wasm` enforces the strict artifact profile as a QIP component.
 
-The browser JavaScript hosts expose a matching policy shape with `max-memory="<bytes>"` and `fixed-memory`; see [Browser Preview Element](/docs/qip-preview) and [Interactive ABI](/docs/interactive).
+The browser JavaScript hosts expose a matching policy shape with `max-memory="<bytes>"` and `fixed-memory`; see [Browser Elements](/docs/qip-elements) and [Interactive ABI](/docs/interactive).
 
 Current limitations:
 

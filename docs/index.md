@@ -20,7 +20,7 @@ QIP is named for the constraints we want every component to keep:
 
 QIP is the portable standard of component contracts, documented in these pages.
 
-[`qip`](/docs/qip-cli) is the command-line host implemented in this repo. It also serves as a reference implementation of QIP. This repo also contains browser JavaScript hosts such as `<qip-preview>` and `<qip-play>`. Native implementations such as in Swift are also available on request.
+[`qip`](/docs/qip-cli) is the command-line host implemented in this repo. It also serves as a reference implementation of QIP. This repo also contains browser JavaScript hosts such as `<qip-edit>` and `<qip-play>`. Native implementations such as in Swift are also available on request.
 
 ## QIP Spec
 
@@ -36,7 +36,7 @@ Then add the relevant extension specs for the component type:
 - [Form ABI](/docs/form_abi) for form components.
 - [`qip comply`](/docs/comply) when you need reusable conformance checks.
 
-[`qip` CLI](/docs/qip-cli), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Preview Element](/docs/qip-preview) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
+[`qip` CLI](/docs/qip-cli), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Elements](/docs/qip-elements) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
 
 ## Why WebAssembly
 
@@ -108,7 +108,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><span class="docs-section">Runtimes</span>
 <ol>
 <li><a href="/docs/qip-cli">qip CLI</a></li>
-<li><a href="/docs/qip-preview">Browser Preview Element</a></li>
+<li><a href="/docs/qip-elements">Browser Elements</a></li>
 <li><a href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
 </ol>
 </li>

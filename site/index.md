@@ -15,7 +15,7 @@ h1 + a, nav > a  {
     }
 }
 
-qip-preview source { display: none }
+qip-edit source { display: none }
 
 .browser-preview-demo {
     gap: 0.5lh;
@@ -106,7 +106,7 @@ printf '%s\n' \
 You can render any QIP component in a browser:
 
 <form class="browser-preview-demo" aria-label="Markdown to HTML">
-    <qip-preview>
+    <qip-edit>
         <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
         <source src="/components/text/html/highlight-syntax-highlight-tsx.wasm" type="application/wasm" />
         <source src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
@@ -120,13 +120,13 @@ You can render any QIP component in a browser:
                 <iframe title="Rendered HTML preview" sandbox></iframe>
             </output>
         </section>
-    </qip-preview>
+    </qip-edit>
 </form>
 
-Use the `<qip-preview>` custom element to render a series of QIP components with user `<input>`.
+Use the `<qip-edit>` custom element to render a series of QIP components with user `<input>`.
 
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
-        &lt;qip-preview&gt;
+        &lt;qip-edit&gt;
             &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
             &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
             &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
@@ -136,7 +136,7 @@ const pi: number = 3.14;
 ```&lt;/textarea&gt;
         &lt;output name=&quot;output&quot;&gt;&lt;iframe title=&quot;Rendered HTML preview&quot; sandbox&gt;&lt;/iframe&gt;&lt;/output&gt;
         &lt;output name=&quot;output&quot;&gt;&lt;pre&gt;&lt;code&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/output&gt;
-    &lt;/qip-preview&gt;
+    &lt;/qip-edit&gt;
 &lt;/form&gt;
 </code></pre>
 

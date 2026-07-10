@@ -51,9 +51,9 @@ qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 --fixed-me
 Use the same policy shape in browser hosts:
 
 ```html
-<qip-preview max-memory="1048576" fixed-memory>
+<qip-edit max-memory="1048576" fixed-memory>
   <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
-</qip-preview>
+</qip-edit>
 ```
 
 `--max-memory <bytes>` rejects modules whose declared linear memory minimum or maximum exceeds the byte cap. A module with memory but no declared maximum is rejected when this flag is set.

@@ -51,7 +51,7 @@ Render Markdown with the same QIP component used by this website.
 </style>
 
 <form aria-label="Markdown to HTML">
-  <qip-preview>
+  <qip-edit>
     <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
     <div class="tool-grid">
       <label class="tool-panel">
@@ -69,7 +69,7 @@ Render Markdown with the same QIP component used by this website.
         <iframe title="Rendered HTML preview" sandbox></iframe>
       </output>
     </section>
-  </qip-preview>
+  </qip-edit>
 </form>
 
 ## CLI equivalent

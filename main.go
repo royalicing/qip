@@ -137,7 +137,7 @@ const usageHelp = "Usage: qip help [command]"
 
 var qipFormTagPattern = regexp.MustCompile(`(?is)<qip-form\b[^>]*>`)
 var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+))")
-var qipPreviewTagPattern = regexp.MustCompile(`(?is)<qip-preview\b[^>]*>`)
+var qipEditTagPattern = regexp.MustCompile(`(?is)<qip-edit\b[^>]*>`)
 var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
 const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--fixed-memory] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n  - --fixed-memory rejects modules that can grow linear memory while they run.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
@@ -2504,7 +2504,7 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 							InstantiationDurations: []time.Duration{},
 						}, err
 					}
-					body = injectQIPPreviewRuntime(body)
+					body = injectQIPEditRuntime(body)
 					body = injectQIPPlayRuntime(body)
 				}
 
@@ -3204,7 +3204,7 @@ func resolveDevBaseRouteResponse(ctx context.Context, current *devRuntimeState, 
 		if err != nil {
 			return qinternal.InProcessHTTPResponse{}, false, err
 		}
-		body = injectQIPPreviewRuntime(body)
+		body = injectQIPEditRuntime(body)
 		body = injectQIPPlayRuntime(body)
 	}
 	return qinternal.InProcessHTTPResponse{
@@ -3640,14 +3640,14 @@ func injectInlineModuleScript(body []byte, script []byte) []byte {
 	return out
 }
 
-func injectQIPPreviewRuntime(body []byte) []byte {
-	if !qipPreviewTagPattern.Match(body) {
+func injectQIPEditRuntime(body []byte) []byte {
+	if !qipEditTagPattern.Match(body) {
 		return body
 	}
 	var b strings.Builder
-	b.Grow(len(qipPreviewClientRuntimeModuleJS) + 64)
+	b.Grow(len(qipEditClientRuntimeModuleJS) + 64)
 	b.WriteString("<script type=\"module\">\n")
-	b.WriteString(qipPreviewClientRuntimeModuleJS)
+	b.WriteString(qipEditClientRuntimeModuleJS)
 	b.WriteString("\n</script>")
 	return injectInlineModuleScript(body, []byte(b.String()))
 }
@@ -3667,8 +3667,8 @@ func injectQIPPlayRuntime(body []byte) []byte {
 //go:embed embedded/qip-form-client-runtime.js
 var qipFormClientRuntimeModuleJS string
 
-//go:embed embedded/qip-preview-client-runtime.js
-var qipPreviewClientRuntimeModuleJS string
+//go:embed embedded/qip-edit-client-runtime.js
+var qipEditClientRuntimeModuleJS string
 
 //go:embed embedded/qip-play-client-runtime.js
 var qipPlayClientRuntimeModuleJS string

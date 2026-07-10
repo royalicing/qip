@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-let QIPPreviewElement = null;
+let QIPEditElement = null;
 
 globalThis.HTMLElement = class {
   constructor() {
@@ -16,19 +16,19 @@ globalThis.customElements = {
     return undefined;
   },
   define(name, elementClass) {
-    if (name === "qip-preview") {
-      QIPPreviewElement = elementClass;
+    if (name === "qip-edit") {
+      QIPEditElement = elementClass;
     }
   },
 };
 
 vm.runInThisContext(
-  readFileSync("embedded/qip-preview-client-runtime.js", "utf8"),
-  { filename: "embedded/qip-preview-client-runtime.js" },
+  readFileSync("embedded/qip-edit-client-runtime.js", "utf8"),
+  { filename: "embedded/qip-edit-client-runtime.js" },
 );
 
-test("qip-preview formats pipeline stats like qip-play", () => {
-  const element = new QIPPreviewElement();
+test("qip-edit formats pipeline stats like qip-play", () => {
+  const element = new QIPEditElement();
   element._moduleBytesTotal = 4900;
   element._stages = [
     { exports: { memory: new WebAssembly.Memory({ initial: 2 }) } },
@@ -45,8 +45,8 @@ test("qip-preview formats pipeline stats like qip-play", () => {
   assert.equal(element.dataset.renderTime, "2.5 ms");
 });
 
-test("qip-preview excludes stages without a live instance from memory", () => {
-  const element = new QIPPreviewElement();
+test("qip-edit excludes stages without a live instance from memory", () => {
+  const element = new QIPEditElement();
   element._stages = [
     { exports: { memory: new WebAssembly.Memory({ initial: 1 }) } },
     { exports: null },
@@ -59,7 +59,7 @@ test("qip-preview excludes stages without a live instance from memory", () => {
   assert.equal(element.dataset.renderTime, "0.0 ms");
 });
 
-test("qip-preview after content uses the formatted stats", () => {
+test("qip-edit after content uses the formatted stats", () => {
   const styles = readFileSync("recipes/text/markdown/styles.css", "utf8");
 
   assert.match(

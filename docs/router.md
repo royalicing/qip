@@ -192,7 +192,7 @@ Nested recipe roots are not active in this version. A file at `site/docs/_recipe
 If the final content response is HTML, qip must inject client runtime support needed by embedded qip tags:
 
 - `<qip-form>` uses form components from `--forms`
-- `<qip-preview>` uses the preview runtime
+- `<qip-edit>` uses the edit runtime
 - `<qip-play>` uses interactive QIP components through the play runtime
 
 If a page contains `<qip-form>` tags and no form components are loaded, qip must fail the response instead of silently serving a broken form.

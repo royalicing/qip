@@ -1,0 +1,212 @@
+# Browser Elements
+
+QIP provides three custom elements organized around the user's relationship to a component. Use `<qip-view>` to consume a result, `<qip-edit>` to author inputs, and `<qip-play>` to interact with a running component.
+
+```text
+view    consume
+edit    author
+play    interact
+```
+
+These names describe the user experience, not implementation concepts such as rendering, pipelines, transforms, or static generation.
+
+| Element | User relationship | Input or state owner | Lifecycle | Pre-rendering |
+|---|---|---|---|---|
+| `<qip-view>` | Consume | The page or application | Finite rendering | The complete output can be rendered at build time or on the server; client activation can be optional |
+| `<qip-edit>` | Author | User-editable form controls | Reactive finite rendering | The initial output can be pre-rendered, but client activation is required for editing |
+| `<qip-play>` | Interact | The running QIP component | Persistent, stateful session | A fallback, poster, or initial snapshot can be pre-rendered, but interaction requires activation |
+
+## Choosing An Element
+
+1. Use `<qip-view>` when the user consumes a result whose source is owned by the page or application.
+2. Use `<qip-edit>` when the user changes source inputs and QIP reactively updates the outputs.
+3. Use `<qip-play>` when the component owns an ongoing stateful session and responds to interaction over time.
+
+The distinction is the overall user experience, not the presence of a particular form-control attribute:
+
+- A published Markdown document with its source in a hidden input is a view.
+- A Markdown authoring interface is an edit.
+- An editor temporarily locked by permissions remains an edit: it is still fundamentally an authoring interface.
+- A game, simulation, or other persistent interactive component is a play experience.
+
+## `<qip-view>` (Proposed)
+
+`<qip-view>` is the finite, consumption-oriented element. It is documented here as a proposal and is not implemented yet; this section becomes the reference once it is.
+
+The page or application owns the canonical input, and the user consumes the resulting representation rather than editing it. Inputs may be supplied with hidden or read-only controls:
+
+```html
+<qip-view rendered>
+  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <input type="hidden" name="input" value="# Rendered ahead of time" />
+  <output name="output"><h1>Rendered ahead of time</h1></output>
+</qip-view>
+```
+
+A view performs a finite rendering operation. Its output may be generated at build time or on the server, and a pre-rendered view stays useful without client-side execution merely to display existing output. The browser may render or rerender the view when the application explicitly asks for it.
+
+### Authoritative Output
+
+The boolean `rendered` attribute on `<qip-view>` marks the element's output children as authoritative pre-rendered output. When `rendered` is present, client activation may skip the initial render; when absent, the output children are placeholder or fallback content and the client must render before the view is trustworthy.
+
+The signal is the attribute, never the output contents: empty output is a valid result, so authoritative output cannot be inferred from whether an `<output>` element is non-empty.
+
+## `<qip-edit>`
+
+`<qip-edit>` is the finite, authoring-oriented element. The user authors one or more declared inputs; QIP performs finite renders in response to relevant input changes and writes the result to the declared outputs. Use "edit element" when a noun is needed in prose.
+
+The element is intentionally small: the page provides input controls, Wasm sources, and output views; the runtime wires them together.
+
+```html
+<form aria-label="Markdown to HTML">
+  <qip-edit>
+    <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+    <source src="/components/text/html/highlight-syntax-highlight-tsx.wasm" type="application/wasm" />
+
+    <textarea name="input" rows="5" placeholder="Write some Markdown"># A Markdown renderer that works identically cross-platform! Try typing…</textarea>
+
+    <output name="output"><pre><code></code></pre></output>
+    <output name="output"><iframe title="Rendered HTML preview" sandbox></iframe></output>
+  </qip-edit>
+</form>
+```
+
+Initial output may be rendered ahead of time, but client activation is still required for the element to respond to later edits. A temporarily read-only authoring experience is still an edit rather than a view.
+
+### Contract
+
+Each edit element needs at least one QIP component, one input, and one output:
+
+```html
+<qip-edit>
+  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <textarea name="input"># Hello</textarea>
+  <output name="output"><pre><code></code></pre></output>
+</qip-edit>
+```
+
+The runtime reads from the first child with `name="input"`. It runs each `<source type="application/wasm">` as a pipeline stage in document order. It then writes the same output bytes into every `<output name="output">`.
+
+Multiple outputs are multiple views of one result. They are not multiple return values from the component.
+
+### Output Views
+
+`<output name="output">` is the semantic binding. Its child element declares how the page wants to show the bytes.
+
+```html
+<output name="output"><pre><code></code></pre></output>
+<output name="output"><iframe title="Rendered HTML preview" sandbox></iframe></output>
+<output name="output"><img alt="Generated image preview" /></output>
+```
+
+For UTF-8 output, the runtime looks inside each output for `pre > code` or `iframe`.
+
+- `pre > code` receives the decoded output as `textContent`.
+- `iframe` receives the decoded output as `srcdoc`. For `text/html` output, the runtime appends a low-specificity default sans-serif body style. Use `sandbox` for rendered HTML.
+- Without either child, decoded text is written directly to the `<output>`.
+
+For `image/*` output, an `img` child receives an object URL for the rendered image. This is the right view for SVG, PNG, JPEG, GIF, BMP, ICO, or WebP output. If there is no `img`, SVG and other UTF-8 image formats can still be shown as text with `pre > code`.
+
+Binary output without a matching view falls back to a short hex listing in the `<output>`.
+
+### Binary Input
+
+Text inputs cover UTF-8 transforms; binary payloads have two HTML-native forms.
+
+A `<source name="input">` declares the input. The runtime fetches it, and its `type` attribute becomes the pipeline's initial content type:
+
+```html
+<qip-edit>
+  <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
+  <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+  <output name="output"><pre><code></code></pre></output>
+</qip-edit>
+```
+
+Every other `<source>` is a pipeline stage. The naming follows the element's existing `name="output"` and `name="uniform-*"` wiring, and the input can itself be a wasm module — for example, feeding one into `wasm-safety-check.wasm`:
+
+```html
+<qip-edit>
+  <source name="input" src="/components/utf8/luhn.wasm" type="application/wasm" />
+  <source src="/components/application/wasm/wasm-safety-check.wasm" type="application/wasm" />
+  <output name="output"><pre><code></code></pre></output>
+</qip-edit>
+```
+
+With an input `<source>` present, a separate input control is optional. `data:` URLs work for inlining small payloads.
+
+An `<input type="file" name="input">` supplies the chosen file's bytes and content type instead. With no file selected it falls back to the input `<source>`, so a page can ship default data that visitors override with their own file:
+
+```html
+<qip-edit>
+  <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
+  <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+  <input type="file" name="input" accept=".sqlite,application/vnd.sqlite3" />
+  <output name="output"><pre><code></code></pre></output>
+</qip-edit>
+```
+
+Precedence: a chosen file wins, then the input `<source>`, then the input element's text.
+
+### Module Policy
+
+Use module policy attributes when a page runs code you want to keep inside a tighter resource boundary:
+
+```html
+<qip-edit max-memory="1048576" fixed-memory>
+  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <textarea name="input"># Hello</textarea>
+  <output name="output"><pre><code></code></pre></output>
+</qip-edit>
+```
+
+- `max-memory="<bytes>"` rejects a module whose declared memory minimum or maximum exceeds the cap. If a module has memory but no declared maximum, it is rejected.
+- `fixed-memory` rejects a module that can grow linear memory while it runs.
+
+These checks run after the module bytes are fetched and before `WebAssembly.compile`. `<qip-play>` accepts the same attributes.
+
+## `<qip-play>`
+
+`<qip-play>` is the persistent, interaction-oriented element. The component remains instantiated over time, owns or participates in an evolving stateful session, and user events can affect subsequent output.
+
+```html
+<qip-play>
+  <source src="/components/interactive/snake.wasm" type="application/wasm" />
+</qip-play>
+```
+
+The distinction from `<qip-edit>` is not merely that both accept interaction. Editing changes declared source inputs and produces finite results; playing interacts with a running component whose state persists between events. A fallback, poster, or initial snapshot may be rendered ahead of time, but the experience requires client activation to become interactive.
+
+The component side of this element is the Interactive contract: `tick`, `key_event`, `pointer_event`, and frame output. See [Interactive ABI](/docs/interactive) and [Interactive Rendering Performance](/docs/interactive-rendering-performance).
+
+## Pre-Rendering
+
+Prefer the terms pre-rendered, build-time rendered, or server-rendered over calling the consumption element "static".
+
+A view is not necessarily unchanging: application code may explicitly rerender it when externally owned data changes. Likewise, an edit may begin with pre-rendered output even though it later becomes reactive. The distinction stays:
+
+```text
+view    consume a finite result
+edit    author inputs and produce finite results
+play    interact with a persistent session
+```
+
+— not static versus dynamic.
+
+## Externally Managed Data
+
+`<qip-view>` is not intended to own application data loading. Authentication, network requests, caching, retries, and invalidation belong in application code or a developer-defined custom element, which can invoke QIP's rendering functions and control when a component is loaded or rerendered:
+
+```html
+<account-usage-report account="123"></account-usage-report>
+```
+
+A custom element such as `<account-usage-report>` can own authenticated fetching and caching while using QIP internally for deterministic rendering.
+
+## Related Documentation
+
+- [Component Contract](/docs/component-contract) — the exports, inputs, outputs, and content-type composition all three elements build on.
+- [Hard Limits](/docs/hard-limits) — the memory, time, and host-access budget components run within.
+- [Architecture And Boundaries](/docs/architecture-boundaries) — where trust boundaries sit between host, component, and page.
+- [Interactive ABI](/docs/interactive) — the component contract behind `<qip-play>`.
+- [Form ABI](/docs/form_abi) — prompt-driven form components, a separate element family.
