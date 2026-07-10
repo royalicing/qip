@@ -1,4 +1,4 @@
-<title>QIP: reproducible rendering</title>
+<title>QIP: a new way to render</title>
 
 <style>
 h1 + a, nav > a  {
