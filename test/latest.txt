@@ -5,7 +5,7 @@ hello
 module: bmp-to-ico.wasm | base64-encode.wasm
 AAABAAEAAQEAAAEAGAAwAAAAFgAAACgAAAABAAAAAgAAAAEAGAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAA==
 
-module: crc.wasm
+module: crc32-hex.wasm
 352441c2
 module: css-class-validator.wasm
 btn-primary

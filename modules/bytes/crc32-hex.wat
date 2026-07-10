@@ -1,4 +1,4 @@
-(module $CRC
+(module $CRC32Hex
   (memory (export "memory") 3 3)
   (global $input_ptr i32 (i32.const 0x10000))
   (func (export "input_ptr") (result i32)
@@ -29,14 +29,10 @@
     (local $c i32)
     (local $out i32)
     (local.set $ptr (global.get $input_ptr))
-    (i32.eq (local.get $input_size) (i32.const 0))
-    (if
-      (then
-        (return (i32.const 0))
-      )
-    )
     (i32.const 4294967295)
     (local.set $c)
+    (if (i32.gt_s (local.get $input_size) (i32.const 0))
+      (then
     (loop $EachByte
       (i32.xor
         (local.get $c)
@@ -154,6 +150,8 @@
         (then
           (br $EachByte)
         )
+      )
+    )
       )
     )
     (local.set $out (global.get $output_ptr))
