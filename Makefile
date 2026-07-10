@@ -92,6 +92,7 @@ recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 67108
 modules/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 
 modules/bytes/zlib-compress-dynamic-huffman-opt.wasm: modules/bytes/lib/deflate.zig
+modules/bytes/zlib-decompress.wasm: modules/bytes/lib/inflate.zig modules/bytes/lib/deflate.zig
 
 modules/%.wasm: modules/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
