@@ -1,4 +1,4 @@
-.PHONY: compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go test-node test-deno test-comply site-static install score wasm-safety-report
+.PHONY: fuzz-zlib compliance modules recipes modules-wat-wasm modules-c-wasm modules-zig-wasm test test-go test-node test-deno test-comply site-static install score wasm-safety-report
 
 default: qip compliance modules recipes
 
@@ -139,6 +139,9 @@ test-node: qip modules
 	node --test test/sqlite-modules.mjs
 	node --test test/bmp-png.mjs
 	node --test test/wasm-trap-instance-continues.mjs
+
+fuzz-zlib: modules/bytes/zlib-compress.wasm modules/bytes/zlib-compress-fixed-huffman.wasm modules/bytes/zlib-compress-dynamic-huffman.wasm modules/bytes/zlib-compress-dynamic-huffman-opt.wasm modules/bytes/zlib-decompress.wasm
+	node tools/fuzz-zlib.mjs 20000
 
 test-deno: qip modules
 	deno check site/qip-runner.js
