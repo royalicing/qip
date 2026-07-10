@@ -365,8 +365,9 @@ ls ./site
 - [QIP Component Contract](docs/component-contract.md)
 - [QIP Component Patterns](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
+- [Hard Limits](docs/hard-limits.md)
 - [WebAssembly ES Module Integration](docs/esm-integration.md)
-- [Security Model](docs/security-model.md)
+- [qip CLI](docs/qip-cli.md)
 - [QIP Component Compliance](docs/comply.md)
 
 ----
@@ -470,20 +471,32 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 
 ## TODO
 
+- [ ] Add CSV to chart SVG example
+- [ ] Add Email render example (do we use an existing layout system?)
+  - See https://www.joshwcomeau.com/react/wonderful-emails-with-mjml-and-mdx/
+  - See https://react.email/components and https://demo.react.email/preview/05-Studio/welcome
+- [ ] Add MathML https://www.w3.org/TR/mathml-core/ `<math>` renderer
+  - See https://github.com/KaTeX/KaTeX
+  - See https://www.intmath.com/cg5/katex-mathjax-comparison.php?processor=MathJax3
+  - See https://andrewlock.net/rendering-math-in-html-mathml-mathml-core-and-asciimath/
+  - See https://developer.mozilla.org/en-US/docs/Web/MathML/Reference/Element/semantics
+  - See https://asciimath.org/#syntax
+  - Have `/math-to-html` demo like https://katex.org/#demo
 - [ ] Rename CLI command to `qip router dev`
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
+- [x] Add max-memory and fixed-memory policies to CLI and custom elements.
 - [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
 - [ ] Add optional field telemetry for deployed QIP components: user-experience metrics such as component hash, host/runtime/device class, time to first QIP paint p75/p95/p99, render-to-paint delay p75/p95/p99, interactive event-to-painted-frame p75/p95/p99, sampled pipeline render p95/p99, frame-budget miss rate, trap/timeout rate, and slowest device classes so production performance can be compared without changing the component contract.
 - [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
-- [ ] Box shadow renderer that compares how Chrome, Safari, Firefox, and Figma all render box shadows. Lets you see all of them together at once and change widths and colors.
+- [x] Box shadow renderer that compares how Chrome, Safari, Firefox, and Figma all render box shadows. Lets you see all of them together at once and change widths and colors.
 - [ ] Rename `<qip-preview>` to `<qip-run>` or `<qip-render>` or something more clear.
 - [ ] Add TypeScript-to-JavaScript type stripper.
 - [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add DOOM example.
 - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
-- [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
-- [x] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
+- [x] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
+- [x] Add application/wasm verifier for fixed memory, fixed-bound loop evidence, and no recursion. This is a conservative subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code: loops must compile to a visible counter, monotonic update, and exit bound.
 - [ ] Add tracing by modifying modules:
   - [ ] Trace unreachable by adding calls to memory reads of input so we can check last read which will likely be source reason for the trap.
   - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
@@ -495,7 +508,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Add bar charts.
 - [ ] Add scatter plot charts.
 - [ ] Add pixel editor.
-- [ ] Add Cover Flow example.
+- [x] Add Cover Flow example.
 - [ ] Add Figma vector networks example.
 - [ ] Add localized example in multiple languages.
 - [ ] Add a split interactive pipeline mode with two collaborative modules: state/tick module writes an internal scene buffer, renderer module consumes it via `render(input_size)` with a simple `memcpy` handoff between module instances, enabling presentation variants like language/locale, dark or light mode, font size, DPI scaling, and accessibility-focused rendering.

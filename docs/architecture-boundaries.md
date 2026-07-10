@@ -242,7 +242,7 @@ Capability-based security starts with a simple rule: code can only use what it h
 
 Many application tools assume global context. A helper can read process environment. A plugin can import a package. A server component can call application code. A template extension may reach the filesystem or network because it is running inside the app process.
 
-QIP is on the strict side of this spectrum. A component is not expected to discover context. The host passes bytes in. The component returns bytes out. If the component needs a setting, pass it as a uniform or encode it in the input. If it needs database data, the app should query the database and pass only the relevant bytes.
+QIP is on the strict side of this spectrum. A component cannot reach out to discover context. The host passes bytes in and the component returns bytes out. If the component needs a setting, pass it as a uniform or include it in the input. If it needs database data, the app should query the database and pass only the relevant bytes.
 
 ```text
 ambient model:       code -> reaches out for context
@@ -250,7 +250,7 @@ capability model:    host -> passes explicit input -> code
 QIP default:         host -> bytes/uniforms/events -> component -> bytes
 ```
 
-That explicitness is less convenient than a full application runtime. It is also the point: the boundary is easy to reason about, test, and review.
+These explicit boundaries are easy to reason about, audit, test, and review.
 
 ## CSP And Sandboxed Previews
 
@@ -271,6 +271,35 @@ preview document
 ```
 
 Use CSP and iframe sandboxing as browser boundaries. Use QIP as the transform boundary before the browser sees the bytes.
+
+## Script Tags And Growing Sandboxes
+
+Loading JavaScript from a server is a different trust decision.
+
+If you load JavaScript with `<script src="...">`, there is no small component boundary around that script. It runs as page code. It can allocate memory until the browser stops it. It can start more network requests. It can load more code. It runs in a browser sandbox, but the sandbox can grow in size and reach out to fetch more of what it wants.
+
+That is often intentional. Analytics and tracking scripts are added to help product and marketing teams understand behavior. The tradeoff is that the script is not just data. It is code running inside your page's authority.
+
+```text
+<script src="https://analytics.example/script.js">
+  |
+  v
++----------------------------------------------------------+
+| Browser origin: https://app.example                      |
+|                                                          |
+|  third-party script runs as page code                    |
+|  can inspect DOM                                         |
+|  can send network requests                               |
+|  can allocate memory until browser/runtime limits         |
+|  can load more code                                      |
++----------------------------------------------------------+
+```
+
+QIP is meant to sit on the stricter side of this spectrum. A component should not assume it can read global page context, discover tokens, call network APIs, or grow into a larger runtime. The host passes input explicitly and reads output explicitly.
+
+The CLI and browser custom elements now expose that boundary as policy. `qip run`, `qip bench`, and `qip image` can reject modules with `--max-memory <bytes>` and `--fixed-memory`. `<qip-preview>` and `<qip-play>` can do the same before browser compilation with `max-memory="<bytes>"` and `fixed-memory`.
+
+Those checks are opt-in. That is deliberate for now: current components do not use `memory.grow`, but some older artifacts still need explicit memory maxima before a max-memory rule can become painless by default.
 
 ## How WebAssembly Changes The Shape
 

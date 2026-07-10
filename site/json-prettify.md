@@ -53,19 +53,20 @@ Paste JSON and format it locally with a QIP component.
 </p>
 
 <script type="module">
-import { render } from "/qip-runner.js";
+import { contentComponent, contentContract } from "/qip-runner.js";
 
 const input = document.getElementById("json-input");
 const output = document.getElementById("json-output");
 const formatButton = document.getElementById("json-format");
 const copyButton = document.getElementById("json-copy");
 const status = document.getElementById("json-status");
-const component = await WebAssembly.compileStreaming(fetch("/components/text/json/json-prettify.wasm"));
+const text = contentContract({ encoding: "utf-8" });
+const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/json/json-prettify.wasm"));
+const formatJSONComponent = contentComponent(text, componentModule, text);
 
 function formatJSON() {
   try {
-    const result = render(component, input.value);
-    output.value = result.value;
+    output.value = formatJSONComponent(input.value);
     status.textContent = "Formatted.";
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);

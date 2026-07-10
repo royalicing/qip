@@ -23,11 +23,13 @@ Given MIME `type/subtype`, recipe directory is:
 - Directory: `_recipes/application/warc/`
 - Typical use:
   - link integrity checks on the full routed archive
+  - JavaScript module import checks across rendered HTML
   - archive rewrites before export (for example tar/static packaging pipelines)
 - Example filenames:
   - `10-warc-check-broken-links.wasm`
-  - `20-warc-to-sitemap.wasm`
-  - `30-warc-add-open-graph-image-meta.wasm`
+  - `20-warc-check-broken-module-imports.wasm`
+  - `30-warc-to-sitemap.wasm`
+  - `40-warc-add-open-graph-image-meta.wasm`
 
 ## Execution Context
 

@@ -14,6 +14,37 @@ h1 + a, nav > a  {
         background: rgba(255, 255, 255, 0.125);
     }
 }
+
+qip-preview source { display: none }
+
+.browser-preview-demo {
+    gap: 0.5lh;
+}
+
+.browser-preview-view {
+    display: contents;
+    gap: 0.5lh;
+}
+
+.browser-preview-output {
+    display: block;
+    padding: 0;
+    overflow: auto;
+}
+
+.browser-preview-output pre {
+    margin: 0;
+    padding: 0.5rlh 1em;
+    max-height: 8lh;
+}
+
+.browser-preview-output iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: white;
+}
 </style>
 
 <h1>Components that are<br> <em>Quick</em> to make/maintain/run, <em>Isolated</em> from net/disk/deps, <em>Portable</em> to web/server/native.</h1>
@@ -32,9 +63,9 @@ Render across browser, server, mobile, native, CLI, and CI. Same input, same out
 
 Use QIP components for text, images, documents, archives, interactive UI, or any MIME type.
 
-Just like the web is `request -> response`, with QIP components are `input -> output`. But QIP components are not tied to HTML or JavaScript: they work with any content as input or as output.
+Just like the web is `request -> response`, QIP components are `input -> output`. Yet QIP components are not tied to HTML or JavaScript: they take any content as input and render any content as output.
 
-Your components can render Markdown into HTML, URLs into QR codes, SVG into bitmap images, or WARC archives into deployable websites. Missing something? Prompt a small component and add it to your collection.
+Your components can render Markdown into HTML, URLs into QR codes, SVG into bitmap images, SQLite databases into CSV, or WARC archives into deployable websites. Missing something? Prompt a small component and add it to your collection.
 
 ```bash
 echo "# A Markdown renderer that works _identically_ on any platform" \
@@ -46,60 +77,68 @@ echo "# A Markdown renderer that works _identically_ on any platform" \
 <a href="/markdown-to-html">Try Markdown renderer</a>
 </nav>
 
-## Repeatable recipes
+## Reproducible recipes
 
 You can pipe one component into another step-by-step like a recipe.
 
 Make a recipe you like? It will work identically on mobile, in a browser, in your CI pipeline, or on Windows. You can be confident if it works here, it works there.
 
-For example, one component can render Markdown to HTML, then the next component can highlight TSX code blocks in that HTML.
+For example, one component can render Markdown to HTML, then it passes that to the next component to highlight TSX code blocks:
 
 ```bash
 printf '%s\n' \
   '# Markdown with code snippet' \
   '' \
   '```tsx' \
-  'export function Button({ label }: { label: string }) {' \
-  '  return <button>{label}</button>;' \
-  '}' \
+  'const pi: number = 3.14;' \
   '```' \
 | qip run \
   modules/text/markdown/commonmark.0.31.2.wasm \
   modules/text/html/highlight-syntax-highlight-tsx.wasm
 
 # <h1>Markdown with code snippet</h1>
-# <pre><code class="language-tsx hljs"><span class="hljs-keyword">export</span> <span class="hljs-keyword">function</span> Button({ label }: { label: <span class="hljs-type">string</span> }) {
-#   <span class="hljs-keyword">return</span> <span class="hljs-tag">&lt;button&gt;</span>{label}&lt;/button&gt;;
-# }
+# <pre><code class="language-tsx hljs"><span class="hljs-keyword">const</span> pi: <span class="hljs-type">number</span> = <span class="hljs-number">3.14</span>;
 # </code></pre>
 ```
 
 ## Browser rendering
 
-Load the exact same Markdown component in the browser with the `<qip-preview>` custom HTML element:
+You can render any QIP component in a browser:
 
-<pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
-    &lt;qip-preview&gt;
-        &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-        &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-        &lt;textarea name=&quot;input&quot; rows=&quot;5&quot; placeholder=&quot;Write some Markdown&quot;
-        &gt;# A Markdown renderer that works identically cross-platform! Try typing…&lt;/textarea&gt;
-        &lt;output name=&quot;output&quot;&gt;&lt;pre&gt;&lt;code&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/output&gt;
-        &lt;output name=&quot;output&quot;&gt;&lt;iframe title=&quot;Rendered HTML preview&quot; sandbox&gt;&lt;/iframe&gt;&lt;/output&gt;
-    &lt;/qip-preview&gt;
-&lt;/form&gt;
-</code></pre>
-
-<form aria-label="Markdown to HTML">
+<form class="browser-preview-demo" aria-label="Markdown to HTML">
     <qip-preview>
         <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
         <source src="/components/text/html/highlight-syntax-highlight-tsx.wasm" type="application/wasm" />
-        <textarea name="input" rows="5" placeholder="Write some Markdown"
-        ># A Markdown renderer that works identically cross-platform! Try typing…</textarea>
-        <output name="output" style="min-height: 5lh"><pre><code></code></pre></output>
-        <output name="output" style="min-height: 5lh"><iframe title="Rendered HTML preview" sandbox></iframe></output>
+        <source src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
+        <label class="browser-preview-view">
+            <strong>Markdown input</strong>
+            <textarea name="input" rows="5"># Markdown with highlighted code&#10;&#10;```tsx&#10;const pi: number = 3.14;&#10;```</textarea>
+        </label>
+        <section class="browser-preview-view" aria-labelledby="home-html-preview-heading">
+            <strong id="home-html-preview-heading">HTML output</strong>
+            <output name="output" class="browser-preview-output">
+                <iframe title="Rendered HTML preview" sandbox></iframe>
+            </output>
+        </section>
     </qip-preview>
 </form>
+
+Use the `<qip-preview>` custom element to render a series of QIP components with user `<input>`.
+
+<pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
+        &lt;qip-preview&gt;
+            &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+            &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+            &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
+
+```tsx
+const pi: number = 3.14;
+```&lt;/textarea&gt;
+        &lt;output name=&quot;output&quot;&gt;&lt;iframe title=&quot;Rendered HTML preview&quot; sandbox&gt;&lt;/iframe&gt;&lt;/output&gt;
+        &lt;output name=&quot;output&quot;&gt;&lt;pre&gt;&lt;code&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/output&gt;
+    &lt;/qip-preview&gt;
+&lt;/form&gt;
+</code></pre>
 
 ## Interactive components
 

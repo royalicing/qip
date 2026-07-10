@@ -2,7 +2,7 @@
 
 # Markdown to HTML
 
-Render Markdown locally with the same QIP component used by the router.
+Render Markdown with the same QIP component used by this website.
 
 <style>
 .tool-grid {
@@ -24,78 +24,53 @@ Render Markdown locally with the same QIP component used by the router.
   font: inherit;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-.rendered-preview {
+.source-output {
+  display: block;
   min-height: 22rem;
+  padding: 0;
+  overflow: auto;
+}
+.source-output pre {
+  min-height: 22rem;
+  margin: 0;
   padding: 0.75rem;
+}
+.rendered-preview {
+  display: block;
+  min-height: 22rem;
+  padding: 0;
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
-.tool-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-}
-.tool-status {
-  min-height: 1.5rem;
+.rendered-preview iframe {
+  display: block;
+  width: 100%;
+  min-height: 22rem;
+  border: 0;
+  background: white;
 }
 </style>
 
-<div class="tool-grid">
-  <label class="tool-panel">
-    <strong>Markdown</strong>
-    <textarea id="markdown-input" spellcheck="false"></textarea>
-  </label>
-  <section class="tool-panel" aria-labelledby="html-output-heading">
-    <strong id="html-output-heading">HTML</strong>
-    <textarea id="html-output" spellcheck="false" readonly></textarea>
-  </section>
-</div>
-
-<p class="tool-actions">
-  <button id="markdown-render" type="button">Render</button>
-  <button id="markdown-copy" type="button">Copy HTML</button>
-  <span id="markdown-status" class="tool-status" role="status"></span>
-</p>
-
-<section aria-labelledby="preview-heading">
-  <h2 id="preview-heading">Preview</h2>
-  <div id="markdown-preview" class="rendered-preview"></div>
-</section>
-
-<script type="module">
-import { contentComponent, contentContract } from "/qip-runner.js";
-
-const input = document.getElementById("markdown-input");
-const output = document.getElementById("html-output");
-const preview = document.getElementById("markdown-preview");
-const renderButton = document.getElementById("markdown-render");
-const copyButton = document.getElementById("markdown-copy");
-const status = document.getElementById("markdown-status");
-const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
-const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
-const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/markdown/commonmark.0.31.2.wasm"));
-const renderMarkdownComponent = contentComponent(markdown, componentModule, html);
-input.value = "# Hello from QIP\n\nThis Markdown is rendered by a browser-loaded WebAssembly component.";
-
-function renderMarkdown() {
-  try {
-    const result = renderMarkdownComponent(input.value);
-    output.value = result;
-    preview.innerHTML = result;
-    status.textContent = "Rendered.";
-  } catch (error) {
-    status.textContent = error instanceof Error ? error.message : String(error);
-  }
-}
-
-renderButton.addEventListener("click", renderMarkdown);
-copyButton.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(output.value);
-  status.textContent = "Copied.";
-});
-input.addEventListener("input", renderMarkdown);
-renderMarkdown();
-</script>
+<form aria-label="Markdown to HTML">
+  <qip-preview>
+    <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+    <div class="tool-grid">
+      <label class="tool-panel">
+        <strong>Markdown input</strong>
+        <textarea name="input" spellcheck="false"># Hello from QIP&#10;&#10;This Markdown is rendered by a browser-loaded WebAssembly component.</textarea>
+      </label>
+      <section class="tool-panel" aria-labelledby="html-output-heading">
+        <strong id="html-output-heading">HTML output</strong>
+        <output name="output" class="source-output"><pre><code></code></pre></output>
+      </section>
+    </div>
+    <section class="tool-panel" aria-labelledby="preview-heading">
+      <h2 id="preview-heading">Preview</h2>
+      <output name="output" class="rendered-preview">
+        <iframe title="Rendered HTML preview" sandbox></iframe>
+      </output>
+    </section>
+  </qip-preview>
+</form>
 
 ## CLI equivalent
 

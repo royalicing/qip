@@ -14,7 +14,7 @@
             spellcheck="false"
             style="min-width: 100%; border-radius: 0; border: none; padding: 0.5em 1em;"
         />
-        <output name="output"></output>
+        <output name="output"><img alt="QR code SVG preview" /></output>
     </qip-preview>
 </form>
 

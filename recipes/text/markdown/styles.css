@@ -158,6 +158,12 @@ main {
         margin-bottom: 0;
         margin-left: 4em;
     }
+    table {
+        th,
+        td {
+            padding: 0 0.5em;
+        }
+    }
 }
 main.docs-layout,
 main:has(> .docs-sidebar) {
@@ -177,6 +183,23 @@ main:has(> .docs-sidebar) {
 
     li {
         margin-bottom: 0.25rlh;
+    }
+
+    ol ol {
+        margin-bottom: 0.75rlh;
+        padding-left: 1em;
+        border-left: 1px solid currentColor;
+    }
+
+    .docs-section {
+        display: block;
+        margin-top: 1rlh;
+        margin-bottom: 0.25rlh;
+        font-weight: 700;
+    }
+
+    > ol > li:first-child .docs-section {
+        margin-top: 0;
     }
 
     a {
@@ -236,8 +259,8 @@ form {
             text-align: center;
             font-size: 85%;
             opacity: 50%;
-            content: attr(data-module-bytes-total) " bytes of wasm took "
-                attr(data-run-ms) " ms";
+            content: "wasm " attr(data-wasm-size) " | memory "
+                attr(data-memory-size) " | render " attr(data-render-time);
         }
     }
     input:not([type]),
@@ -262,6 +285,10 @@ form {
             display: block;
             margin: auto;
             border: 0.5px solid gray;
+        }
+
+        iframe {
+            width: 100%;
         }
     }
 }

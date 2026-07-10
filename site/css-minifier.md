@@ -57,19 +57,20 @@ Paste CSS and minify it locally with a QIP component.
 </p>
 
 <script type="module">
-import { render } from "/qip-runner.js";
+import { contentComponent, contentContract } from "/qip-runner.js";
 
 const input = document.getElementById("css-input");
 const output = document.getElementById("css-output");
 const minifyButton = document.getElementById("css-minify");
 const copyButton = document.getElementById("css-copy");
 const status = document.getElementById("css-status");
-const component = await WebAssembly.compileStreaming(fetch("/components/text/css/css-minify.wasm"));
+const text = contentContract({ encoding: "utf-8" });
+const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/css/css-minify.wasm"));
+const minifyCSSComponent = contentComponent(text, componentModule, text);
 
 function minifyCSS() {
   try {
-    const result = render(component, input.value);
-    output.value = result.value;
+    output.value = minifyCSSComponent(input.value);
     status.textContent = "Minified.";
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);

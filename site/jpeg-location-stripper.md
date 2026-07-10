@@ -42,13 +42,15 @@ Remove GPS EXIF metadata from a JPEG locally with a QIP component.
 </div>
 
 <script type="module">
-import { render } from "/qip-runner.js";
+import { contentComponent, contentContract } from "/qip-runner.js";
 
 const fileInput = document.getElementById("jpeg-input");
 const downloadButton = document.getElementById("jpeg-download");
 const status = document.getElementById("jpeg-status");
 const preview = document.getElementById("jpeg-preview");
-const component = await WebAssembly.compileStreaming(fetch("/components/image/jpeg/jpeg-strip-gps-exif.wasm"));
+const bytes = contentContract({ encoding: "bytes" });
+const componentModule = await WebAssembly.compileStreaming(fetch("/components/image/jpeg/jpeg-strip-gps-exif.wasm"));
+const stripGPSComponent = contentComponent(bytes, componentModule, bytes);
 let currentUrl = "";
 let currentName = "cleaned.jpg";
 
@@ -69,9 +71,9 @@ fileInput.addEventListener("change", async () => {
   if (!file) return;
   try {
     const inputBytes = new Uint8Array(await file.arrayBuffer());
-    const result = render(component, inputBytes);
-    setDownload(result.bytes, file.name);
-    status.textContent = result.reusedInput ? "No GPS EXIF metadata found." : "GPS EXIF metadata removed.";
+    const result = stripGPSComponent(inputBytes);
+    setDownload(result, file.name);
+    status.textContent = "Cleaned JPEG ready.";
   } catch (error) {
     downloadButton.disabled = true;
     preview.hidden = true;
