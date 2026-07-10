@@ -1691,6 +1691,14 @@ func TestInjectQIPEditRuntime(t *testing.T) {
 	}
 }
 
+func TestInjectQIPEditRuntimeForViewTag(t *testing.T) {
+	htmlBody := []byte(`<html><body><qip-view rendered><source src="/components/utf8/hello.wasm" type="application/wasm"></source><input type="hidden" name="input" value="hi"><output name="output"></output></qip-view></body></html>`)
+	out := injectQIPEditRuntime(htmlBody)
+	if !bytes.Contains(out, []byte(`customElements.define("qip-view"`)) {
+		t.Fatalf("expected qip-view custom element runtime")
+	}
+}
+
 func TestInjectQIPEditRuntimeNoTag(t *testing.T) {
 	htmlBody := []byte(`<html><body><h1>Page</h1><p>No preview.</p></body></html>`)
 	out := injectQIPEditRuntime(htmlBody)

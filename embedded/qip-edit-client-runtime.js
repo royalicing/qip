@@ -1319,6 +1319,15 @@ class QIPEditElement extends HTMLElement {
   }
 }
 
+// <qip-view> shares the implementation: same wiring, same rendering. The
+// user relationship differs (consume rather than author), and views commonly
+// carry the rendered attribute with page-owned hidden inputs.
+class QIPViewElement extends QIPEditElement {}
+
 if (!customElements.get("qip-edit")) {
   customElements.define("qip-edit", QIPEditElement);
+}
+
+if (!customElements.get("qip-view")) {
+  customElements.define("qip-view", QIPViewElement);
 }

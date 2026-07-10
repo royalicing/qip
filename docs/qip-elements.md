@@ -29,14 +29,14 @@ The distinction is the overall user experience, not the presence of a particular
 - An editor temporarily locked by permissions remains an edit: it is still fundamentally an authoring interface.
 - A game, simulation, or other persistent interactive component is a play experience.
 
-## `<qip-view>` (Proposed)
+## `<qip-view>`
 
-`<qip-view>` is the finite, consumption-oriented element. It is documented here as a proposal and is not implemented yet; this section becomes the reference once it is.
+`<qip-view>` is the finite, consumption-oriented element. It shares its implementation with `<qip-edit>` — the same wiring, rendering, and module policy — because the difference is the user's relationship, not the machinery.
 
 The page or application owns the canonical input, and the user consumes the resulting representation rather than editing it. Inputs may be supplied with hidden or read-only controls:
 
 ```html
-<qip-view rendered>
+<qip-view>
   <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
   <input type="hidden" name="input" value="# Rendered ahead of time" />
   <output name="output"><h1>Rendered ahead of time</h1></output>
@@ -44,12 +44,6 @@ The page or application owns the canonical input, and the user consumes the resu
 ```
 
 A view performs a finite rendering operation. Its output may be generated at build time or on the server, and a pre-rendered view stays useful without client-side execution merely to display existing output. The browser may render or rerender the view when the application explicitly asks for it.
-
-### Authoritative Output
-
-The boolean `rendered` attribute on `<qip-view>` marks the element's output children as authoritative pre-rendered output. When `rendered` is present, client activation may skip the initial render; when absent, the output children are placeholder or fallback content and the client must render before the view is trustworthy.
-
-The signal is the attribute, never the output contents: empty output is a valid result, so authoritative output cannot be inferred from whether an `<output>` element is non-empty.
 
 ## `<qip-edit>`
 
@@ -163,7 +157,7 @@ Use module policy attributes when a page runs code you want to keep inside a tig
 - `max-memory="<bytes>"` rejects a module whose declared memory minimum or maximum exceeds the cap. If a module has memory but no declared maximum, it is rejected.
 - `fixed-memory` rejects a module that can grow linear memory while it runs.
 
-These checks run after the module bytes are fetched and before `WebAssembly.compile`. `<qip-play>` accepts the same attributes.
+These checks run after the module bytes are fetched and before `WebAssembly.compile`. `<qip-view>` and `<qip-play>` accept the same attributes.
 
 ## `<qip-play>`
 
