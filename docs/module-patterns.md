@@ -6,6 +6,10 @@ It also includes the error semantics for deciding whether to return a value, ret
 Default recommendation: trap on invalid input or overflow for transformation components.
 For validator-style components that should compose in pipelines, prefer assertion pass-through: return input unchanged on success, trap on failure.
 
+## Tailored solutions
+
+A Content component receives its whole input in memory and writes its whole output in memory. Implementations get to exploit that: flat loops over slices, with no streaming state machines, reader/writer abstractions, or suspend points. For example, our zlib inflater is a quarter the size of the one in the Zig standard library and decodes twice as fast — not through cleverness but by not needing to be general-purpose. The strict input -> output contract lets us make more assumptions and optimizations. Generality is expensive. The component contract often lends us to needing less.
+
 ## Choose A Pattern
 
 Use this quick mapping:
