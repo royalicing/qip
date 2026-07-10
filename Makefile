@@ -250,7 +250,7 @@ site/favicon.ico: qip-logo.svg
 	$(QIP_BIN) run -i qip-logo.svg -- modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm > $@
 
 OG_MD_SOURCES := $(shell find site docs -type f -name '*.md' | sort)
-OG_IMAGE_MODULES := modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm modules/image/svg+xml/svg-rasterize.wasm
+OG_IMAGE_MODULES := modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-to-png.wasm
 
 OG_PNG_TARGETS := $(sort $(patsubst site/_og/%/index.png,site/_og/%.png,$(patsubst docs/%.md,site/_og/docs/%.png,$(patsubst site/%.md,site/_og/%.png,$(OG_MD_SOURCES)))))
 
@@ -258,7 +258,7 @@ site/_og: $(OG_PNG_TARGETS)
 
 define OG_RENDER_PNG_RECIPE
 	@mkdir -p $(dir $@)
-	$(QIP_BIN) run -i "$<" -o "$@" -- modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' modules/image/svg+xml/svg-rasterize.wasm '?background_color_rgba=0xeecc33ff'
+	$(QIP_BIN) run -i "$<" -o "$@" -- modules/text/markdown/extract-title-text.wasm modules/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' modules/image/svg+xml/svg-rasterize.wasm '?background_color_rgba=0xeecc33ff' modules/image/bmp/bmp-to-png.wasm
 endef
 
 site/_og/%.png: site/%.md $(OG_IMAGE_MODULES)
