@@ -252,7 +252,7 @@ form {
     *:not(h2, h3, h4, blockquote) {
         --paragraph-leading: 0;
     }
-    qip-preview {
+    qip-edit {
         display: contents;
 
         &::after {
