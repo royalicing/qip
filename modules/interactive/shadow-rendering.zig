@@ -1,4 +1,5 @@
 const std = @import("std");
+const ui_font = @import("assets/dejavu_sans_mono_56_ascii_subset.zig");
 
 const RENDER_W: usize = 1120;
 const RENDER_H: usize = 720;
@@ -10,6 +11,11 @@ const XK_LEFT: i32 = 0xFF51;
 const XK_RIGHT: i32 = 0xFF53;
 
 const Color = [4]u8;
+const PointF = struct {
+    x: f32,
+    y: f32,
+};
+
 const C_BG: Color = .{ 0xEF, 0xF2, 0xF5, 0xFF };
 const C_PANEL: Color = .{ 0xFA, 0xFA, 0xF8, 0xFF };
 const C_TILE: Color = .{ 0xFF, 0xFF, 0xFC, 0xFF };
@@ -257,8 +263,8 @@ fn drawPlatformCard(x: i32, y: i32, w: i32, h: i32, platform: Platform) void {
     const rw = 82;
     const rh = 52;
     const rx = x + @divTrunc(w - rw, 2);
-    const ry = y + 48;
-    drawShadow(x + 8, y + 40, w - 16, h - 48, @as(f64, @floatFromInt(rx)), @as(f64, @floatFromInt(ry)), @as(f64, @floatFromInt(rw)), @as(f64, @floatFromInt(rh)), platform);
+    const ry = y + 68;
+    drawShadow(x + 8, y + 58, w - 16, h - 66, @as(f64, @floatFromInt(rx)), @as(f64, @floatFromInt(ry)), @as(f64, @floatFromInt(rw)), @as(f64, @floatFromInt(rh)), platform);
     drawRoundedRect(rx, ry, rw, rh, corner_radius, C_OBJECT, C_OBJECT_EDGE, platform.aa);
 }
 
@@ -558,19 +564,21 @@ fn drawButton(x: i32, y: i32, w: i32, h: i32, label: []const u8) void {
 }
 
 fn drawText(x: i32, y: i32, text: []const u8, c: Color, scale: i32) void {
+    const size_px = textSizeForScale(scale);
+    const advance = fontAdvance(size_px);
     var cursor = x;
     var i: usize = 0;
-    while (i < text.len and i < 64) : (i += 1) {
-        drawChar(cursor, y, text[i], c, scale);
-        cursor += 4 * scale;
+    while (i < text.len and i < 120) : (i += 1) {
+        drawFontChar(cursor, y, text[i], c, size_px);
+        cursor += advance;
     }
 }
 
 fn drawSignedInt(x: i32, y: i32, value: i32, c: Color, scale: i32) void {
     var cursor = x;
     if (value < 0) {
-        drawChar(cursor, y, '-', c, scale);
-        cursor += 4 * scale;
+        drawFontChar(cursor, y, '-', c, textSizeForScale(scale));
+        cursor += fontAdvance(textSizeForScale(scale));
         drawUnsignedInt(cursor, y, -value, c, scale);
     } else {
         drawUnsignedInt(cursor, y, value, c, scale);
@@ -590,72 +598,77 @@ fn drawUnsignedInt(x: i32, y: i32, value_in: i32, c: Color, scale: i32) void {
 
     var i = count;
     var cursor = x;
+    const size_px = textSizeForScale(scale);
+    const advance = fontAdvance(size_px);
     while (i > 0) {
         i -= 1;
-        drawChar(cursor, y, '0' + digits[i], c, scale);
-        cursor += 4 * scale;
+        drawFontChar(cursor, y, '0' + digits[i], c, size_px);
+        cursor += advance;
     }
 }
 
-fn drawChar(x: i32, y: i32, ch: u8, c: Color, scale: i32) void {
-    const rows = glyph(ch);
-    var ry: usize = 0;
-    while (ry < 5) : (ry += 1) {
-        var rx: usize = 0;
-        while (rx < 3) : (rx += 1) {
-            if ((rows[ry] & (@as(u8, 1) << @as(u3, @intCast(2 - rx)))) != 0) {
-                fillRect(x + @as(i32, @intCast(rx)) * scale, y + @as(i32, @intCast(ry)) * scale, scale, scale, c);
-            }
+fn textSizeForScale(scale: i32) i32 {
+    return switch (scale) {
+        1 => 11,
+        2 => 16,
+        3 => 23,
+        else => @max(1, scale * 8),
+    };
+}
+
+fn fontAdvance(size_px: i32) i32 {
+    return @max(1, @as(i32, @intFromFloat(@ceil(@as(f32, @floatFromInt(ui_font.GLYPH_W)) * fontScale(size_px)))));
+}
+
+fn fontScale(size_px: i32) f32 {
+    return @as(f32, @floatFromInt(size_px)) / @as(f32, @floatFromInt(ui_font.GLYPH_H));
+}
+
+fn drawFontChar(x: i32, y: i32, ch: u8, c: Color, size_px: i32) void {
+    const glyph_index = glyphIndexForByte(ch) orelse return;
+    const scale = fontScale(size_px);
+    const w = fontAdvance(size_px);
+    const h = size_px;
+    var dy: i32 = 0;
+    while (dy < h) : (dy += 1) {
+        var dx: i32 = 0;
+        while (dx < w) : (dx += 1) {
+            const coverage = fontCoverage(glyph_index, dx, dy, scale);
+            if (coverage == 0) continue;
+            const alpha = (@as(f64, @floatFromInt(c[3])) / 255.0) * (@as(f64, @floatFromInt(coverage)) / 4.0);
+            blendPixel(x + dx, y + dy, c, alpha);
         }
     }
 }
 
-fn glyph(ch: u8) [5]u8 {
-    return switch (ch) {
-        'A' => .{ 0b010, 0b101, 0b111, 0b101, 0b101 },
-        'B' => .{ 0b110, 0b101, 0b110, 0b101, 0b110 },
-        'C' => .{ 0b111, 0b100, 0b100, 0b100, 0b111 },
-        'D' => .{ 0b110, 0b101, 0b101, 0b101, 0b110 },
-        'E' => .{ 0b111, 0b100, 0b110, 0b100, 0b111 },
-        'F' => .{ 0b111, 0b100, 0b110, 0b100, 0b100 },
-        'G' => .{ 0b111, 0b100, 0b101, 0b101, 0b111 },
-        'H' => .{ 0b101, 0b101, 0b111, 0b101, 0b101 },
-        'I' => .{ 0b111, 0b010, 0b010, 0b010, 0b111 },
-        'J' => .{ 0b001, 0b001, 0b001, 0b101, 0b111 },
-        'K' => .{ 0b101, 0b101, 0b110, 0b101, 0b101 },
-        'L' => .{ 0b100, 0b100, 0b100, 0b100, 0b111 },
-        'M' => .{ 0b101, 0b111, 0b111, 0b101, 0b101 },
-        'N' => .{ 0b101, 0b111, 0b111, 0b111, 0b101 },
-        'O' => .{ 0b111, 0b101, 0b101, 0b101, 0b111 },
-        'P' => .{ 0b111, 0b101, 0b111, 0b100, 0b100 },
-        'Q' => .{ 0b111, 0b101, 0b101, 0b111, 0b001 },
-        'R' => .{ 0b110, 0b101, 0b110, 0b101, 0b101 },
-        'S' => .{ 0b111, 0b100, 0b111, 0b001, 0b111 },
-        'T' => .{ 0b111, 0b010, 0b010, 0b010, 0b010 },
-        'U' => .{ 0b101, 0b101, 0b101, 0b101, 0b111 },
-        'V' => .{ 0b101, 0b101, 0b101, 0b101, 0b010 },
-        'W' => .{ 0b101, 0b101, 0b111, 0b111, 0b101 },
-        'X' => .{ 0b101, 0b101, 0b010, 0b101, 0b101 },
-        'Y' => .{ 0b101, 0b101, 0b010, 0b010, 0b010 },
-        'Z' => .{ 0b111, 0b001, 0b010, 0b100, 0b111 },
-        '0' => .{ 0b111, 0b101, 0b101, 0b101, 0b111 },
-        '1' => .{ 0b010, 0b110, 0b010, 0b010, 0b111 },
-        '2' => .{ 0b111, 0b001, 0b111, 0b100, 0b111 },
-        '3' => .{ 0b111, 0b001, 0b111, 0b001, 0b111 },
-        '4' => .{ 0b101, 0b101, 0b111, 0b001, 0b001 },
-        '5' => .{ 0b111, 0b100, 0b111, 0b001, 0b111 },
-        '6' => .{ 0b111, 0b100, 0b111, 0b101, 0b111 },
-        '7' => .{ 0b111, 0b001, 0b001, 0b001, 0b001 },
-        '8' => .{ 0b111, 0b101, 0b111, 0b101, 0b111 },
-        '9' => .{ 0b111, 0b101, 0b111, 0b001, 0b111 },
-        '+' => .{ 0b000, 0b010, 0b111, 0b010, 0b000 },
-        '-' => .{ 0b000, 0b000, 0b111, 0b000, 0b000 },
-        '/' => .{ 0b001, 0b001, 0b010, 0b100, 0b100 },
-        '%' => .{ 0b101, 0b001, 0b010, 0b100, 0b101 },
-        ':' => .{ 0b000, 0b010, 0b000, 0b010, 0b000 },
-        '.' => .{ 0b000, 0b000, 0b000, 0b000, 0b010 },
-        else => .{ 0, 0, 0, 0, 0 },
+fn glyphIndexForByte(ch: u8) ?usize {
+    if (ch >= ui_font.ASCII_START and ch <= ui_font.ASCII_END) {
+        return @as(usize, @intCast(ch - ui_font.ASCII_START));
+    }
+    return null;
+}
+
+fn fontCoverage(glyph_index: usize, dx: i32, dy: i32, scale: f32) i32 {
+    const offsets = [_]PointF{
+        .{ .x = 0.25, .y = 0.25 },
+        .{ .x = 0.75, .y = 0.25 },
+        .{ .x = 0.25, .y = 0.75 },
+        .{ .x = 0.75, .y = 0.75 },
     };
+
+    var covered: i32 = 0;
+    for (offsets) |off| {
+        const sx = @as(i32, @intFromFloat(@floor((@as(f32, @floatFromInt(dx)) + off.x) / scale)));
+        const sy = @as(i32, @intFromFloat(@floor((@as(f32, @floatFromInt(dy)) + off.y) / scale)));
+        if (fontBit(glyph_index, sx, sy)) covered += 1;
+    }
+    return covered;
+}
+
+fn fontBit(glyph_index: usize, sx: i32, sy: i32) bool {
+    if (sx < 0 or sy < 0 or sx >= @as(i32, @intCast(ui_font.GLYPH_W)) or sy >= @as(i32, @intCast(ui_font.GLYPH_H))) return false;
+    const row = ui_font.glyph_rows[glyph_index][@as(usize, @intCast(sy))];
+    return ((row >> @as(u6, @intCast(sx))) & 1) != 0;
 }
 
 fn drawRect(x: i32, y: i32, w: i32, h: i32, c: Color) void {
