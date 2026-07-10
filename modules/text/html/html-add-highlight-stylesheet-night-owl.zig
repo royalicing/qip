@@ -8,6 +8,12 @@ const OUTPUT_CAP: u32 = INPUT_CAP + @as(u32, @intCast(STYLE_PREFIX.len + NIGHT_O
 const INPUT_CONTENT_TYPE = "text/html";
 const OUTPUT_CONTENT_TYPE = "text/html";
 
+comptime {
+    if (std.mem.indexOf(u8, NIGHT_OWL_CSS, "</style")) |_| {
+        @compileError("highlight-night-owl.css contains closing </style sequence");
+    }
+}
+
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
@@ -69,10 +75,9 @@ export fn render(input_size: u32) u32 {
 }
 
 test "prepends night owl highlight stylesheet" {
-    const input = "<!doctype html><html><body><pre><code class=\"language-zig hljs\">...</code></pre></body></html>";
+    const input = "<pre><code class=\"language-tsx hljs\">...</code></pre>";
     const expected = STYLE_PREFIX ++ NIGHT_OWL_CSS ++ STYLE_SUFFIX ++ input;
     var out: [expected.len]u8 = undefined;
     const written = prependHighlightStyles(input, out[0..]);
     try std.testing.expectEqualStrings(expected, out[0..written]);
 }
-

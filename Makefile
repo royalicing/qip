@@ -79,6 +79,11 @@ modules/text/x-c/c-to-bmp.wasm: modules/text/x-c/c-to-bmp.c
 
 recipes/text/markdown/80-html-page-wrap.wasm: recipes/text/markdown/styles.css recipes/text/markdown/header.html recipes/text/markdown/footer.html
 
+modules/text/html/html-add-highlight-stylesheet-night-owl.wasm: modules/text/html/highlight-night-owl.css
+
+recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm: modules/text/html/html-add-highlight-stylesheet-night-owl.wasm
+	cp $< $@
+
 modules/text/markdown/markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.wasm
 	cp $< $@
 
@@ -122,6 +127,7 @@ modules-zig-wasm: recipes/text/markdown/80-html-page-wrap.wasm
 recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(wildcard recipes/text/markdown/*.zig))
 recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
+recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 modules: modules-wat-wasm modules-c-wasm modules-zig-wasm
 
