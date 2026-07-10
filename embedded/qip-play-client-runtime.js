@@ -924,8 +924,10 @@ class QIPPlayElement extends HTMLElement {
     this._canvas.style.width = presentation.canvasWidth;
     this._canvas.style.height = presentation.canvasHeight;
     this._canvas.style.touchAction = "none";
+    this._canvas.tabIndex = this.hasAttribute("tabindex") ? this.tabIndex : 0;
+    this.removeAttribute("tabindex");
 
-    this._stats = document.createElement("div");
+    this._stats = document.createElement("aside");
     this._stats.setAttribute("aria-label", "qip-play stats");
     this._stats.style.boxSizing = "border-box";
     this._stats.style.marginTop = "6px";
@@ -947,10 +949,6 @@ class QIPPlayElement extends HTMLElement {
       this._renderWidth,
       this._renderHeight,
     );
-
-    if (!this.hasAttribute("tabindex")) {
-      this.tabIndex = 0;
-    }
 
     this.replaceChildren(this._canvas);
     if (inputElement) {
@@ -1052,29 +1050,31 @@ class QIPPlayElement extends HTMLElement {
     };
 
     this._boundClickFocus = () => {
-      this.focus();
+      this._canvas.focus();
     };
     this._boundBlur = () => {
       this._clearKeyRepeats();
     };
 
-    this.addEventListener("keydown", this._boundKeyDown);
-    this.addEventListener("keyup", this._boundKeyUp);
+    this._canvas.addEventListener("keydown", this._boundKeyDown);
+    this._canvas.addEventListener("keyup", this._boundKeyUp);
     this._canvas.addEventListener("pointerdown", this._boundPointer);
     this._canvas.addEventListener("pointermove", this._boundPointer);
     this._canvas.addEventListener("pointerup", this._boundPointerUp);
     this._canvas.addEventListener("pointercancel", this._boundPointerUp);
     this._canvas.addEventListener("contextmenu", this._boundContextMenu, true);
     this._canvas.addEventListener("click", this._boundClickFocus);
-    this.addEventListener("blur", this._boundBlur);
+    this._canvas.addEventListener("blur", this._boundBlur);
   }
 
   _detachInputHandlers() {
-    if (this._boundKeyDown)
-      this.removeEventListener("keydown", this._boundKeyDown);
-    if (this._boundKeyUp) this.removeEventListener("keyup", this._boundKeyUp);
-
     if (this._canvas) {
+      if (this._boundKeyDown) {
+        this._canvas.removeEventListener("keydown", this._boundKeyDown);
+      }
+      if (this._boundKeyUp) {
+        this._canvas.removeEventListener("keyup", this._boundKeyUp);
+      }
       if (this._boundPointer) {
         this._canvas.removeEventListener("pointerdown", this._boundPointer);
         this._canvas.removeEventListener("pointermove", this._boundPointer);
@@ -1093,6 +1093,9 @@ class QIPPlayElement extends HTMLElement {
       if (this._boundClickFocus) {
         this._canvas.removeEventListener("click", this._boundClickFocus);
       }
+      if (this._boundBlur) {
+        this._canvas.removeEventListener("blur", this._boundBlur);
+      }
     }
 
     this._boundKeyDown = null;
@@ -1101,7 +1104,6 @@ class QIPPlayElement extends HTMLElement {
     this._boundPointerUp = null;
     this._boundContextMenu = null;
     this._boundClickFocus = null;
-    if (this._boundBlur) this.removeEventListener("blur", this._boundBlur);
     this._boundBlur = null;
   }
 

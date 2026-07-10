@@ -103,7 +103,7 @@ printf '%s\n' \
 
 ## Browser rendering
 
-You can render any QIP component in a browser:
+You can render the same QIP components in the browser:
 
 <form class="browser-preview-demo" aria-label="Markdown to HTML">
     <qip-edit>
@@ -112,7 +112,7 @@ You can render any QIP component in a browser:
         <source src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
         <label class="browser-preview-view">
             <strong>Markdown input</strong>
-            <textarea name="input" rows="5"># Markdown with highlighted code&#10;&#10;```tsx&#10;const pi: number = 3.14;&#10;```</textarea>
+            <textarea name="input" rows="5"># Markdown with highlighted code&#10;```tsx&#10;const pi: number = 3.14;&#10;```</textarea>
         </label>
         <section class="browser-preview-view" aria-labelledby="home-html-preview-heading">
             <strong id="home-html-preview-heading">HTML output</strong>
@@ -126,37 +126,45 @@ You can render any QIP component in a browser:
 Use the `<qip-edit>` custom element to render a series of QIP components with user `<input>`.
 
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
-        &lt;qip-edit&gt;
-            &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-            &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-            &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
-
+    &lt;qip-edit&gt;
+        &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
 ```tsx
 const pi: number = 3.14;
 ```&lt;/textarea&gt;
         &lt;output name=&quot;output&quot;&gt;&lt;iframe title=&quot;Rendered HTML preview&quot; sandbox&gt;&lt;/iframe&gt;&lt;/output&gt;
-        &lt;output name=&quot;output&quot;&gt;&lt;pre&gt;&lt;code&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/output&gt;
     &lt;/qip-edit&gt;
 &lt;/form&gt;
 </code></pre>
 
-## Interactive components
+## Cross-platform `<canvas>` components
 
-Interactive QIP Components receive keyboard & pointer events and render out pixels.
+QIP Interactive Components receive keyboard & pointer events and render out pixels.
 
-<qip-play log>
+Use `<qip-play>` to render them in the browser, or use our SDK to render them in Swift.
+
+<qip-play canvas-width="820px" canvas-height="auto">
+  <source src="/components/interactive/openai-anthropic-arr.wasm" type="application/wasm" />
+</qip-play>
+
+---
+
+<qip-play canvas-width="720px" canvas-height="auto">
+  <source src="/components/interactive/cover-flow.wasm" type="application/wasm" />
+</qip-play>
+
+---
+
+<qip-play canvas-width="min(780px, 100%)" canvas-height="auto">
   <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>
 
+---
+
 See [`/play`](/play) for more interactive examples, or [`/charts`](/charts) for chart-focused components.
 
-## Pick three: components, AI coding, security
-
-Modern software is tied to an ecosystem that never stops moving. QIP components are self-contained, so you can worry less about supply-chain attacks, outdated libraries, remote-code execution, and environment drift.
-
-QIP is built around a strict contract: same component, same input, same output. It does not read the clock, locale, filesystem, package graph, environment variables, OS, device, chipset, or network — unless you deliberately pass it in. Every input is explicit. This means if it works today, it’ll work tomorrow.
-
-## Utilities that run cross-platform
+## Utilities that run everywhere
 
 We believe small functions should not need a massive application environment to run. Write or vibe Zig/C then compile to WebAssembly, and you get a deterministic puzzle piece that runs the same everywhere.
 
@@ -167,13 +175,7 @@ We believe small functions should not need a massive application environment to 
 - [Image color palette extractor](/image-color-palette)
 - [SQLite as a payload](/sqlite)
 
-## Interactive explainers
-
-- [Cache-Control request chains](/cache-control)
-- [Flexbox and SwiftUI layout](/layout-systems)
-- [Browser security: CORS, CSRF, and XSS](/browser-security)
-- [Web mechanics: TLS, DNS, page loading, and cookies](/web-mechanics)
-- [Page load waterfall](/page-load-waterfall)
+Want a utility without the trackers? Request me to make one.
 
 ## Portable pipelines of purity
 
@@ -239,17 +241,23 @@ Components, AI coding, security: you can pick all three.
 
 ## FAQ
 
-### How is QIP different from Flutter?
-
-Flutter is a way to build an app. QIP is a way to package a small piece of deterministic work so it can run inside many apps.
-
-Flutter helps you write one app for many platforms. QIP helps you write one component for many apps.
-
 ### How is QIP different from WASI?
 
-WASI is useful when a WebAssembly program needs operating-system-like capabilities. QIP is narrower. A QIP component gets bytes from the host, transforms them, and returns bytes. It does not get filesystem, network, environment, clock, or secrets by default.
+WASI is useful when a WebAssembly program needs operating-system-like capabilities. QIP is purposefully much narrower. A QIP component gets bytes from the host, transforms them, and returns bytes. It cannot access the filesystem, network, environment, clock, or secrets.
 
-That smaller contract is the point. It makes components easier to run in browsers, mobile apps, servers, CI, and native hosts without giving them an operating-system-shaped API.
+That smaller contract allow components to run easily in browsers, mobile apps, servers, CI, and native hosts. It also makes the attack-surface much narrower.
+
+### How is QIP different from React?
+
+React has become the default choice for making web apps and many native apps. Adopting React usually means adopting JavaScript full-stack. QIP wants to be platform and language agnostic: you can write QIP components in anything that compiles to `.wasm` and you can run `.wasm` modules pretty much in any modern platform. Because QIP Components are just WebAssembly they work in React (TODO: React QIP documentation page).
+
+### How is QIP different from Flutter?
+
+Flutter follows the write-once, run-anywhere philosophy. QIP is also write-once, run-anywhere but is designed to be embedded inside existing apps. You don’t have to port your entire app to QIP and WebAssembly.
+
+This means you can make the most of native tooling and frameworks with proper UI controls and tight integration with the target platform. And then you sprinkle in QIP components where they make sense for their cross-platform or security benefit.
+
+Flutter helps you write one app for many platforms. QIP helps you write one component for many apps.
 
 ## Learn more
 

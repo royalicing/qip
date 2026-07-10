@@ -110,6 +110,7 @@ function makePlayElement(debugStats, outputPtr = 0, outputLen = 4, imageOffset =
 function makeEventTarget() {
   return {
     listeners: [],
+    focusN: 0,
     addEventListener(type, listener, options) {
       this.listeners.push({ type, listener, options });
     },
@@ -121,6 +122,9 @@ function makeEventTarget() {
           entry.options !== options
         );
       });
+    },
+    focus() {
+      this.focusN++;
     },
   };
 }
@@ -203,4 +207,20 @@ test("qip-play only suppresses context menu on the canvas", () => {
     element._canvas.listeners.filter((entry) => entry.type === "contextmenu").length,
     0,
   );
+});
+
+test("qip-play scopes keyboard focus to the canvas", () => {
+  const element = new QIPPlayElement();
+  element._exports = { key_event() {}, pointer_event() {} };
+  element._canvas = makeEventTarget();
+
+  element._attachInputHandlers();
+
+  assert.equal(element._listeners.filter((entry) => entry.type === "keydown").length, 0);
+  assert.equal(element._canvas.listeners.filter((entry) => entry.type === "keydown").length, 1);
+  const click = element._canvas.listeners.find((entry) => entry.type === "click");
+  click.listener();
+  assert.equal(element._canvas.focusN, 1);
+
+  element._detachInputHandlers();
 });

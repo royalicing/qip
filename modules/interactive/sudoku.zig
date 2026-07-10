@@ -5,15 +5,33 @@ const BOX: usize = 3;
 const CELL_PX: usize = 56;
 const BOARD_PX: usize = GRID * CELL_PX;
 
-const PAD_X: usize = 18;
-const PAD_TOP: usize = 18;
-const PAD_BOTTOM: usize = 18;
+const OUTER_X: usize = 18;
+const OUTER_TOP: usize = 18;
+const OUTER_BOTTOM: usize = 18;
 
-const BOARD_X: usize = PAD_X;
-const BOARD_Y: usize = PAD_TOP;
+const BOARD_X: usize = OUTER_X;
+const BOARD_Y: usize = OUTER_TOP;
 
-const RENDER_W: usize = PAD_X * 2 + BOARD_PX;
-const RENDER_H: usize = PAD_TOP + BOARD_PX + PAD_BOTTOM;
+const CONTROLS_GAP: usize = 24;
+const CONTROLS_W: usize = 216;
+const CONTROLS_X: usize = BOARD_X + BOARD_PX + CONTROLS_GAP;
+
+const NUMBER_BUTTON_PX: usize = 56;
+const NUMBER_BUTTON_GAP: usize = 8;
+const NUMBER_GRID_PX: usize = NUMBER_BUTTON_PX * 3 + NUMBER_BUTTON_GAP * 2;
+const NUMBER_PAD_X: usize = CONTROLS_X + (CONTROLS_W - NUMBER_GRID_PX) / 2;
+
+const ACTION_GAP: usize = 16;
+const ACTION_BUTTON_H: usize = 56;
+const ACTION_BUTTON_W: usize = (NUMBER_GRID_PX - NUMBER_BUTTON_GAP) / 2;
+const CONTROL_GROUP_H: usize = NUMBER_GRID_PX + ACTION_GAP + ACTION_BUTTON_H;
+const NUMBER_PAD_Y: usize = BOARD_Y + (BOARD_PX - CONTROL_GROUP_H) / 2;
+const ACTION_Y: usize = NUMBER_PAD_Y + NUMBER_GRID_PX + ACTION_GAP;
+const CLEAR_X: usize = NUMBER_PAD_X;
+const NEW_X: usize = CLEAR_X + ACTION_BUTTON_W + NUMBER_BUTTON_GAP;
+
+const RENDER_W: usize = CONTROLS_X + CONTROLS_W + OUTER_X;
+const RENDER_H: usize = OUTER_TOP + BOARD_PX + OUTER_BOTTOM;
 const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
 
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -42,18 +60,21 @@ const SMALL_SCALE: usize = 2;
 
 const Color = [4]u8;
 
-const COLOR_BG: Color = .{ 0xE9, 0xEE, 0xF5, 0xFF };
-const COLOR_BOARD: Color = .{ 0xFF, 0xFF, 0xFF, 0xFF };
-const COLOR_BOX_ODD: Color = .{ 0xF5, 0xF8, 0xFC, 0xFF };
+const COLOR_BG: Color = .{ 0x00, 0x00, 0x00, 0xFF };
+const COLOR_BOARD: Color = COLOR_BG;
+const COLOR_BOX_ODD: Color = COLOR_BOARD;
 const COLOR_BOX_EVEN: Color = COLOR_BOARD;
-const COLOR_GRID_THIN: Color = .{ 0x9A, 0xA9, 0xBC, 0xFF };
-const COLOR_GRID_BOLD: Color = .{ 0x2F, 0x3B, 0x4A, 0xFF };
-const COLOR_SELECTED: Color = .{ 0xC7, 0xDD, 0xFF, 0xFF };
-const COLOR_SELECTED_LOCKED: Color = .{ 0xDE, 0xE5, 0xEE, 0xFF };
-const COLOR_GIVEN: Color = .{ 0x16, 0x23, 0x32, 0xFF };
-const COLOR_VALUE: Color = .{ 0x1A, 0x5C, 0xB8, 0xFF };
-const COLOR_CONFLICT: Color = .{ 0xBE, 0x2B, 0x2B, 0xFF };
-const COLOR_CAND: Color = .{ 0x5F, 0x6D, 0x80, 0xFF };
+const COLOR_GRID_THIN: Color = .{ 0x4A, 0x4A, 0x46, 0xFF };
+const COLOR_GRID_BOLD: Color = .{ 0xF5, 0xF5, 0xF0, 0xFF };
+const COLOR_SELECTED: Color = .{ 0xF2, 0xC9, 0x4C, 0xFF };
+const COLOR_SELECTED_INK: Color = .{ 0x0F, 0x0F, 0x0E, 0xFF };
+const COLOR_SELECTED_CONFLICT: Color = .{ 0x78, 0x18, 0x0C, 0xFF };
+const COLOR_GIVEN: Color = .{ 0xFF, 0xFF, 0xFF, 0xFF };
+const COLOR_VALUE: Color = COLOR_SELECTED;
+const COLOR_CONFLICT: Color = .{ 0xFF, 0x6B, 0x57, 0xFF };
+const COLOR_CAND: Color = .{ 0xA8, 0xA8, 0xA0, 0xFF };
+const COLOR_CONTROL_BG: Color = .{ 0x1C, 0x20, 0x24, 0xFF };
+const COLOR_CONTROL_BORDER: Color = .{ 0x82, 0x8B, 0x94, 0xFF };
 
 const DIGIT_BITMAPS = [10][7]u8{
     .{ 0b11111, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b11111 },
@@ -189,12 +210,18 @@ fn resetPuzzle() void {
     initialized = true;
     primary_down = false;
     secondary_down = false;
-    selected_idx = 0;
     game_counter +%= 1;
     rng_state +%= 0x9E3779B9 + game_counter *% 0x85EBCA6B;
 
     generatePuzzle();
+    selectFirstEditableCell();
     needs_redraw = true;
+}
+
+fn selectFirstEditableCell() void {
+    selected_idx = 0;
+    while (selected_idx < CELLS and givens[selected_idx] != 0) : (selected_idx += 1) {}
+    if (selected_idx == CELLS) selected_idx = 0;
 }
 
 fn generatePuzzle() void {
@@ -280,23 +307,23 @@ fn decodeDigitKey(key: i32) u8 {
 }
 
 fn moveSelection(dx: i32, dy: i32) void {
-    const x0: i32 = @intCast(selected_idx % GRID);
-    const y0: i32 = @intCast(selected_idx / GRID);
+    var x: i32 = @intCast(selected_idx % GRID);
+    var y: i32 = @intCast(selected_idx / GRID);
 
-    var x = x0 + dx;
-    var y = y0 + dy;
+    while (true) {
+        x += dx;
+        y += dy;
 
-    if (x < 0) x = 0;
-    if (x >= GRID) x = GRID - 1;
-    if (y < 0) y = 0;
-    if (y >= GRID) y = GRID - 1;
+        if (x < 0 or x >= GRID or y < 0 or y >= GRID) return;
 
-    const xu: usize = @intCast(x);
-    const yu: usize = @intCast(y);
-    const next_idx: usize = yu * GRID + xu;
-    if (next_idx != selected_idx) {
-        selected_idx = next_idx;
-        needs_redraw = true;
+        const xu: usize = @intCast(x);
+        const yu: usize = @intCast(y);
+        const next_idx: usize = yu * GRID + xu;
+        if (givens[next_idx] == 0) {
+            selected_idx = next_idx;
+            needs_redraw = true;
+            return;
+        }
     }
 }
 
@@ -338,11 +365,24 @@ fn toggleCandidateSelectedCell(digit: u8) bool {
 }
 
 fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
+    const digit = numberPadDigitAt(x_px, y_px);
+    if (digit != 0) return setSelectedCellValue(digit);
+
+    if (pointInRect(x_px, y_px, CLEAR_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H)) {
+        return clearSelectedCell();
+    }
+
+    if (pointInRect(x_px, y_px, NEW_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H)) {
+        resetPuzzle();
+        return true;
+    }
+
     const maybe_hit = locateCell(x_px, y_px);
     if (maybe_hit == null) return false;
 
     const hit = maybe_hit.?;
     const idx = hit.idx;
+    if (givens[idx] != 0) return false;
 
     if (idx != selected_idx) {
         selected_idx = idx;
@@ -350,7 +390,6 @@ fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
         return true;
     }
 
-    if (givens[idx] != 0) return false;
     if (values[idx] != 0) return false;
 
     const maybe_digit = candidateAtLocalPoint(hit.local_x, hit.local_y);
@@ -366,14 +405,7 @@ fn handleSecondaryPress(x_px: i32, y_px: i32) bool {
     const hit = maybe_hit.?;
     const idx = hit.idx;
 
-    if (givens[idx] != 0) {
-        if (idx != selected_idx) {
-            selected_idx = idx;
-            needs_redraw = true;
-            return true;
-        }
-        return false;
-    }
+    if (givens[idx] != 0) return false;
 
     selected_idx = idx;
 
@@ -425,6 +457,27 @@ fn locateCell(x_px: i32, y_px: i32) ?CellHit {
         .local_x = lx % CELL_PX,
         .local_y = ly % CELL_PX,
     };
+}
+
+fn numberPadDigitAt(x_px: i32, y_px: i32) u8 {
+    if (!pointInRect(x_px, y_px, NUMBER_PAD_X, NUMBER_PAD_Y, NUMBER_GRID_PX, NUMBER_GRID_PX)) return 0;
+
+    const local_x: usize = @intCast(x_px - @as(i32, @intCast(NUMBER_PAD_X)));
+    const local_y: usize = @intCast(y_px - @as(i32, @intCast(NUMBER_PAD_Y)));
+    const stride = NUMBER_BUTTON_PX + NUMBER_BUTTON_GAP;
+    const col = local_x / stride;
+    const row = local_y / stride;
+    if (col >= 3 or row >= 3) return 0;
+    if ((local_x % stride) >= NUMBER_BUTTON_PX or (local_y % stride) >= NUMBER_BUTTON_PX) return 0;
+
+    return @as(u8, @intCast(row * 3 + col + 1));
+}
+
+fn pointInRect(x_px: i32, y_px: i32, x: usize, y: usize, w: usize, h: usize) bool {
+    if (x_px < 0 or y_px < 0) return false;
+    const px: usize = @intCast(x_px);
+    const py: usize = @intCast(y_px);
+    return px >= x and px < x + w and py >= y and py < y + h;
 }
 
 fn candidateAtLocalPoint(local_x: usize, local_y: usize) u8 {
@@ -531,6 +584,7 @@ fn drawFrame() void {
     drawSelection();
     drawGrid();
     drawValuesAndCandidates();
+    drawControls();
 }
 
 fn drawBoardBackground() void {
@@ -557,8 +611,7 @@ fn drawSelection() void {
     const sy = selected_idx / GRID;
     const px = BOARD_X + sx * CELL_PX;
     const py = BOARD_Y + sy * CELL_PX;
-    const color = if (givens[selected_idx] == 0) COLOR_SELECTED else COLOR_SELECTED_LOCKED;
-    fillRect(px + 1, py + 1, CELL_PX - 2, CELL_PX - 2, color);
+    fillRect(px + 1, py + 1, CELL_PX - 2, CELL_PX - 2, COLOR_SELECTED);
 }
 
 fn drawGrid() void {
@@ -587,10 +640,19 @@ fn drawValuesAndCandidates() void {
 
         if (v != 0) {
             const is_given = givens[idx] != 0;
-            const color = if (isConflictAt(idx)) COLOR_CONFLICT else if (is_given) COLOR_GIVEN else COLOR_VALUE;
+            const is_selected = idx == selected_idx;
+            const color = if (isConflictAt(idx))
+                if (is_selected) COLOR_SELECTED_CONFLICT else COLOR_CONFLICT
+            else if (is_selected)
+                COLOR_SELECTED_INK
+            else if (is_given)
+                COLOR_GIVEN
+            else
+                COLOR_VALUE;
             drawLargeDigit(v, px, py, color);
         } else {
-            drawCandidateDigits(cands[idx], px, py);
+            const color = if (idx == selected_idx) COLOR_SELECTED_INK else COLOR_CAND;
+            drawCandidateDigits(cands[idx], px, py, color);
         }
     }
 }
@@ -603,7 +665,7 @@ fn drawLargeDigit(digit: u8, cell_x: usize, cell_y: usize, color: Color) void {
     drawDigitGlyph(digit, x, y, LARGE_SCALE, color);
 }
 
-fn drawCandidateDigits(mask: u16, cell_x: usize, cell_y: usize) void {
+fn drawCandidateDigits(mask: u16, cell_x: usize, cell_y: usize, color: Color) void {
     if (mask == 0) return;
 
     const gw = 5 * SMALL_SCALE;
@@ -623,8 +685,66 @@ fn drawCandidateDigits(mask: u16, cell_x: usize, cell_y: usize) void {
         const x = cell_x + sx * sub_w + (sub_w - gw) / 2;
         const y = cell_y + sy * sub_h + (sub_h - gh) / 2;
 
-        drawDigitGlyph(d, x, y, SMALL_SCALE, COLOR_CAND);
+        drawDigitGlyph(d, x, y, SMALL_SCALE, color);
     }
+}
+
+fn drawControls() void {
+    const editable = givens[selected_idx] == 0;
+    const selected_value = values[selected_idx];
+
+    var digit: u8 = 1;
+    while (digit <= 9) : (digit += 1) {
+        const pos: usize = digit - 1;
+        const col = pos % 3;
+        const row = pos / 3;
+        const x = NUMBER_PAD_X + col * (NUMBER_BUTTON_PX + NUMBER_BUTTON_GAP);
+        const y = NUMBER_PAD_Y + row * (NUMBER_BUTTON_PX + NUMBER_BUTTON_GAP);
+        const active = selected_value == digit;
+        const border = if (active) COLOR_SELECTED else if (editable) COLOR_CONTROL_BORDER else COLOR_GRID_THIN;
+        const fill = if (active) COLOR_SELECTED else COLOR_CONTROL_BG;
+        const ink = if (active) COLOR_SELECTED_INK else if (editable) COLOR_GIVEN else COLOR_GRID_THIN;
+
+        fillRect(x, y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX, fill);
+        drawRectOutline(x, y, NUMBER_BUTTON_PX, NUMBER_BUTTON_PX, 2, border);
+        drawLargeDigit(digit, x, y, ink);
+    }
+
+    const can_clear = editable and (values[selected_idx] != 0 or cands[selected_idx] != 0);
+    drawActionButton(CLEAR_X, can_clear);
+    drawXIcon(CLEAR_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, if (can_clear) COLOR_GIVEN else COLOR_GRID_THIN);
+
+    drawActionButton(NEW_X, true);
+    drawDiceIcon(NEW_X, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, COLOR_GIVEN);
+}
+
+fn drawActionButton(x: usize, enabled: bool) void {
+    const color = if (enabled) COLOR_CONTROL_BORDER else COLOR_GRID_THIN;
+    fillRect(x, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, COLOR_CONTROL_BG);
+    drawRectOutline(x, ACTION_Y, ACTION_BUTTON_W, ACTION_BUTTON_H, 2, color);
+}
+
+fn drawXIcon(button_x: usize, button_y: usize, button_w: usize, button_h: usize, color: Color) void {
+    const size: usize = 20;
+    const x0 = button_x + (button_w - size) / 2;
+    const y0 = button_y + (button_h - size) / 2;
+    var i: usize = 0;
+    while (i < size) : (i += 1) {
+        fillRect(x0 + i, y0 + i, 2, 2, color);
+        fillRect(x0 + size - 1 - i, y0 + i, 2, 2, color);
+    }
+}
+
+fn drawDiceIcon(button_x: usize, button_y: usize, button_w: usize, button_h: usize, color: Color) void {
+    const size: usize = 28;
+    const x0 = button_x + (button_w - size) / 2;
+    const y0 = button_y + (button_h - size) / 2;
+    drawRectOutline(x0, y0, size, size, 2, color);
+    fillRect(x0 + 6, y0 + 6, 4, 4, color);
+    fillRect(x0 + size - 10, y0 + 6, 4, 4, color);
+    fillRect(x0 + (size - 4) / 2, y0 + (size - 4) / 2, 4, 4, color);
+    fillRect(x0 + 6, y0 + size - 10, 4, 4, color);
+    fillRect(x0 + size - 10, y0 + size - 10, 4, 4, color);
 }
 
 fn drawDigitGlyph(digit: u8, x0: usize, y0: usize, scale: usize, color: Color) void {
@@ -700,6 +820,13 @@ fn fillRect(x: usize, y: usize, w: usize, h: usize, color: Color) void {
             setPixel(xx, yy, color);
         }
     }
+}
+
+fn drawRectOutline(x: usize, y: usize, w: usize, h: usize, thickness: usize, color: Color) void {
+    fillRect(x, y, w, thickness, color);
+    fillRect(x, y + h - thickness, w, thickness, color);
+    fillRect(x, y, thickness, h, color);
+    fillRect(x + w - thickness, y, thickness, h, color);
 }
 
 fn rngNext() u32 {
