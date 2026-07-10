@@ -6,6 +6,10 @@ import vm from "node:vm";
 let QIPPlayElement = null;
 
 globalThis.HTMLElement = class {
+  constructor() {
+    this._listeners = [];
+  }
+
   hasAttribute() {
     return false;
   }
@@ -16,6 +20,20 @@ globalThis.HTMLElement = class {
 
   querySelector() {
     return null;
+  }
+
+  addEventListener(type, listener, options) {
+    this._listeners.push({ type, listener, options });
+  }
+
+  removeEventListener(type, listener, options) {
+    this._listeners = this._listeners.filter((entry) => {
+      return (
+        entry.type !== type ||
+        entry.listener !== listener ||
+        entry.options !== options
+      );
+    });
   }
 
   replaceChildren() {}
@@ -89,6 +107,24 @@ function makePlayElement(debugStats, outputPtr = 0, outputLen = 4, imageOffset =
   };
 }
 
+function makeEventTarget() {
+  return {
+    listeners: [],
+    addEventListener(type, listener, options) {
+      this.listeners.push({ type, listener, options });
+    },
+    removeEventListener(type, listener, options) {
+      this.listeners = this.listeners.filter((entry) => {
+        return (
+          entry.type !== type ||
+          entry.listener !== listener ||
+          entry.options !== options
+        );
+      });
+    },
+  };
+}
+
 test("qip-play debug stats count unchanged renders without skipping canvas draws", () => {
   const { element, bytes, putImageDataN } = makePlayElement(true);
 
@@ -101,8 +137,16 @@ test("qip-play debug stats count unchanged renders without skipping canvas draws
   assert.equal(element._unchangedRenderN, 1);
   assert.equal(element._drawN, 3);
   assert.equal(putImageDataN(), 3);
+  assert.match(
+    element._stats.textContent,
+    /^wasm 0 B \| memory 65\.5 kB \| tick {3}0 \d+\.\d ms \| render {3}3 \d+\.\d ms \| unchanged renders 1 \| compare \d+\.\d ms$/,
+  );
+  assert.doesNotMatch(element._stats.textContent, /\binit\b/);
+  assert.doesNotMatch(element._stats.textContent, /\| ticks /);
+  assert.doesNotMatch(element._stats.textContent, /\| renders /);
+  assert.doesNotMatch(element._stats.textContent, /\bdraws?\b/);
   assert.match(element._stats.textContent, /unchanged renders 1/);
-  assert.match(element._stats.textContent, /compare \d+\.\d{3} ms/);
+  assert.match(element._stats.textContent, /compare \d+\.\d ms/);
 });
 
 test("qip-play unchanged render comparison is disabled outside debug stats", () => {
@@ -115,7 +159,15 @@ test("qip-play unchanged render comparison is disabled outside debug stats", () 
   assert.equal(element._unchangedRenderN, 0);
   assert.equal(element._drawN, 2);
   assert.equal(putImageDataN(), 2);
+  assert.match(
+    element._stats.textContent,
+    /^wasm 0 B \| memory 65\.5 kB \| tick {3}0 \d+\.\d ms \| render {3}2 \d+\.\d ms$/,
+  );
+  assert.doesNotMatch(element._stats.textContent, /\binit\b/);
+  assert.doesNotMatch(element._stats.textContent, /\| ticks /);
+  assert.doesNotMatch(element._stats.textContent, /\| renders /);
   assert.doesNotMatch(element._stats.textContent, /unchanged renders/);
+  assert.doesNotMatch(element._stats.textContent, /\bdraws?\b/);
 });
 
 test("qip-play unchanged render comparison handles matching unaligned views", () => {
@@ -127,4 +179,28 @@ test("qip-play unchanged render comparison handles matching unaligned views", ()
   assert.equal(element._renderFrame().unchanged, false);
 
   assert.equal(element._unchangedRenderN, 1);
+});
+
+test("qip-play only suppresses context menu on the canvas", () => {
+  const element = new QIPPlayElement();
+  element._exports = { key_event() {}, pointer_event() {} };
+  element._canvas = makeEventTarget();
+
+  element._attachInputHandlers();
+
+  assert.equal(
+    element._canvas.listeners.filter((entry) => entry.type === "contextmenu").length,
+    1,
+  );
+  assert.equal(
+    element._listeners.filter((entry) => entry.type === "contextmenu").length,
+    0,
+  );
+
+  element._detachInputHandlers();
+
+  assert.equal(
+    element._canvas.listeners.filter((entry) => entry.type === "contextmenu").length,
+    0,
+  );
 });

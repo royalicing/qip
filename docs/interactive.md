@@ -128,7 +128,22 @@ Attributes win over CSS custom properties.
 
 Pointer events are still converted from the displayed canvas box into render-space pixels. This lets a component render a 2x backing buffer, while the page displays it at a 1x CSS size for high-DPI screens.
 
+The stats line starts with stable module facts before live frame timings: Wasm byte size and current linear memory size. `memory` is the module's current linear memory buffer size, not allocator live-use inside the component. Byte sizes are formatted with decimal `kB` and `MB` units to match Chrome DevTools: divide bytes by `1000`, then by `1000` again for megabytes. WebAssembly memory still grows in `64 KiB` pages, so one page is shown as `65.5 kB`. `tick` and `render` show a space-padded count followed by the latest timing, so the line moves less while the component runs.
+
 For debug instrumentation, add `debug` to `<qip-play>`. In debug mode the host compares each rendered framebuffer with the previous frame, reports `unchanged renders`, and shows the latest exact-compare time. This is opt-in because scanning the framebuffer can be as expensive as, or more expensive than, drawing it to the canvas.
+
+## Browser Module Policy
+
+`<qip-play>` can reject modules before `WebAssembly.instantiate`:
+
+```html
+<qip-play max-memory="1048576" fixed-memory>
+  <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
+</qip-play>
+```
+
+- `max-memory="<bytes>"` rejects a module whose declared memory minimum or maximum exceeds the cap. If a module has memory but no declared maximum, it is rejected.
+- `fixed-memory` rejects a module that can grow linear memory while it runs.
 
 ## Why This Shape
 

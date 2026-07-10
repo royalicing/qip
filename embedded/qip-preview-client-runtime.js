@@ -8,6 +8,28 @@ function qipPreviewNowMS() {
   return Date.now();
 }
 
+function qipPreviewFormatByteSize(byteLength) {
+  if (byteLength < 1000) {
+    return String(byteLength) + " B";
+  }
+  const kilobytes = byteLength / 1000;
+  if (kilobytes < 100) {
+    return kilobytes.toFixed(1) + " kB";
+  }
+  if (kilobytes < 1000) {
+    return kilobytes.toFixed(0) + " kB";
+  }
+  const megabytes = kilobytes / 1000;
+  if (megabytes < 100) {
+    return megabytes.toFixed(1) + " MB";
+  }
+  return megabytes.toFixed(0) + " MB";
+}
+
+function qipPreviewFormatMS(ms) {
+  return ms.toFixed(1) + " ms";
+}
+
 const QIP_PREVIEW_WASM_PAGE_SIZE_BYTES = 65536;
 const QIP_PREVIEW_OPCODE_MEMORY_GROW = 0x40;
 
@@ -1132,6 +1154,7 @@ class QIPPreviewElement extends HTMLElement {
       this._moduleBytesTotal += stage.moduleBytes;
     }
     this.dataset.moduleBytesTotal = String(this._moduleBytesTotal);
+    this.dataset.wasmSize = qipPreviewFormatByteSize(this._moduleBytesTotal);
 
     this._payload = null;
     if (dataSourceElements.length === 1) {
@@ -1204,10 +1227,24 @@ class QIPPreviewElement extends HTMLElement {
       this._renderResult(current);
     } finally {
       if (token === this._runToken) {
-        const elapsedMS = Math.max(0, Math.round(qipPreviewNowMS() - startedMS));
-        this.dataset.runMs = String(elapsedMS);
+        const elapsedMS = Math.max(0, qipPreviewNowMS() - startedMS);
+        this.dataset.runMs = String(Math.round(elapsedMS));
+        this._updateStats(elapsedMS);
       }
     }
+  }
+
+  _updateStats(elapsedMS) {
+    let memoryBytesTotal = 0;
+    for (const stage of this._stages) {
+      if (stage.exports && stage.exports.memory instanceof WebAssembly.Memory) {
+        memoryBytesTotal += stage.exports.memory.buffer.byteLength;
+      }
+    }
+    this.dataset.wasmSize = qipPreviewFormatByteSize(this._moduleBytesTotal);
+    this.dataset.memoryBytesTotal = String(memoryBytesTotal);
+    this.dataset.memorySize = qipPreviewFormatByteSize(memoryBytesTotal);
+    this.dataset.renderTime = qipPreviewFormatMS(elapsedMS);
   }
 
   _renderResult(result) {
