@@ -1,0 +1,163 @@
+diff --git a/README.md b/README.md
+index 24b7a30..c5be7d0 100644
+--- a/README.md
++++ b/README.md
+@@ -2,11 +2,19 @@
+ 
+ QIP Components are Quick to run/make/maintain, Isolated from network/disk/dependencies, and Portable across browser/server/native.
+ 
+-You write or vibe C/Zig, compile it to WebAssembly and have a deterministic puzzle piece that will run the same everywhere. These components can work with text, images, or any binary data, and then be composed into predictable recipes. Make a recipe you like? You can be confident it’ll work identically on mobile, in a browser, in your CI pipeline, on Windows, or whatever comes next.
++QIP is built around **Reproducible Rendering**: same input, same output, everywhere. A component is a self-contained WebAssembly module that renders from explicit input bytes, primitive uniforms, and, for interactive components, event/tick calls. It does not read the clock, locale, filesystem, package graph, environment variables, OS, device, chipset, or network unless a host deliberately makes something part of the contract.
+ 
+-Because they are self-contained with no required dependencies they will keep working for years to come. This means you can worry less about supply-chain attacks, outdated libraries, remote-code-execution, and environment or file-system access.
++QIP is content-first: pass content in, get content out, and use MIME types to describe what is flowing through the system. It is webby in the same way HTTP is request -> response, but it is not tied to HTML, JavaScript, Custom Elements, props, imports, or app schemas.
+ 
+-Your users get small `.wasm` modules that load fast, you get small amounts of code that is easy to review.
++Use QIP to add portable pockets of purity to existing applications. A component can render text, images, documents, archives, UI frames, or arbitrary bytes, then pipe into the next component when the workflow grows. If it works here, it works there. If it works today, it'll work tomorrow.
++
++Components are fast for you to create with coding agents and fast for users to run.
++
++QIP is **designed for agents to rip**. Big room to optimize. Small surface to attack. Components have enough scope for agents to generate and optimize meaningful code, while explicit contracts and quarantine keep changes reviewable and keep generated or third-party code away from filesystem, network, secrets, environment, and dependency access by default.
++
++Determinism makes cross-platform performance work safer. Every QIP pipeline stage is a benchmark boundary: feed it input, measure it, optimize it, and compare the output bytes. If the bytes still match and the stopwatch got faster, ship the same `.wasm` module everywhere that component runs. If it is fast today, it should remain fast tomorrow. Agents get enough scope to use Zig or C compilers, explicit memory layouts, and SIMD, while the Wasm sandbox keeps optimization inside portable code instead of host-specific GPU, filesystem, or platform side effects.
++
++QIP's goal is simple: if it renders today, it renders the same tomorrow.
+ 
+ ## Install CLI
+ 
+@@ -21,6 +29,7 @@ QIP does not use WASI or WIT, standards that have ballooned in complexity from s
+ - `input_ptr()` / `input_bytes_cap()`: where the host writes input.
+ - `output_ptr()` / `output_bytes_cap()`: where your module writes its output.
+ - `render(input_size)`: function to transform input and return output length in bytes.
++- Optional `uniform_set_<key>(value)`: primitive integer or float parameters applied explicitly before rendering.
+ 
+ You can read more about the [component contract in our docs](./docs/component-contract.md#qip-component-contract).
+ 
+@@ -461,9 +470,16 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
+ 
+ ## TODO
+ 
++- [ ] Increase recipe order prefix from `nn` to `nnn`.
++- [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
++- [ ] Add optional field telemetry for deployed QIP components: user-experience metrics such as component hash, host/runtime/device class, time to first QIP paint p75/p95/p99, render-to-paint delay p75/p95/p99, interactive event-to-painted-frame p75/p95/p99, sampled pipeline render p95/p99, frame-budget miss rate, trap/timeout rate, and slowest device classes so production performance can be compared without changing the component contract.
++- [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
++- [ ] Box shadow renderer that compares how Chrome, Safari, Firefox, and Figma all render box shadows. Lets you see all of them together at once and change widths and colors.
++- [ ] Rename `<qip-preview>` to `<qip-run>` or `<qip-render>` or something more clear.
+ - [ ] Add TypeScript-to-JavaScript type stripper.
+ - [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
+ - [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
++- [ ] Add DOOM example.
+ - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
+ - [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
+ - [x] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
+@@ -476,6 +492,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
+ - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
+ - [ ] Add spreadsheet example.
+ - [ ] Add bar charts.
++- [ ] Add scatter plot charts.
+ - [ ] Add pixel editor.
+ - [ ] Add Cover Flow example.
+ - [ ] Add Figma vector networks example.
+diff --git a/site/index.md b/site/index.md
+index f33db6f..a3d8ac0 100644
+--- a/site/index.md
++++ b/site/index.md
+@@ -1,4 +1,4 @@
+-<title>QIP: secure cross-platform components</title>
++<title>QIP: reproducible rendering components</title>
+ 
+ <style>
+ .hero-left {
+@@ -43,19 +43,21 @@
+ 
+ <section class="hero-right">
+ 
+-## QIP components render identically across browser, server, cli, and native.
++## Reproducible rendering across every platform.
+ 
+-They are fast for you to create with coding agents and fast for users to run. You can add them to existing applications or use QIP Router to create websites just like this one.
++QIP Components are self-contained WebAssembly modules that run like small rendering functions. They render text, images, archives, sites, and interactive pixels from explicit inputs, primitive uniforms, and event/tick calls.
+ 
+-WebAssembly provides strong isolation with no filesystem, network, or secrets access. Strict component contracts bring determinism that means everything renders predictably alike everywhere.
++They are fast for you to create with coding agents and fast for users to run.
+ 
+-It’s secure for users, cross-platform for developers, and fast for everyone.
++Same input, same output, everywhere: browser, server, CLI, native, CI, mobile, and edge. If it renders today, QIP is designed to make it render the same tomorrow.
++
++Use QIP to add portable pockets of purity to existing applications, then compose pocket-sized pipelines when a workflow grows. QIP is designed for agents to rip: big room to optimize, small surface to attack. Components have enough scope for meaningful generation and optimization, with explicit contracts and quarantine from filesystem, network, secrets, environment, and dependencies by default.
+ 
+ </section>
+ 
+ ---
+ 
+-## Render any content
++## Content-first components
+ 
+ ```bash
+ du -h modules/text/markdown/commonmark.0.31.2.wasm
+@@ -66,7 +68,9 @@ echo "# A Markdown renderer that works identically cross-platform!" \
+ # <h1>A Markdown renderer that works identically cross-platform!<h1>
+ ```
+ 
+-QIP components can convert text, images, or any MIME type. A pipeline can turn Markdown into HTML, URLs into QR codes, SVG into bitmap images, or WARC archives into deployable websites. Missing something? Just prompt it and add it to your component collection.
++QIP components render content. Pass content in, get content out, and use MIME types to describe what is flowing through the system. It is webby in the same way HTTP is request -> response, but it is not tied to HTML, JavaScript, Custom Elements, props, imports, or app schemas.
++
++A component can turn one content type into another, and a pipeline can turn Markdown into HTML, URLs into QR codes, SVG into bitmap images, or WARC archives into deployable websites. Missing something? Prompt a small component and add it to your collection.
+ 
+ ## Browser rendering
+ 
+@@ -119,9 +123,9 @@ These pages run QIP components in your browser:
+ - [Web mechanics: TLS, DNS, page loading, and cookies](/web-mechanics)
+ - [Page load waterfall](/page-load-waterfall)
+ 
+-## Pluggable web router
++## Portable pipelines of purity
+ 
+-QIP can also take Markdown files and render a website:
++QIP can take Markdown files and render a website:
+ 
+ ```txt
+ site/
+@@ -148,28 +152,30 @@ qip dev ./site
+ qip router warc ./site --view-source
+ ```
+ 
+-Recipes allow each MIME type to be processed by a series of QIP component steps. Each source file is transformed by the recipe and become a webpage route. The same components can be rendered in the browser via custom HTML elements.
++Recipes allow each MIME type to be processed by a series of QIP component steps. Each source file is transformed by the recipe and becomes a webpage route. The same components can be rendered in the browser via custom HTML elements.
++
++If it works here, it works there. If it works today, it'll work tomorrow. Build a pipeline where it first helps, then carry it to browser, native mobile, server, CLI, CI, or edge with the same components and the same rendering behavior.
++
++QIP turns performance work into portable component work. Every QIP pipeline stage is a benchmark boundary: feed it input, measure it, optimize it, and compare the output bytes. If the bytes still match and the stopwatch got faster, ship the same `.wasm` module everywhere that component runs. If it is fast today, it should remain fast tomorrow. Agents get enough scope to use Zig or C compilers, explicit memory layouts, and SIMD, while the Wasm sandbox keeps optimization inside portable code instead of host-specific GPU, filesystem, or platform side effects.
+ 
+ ## Software today never stops
+ 
+ Modern software depends on libraries, frameworks, and platforms that are continuously changing.
+ 
+-Docker can package that world, but it requires lots of moving pieces that require constant patches. We believe a small function to transform some data should not need a whole application environment to run.
++Docker can package that world, but it preserves the idea that a small rendering function needs a whole application environment around it. QIP is for application output that needs to be portable, predictable, testable, and hard to break.
+ 
+-## Components that are small, isolated, and deterministic across platforms
++## Reproducible rendering
+ 
+-**QIP component** are self-contained WebAssembly modules with strict input and output. The output of one then becomes the input of the next, allowing you to compose them together into deterministic pipelines. These will work identically across platforms and will not bitrot due to outdated dependencies.
++**QIP Components** are self-contained WebAssembly modules with strict input and output. The output of one component can become the input of the next, allowing you to compose deterministic pipelines that keep working across platforms and over time.
+ 
+-- **Quarantined:** components run in a sandbox isolated from the host (no filesystem, network, or environment access).
+-- **Immutable:** components are self-contained with no dependencies required, so once you have a working component it stays working.
+-- **Portable:** components run identically across platforms using Core WebAssembly.
+-- **Agent-friendly:** components are small, making them easy to generate, review, benchmark, and replace.
+-- **Deterministic:** the same component and input are guaranteed to produce the same output no matter where or when you run it.
+-- **Composable:** components pipe together like Unix tools and run everywhere like React.
++- **Reproducible Rendering:** same component, same input, same uniforms or event transcript, same output.
++- **Content-First Components:** pass content in, get content out, and use MIME types instead of framework props, imports, schemas, or UI-only component trees.
++- **Portable Pipelines of Purity:** build a pipeline once, then carry it across platforms with the same components, same outputs, and no ambient host state.
++- **Designed for Agents to Rip:** big room to optimize, small surface to attack. Components have enough scope for meaningful generation and optimization, with deterministic output checks and sandboxed host access to keep changes reviewable.
+ 
+-All these properties combined give you predictability. Agent-friendly combined with quarantined means you can experiment with the latest AI tools or programming language without concerns of leaking data. Cross-platform combined with determinism gives you confidence it’ll work the same everywhere, making testing faster. Composable together with immutable means a sophisticated pipeline of components you’ve created will just continue working the same as it did last week.
++All these properties combined give you predictability. Reproducible rendering makes tests sharper because output drift is visible. Portable pipelines of purity make adoption less fragile because a working pipeline can move from web to native mobile, server, CLI, CI, or edge without changing its rendering contract. Agent-friendly components let you experiment with generated and optimized code without handing it filesystem, network, or secret access.
+ 
+-You break things into small pieces amenable to agentic coding, and those pieces run securely protecting you and your users, and work the same over time and across platforms. Components, AI coding, security — you can pick all three.
++You do not rewrite an application around QIP. You add portable pockets of purity where behavior and performance need to stay stable, then grow those pockets into pipelines when the workflow deserves it.
+ 
+ ## Learn more
+ 
