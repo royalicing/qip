@@ -218,6 +218,9 @@ func TestNormalizeRunArgs(t *testing.T) {
 		"out.txt",
 		"--timeout-ms",
 		"2500",
+		"--max-memory",
+		"1048576",
+		"--fixed-memory",
 	}
 	got := normalizeRunArgs(in)
 	want := []string{
@@ -225,6 +228,9 @@ func TestNormalizeRunArgs(t *testing.T) {
 		"out.txt",
 		"--timeout-ms",
 		"2500",
+		"--max-memory",
+		"1048576",
+		"--fixed-memory",
 		"modules/utf8/trim.wasm",
 		"?x=1",
 		"modules/utf8/wc.wasm",

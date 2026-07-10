@@ -5,6 +5,9 @@ const OUTPUT_CAP: usize = INPUT_CAP;
 const MAX_DEFINED_FUNCS: usize = 8192;
 const MAX_CALL_EDGES: usize = 262144;
 const MAX_CONTROL_DEPTH: usize = 4096;
+const MAX_LOOP_EVIDENCE: usize = 4096;
+const MAX_LOOP_COUNTERS: usize = 16384;
+const MAX_RECENT_INSTR: usize = 8;
 const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
@@ -18,6 +21,38 @@ var edge_count: usize = 0;
 var dfs_state_buf: [MAX_DEFINED_FUNCS]u8 = undefined;
 var dfs_stack_buf: [MAX_DEFINED_FUNCS]u32 = undefined;
 var dfs_edge_buf: [MAX_DEFINED_FUNCS]i32 = undefined;
+var loop_has_backedge_buf: [MAX_LOOP_EVIDENCE]bool = undefined;
+var loop_counter_head_buf: [MAX_LOOP_EVIDENCE]i32 = undefined;
+var loop_counter_local_buf: [MAX_LOOP_COUNTERS]u32 = undefined;
+var loop_counter_update_buf: [MAX_LOOP_COUNTERS]u8 = undefined;
+var loop_counter_exit_buf: [MAX_LOOP_COUNTERS]u8 = undefined;
+var loop_counter_next_buf: [MAX_LOOP_COUNTERS]i32 = undefined;
+var loop_count_current: usize = 0;
+var loop_counter_count: usize = 0;
+
+const DIR_INC: u8 = 1;
+const DIR_DEC: u8 = 2;
+
+const ControlFrame = struct {
+    op: u8,
+    loop_idx: i32,
+};
+
+const InstrTrace = struct {
+    op: u8 = 0,
+    imm: i64 = 0,
+    has_imm: bool = false,
+};
+
+const BoundCandidate = struct {
+    local: u32,
+    direction: u8,
+};
+
+const BoundCandidates = struct {
+    items: [2]BoundCandidate = undefined,
+    len: usize = 0,
+};
 
 const CheckError = error{
     InvalidWasm,
@@ -38,6 +73,9 @@ const CheckError = error{
     TooManyFunctions,
     TooManyEdges,
     TooDeepControl,
+    TooManyLoops,
+    TooManyLoopCounters,
+    LoopBoundNotProven,
     UnsupportedImportKind,
     UnsupportedInstruction,
 };
@@ -233,6 +271,267 @@ fn hasCallCycle(defined_func_count: u32) bool {
     return false;
 }
 
+fn initLoopEvidence() void {
+    loop_count_current = 0;
+    loop_counter_count = 0;
+}
+
+fn addLoopEvidence() CheckError!u32 {
+    if (loop_count_current >= MAX_LOOP_EVIDENCE) return CheckError.TooManyLoops;
+    const idx = loop_count_current;
+    loop_has_backedge_buf[idx] = false;
+    loop_counter_head_buf[idx] = -1;
+    loop_count_current += 1;
+    return @intCast(idx);
+}
+
+fn findLoopCounter(loop_idx: u32, local: u32) ?usize {
+    var edge = loop_counter_head_buf[loop_idx];
+    while (edge != -1) {
+        const i: usize = @intCast(edge);
+        if (loop_counter_local_buf[i] == local) return i;
+        edge = loop_counter_next_buf[i];
+    }
+    return null;
+}
+
+fn loopCounterSlot(loop_idx: u32, local: u32) CheckError!usize {
+    if (findLoopCounter(loop_idx, local)) |idx| return idx;
+    if (loop_counter_count >= MAX_LOOP_COUNTERS) return CheckError.TooManyLoopCounters;
+    const idx = loop_counter_count;
+    loop_counter_local_buf[idx] = local;
+    loop_counter_update_buf[idx] = 0;
+    loop_counter_exit_buf[idx] = 0;
+    loop_counter_next_buf[idx] = loop_counter_head_buf[loop_idx];
+    loop_counter_head_buf[loop_idx] = @intCast(idx);
+    loop_counter_count += 1;
+    return idx;
+}
+
+fn markLoopCounterUpdate(loop_idx: u32, local: u32, direction: u8) CheckError!void {
+    if (direction == 0) return;
+    const idx = try loopCounterSlot(loop_idx, local);
+    loop_counter_update_buf[idx] |= direction;
+}
+
+fn markLoopCounterExit(loop_idx: u32, candidate: BoundCandidate) CheckError!void {
+    if (candidate.direction == 0) return;
+    const idx = try loopCounterSlot(loop_idx, candidate.local);
+    loop_counter_exit_buf[idx] |= candidate.direction;
+}
+
+fn loopHasBoundedCounter(loop_idx: u32) bool {
+    var edge = loop_counter_head_buf[loop_idx];
+    while (edge != -1) {
+        const i: usize = @intCast(edge);
+        if ((loop_counter_update_buf[i] & loop_counter_exit_buf[i]) != 0) return true;
+        edge = loop_counter_next_buf[i];
+    }
+    return false;
+}
+
+fn appendTrace(recent: *[MAX_RECENT_INSTR]InstrTrace, recent_len: *usize, instr: InstrTrace) void {
+    if (recent_len.* < MAX_RECENT_INSTR) {
+        recent[recent_len.*] = instr;
+        recent_len.* += 1;
+        return;
+    }
+    var i: usize = 1;
+    while (i < MAX_RECENT_INSTR) : (i += 1) {
+        recent[i - 1] = recent[i];
+    }
+    recent[MAX_RECENT_INSTR - 1] = instr;
+}
+
+fn traceLocalGet(t: InstrTrace) ?u32 {
+    if (t.op != 0x20 or !t.has_imm or t.imm < 0) return null;
+    return @intCast(t.imm);
+}
+
+fn traceI32Const(t: InstrTrace) ?i32 {
+    if (t.op != 0x41 or !t.has_imm) return null;
+    return @intCast(t.imm);
+}
+
+fn counterDirection(op: u8, delta: i32) ?u8 {
+    if (delta == 0) return null;
+    switch (op) {
+        0x6a => return if (delta > 0) DIR_INC else DIR_DEC,
+        0x6b => return if (delta > 0) DIR_DEC else DIR_INC,
+        else => return null,
+    }
+}
+
+fn detectCounterUpdate(recent: []const InstrTrace, set_local: u32) ?u8 {
+    if (recent.len < 3) return null;
+    const a = recent[recent.len - 3];
+    const b = recent[recent.len - 2];
+    const op = recent[recent.len - 1];
+    if (op.op != 0x6a and op.op != 0x6b) return null;
+
+    if (traceLocalGet(a)) |local| {
+        if (local == set_local) {
+            if (traceI32Const(b)) |delta| return counterDirection(op.op, delta);
+        }
+    }
+    if (op.op == 0x6a) {
+        if (traceI32Const(a)) |delta| {
+            if (traceLocalGet(b)) |local| {
+                if (local == set_local) return counterDirection(op.op, delta);
+            }
+        }
+    }
+    return null;
+}
+
+fn isI32Compare(op: u8) bool {
+    return switch (op) {
+        0x46, 0x47, 0x48, 0x49, 0x4b, 0x4d, 0x4f => true,
+        else => false,
+    };
+}
+
+fn pushCandidate(out: *BoundCandidates, local: u32, direction: u8) void {
+    if (direction == 0 or out.len >= out.items.len) return;
+    out.items[out.len] = .{ .local = local, .direction = direction };
+    out.len += 1;
+}
+
+fn chooseBoundDirection(exit_direction: u8, branch_back: bool) u8 {
+    if (!branch_back) return exit_direction;
+    return switch (exit_direction) {
+        DIR_INC => DIR_DEC,
+        DIR_DEC => DIR_INC,
+        else => exit_direction,
+    };
+}
+
+fn compareLocalConstBoundCandidates(op: u8, local: u32, local_on_right: bool, branch_back: bool) BoundCandidates {
+    var out = BoundCandidates{};
+    if (local_on_right) {
+        switch (op) {
+            0x46, 0x47 => pushCandidate(&out, local, DIR_INC | DIR_DEC),
+            0x4f, 0x4b => pushCandidate(&out, local, chooseBoundDirection(DIR_DEC, branch_back)),
+            0x4d, 0x49 => pushCandidate(&out, local, chooseBoundDirection(DIR_INC, branch_back)),
+            else => {},
+        }
+        return out;
+    }
+    switch (op) {
+        0x46, 0x47 => pushCandidate(&out, local, DIR_INC | DIR_DEC),
+        0x4f, 0x4b => pushCandidate(&out, local, chooseBoundDirection(DIR_INC, branch_back)),
+        0x4d, 0x49 => pushCandidate(&out, local, chooseBoundDirection(DIR_DEC, branch_back)),
+        else => {},
+    }
+    return out;
+}
+
+fn compareBoundCandidates(op: u8, left: u32, right: u32, branch_back: bool) BoundCandidates {
+    var out = BoundCandidates{};
+    switch (op) {
+        0x46, 0x47 => {
+            pushCandidate(&out, left, DIR_INC | DIR_DEC);
+            pushCandidate(&out, right, DIR_INC | DIR_DEC);
+        },
+        0x4f, 0x4b => {
+            pushCandidate(&out, left, chooseBoundDirection(DIR_INC, branch_back));
+            pushCandidate(&out, right, chooseBoundDirection(DIR_DEC, branch_back));
+        },
+        0x4d, 0x49 => {
+            pushCandidate(&out, left, chooseBoundDirection(DIR_DEC, branch_back));
+            pushCandidate(&out, right, chooseBoundDirection(DIR_INC, branch_back));
+        },
+        else => {},
+    }
+    return out;
+}
+
+fn detectBoundCandidates(recent: []const InstrTrace, branch_back: bool) BoundCandidates {
+    var out = BoundCandidates{};
+    if (recent.len < 2) return out;
+
+    const last = recent[recent.len - 1];
+    const prev = recent[recent.len - 2];
+    if (last.op == 0x45) {
+        if (branch_back) return out;
+        if (traceLocalGet(prev)) |local| pushCandidate(&out, local, DIR_DEC);
+        return out;
+    }
+    if (!isI32Compare(last.op)) return out;
+
+    if (recent.len >= 3) {
+        const left = recent[recent.len - 3];
+        const right = recent[recent.len - 2];
+        if (traceLocalGet(left)) |left_local| {
+            if (traceLocalGet(right)) |right_local| return compareBoundCandidates(last.op, left_local, right_local, branch_back);
+            if (traceI32Const(right) != null) return compareLocalConstBoundCandidates(last.op, left_local, false, branch_back);
+        }
+        if (traceLocalGet(right)) |right_local| {
+            if (traceI32Const(left) != null) return compareLocalConstBoundCandidates(last.op, right_local, true, branch_back);
+        }
+    }
+
+    if (recent.len >= 6 and recent[recent.len - 2].op == 0x22) {
+        const local: u32 = @intCast(recent[recent.len - 2].imm);
+        if (traceLocalGet(recent[recent.len - 6]) != null) {
+            if (detectCounterUpdate(recent[0 .. recent.len - 2], local)) |dir| {
+                pushCandidate(&out, local, dir);
+                return out;
+            }
+        }
+    }
+    if (recent.len >= 6 and recent[recent.len - 3].op == 0x22) {
+        const local: u32 = @intCast(recent[recent.len - 3].imm);
+        if (traceLocalGet(recent[recent.len - 2]) != null) {
+            if (detectCounterUpdate(recent[0 .. recent.len - 3], local)) |dir| {
+                pushCandidate(&out, local, dir);
+                return out;
+            }
+        }
+    }
+
+    return out;
+}
+
+fn markActiveLoopCounterUpdate(control_stack: []const ControlFrame, local: u32, direction: u8) CheckError!void {
+    if (direction == 0) return;
+    for (control_stack) |frame| {
+        if (frame.op != 0x03 or frame.loop_idx < 0) continue;
+        try markLoopCounterUpdate(@intCast(frame.loop_idx), local, direction);
+    }
+}
+
+fn markBranchLoopEvidence(control_stack: []const ControlFrame, depth: u32, exit_candidates: BoundCandidates, continue_candidates: BoundCandidates) CheckError!void {
+    if (depth >= control_stack.len) return;
+    const target_index = control_stack.len - 1 - @as(usize, @intCast(depth));
+    const target = control_stack[target_index];
+    if (target.op == 0x03) {
+        if (target.loop_idx >= 0) {
+            const loop_idx: u32 = @intCast(target.loop_idx);
+            loop_has_backedge_buf[loop_idx] = true;
+            var i: usize = 0;
+            while (i < continue_candidates.len) : (i += 1) try markLoopCounterExit(loop_idx, continue_candidates.items[i]);
+        }
+        return;
+    }
+
+    var i = control_stack.len;
+    while (i > target_index + 1) {
+        i -= 1;
+        const frame = control_stack[i];
+        if (frame.op != 0x03 or frame.loop_idx < 0) continue;
+        const loop_idx: u32 = @intCast(frame.loop_idx);
+        var j: usize = 0;
+        while (j < exit_candidates.len) : (j += 1) try markLoopCounterExit(loop_idx, exit_candidates.items[j]);
+    }
+}
+
+fn isLoopTarget(control_stack: []const ControlFrame, depth: u32) bool {
+    if (depth >= control_stack.len) return false;
+    const target = control_stack[control_stack.len - 1 - @as(usize, @intCast(depth))];
+    return target.op == 0x03;
+}
+
 fn readBlockType(r: *Reader) CheckError!void {
     const b = try r.peekByte();
     switch (b) {
@@ -382,6 +681,7 @@ fn parseMemorySection(payload: []const u8) CheckError!u32 {
 }
 
 fn parseFunctionBody(body: []const u8, func_idx: u32, imported_func_count: u32, defined_func_count: u32) CheckError!void {
+    initLoopEvidence();
     var r = Reader.init(body);
 
     const local_decls = try r.readVarU32();
@@ -391,17 +691,22 @@ fn parseFunctionBody(body: []const u8, func_idx: u32, imported_func_count: u32, 
         _ = try r.readByte();
     }
 
-    var control_stack: [MAX_CONTROL_DEPTH]u8 = undefined;
+    var control_stack: [MAX_CONTROL_DEPTH]ControlFrame = undefined;
     var control_len: usize = 0;
+    var recent: [MAX_RECENT_INSTR]InstrTrace = undefined;
+    var recent_len: usize = 0;
 
     while (true) {
         const op = try r.readByte();
+        var trace = InstrTrace{ .op = op };
         switch (op) {
             0x00, 0x01, 0x05, 0x0f, 0x1a, 0x1b => {},
             0x02, 0x03, 0x04 => {
                 try readBlockType(&r);
                 if (control_len >= MAX_CONTROL_DEPTH) return CheckError.TooDeepControl;
-                control_stack[control_len] = op;
+                var loop_idx: i32 = -1;
+                if (op == 0x03) loop_idx = @intCast(try addLoopEvidence());
+                control_stack[control_len] = .{ .op = op, .loop_idx = loop_idx };
                 control_len += 1;
             },
             0x0b => {
@@ -409,17 +714,47 @@ fn parseFunctionBody(body: []const u8, func_idx: u32, imported_func_count: u32, 
                     if (r.remaining() != 0) return CheckError.TrailingBytes;
                     return;
                 }
+                const frame = control_stack[control_len - 1];
                 control_len -= 1;
+                if (frame.op == 0x03 and frame.loop_idx >= 0) {
+                    const loop_idx: u32 = @intCast(frame.loop_idx);
+                    if (loop_has_backedge_buf[loop_idx] and !loopHasBoundedCounter(loop_idx)) {
+                        return CheckError.LoopBoundNotProven;
+                    }
+                }
             },
-            0x0c, 0x0d => _ = try r.readVarU32(),
+            0x0c => {
+                const depth = try r.readVarU32();
+                trace.imm = depth;
+                trace.has_imm = true;
+                try markBranchLoopEvidence(control_stack[0..control_len], depth, BoundCandidates{}, BoundCandidates{});
+            },
+            0x0d => {
+                const depth = try r.readVarU32();
+                trace.imm = depth;
+                trace.has_imm = true;
+                const exit_candidates = detectBoundCandidates(recent[0..recent_len], false);
+                const continue_candidates = detectBoundCandidates(recent[0..recent_len], true);
+                try markBranchLoopEvidence(control_stack[0..control_len], depth, exit_candidates, continue_candidates);
+            },
             0x0e => {
                 const target_count = try r.readVarU32();
+                trace.imm = target_count;
+                trace.has_imm = true;
+                const exit_candidates = detectBoundCandidates(recent[0..recent_len], false);
+                const continue_candidates = detectBoundCandidates(recent[0..recent_len], true);
                 var i: u32 = 0;
-                while (i < target_count) : (i += 1) _ = try r.readVarU32();
-                _ = try r.readVarU32();
+                while (i < target_count) : (i += 1) {
+                    const depth = try r.readVarU32();
+                    try markBranchLoopEvidence(control_stack[0..control_len], depth, exit_candidates, continue_candidates);
+                }
+                const default_depth = try r.readVarU32();
+                try markBranchLoopEvidence(control_stack[0..control_len], default_depth, exit_candidates, continue_candidates);
             },
             0x10, 0x12 => {
                 const idx = try r.readVarU32();
+                trace.imm = idx;
+                trace.has_imm = true;
                 if (idx < imported_func_count) return CheckError.ImportNotAllowed;
                 const callee = idx - imported_func_count;
                 if (callee < defined_func_count) try addEdge(func_idx, callee);
@@ -433,13 +768,26 @@ fn parseFunctionBody(body: []const u8, func_idx: u32, imported_func_count: u32, 
                 const count = try r.readVarU32();
                 _ = try r.readN(count);
             },
-            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26 => _ = try r.readVarU32(),
+            0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26 => {
+                const idx = try r.readVarU32();
+                trace.imm = idx;
+                trace.has_imm = true;
+                if (op == 0x21 or op == 0x22) {
+                    if (detectCounterUpdate(recent[0..recent_len], idx)) |dir| {
+                        try markActiveLoopCounterUpdate(control_stack[0..control_len], idx, dir);
+                    }
+                }
+            },
             0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
             0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
             0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e => try readMemArg(&r),
             0x3f => _ = try r.readVarU32(),
             0x40 => return CheckError.MemoryGrowNotAllowed,
-            0x41 => _ = try r.readVarS32(),
+            0x41 => {
+                const value = try r.readVarS32();
+                trace.imm = value;
+                trace.has_imm = true;
+            },
             0x42 => _ = try r.readVarS64(10),
             0x43 => _ = try r.readN(4),
             0x44 => _ = try r.readN(8),
@@ -452,6 +800,7 @@ fn parseFunctionBody(body: []const u8, func_idx: u32, imported_func_count: u32, 
             0xfe => return CheckError.AtomicsNotAllowed,
             else => return CheckError.UnsupportedInstruction,
         }
+        appendTrace(&recent, &recent_len, trace);
     }
 }
 

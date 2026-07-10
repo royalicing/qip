@@ -6,7 +6,7 @@ The tradeoff is that you are responsible for being explicit about the WebAssembl
 
 ## Build With A Memory Maximum
 
-Compile Zig components with `--max-memory` so the component's worst-case linear memory is visible in the Wasm binary.
+Compile Zig components with `--max-memory` so the component's worst-case linear memory is visible in the Wasm binary. For the cross-language resource policy, including fixed memory and `memory.grow` checks, see [Hard Limits](/docs/hard-limits).
 
 Without this flag, Zig can emit a memory with an initial size but no declared maximum. That still runs in `qip`, but it is harder to inspect and it fails stricter safety checks that require fixed memory. A maximum also keeps review honest: if a component needs 20 MiB, the build command says so.
 
@@ -185,6 +185,7 @@ For safety-oriented modules, prefer:
 - No imports.
 - No `memory.grow`.
 - No recursion.
+- Fixed-bound loops with a visible counter and exit condition.
 - No indirect calls unless there is a specific need.
 - Fixed memory maximum via `--max-memory`.
 - Small exported surface: only the QIP contract and intentional uniforms.
@@ -200,7 +201,7 @@ while (i < input.len) : (i += 1) {
 }
 ```
 
-When a loop advances by variable amounts, make every branch either advance or trap. That makes review much easier.
+The safety checker looks at the final Wasm. It accepts the normal counter-loop shape where a local counter is compared to a bound, updated by `+1` or `-1`, and then branches back. If a loop advances by variable amounts, make every branch either advance or trap; this is easier to review, but it may still need a simpler counter shape if the strict checker cannot prove the bound.
 
 You can inspect the resulting module with WABT:
 
@@ -275,7 +276,7 @@ wasm-objdump -x modules/bytes/your-module.wasm
 qip run -i modules/application/wasm/your-module.wasm -- modules/application/wasm/wasm-score.wasm
 ```
 
-Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, and control-flow weight. Use stricter validator modules such as `modules/application/wasm/wasm-safety-check.wasm` when the module should obey the fixed-memory/no-import/no-recursion profile.
+Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use stricter validator modules such as `modules/application/wasm/wasm-safety-check.wasm` when the module should obey the fixed-memory/no-import/no-recursion/fixed-bound-loop profile.
 
 ## Checklist
 

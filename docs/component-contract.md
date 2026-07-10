@@ -72,7 +72,7 @@ These are the composition rules for QIP component pipelines:
 - Keep input and output buffers disjoint unless overlap is an intentional and tested optimization.
 - Validate `input_size` and trap on out-of-bounds assumptions drifting between host and component.
 - Reserve explicit scratch space if needed.
-- For Zig components, compile with `--max-memory=<bytes>` so the Wasm memory has an explicit maximum. See [Writing QIP Components In Zig](/docs/zig-components).
+- For Zig components, compile with `--max-memory=<bytes>` so the Wasm memory has an explicit maximum. See [Writing QIP Components In Zig](/docs/zig-components) and [Hard Limits](/docs/hard-limits).
 - Preferred for data-preserving transforms: trap on invalid input/overflow so bad data does not silently become empty output.
 - Prefer trapping over silent truncation when output buffers overfill.
 - Use `return 0` only when empty output is an intentional, non-error result.
@@ -234,6 +234,14 @@ For required exports and flow details, see [docs/form_abi.md](/docs/form_abi).
 
 - If `tile_rgba32float_64x64` is exported, pipeline classification treats the component as `Tile`.
 - Keep combined `Content+Tile` components only when you intentionally want tile classification.
+
+## Hard Limits
+
+This interface is the first layer of compatibility. A component should not assume unbounded
+memory, long-running execution, host imports, filesystem access, network access,
+or a larger runtime around it. See [Hard Limits](/docs/hard-limits) for the
+runtime limits component authors should keep in mind after implementing the QIP
+interface.
 
 ## Future Direction: Numeric Arrays And Tensors
 

@@ -1,6 +1,9 @@
 package wasminspect
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAnalyzeModuleCountsAndNoCycle(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
@@ -148,14 +151,164 @@ func TestEvaluateQIPContractChecksPassConstantGlobal(t *testing.T) {
 	}
 }
 
+func TestValidateModulePolicyRejectsMemoryGrow(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		Memories: []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
+		FunctionBodies: [][]byte{
+			{
+				0x41, 0x01, // i32.const 1
+				0x40, 0x00, // memory.grow 0
+				0x1a, // drop
+				0x0b, // end function
+			},
+		},
+	})
+
+	analysis, err := AnalyzeModule(module)
+	if err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
+	}
+	if got := analysis.InstructionCounts[OpcodeMemoryGrow]; got != 1 {
+		t.Fatalf("memory.grow count=%d, want 1", got)
+	}
+
+	err = ValidateModulePolicy(module, ModulePolicy{RejectOpcodes: []InstructionOpcode{OpcodeMemoryGrow}})
+	if err == nil {
+		t.Fatalf("expected policy rejection")
+	}
+	if !strings.Contains(err.Error(), "violates fixed-memory policy") {
+		t.Fatalf("error=%q, want memory.grow rejection", err.Error())
+	}
+}
+
+func TestValidateModulePolicyMaxMemory(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		Memories:       []testMemory{{MinPages: 1, HasMax: true, MaxPages: 2}},
+		FunctionBodies: [][]byte{{0x0b}},
+	})
+
+	if err := ValidateModulePolicy(module, ModulePolicy{MaxMemoryBytes: 2 * WasmPageSizeBytes}); err != nil {
+		t.Fatalf("ValidateModulePolicy within max: %v", err)
+	}
+	err := ValidateModulePolicy(module, ModulePolicy{MaxMemoryBytes: WasmPageSizeBytes})
+	if err == nil {
+		t.Fatalf("expected max-memory rejection")
+	}
+	if !strings.Contains(err.Error(), "maximum 2 pages exceeds") {
+		t.Fatalf("error=%q, want max-memory rejection", err.Error())
+	}
+}
+
+func TestValidateModulePolicyRejectsMemoryWithoutDeclaredMax(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		Memories:       []testMemory{{MinPages: 1}},
+		FunctionBodies: [][]byte{{0x0b}},
+	})
+
+	err := ValidateModulePolicy(module, ModulePolicy{MaxMemoryBytes: 2 * WasmPageSizeBytes})
+	if err == nil {
+		t.Fatalf("expected no-max rejection")
+	}
+	if !strings.Contains(err.Error(), "has no declared maximum") {
+		t.Fatalf("error=%q, want missing max rejection", err.Error())
+	}
+}
+
+func TestValidateModulePolicyAcceptsBoundedCounterLoop(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		FunctionBodies: [][]byte{{
+			0x41, 0x00, // i32.const 0
+			0x21, 0x00, // local.set 0
+			0x02, 0x40, // block
+			0x03, 0x40, // loop
+			0x20, 0x00, // local.get 0
+			0x41, 0x0a, // i32.const 10
+			0x4f,       // i32.ge_u
+			0x0d, 0x01, // br_if 1 (exit block)
+			0x20, 0x00, // local.get 0
+			0x41, 0x01, // i32.const 1
+			0x6a,       // i32.add
+			0x21, 0x00, // local.set 0
+			0x0c, 0x00, // br 0 (backedge)
+			0x0b, // end loop
+			0x0b, // end block
+			0x0b, // end function
+		}},
+	})
+
+	analysis, err := AnalyzeModule(module)
+	if err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
+	}
+	if len(analysis.LoopBoundFailures) != 0 {
+		t.Fatalf("unexpected loop bound failures: %+v", analysis.LoopBoundFailures)
+	}
+	if err := ValidateModulePolicy(module, ModulePolicy{RequireBoundedLoops: true}); err != nil {
+		t.Fatalf("ValidateModulePolicy bounded loop: %v", err)
+	}
+}
+
+func TestValidateModulePolicyRejectsUnboundedLoop(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		FunctionBodies: [][]byte{{
+			0x03, 0x40, // loop
+			0x0c, 0x00, // br 0 (backedge)
+			0x0b, // end loop
+			0x0b, // end function
+		}},
+	})
+
+	analysis, err := AnalyzeModule(module)
+	if err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
+	}
+	if len(analysis.LoopBoundFailures) != 1 {
+		t.Fatalf("loop bound failures=%+v, want 1", analysis.LoopBoundFailures)
+	}
+	err = ValidateModulePolicy(module, ModulePolicy{RequireBoundedLoops: true})
+	if err == nil {
+		t.Fatalf("expected bounded-loop policy rejection")
+	}
+	if !strings.Contains(err.Error(), "loop bound not proven") {
+		t.Fatalf("error=%q, want loop bound rejection", err.Error())
+	}
+}
+
+func TestAnalyzeModuleParsesCurrentBulkMemoryAndSIMDImmediates(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		Memories: []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
+		FunctionBodies: [][]byte{
+			{
+				0xfc, 0x0a, 0x00, 0x00, // memory.copy 0 0
+				0xfc, 0x0b, 0x00, // memory.fill 0
+				0xfd, 0x56, 0x00, 0x00, 0x01, // v128.load32_lane align=0 offset=0 lane=1
+				0xfd, 0x5a, 0x00, 0x00, 0x02, // v128.store32_lane align=0 offset=0 lane=2
+				0xfd, 0x5c, 0x00, 0x00, // v128.load32_zero align=0 offset=0
+				0x0b, // end function
+			},
+		},
+	})
+
+	if _, err := AnalyzeModule(module); err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
+	}
+}
+
 type testModuleConfig struct {
 	ImportFuncCount   int
 	ImportGlobalCount int
 	FunctionBodies    [][]byte
 	WithTable         bool
+	Memories          []testMemory
 	Globals           []testGlobal
 	Exports           []testExport
 	StartFunc         *uint32
+}
+
+type testMemory struct {
+	MinPages uint32
+	HasMax   bool
+	MaxPages uint32
 }
 
 type testGlobal struct {
@@ -216,6 +369,23 @@ func buildTestModule(cfg testModuleConfig) []byte {
 		tableSec = makeSection(4, payload)
 	}
 
+	memorySec := []byte{}
+	if len(cfg.Memories) > 0 {
+		payload := []byte{}
+		payload = append(payload, encodeU32(uint32(len(cfg.Memories)))...)
+		for _, m := range cfg.Memories {
+			if m.HasMax {
+				payload = append(payload, 0x01)
+				payload = append(payload, encodeU32(m.MinPages)...)
+				payload = append(payload, encodeU32(m.MaxPages)...)
+			} else {
+				payload = append(payload, 0x00)
+				payload = append(payload, encodeU32(m.MinPages)...)
+			}
+		}
+		memorySec = makeSection(5, payload)
+	}
+
 	globalSec := []byte{}
 	if len(cfg.Globals) > 0 {
 		payload := []byte{}
@@ -265,6 +435,7 @@ func buildTestModule(cfg testModuleConfig) []byte {
 	module = append(module, importSec...)
 	module = append(module, functionSec...)
 	module = append(module, tableSec...)
+	module = append(module, memorySec...)
 	module = append(module, globalSec...)
 	module = append(module, exportSec...)
 	module = append(module, startSec...)

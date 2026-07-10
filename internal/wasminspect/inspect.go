@@ -9,6 +9,7 @@ import (
 
 type scoreMetrics struct {
 	InstructionTotal int
+	LoopCount        int
 	BranchDecision   int // br_if + if
 	BrTableCount     int
 	BrTableTargets   int
@@ -20,6 +21,7 @@ type scoreMetrics struct {
 
 type functionMetrics struct {
 	InstructionTotal int
+	LoopCount        int
 	BranchDecision   int
 	BrTableCount     int
 	BrTableTargets   int
@@ -53,6 +55,14 @@ type instantiationMetrics struct {
 	StartLoopBackedges  int
 }
 
+type memoryLimit struct {
+	Imported bool
+	Memory64 bool
+	MinPages uint64
+	HasMax   bool
+	MaxPages uint64
+}
+
 type contractCheck struct {
 	Export string
 	Kind   string
@@ -67,6 +77,9 @@ type wasmExport struct {
 
 type wasmAnalysis struct {
 	Metrics           scoreMetrics
+	InstructionCounts map[InstructionOpcode]int
+	LoopBoundFailures []LoopBoundFailure
+	MemoryLimits      []memoryLimit
 	CallEdges         []map[int]struct{}
 	ImportedFuncCount int
 	ImportedGlobals   int
@@ -77,8 +90,49 @@ type wasmAnalysis struct {
 }
 
 type importCounts struct {
-	Funcs   int
-	Globals int
+	Funcs        int
+	Globals      int
+	MemoryLimits []memoryLimit
+}
+
+type LoopBoundFailure struct {
+	Function int
+	Loop     int
+	Reason   string
+}
+
+type loopCounterDirection uint8
+
+const (
+	loopCounterInc loopCounterDirection = 1 << iota
+	loopCounterDec
+)
+
+type loopCounterEvidence struct {
+	update loopCounterDirection
+	exit   loopCounterDirection
+}
+
+type loopEvidence struct {
+	index       int
+	hasBackedge bool
+	counters    map[uint32]loopCounterEvidence
+}
+
+type controlFrame struct {
+	op      byte
+	loopIdx int
+}
+
+type instrTrace struct {
+	op     byte
+	imm    int64
+	hasImm bool
+}
+
+type boundCandidate struct {
+	local     uint32
+	direction loopCounterDirection
 }
 
 // Exported aliases for shared use by commands.
@@ -86,9 +140,20 @@ type ScoreMetrics = scoreMetrics
 type FunctionMetrics = functionMetrics
 type GlobalInitMetrics = globalInitMetrics
 type InstantiationMetrics = instantiationMetrics
+type MemoryLimit = memoryLimit
 type ContractCheck = contractCheck
 type Export = wasmExport
 type Analysis = wasmAnalysis
+
+const WasmPageSizeBytes uint64 = 65536
+
+type InstructionOpcode uint32
+
+const OpcodeMemoryGrow InstructionOpcode = 0x40
+
+var instructionOpcodeNames = map[InstructionOpcode]string{
+	OpcodeMemoryGrow: "memory.grow",
+}
 
 var qipContractExports = []string{
 	"input_ptr",
@@ -105,6 +170,310 @@ var qipContractExports = []string{
 
 func AnalyzeModule(wasm []byte) (Analysis, error) {
 	return analyzeWASMModule(wasm)
+}
+
+type ModulePolicy struct {
+	MaxMemoryBytes      uint64
+	RejectOpcodes       []InstructionOpcode
+	RequireBoundedLoops bool
+}
+
+func ValidateModulePolicy(wasm []byte, policy ModulePolicy) error {
+	if policy.MaxMemoryBytes == 0 && len(policy.RejectOpcodes) == 0 && !policy.RequireBoundedLoops {
+		return nil
+	}
+
+	analysis, err := AnalyzeModule(wasm)
+	if err != nil {
+		return err
+	}
+
+	failures := make([]string, 0)
+	if policy.MaxMemoryBytes > 0 {
+		for i, memory := range analysis.MemoryLimits {
+			minBytes, ok := pagesToBytes(memory.MinPages)
+			if !ok || minBytes > policy.MaxMemoryBytes {
+				failures = append(failures, fmt.Sprintf("memory[%d] initial size %d pages exceeds --max-memory %d bytes", i, memory.MinPages, policy.MaxMemoryBytes))
+			}
+			if !memory.HasMax {
+				failures = append(failures, fmt.Sprintf("memory[%d] has no declared maximum", i))
+				continue
+			}
+			maxBytes, ok := pagesToBytes(memory.MaxPages)
+			if !ok || maxBytes > policy.MaxMemoryBytes {
+				failures = append(failures, fmt.Sprintf("memory[%d] maximum %d pages exceeds --max-memory %d bytes", i, memory.MaxPages, policy.MaxMemoryBytes))
+			}
+		}
+	}
+
+	for _, opcode := range policy.RejectOpcodes {
+		if count := analysis.InstructionCounts[opcode]; count > 0 {
+			failures = append(failures, fmt.Sprintf("violates fixed-memory policy: contains %s (%d)", instructionOpcodeName(opcode), count))
+		}
+	}
+	if policy.RequireBoundedLoops && len(analysis.LoopBoundFailures) > 0 {
+		for _, failure := range analysis.LoopBoundFailures {
+			failures = append(failures, fmt.Sprintf("loop bound not proven: function %d loop %d: %s", failure.Function, failure.Loop, failure.Reason))
+		}
+	}
+
+	if len(failures) > 0 {
+		return errors.New(strings.Join(failures, "; "))
+	}
+	return nil
+}
+
+func instructionOpcodeName(opcode InstructionOpcode) string {
+	if name, ok := instructionOpcodeNames[opcode]; ok {
+		return name
+	}
+	return fmt.Sprintf("opcode 0x%x", uint32(opcode))
+}
+
+func pagesToBytes(pages uint64) (uint64, bool) {
+	if pages > ^uint64(0)/WasmPageSizeBytes {
+		return 0, false
+	}
+	return pages * WasmPageSizeBytes, true
+}
+
+func appendTrace(recent []instrTrace, instr instrTrace) []instrTrace {
+	const maxRecent = 8
+	recent = append(recent, instr)
+	if len(recent) > maxRecent {
+		copy(recent, recent[len(recent)-maxRecent:])
+		recent = recent[:maxRecent]
+	}
+	return recent
+}
+
+func traceLocalGet(t instrTrace) (uint32, bool) {
+	if t.op != 0x20 || !t.hasImm || t.imm < 0 {
+		return 0, false
+	}
+	return uint32(t.imm), true
+}
+
+func traceI32Const(t instrTrace) (int32, bool) {
+	if t.op != 0x41 || !t.hasImm {
+		return 0, false
+	}
+	return int32(t.imm), true
+}
+
+func detectCounterUpdate(recent []instrTrace, setLocal uint32) (loopCounterDirection, bool) {
+	if len(recent) < 3 {
+		return 0, false
+	}
+	a := recent[len(recent)-3]
+	b := recent[len(recent)-2]
+	op := recent[len(recent)-1]
+
+	if op.op != 0x6a && op.op != 0x6b { // i32.add, i32.sub
+		return 0, false
+	}
+
+	if local, ok := traceLocalGet(a); ok && local == setLocal {
+		if delta, ok := traceI32Const(b); ok {
+			return counterDirection(op.op, delta)
+		}
+	}
+	if op.op == 0x6a {
+		if delta, ok := traceI32Const(a); ok {
+			if local, ok := traceLocalGet(b); ok && local == setLocal {
+				return counterDirection(op.op, delta)
+			}
+		}
+	}
+	return 0, false
+}
+
+func counterDirection(op byte, delta int32) (loopCounterDirection, bool) {
+	if delta == 0 {
+		return 0, false
+	}
+	switch op {
+	case 0x6a: // i32.add
+		if delta > 0 {
+			return loopCounterInc, true
+		}
+		return loopCounterDec, true
+	case 0x6b: // i32.sub
+		if delta > 0 {
+			return loopCounterDec, true
+		}
+		return loopCounterInc, true
+	default:
+		return 0, false
+	}
+}
+
+func isI32Compare(op byte) bool {
+	switch op {
+	case 0x46, 0x47, 0x48, 0x49, 0x4b, 0x4d, 0x4f:
+		return true
+	default:
+		return false
+	}
+}
+
+func detectBoundCandidates(recent []instrTrace, branchBack bool) []boundCandidate {
+	if len(recent) < 2 {
+		return nil
+	}
+	last := recent[len(recent)-1]
+	prev := recent[len(recent)-2]
+	if last.op == 0x45 { // i32.eqz
+		if branchBack {
+			return nil
+		}
+		if local, ok := traceLocalGet(prev); ok {
+			return []boundCandidate{{local: local, direction: loopCounterDec}}
+		}
+	}
+	if !isI32Compare(last.op) {
+		return nil
+	}
+
+	if len(recent) >= 3 {
+		leftLocal, leftLocalOK := traceLocalGet(recent[len(recent)-3])
+		rightLocal, rightLocalOK := traceLocalGet(recent[len(recent)-2])
+		if leftLocalOK && rightLocalOK {
+			return compareBoundCandidates(last.op, leftLocal, rightLocal, branchBack)
+		}
+		if leftLocalOK {
+			if _, ok := traceI32Const(recent[len(recent)-2]); ok {
+				return compareLocalConstBoundCandidates(last.op, leftLocal, false, branchBack)
+			}
+		}
+		if rightLocalOK {
+			if _, ok := traceI32Const(recent[len(recent)-3]); ok {
+				return compareLocalConstBoundCandidates(last.op, rightLocal, true, branchBack)
+			}
+		}
+	}
+
+	// Common bottom-tested shape after an update:
+	// local.get bound; local.get i; i32.const 1; i32.add; local.tee i; i32.ne
+	if len(recent) >= 6 && recent[len(recent)-2].op == 0x22 {
+		local := uint32(recent[len(recent)-2].imm)
+		if _, ok := traceLocalGet(recent[len(recent)-6]); ok {
+			if dir, ok := detectCounterUpdate(recent[:len(recent)-2], local); ok {
+				return []boundCandidate{{local: local, direction: dir}}
+			}
+		}
+	}
+	// Equivalent bottom-tested shape with the updated counter on the left:
+	// local.get i; i32.const -1; i32.add; local.tee i; local.get bound; i32.gt_u
+	if len(recent) >= 6 && recent[len(recent)-3].op == 0x22 {
+		local := uint32(recent[len(recent)-3].imm)
+		if _, ok := traceLocalGet(recent[len(recent)-2]); ok {
+			if dir, ok := detectCounterUpdate(recent[:len(recent)-3], local); ok {
+				return []boundCandidate{{local: local, direction: dir}}
+			}
+		}
+	}
+	return nil
+}
+
+func compareLocalConstBoundCandidates(op byte, local uint32, localOnRight bool, branchBack bool) []boundCandidate {
+	if localOnRight {
+		switch op {
+		case 0x46, 0x47: // i32.eq, i32.ne
+			return []boundCandidate{{local: local, direction: loopCounterInc | loopCounterDec}}
+		case 0x4f, 0x4b: // const >= local, const > local
+			return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterDec, branchBack)}}
+		case 0x4d, 0x49: // const <= local, const < local
+			return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterInc, branchBack)}}
+		default:
+			return nil
+		}
+	}
+	switch op {
+	case 0x46, 0x47: // i32.eq, i32.ne
+		return []boundCandidate{{local: local, direction: loopCounterInc | loopCounterDec}}
+	case 0x4f, 0x4b: // local >= const, local > const
+		return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterInc, branchBack)}}
+	case 0x4d, 0x49: // local <= const, local < const
+		return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterDec, branchBack)}}
+	default:
+		return nil
+	}
+}
+
+func compareBoundCandidates(op byte, left uint32, right uint32, branchBack bool) []boundCandidate {
+	switch op {
+	case 0x46, 0x47: // i32.eq, i32.ne
+		return []boundCandidate{
+			{local: left, direction: loopCounterInc | loopCounterDec},
+			{local: right, direction: loopCounterInc | loopCounterDec},
+		}
+	case 0x4f, 0x4b: // i32.ge_u, i32.gt_u
+		return []boundCandidate{
+			{local: left, direction: chooseBoundDirection(loopCounterInc, branchBack)},
+			{local: right, direction: chooseBoundDirection(loopCounterDec, branchBack)},
+		}
+	case 0x4d, 0x49: // i32.le_u, i32.lt_u
+		return []boundCandidate{
+			{local: left, direction: chooseBoundDirection(loopCounterDec, branchBack)},
+			{local: right, direction: chooseBoundDirection(loopCounterInc, branchBack)},
+		}
+	default:
+		return nil
+	}
+}
+
+func chooseBoundDirection(exitDirection loopCounterDirection, branchBack bool) loopCounterDirection {
+	if !branchBack {
+		return exitDirection
+	}
+	switch exitDirection {
+	case loopCounterInc:
+		return loopCounterDec
+	case loopCounterDec:
+		return loopCounterInc
+	default:
+		return exitDirection
+	}
+}
+
+func markLoopCounterUpdate(loops []loopEvidence, controlStack []controlFrame, local uint32, direction loopCounterDirection) {
+	if direction == 0 {
+		return
+	}
+	for _, frame := range controlStack {
+		if frame.op != 0x03 || frame.loopIdx < 0 || frame.loopIdx >= len(loops) {
+			continue
+		}
+		loop := &loops[frame.loopIdx]
+		if loop.counters == nil {
+			loop.counters = map[uint32]loopCounterEvidence{}
+		}
+		evidence := loop.counters[local]
+		evidence.update |= direction
+		loop.counters[local] = evidence
+	}
+}
+
+func markLoopCounterExit(loop *loopEvidence, candidate boundCandidate) {
+	if candidate.direction == 0 {
+		return
+	}
+	if loop.counters == nil {
+		loop.counters = map[uint32]loopCounterEvidence{}
+	}
+	evidence := loop.counters[candidate.local]
+	evidence.exit |= candidate.direction
+	loop.counters[candidate.local] = evidence
+}
+
+func loopHasBoundedCounter(loop loopEvidence) bool {
+	for _, evidence := range loop.counters {
+		if evidence.update&evidence.exit != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func DetectCallCycle(edges []map[int]struct{}) (bool, []int) {
@@ -365,7 +734,8 @@ func analyzeWASMModule(wasm []byte) (wasmAnalysis, error) {
 	var imports importCounts
 	var functionTypeIdx []uint32
 	analysis := wasmAnalysis{
-		Exports: map[string]wasmExport{},
+		InstructionCounts: map[InstructionOpcode]int{},
+		Exports:           map[string]wasmExport{},
 	}
 	startFuncIdx := -1
 
@@ -396,6 +766,10 @@ func analyzeWASMModule(wasm []byte) (wasmAnalysis, error) {
 				return wasmAnalysis{}, fmt.Errorf("parse import section: %w", err)
 			}
 			imports = counts
+			analysis.MemoryLimits = append(analysis.MemoryLimits, counts.MemoryLimits...)
+			for _, memory := range counts.MemoryLimits {
+				analysis.Instantiation.MemoryMinPages += memory.MinPages
+			}
 		case 3:
 			idxs, err := parseFunctionSection(payload)
 			if err != nil {
@@ -409,11 +783,14 @@ func analyzeWASMModule(wasm []byte) (wasmAnalysis, error) {
 			}
 			analysis.Instantiation.TableMinElements = min
 		case 5:
-			min, err := parseMemorySection(payload)
+			memories, err := parseMemorySection(payload)
 			if err != nil {
 				return wasmAnalysis{}, fmt.Errorf("parse memory section: %w", err)
 			}
-			analysis.Instantiation.MemoryMinPages = min
+			analysis.MemoryLimits = append(analysis.MemoryLimits, memories...)
+			for _, memory := range memories {
+				analysis.Instantiation.MemoryMinPages += memory.MinPages
+			}
 		case 6:
 			globals, err := parseGlobalSection(payload)
 			if err != nil {
@@ -436,12 +813,13 @@ func analyzeWASMModule(wasm []byte) (wasmAnalysis, error) {
 				analysis.Instantiation.HasStart = true
 			}
 		case 10:
-			edges, fnMetrics, err := parseCodeSection(payload, imports.Funcs, len(functionTypeIdx), &analysis.Metrics)
+			edges, fnMetrics, loopFailures, err := parseCodeSection(payload, imports.Funcs, len(functionTypeIdx), &analysis.Metrics, analysis.InstructionCounts)
 			if err != nil {
 				return wasmAnalysis{}, fmt.Errorf("parse code section: %w", err)
 			}
 			analysis.CallEdges = edges
 			analysis.FuncMetrics = fnMetrics
+			analysis.LoopBoundFailures = append(analysis.LoopBoundFailures, loopFailures...)
 		case 9:
 			segCount, elemCount, err := parseElementSection(payload)
 			if err != nil {
@@ -549,9 +927,12 @@ func parseImportSection(payload []byte) (importCounts, error) {
 				return importCounts{}, err
 			}
 		case 0x02: // memory
-			if err := skipLimits(r); err != nil {
+			limit, err := parseLimits(r)
+			if err != nil {
 				return importCounts{}, err
 			}
+			limit.Imported = true
+			counts.MemoryLimits = append(counts.MemoryLimits, limit)
 		case 0x03: // global
 			if err := skipGlobalType(r); err != nil {
 				return importCounts{}, err
@@ -657,24 +1038,24 @@ func parseStartSection(payload []byte) (uint32, bool, error) {
 	return idx, true, nil
 }
 
-func parseMemorySection(payload []byte) (uint64, error) {
+func parseMemorySection(payload []byte) ([]memoryLimit, error) {
 	r := newWasmReader(payload)
 	n, err := r.readVarU32()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	var minPages uint64
+	memories := make([]memoryLimit, 0, n)
 	for i := 0; i < int(n); i++ {
-		min, err := parseLimitsMin(r)
+		limit, err := parseLimits(r)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		minPages += min
+		memories = append(memories, limit)
 	}
 	if r.remaining() != 0 {
-		return 0, errors.New("trailing bytes in memory section")
+		return nil, errors.New("trailing bytes in memory section")
 	}
-	return minPages, nil
+	return memories, nil
 }
 
 func parseTableSection(payload []byte) (uint64, error) {
@@ -857,36 +1238,39 @@ func parseCodeSection(
 	importedFuncCount int,
 	definedFuncCount int,
 	metrics *scoreMetrics,
-) ([]map[int]struct{}, []functionMetrics, error) {
+	instructionCounts map[InstructionOpcode]int,
+) ([]map[int]struct{}, []functionMetrics, []LoopBoundFailure, error) {
 	r := newWasmReader(payload)
 	n, err := r.readVarU32()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if int(n) != definedFuncCount {
-		return nil, nil, fmt.Errorf("function/code count mismatch: function=%d code=%d", definedFuncCount, n)
+		return nil, nil, nil, fmt.Errorf("function/code count mismatch: function=%d code=%d", definedFuncCount, n)
 	}
 	edges := make([]map[int]struct{}, definedFuncCount)
 	funcMetrics := make([]functionMetrics, definedFuncCount)
+	loopFailures := make([]LoopBoundFailure, 0)
 	for i := 0; i < int(n); i++ {
 		bodySize, err := r.readVarU32()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		body, err := r.readN(int(bodySize))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		fm, err := parseFunctionBody(body, i, importedFuncCount, definedFuncCount, metrics, edges)
+		fm, failures, err := parseFunctionBody(body, i, importedFuncCount, definedFuncCount, metrics, instructionCounts, edges)
 		if err != nil {
-			return nil, nil, fmt.Errorf("function %d: %w", i, err)
+			return nil, nil, nil, fmt.Errorf("function %d: %w", i, err)
 		}
 		funcMetrics[i] = fm
+		loopFailures = append(loopFailures, failures...)
 	}
 	if r.remaining() != 0 {
-		return nil, nil, errors.New("trailing bytes in code section")
+		return nil, nil, nil, errors.New("trailing bytes in code section")
 	}
-	return edges, funcMetrics, nil
+	return edges, funcMetrics, loopFailures, nil
 }
 
 func parseFunctionBody(
@@ -895,19 +1279,20 @@ func parseFunctionBody(
 	importedFuncCount int,
 	definedFuncCount int,
 	metrics *scoreMetrics,
+	instructionCounts map[InstructionOpcode]int,
 	edges []map[int]struct{},
-) (functionMetrics, error) {
+) (functionMetrics, []LoopBoundFailure, error) {
 	r := newWasmReader(body)
 	localDecls, err := r.readVarU32()
 	if err != nil {
-		return functionMetrics{}, err
+		return functionMetrics{}, nil, err
 	}
 	for i := 0; i < int(localDecls); i++ {
 		if _, err := r.readVarU32(); err != nil {
-			return functionMetrics{}, err
+			return functionMetrics{}, nil, err
 		}
 		if _, err := r.readByte(); err != nil {
-			return functionMetrics{}, err
+			return functionMetrics{}, nil, err
 		}
 	}
 
@@ -920,11 +1305,21 @@ func parseFunctionBody(
 	)
 
 	fm := functionMetrics{}
-	controlStack := make([]byte, 0, 16)
+	controlStack := make([]controlFrame, 0, 16)
+	loops := make([]loopEvidence, 0, 8)
+	loopFailures := make([]LoopBoundFailure, 0)
+	recent := make([]instrTrace, 0, 8)
 
 	addInstr := func() {
 		metrics.InstructionTotal++
 		fm.InstructionTotal++
+	}
+	addLoop := func() int {
+		metrics.LoopCount++
+		fm.LoopCount++
+		idx := len(loops)
+		loops = append(loops, loopEvidence{index: fm.LoopCount})
+		return idx
 	}
 	addBranch := func() {
 		metrics.BranchDecision++
@@ -956,9 +1351,10 @@ func parseFunctionBody(
 	for {
 		op, err := r.readByte()
 		if err != nil {
-			return functionMetrics{}, err
+			return functionMetrics{}, nil, err
 		}
 		addInstr()
+		trace := instrTrace{op: op}
 
 		switch op {
 		case 0x00, 0x01, opElse, 0x0f, 0x1a, 0x1b:
@@ -968,71 +1364,102 @@ func parseFunctionBody(
 			}
 		case opBlock, opLoop, opIf:
 			if err := readBlockType(r); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			if op == opIf {
 				addBranch()
 			} else {
 				fm.ControlFlowOps++
 			}
-			controlStack = append(controlStack, op)
+			loopIdx := -1
+			if op == opLoop {
+				loopIdx = addLoop()
+			}
+			controlStack = append(controlStack, controlFrame{op: op, loopIdx: loopIdx})
 		case opEnd:
 			if len(controlStack) == 0 {
 				if r.remaining() != 0 {
-					return functionMetrics{}, errors.New("trailing bytes after final end")
+					return functionMetrics{}, nil, errors.New("trailing bytes after final end")
 				}
-				return fm, nil
+				return fm, loopFailures, nil
 			}
+			frame := controlStack[len(controlStack)-1]
 			controlStack = controlStack[:len(controlStack)-1]
+			if frame.op == opLoop && frame.loopIdx >= 0 && frame.loopIdx < len(loops) {
+				loop := loops[frame.loopIdx]
+				if loop.hasBackedge && !loopHasBoundedCounter(loop) {
+					loopFailures = append(loopFailures, LoopBoundFailure{
+						Function: funcIdx,
+						Loop:     loop.index,
+						Reason:   "no local counter with a matching monotonic update and exit bound",
+					})
+				}
+			}
 		case 0x0c:
 			depth, err := r.readVarU32()
 			if err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
+			trace.imm = int64(depth)
+			trace.hasImm = true
 			fm.ControlFlowOps++
 			if isLoopTarget(controlStack, depth) {
 				addLoopBack()
 			}
+			markBranchLoopEvidence(loops, controlStack, depth, nil, nil)
 		case 0x0d:
 			depth, err := r.readVarU32()
 			if err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
+			trace.imm = int64(depth)
+			trace.hasImm = true
 			addBranch()
+			exitCandidates := detectBoundCandidates(recent, false)
+			continueCandidates := detectBoundCandidates(recent, true)
 			if isLoopTarget(controlStack, depth) {
 				addLoopBack()
 			}
+			markBranchLoopEvidence(loops, controlStack, depth, exitCandidates, continueCandidates)
 		case 0x0e:
 			targetCount, err := r.readVarU32()
 			if err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
+			trace.imm = int64(targetCount)
+			trace.hasImm = true
 			addBrTable(int(targetCount))
+			exitCandidates := detectBoundCandidates(recent, false)
+			continueCandidates := detectBoundCandidates(recent, true)
 			hasLoopTarget := false
 			for i := 0; i < int(targetCount); i++ {
 				depth, err := r.readVarU32()
 				if err != nil {
-					return functionMetrics{}, err
+					return functionMetrics{}, nil, err
 				}
 				if isLoopTarget(controlStack, depth) {
 					hasLoopTarget = true
 				}
+				markBranchLoopEvidence(loops, controlStack, depth, exitCandidates, continueCandidates)
 			}
 			defaultDepth, err := r.readVarU32()
 			if err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			if isLoopTarget(controlStack, defaultDepth) {
 				hasLoopTarget = true
 			}
+			markBranchLoopEvidence(loops, controlStack, defaultDepth, exitCandidates, continueCandidates)
 			if hasLoopTarget {
 				addLoopBack()
 			}
 		case 0x10, 0x12:
 			idx, err := r.readVarU32()
 			if err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
+			trace.imm = int64(idx)
+			trace.hasImm = true
 			if int(idx) < importedFuncCount {
 				addCallImport()
 			} else {
@@ -1047,30 +1474,33 @@ func parseFunctionBody(
 			}
 		case 0x11, 0x13:
 			if _, err := r.readVarU32(); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			if _, err := r.readVarU32(); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			addCallIndirect()
 			fm.TableOps++
 		case 0x14:
 			if _, err := r.readVarU32(); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			addCallIndirect()
 		case 0x1c:
 			count, err := r.readVarU32()
 			if err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			if _, err := r.readN(int(count)); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 		case 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26:
-			if _, err := r.readVarU32(); err != nil {
-				return functionMetrics{}, err
+			idx, err := r.readVarU32()
+			if err != nil {
+				return functionMetrics{}, nil, err
 			}
+			trace.imm = int64(idx)
+			trace.hasImm = true
 			switch op {
 			case 0x23:
 				// global.get is the expected shape for qip contract accessor functions.
@@ -1079,60 +1509,72 @@ func parseFunctionBody(
 			default:
 				fm.LocalOps++
 			}
+			if op == 0x21 || op == 0x22 {
+				if dir, ok := detectCounterUpdate(recent, idx); ok {
+					markLoopCounterUpdate(loops, controlStack, idx, dir)
+				}
+			}
 		case 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
 			0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
 			0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e:
 			if err := readMemArg(r); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			fm.MemoryOps++
 		case 0x3f, 0x40:
 			if _, err := r.readVarU32(); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
+			}
+			if op == 0x40 {
+				instructionCounts[OpcodeMemoryGrow]++
 			}
 			fm.MemoryOps++
 		case 0x41:
-			if _, err := r.readVarS32(); err != nil {
-				return functionMetrics{}, err
+			v, err := r.readVarS32()
+			if err != nil {
+				return functionMetrics{}, nil, err
 			}
+			trace.imm = int64(v)
+			trace.hasImm = true
 		case 0x42:
 			if _, err := r.readVarS64(10); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 		case 0x43:
 			if _, err := r.readN(4); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 		case 0x44:
 			if _, err := r.readN(8); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 		case 0xd0:
 			if _, err := r.readByte(); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 		case 0xd2:
 			if _, err := r.readVarU32(); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 		case 0xfc:
 			if err := readFCImmediate(r); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			fm.MemoryOps++
 		case 0xfd:
 			if err := readFDImmediate(r); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			fm.MemoryOps++
 		case 0xfe:
 			if err := readFEImmediate(r); err != nil {
-				return functionMetrics{}, err
+				return functionMetrics{}, nil, err
 			}
 			fm.MemoryOps++
 		default:
 			// Most core numeric/reference ops have no immediates.
 		}
+		recent = appendTrace(recent, trace)
 	}
 }
 
@@ -1264,47 +1706,47 @@ func readFCImmediate(r *wasmReader) error {
 		return err
 	}
 	switch sub {
-	case 0: // memory.init
+	case 8: // memory.init
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
-	case 1: // data.drop
+	case 9: // data.drop
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
-	case 2: // memory.copy
-		if _, err := r.readVarU32(); err != nil {
-			return err
-		}
-		if _, err := r.readVarU32(); err != nil {
-			return err
-		}
-	case 3: // memory.fill
-		if _, err := r.readVarU32(); err != nil {
-			return err
-		}
-	case 4: // table.init
+	case 10: // memory.copy
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
-	case 5: // elem.drop
+	case 11: // memory.fill
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
-	case 6: // table.copy
+	case 12: // table.init
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
-	case 7, 8, 9: // table.grow/size/fill
+	case 13: // elem.drop
+		if _, err := r.readVarU32(); err != nil {
+			return err
+		}
+	case 14: // table.copy
+		if _, err := r.readVarU32(); err != nil {
+			return err
+		}
+		if _, err := r.readVarU32(); err != nil {
+			return err
+		}
+	case 15, 16, 17: // table.grow/size/fill
 		if _, err := r.readVarU32(); err != nil {
 			return err
 		}
@@ -1331,14 +1773,14 @@ func readFDImmediate(r *wasmReader) error {
 	case sub >= 21 && sub <= 34:
 		_, err := r.readByte()
 		return err
-	case sub == 84 || sub == 85:
-		return readMemArg(r)
-	case sub >= 92 && sub <= 99:
+	case sub >= 84 && sub <= 91:
 		if err := readMemArg(r); err != nil {
 			return err
 		}
 		_, err := r.readByte()
 		return err
+	case sub == 92 || sub == 93:
+		return readMemArg(r)
 	default:
 		// Remaining SIMD ops in active use have no immediates.
 		return nil
@@ -1357,43 +1799,91 @@ func readFEImmediate(r *wasmReader) error {
 	return readMemArg(r)
 }
 
-func isLoopTarget(controlStack []byte, depth uint32) bool {
+func markBranchLoopEvidence(loops []loopEvidence, controlStack []controlFrame, depth uint32, exitCandidates []boundCandidate, continueCandidates []boundCandidate) {
+	d := int(depth)
+	if d < 0 || d >= len(controlStack) {
+		return
+	}
+	targetIndex := len(controlStack) - 1 - d
+	target := controlStack[targetIndex]
+	if target.op == 0x03 {
+		if target.loopIdx >= 0 && target.loopIdx < len(loops) {
+			loop := &loops[target.loopIdx]
+			loop.hasBackedge = true
+			for _, candidate := range continueCandidates {
+				markLoopCounterExit(loop, candidate)
+			}
+		}
+		return
+	}
+	for i := len(controlStack) - 1; i > targetIndex; i-- {
+		frame := controlStack[i]
+		if frame.op != 0x03 || frame.loopIdx < 0 || frame.loopIdx >= len(loops) {
+			continue
+		}
+		loop := &loops[frame.loopIdx]
+		for _, candidate := range exitCandidates {
+			markLoopCounterExit(loop, candidate)
+		}
+	}
+}
+
+func isLoopTarget(controlStack []controlFrame, depth uint32) bool {
 	d := int(depth)
 	if d < 0 || d >= len(controlStack) {
 		return false
 	}
 	target := controlStack[len(controlStack)-1-d]
-	return target == 0x03
+	return target.op == 0x03
 }
 
-func parseLimitsMin(r *wasmReader) (uint64, error) {
+func parseLimits(r *wasmReader) (memoryLimit, error) {
 	flags, err := r.readByte()
 	if err != nil {
-		return 0, err
+		return memoryLimit{}, err
 	}
 	isMemory64 := (flags & 0x04) != 0
 	if isMemory64 {
 		min, err := r.readVarU64()
 		if err != nil {
-			return 0, err
+			return memoryLimit{}, err
+		}
+		limit := memoryLimit{
+			Memory64: true,
+			MinPages: min,
 		}
 		if (flags & 0x01) != 0 {
-			if _, err := r.readVarU64(); err != nil {
-				return 0, err
+			max, err := r.readVarU64()
+			if err != nil {
+				return memoryLimit{}, err
 			}
+			limit.HasMax = true
+			limit.MaxPages = max
 		}
-		return min, nil
+		return limit, nil
 	}
 	min32, err := r.readVarU32()
 	if err != nil {
+		return memoryLimit{}, err
+	}
+	limit := memoryLimit{MinPages: uint64(min32)}
+	if (flags & 0x01) != 0 {
+		max, err := r.readVarU32()
+		if err != nil {
+			return memoryLimit{}, err
+		}
+		limit.HasMax = true
+		limit.MaxPages = uint64(max)
+	}
+	return limit, nil
+}
+
+func parseLimitsMin(r *wasmReader) (uint64, error) {
+	limit, err := parseLimits(r)
+	if err != nil {
 		return 0, err
 	}
-	if (flags & 0x01) != 0 {
-		if _, err := r.readVarU32(); err != nil {
-			return 0, err
-		}
-	}
-	return uint64(min32), nil
+	return limit.MinPages, nil
 }
 
 func skipLimits(r *wasmReader) error {

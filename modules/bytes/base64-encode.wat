@@ -59,17 +59,23 @@
     (local $b2 i32)
     (local $b3 i32)
     (local $remaining i32)
+    (local $full_end i32)
 
     ;; Return 0 if input is empty
     (if (i32.eq (local.get $input_size) (i32.const 0))
       (then (return (i32.const 0)))
     )
 
-    ;; Process 3-byte groups
+    ;; Process 3-byte groups. Keep the loop bound explicit so static
+    ;; checkers can prove the loop is bounded cheaply.
+    (local.set $full_end
+      (i32.sub
+        (local.get $input_size)
+        (i32.rem_u (local.get $input_size) (i32.const 3))))
+
     (block $break
       (loop $continue
-        (local.set $remaining (i32.sub (local.get $input_size) (local.get $input_idx)))
-        (br_if $break (i32.lt_u (local.get $remaining) (i32.const 3)))
+        (br_if $break (i32.ge_u (local.get $input_idx) (local.get $full_end)))
 
         ;; Read 3 bytes
         (local.set $b1 (i32.load8_u (i32.add (global.get $input_ptr) (local.get $input_idx))))

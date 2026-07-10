@@ -31,6 +31,7 @@ type scoreResult struct {
 	RecursionFuncs   []int
 	DefinedFuncBase  int
 	Instantiation    wasminspect.InstantiationMetrics
+	LoopFailures     []wasminspect.LoopBoundFailure
 }
 
 const (
@@ -146,6 +147,7 @@ func scoreModule(path string, wasm []byte) (scoreResult, error) {
 		RecursionFuncs:   cycle,
 		DefinedFuncBase:  analysis.ImportedFuncCount,
 		Instantiation:    analysis.Instantiation,
+		LoopFailures:     analysis.LoopBoundFailures,
 	}, nil
 }
 
@@ -204,6 +206,8 @@ func printScoreSummary(out io.Writer, results []scoreResult) {
 			jit = "FAIL"
 			interp = "FAIL"
 			status = "FAIL(recursion)"
+		} else if len(result.LoopFailures) > 0 {
+			status = "WARN(loop-bound)"
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", result.Path, jit, interp, inst, status)
 	}
@@ -215,6 +219,7 @@ func printScoreDetails(out io.Writer, results []scoreResult) {
 		_, _ = fmt.Fprintln(out)
 		_, _ = fmt.Fprintf(out, "module: %s\n", result.Path)
 		_, _ = fmt.Fprintf(out, "  instr_total: %d\n", result.Metrics.InstructionTotal)
+		_, _ = fmt.Fprintf(out, "  loop_count: %d\n", result.Metrics.LoopCount)
 		_, _ = fmt.Fprintf(out, "  branch_decisions (br_if + if): %d\n", result.Metrics.BranchDecision)
 		_, _ = fmt.Fprintf(out, "  br_table_count: %d\n", result.Metrics.BrTableCount)
 		_, _ = fmt.Fprintf(out, "  br_table_targets: %d\n", result.Metrics.BrTableTargets)
@@ -251,6 +256,14 @@ func printScoreDetails(out io.Writer, results []scoreResult) {
 				global = append(global, strconv.Itoa(result.DefinedFuncBase+fn))
 			}
 			_, _ = fmt.Fprintf(out, "  recursion: FAIL (defined functions=%v, global indices=%v)\n", result.RecursionFuncs, global)
+		}
+		if len(result.LoopFailures) == 0 {
+			_, _ = fmt.Fprintln(out, "  fixed_bound_loops: PASS")
+		} else {
+			_, _ = fmt.Fprintln(out, "  fixed_bound_loops: WARN")
+			for _, failure := range result.LoopFailures {
+				_, _ = fmt.Fprintf(out, "    - function %d loop %d: %s\n", failure.Function, failure.Loop, failure.Reason)
+			}
 		}
 	}
 }
