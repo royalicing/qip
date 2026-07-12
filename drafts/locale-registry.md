@@ -1,6 +1,6 @@
 # The Locale Registry: Query What Any Device Would Format
 
-Status: draft research, 2026-07-08. Companion to [drafts/i18n-formatting.md](./i18n-formatting.md); deliberately a separate, secondary offering.
+Status: draft research, 2026-07-08. Companion to [drafts/i18n-formatting.md](./i18n-formatting.md); deliberately a separate, secondary offering. A first real dataset for Source 1 now exists: [drafts/locale-versions-survey.md](./locale-versions-survey.md).
 
 ## The idea
 
