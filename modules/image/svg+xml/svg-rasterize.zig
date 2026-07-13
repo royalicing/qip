@@ -1427,8 +1427,30 @@ fn skipSpecial(input: []const u8, idx: *usize) void {
     }
 }
 
-fn parseElements(ctx: *ParserCtx, idx: *usize, transform: Mat, fill: Color, stroke: Color, stroke_width: f32, end_tag: ?[]const u8) void {
+// <g>/<svg> nesting is tracked with an explicit stack instead of recursion:
+// the strict wasm profile requires an acyclic call graph, and a fixed cap
+// makes the nesting bound deterministic instead of stack-size dependent.
+// The old recursive version overflowed the 64 KiB wasm stack around 25
+// levels; this allows 128 and traps cleanly past that.
+const MAX_GROUP_DEPTH: usize = 128;
+
+const GroupFrame = struct {
+    end_tag: []const u8,
+    transform: Mat,
+    fill: Color,
+    stroke: Color,
+    stroke_width: f32,
+};
+
+fn parseElements(ctx: *ParserCtx, idx: *usize, root_transform: Mat, root_fill: Color, root_stroke: Color, root_stroke_width: f32) void {
     const input = ctx.input;
+    var group_stack: [MAX_GROUP_DEPTH]GroupFrame = undefined;
+    var group_depth: usize = 0;
+    var transform = root_transform;
+    var fill = root_fill;
+    var stroke = root_stroke;
+    var stroke_width = root_stroke_width;
+
     while (idx.* < input.len) {
         while (idx.* < input.len and input[idx.*] != '<') idx.* += 1;
         if (idx.* >= input.len) return;
@@ -1441,7 +1463,13 @@ fn parseElements(ctx: *ParserCtx, idx: *usize, transform: Mat, fill: Color, stro
             const name = readName(input, idx);
             while (idx.* < input.len and input[idx.*] != '>') idx.* += 1;
             if (idx.* < input.len) idx.* += 1;
-            if (end_tag != null and strEq(name, end_tag.?)) return;
+            if (group_depth > 0 and strEq(name, group_stack[group_depth - 1].end_tag)) {
+                group_depth -= 1;
+                transform = group_stack[group_depth].transform;
+                fill = group_stack[group_depth].fill;
+                stroke = group_stack[group_depth].stroke;
+                stroke_width = group_stack[group_depth].stroke_width;
+            }
             continue;
         }
         if (input[idx.*] == '?' or input[idx.*] == '!') {
@@ -1476,7 +1504,19 @@ fn parseElements(ctx: *ParserCtx, idx: *usize, transform: Mat, fill: Color, stro
 
         if (strEq(name, "g") or strEq(name, "svg")) {
             if (!self_closing) {
-                parseElements(ctx, idx, final_transform, final_fill, final_stroke, final_stroke_width, name);
+                if (group_depth >= MAX_GROUP_DEPTH) @trap();
+                group_stack[group_depth] = .{
+                    .end_tag = name,
+                    .transform = transform,
+                    .fill = fill,
+                    .stroke = stroke,
+                    .stroke_width = stroke_width,
+                };
+                group_depth += 1;
+                transform = final_transform;
+                fill = final_fill;
+                stroke = final_stroke;
+                stroke_width = final_stroke_width;
             }
         } else if (strEq(name, "rect")) {
             drawRect(ctx, final_transform, final_fill, rect);
@@ -1606,7 +1646,7 @@ export fn render(input_size: u32) u32 {
     var idx: usize = 0;
     const default_fill = Color{ .r = 0, .g = 0, .b = 0, .a = 255 };
     const default_stroke = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
-    parseElements(&ctx, &idx, matIdentity(), default_fill, default_stroke, 1.0, null);
+    parseElements(&ctx, &idx, matIdentity(), default_fill, default_stroke, 1.0);
 
     return ctx.out_len;
 }

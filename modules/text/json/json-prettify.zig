@@ -33,10 +33,17 @@ const Writer = struct {
     }
 };
 
+const Container = enum(u8) { object, array };
+
 const Parser = struct {
     input: []const u8,
     pos: usize = 0,
     out: Writer,
+    // The recursion in value -> object/array -> value is unrolled into this
+    // explicit stack so the call graph stays acyclic for the strict profile.
+    // MAX_DEPTH bounds it exactly as it bounded the recursion depth before.
+    stack: [MAX_DEPTH]Container = undefined,
+    depth: usize = 0,
 
     fn skipWs(self: *Parser) void {
         while (self.pos < self.input.len) : (self.pos += 1) {
@@ -49,24 +56,106 @@ const Parser = struct {
 
     fn parse(self: *Parser) JsonError!usize {
         self.skipWs();
-        try self.value(0);
+        try self.value();
         self.skipWs();
         if (self.pos != self.input.len) return error.InvalidJson;
         return self.out.idx;
     }
 
-    fn value(self: *Parser, depth: usize) JsonError!void {
-        if (depth > MAX_DEPTH or self.pos >= self.input.len) return error.InvalidJson;
-        return switch (self.input[self.pos]) {
-            '{' => self.object(depth),
-            '[' => self.array(depth),
-            '"' => self.string(),
-            't' => self.literal("true"),
-            'f' => self.literal("false"),
-            'n' => self.literal("null"),
-            '-', '0'...'9' => self.number(),
-            else => error.InvalidJson,
-        };
+    // Parses one complete value, container nesting included, iteratively.
+    fn value(self: *Parser) JsonError!void {
+        var want_value = true;
+        while (true) {
+            if (want_value) {
+                if (self.pos >= self.input.len) return error.InvalidJson;
+                want_value = switch (self.input[self.pos]) {
+                    '{' => try self.open(.object),
+                    '[' => try self.open(.array),
+                    '"' => blk: {
+                        try self.string();
+                        break :blk false;
+                    },
+                    't' => blk: {
+                        try self.literal("true");
+                        break :blk false;
+                    },
+                    'f' => blk: {
+                        try self.literal("false");
+                        break :blk false;
+                    },
+                    'n' => blk: {
+                        try self.literal("null");
+                        break :blk false;
+                    },
+                    '-', '0'...'9' => blk: {
+                        try self.number();
+                        break :blk false;
+                    },
+                    else => return error.InvalidJson,
+                };
+                continue;
+            }
+
+            // A value just completed: close containers or continue them.
+            self.skipWs();
+            if (self.depth == 0) return;
+            if (self.pos >= self.input.len) return error.InvalidJson;
+            const top = self.stack[self.depth - 1];
+            const c = self.input[self.pos];
+            if ((c == '}' and top == .object) or (c == ']' and top == .array)) {
+                self.pos += 1;
+                self.depth -= 1;
+                try self.out.writeByte('\n');
+                try self.out.writeIndent(self.depth);
+                try self.out.writeByte(c);
+                continue;
+            }
+            if (c != ',') return error.InvalidJson;
+            self.pos += 1;
+            try self.out.writeByte(',');
+            try self.out.writeByte('\n');
+            try self.out.writeIndent(self.depth);
+            self.skipWs();
+            if (top == .object) try self.keyColon();
+            want_value = true;
+        }
+    }
+
+    // Consumes an opening bracket. An empty container is written inline and
+    // completes (returns false); a non-empty one is pushed and, for objects,
+    // its first key is consumed, leaving a member value pending (returns
+    // true).
+    fn open(self: *Parser, kind: Container) JsonError!bool {
+        const open_byte: u8 = if (kind == .object) '{' else '[';
+        const close_byte: u8 = if (kind == .object) '}' else ']';
+        self.pos += 1;
+        try self.out.writeByte(open_byte);
+        self.skipWs();
+        if (self.pos < self.input.len and self.input[self.pos] == close_byte) {
+            self.pos += 1;
+            try self.out.writeByte(close_byte);
+            return false;
+        }
+        if (self.depth >= MAX_DEPTH) return error.InvalidJson;
+        self.stack[self.depth] = kind;
+        self.depth += 1;
+        try self.out.writeByte('\n');
+        try self.out.writeIndent(self.depth);
+        self.skipWs();
+        if (kind == .object) try self.keyColon();
+        return true;
+    }
+
+    // Consumes a "key": pair opener inside an object, leaving pos at the
+    // start of the member value.
+    fn keyColon(self: *Parser) JsonError!void {
+        if (self.pos >= self.input.len or self.input[self.pos] != '"') return error.InvalidJson;
+        try self.string();
+        self.skipWs();
+        if (self.pos >= self.input.len or self.input[self.pos] != ':') return error.InvalidJson;
+        self.pos += 1;
+        try self.out.writeSlice(": ");
+        self.skipWs();
     }
 
     fn literal(self: *Parser, text: []const u8) JsonError!void {
@@ -259,4 +348,18 @@ test "prettifies object" {
 test "rejects trailing input" {
     var out: [64]u8 = undefined;
     try std.testing.expectError(error.InvalidJson, prettifyJson("{}x", out[0..]));
+}
+
+fn nestedArrays(comptime n: usize) []const u8 {
+    return "[" ** n ++ "]" ** n;
+}
+
+test "accepts nesting at the depth limit" {
+    var out: [1024 * 1024]u8 = undefined;
+    _ = try prettifyJson(nestedArrays(MAX_DEPTH + 1), out[0..]);
+}
+
+test "rejects nesting past the depth limit" {
+    var out: [1024 * 1024]u8 = undefined;
+    try std.testing.expectError(error.InvalidJson, prettifyJson(nestedArrays(MAX_DEPTH + 2), out[0..]));
 }
