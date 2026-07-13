@@ -21,6 +21,7 @@ qip: go.mod go.sum $(QIP_GO_DEPS)
 compliance/%.wasm: compliance/%.wat
 	wat2wasm $< -o $@
 
+
 compliance: $(patsubst compliance/%.wat,compliance/%.wasm,$(wildcard compliance/*.wat))
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
@@ -43,25 +44,29 @@ SQLITE3_ZIG_MODULES := sqlite-first-table-dump sqlite-schema sqlite-table-dump s
 $(foreach m,$(SQLITE3_ZIG_MODULES),modules/application/vnd.sqlite3/$(m).wasm): modules/application/vnd.sqlite3/lib/sqlite.zig
 
 modules/application/vnd.sqlite3/sqlite-table-names.wasm: modules/application/vnd.sqlite3/sqlite-table-names.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 modules/utf8/text-to-bmp.wasm: modules/utf8/text-to-bmp.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export=uniform_set_leading -Wl,--export=uniform_set_cols -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=uniform_set_leading -Wl,--export=uniform_set_cols -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 modules/utf8/text-to-og-image-font8x8.wasm: modules/utf8/text-to-og-image-font8x8.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export=uniform_set_text_color -Wl,--export=uniform_set_background_color -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=uniform_set_text_color -Wl,--export=uniform_set_background_color -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 modules/image/bmp/bmp-double.wasm: modules/image/bmp/bmp-double.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 modules/image/bmp/bmp-double-simd.wasm: modules/image/bmp/bmp-double-simd.zig
-	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -mcpu=generic+simd128 -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
 modules/interactive/cover-flow.wasm: modules/interactive/cover-flow.zig
-	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) -mcpu=generic+simd128 -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
-modules/application/wasm/wasm-safety-check.wasm: ZIG_WASM_MAX_MEMORY = 20971520
-modules/application/wasm/wasm-safety-check.wasm: modules/application/wasm/wasm-safety-check.zig
+modules/application/wasm/wasm-strict-profile.wasm: ZIG_WASM_MAX_MEMORY = 20971520
+modules/application/wasm/wasm-strict-profile.wasm: modules/application/wasm/wasm-strict-profile.zig modules/application/wasm/lib/wasm-reader.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+modules/application/wasm/wasm-bounded-loops.wasm: ZIG_WASM_MAX_MEMORY = 25165824
+modules/application/wasm/wasm-bounded-loops.wasm: modules/application/wasm/wasm-bounded-loops.zig modules/application/wasm/lib/wasm-reader.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 modules/application/wasm/wasm-score.wasm: ZIG_WASM_MAX_MEMORY = 14680064
@@ -72,10 +77,10 @@ modules/application/wasm/wasm-to-js.wasm: modules/application/wasm/wasm-to-js.zi
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 modules/text/javascript/js-to-bmp.wasm: modules/text/javascript/js-to-bmp.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 modules/text/x-c/c-to-bmp.wasm: modules/text/x-c/c-to-bmp.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
 recipes/text/markdown/80-html-page-wrap.wasm: recipes/text/markdown/styles.css recipes/text/markdown/header.html recipes/text/markdown/footer.html
 
@@ -105,7 +110,7 @@ modules/bytes/zlib-decompress.wasm: modules/bytes/lib/inflate.zig modules/bytes/
 modules/image/png/png-to-bmp.wasm: modules/image/png/lib/inflate.zig modules/image/png/lib/deflate.zig
 
 modules/%.wasm: modules/%.c
-	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
+	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
 
 modules/%.wasm: modules/%.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -142,7 +147,7 @@ test-node: qip modules
 	node --test test/sudoku-ui.mjs
 	node --test test/html-id-validator.mjs
 	node --test test/luhn.mjs
-	node --test test/qip-wasm-safety-check.mjs
+	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
 	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
@@ -297,7 +302,7 @@ wasm-safety-report: qip modules
 		exit 1; \
 	fi; \
 	for f in $$files; do \
-		if $(QIP_BIN) run -i "$$f" -- modules/application/wasm/wasm-safety-check.wasm >/dev/null 2>&1; then \
+		if $(QIP_BIN) run -i "$$f" -- modules/application/wasm/wasm-strict-profile.wasm modules/application/wasm/wasm-bounded-loops.wasm >/dev/null 2>&1; then \
 			printf "PASS %s\n" "$$f"; \
 			pass=$$((pass + 1)); \
 		else \
