@@ -366,6 +366,7 @@ ls ./site
 - [QIP Component Patterns](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
 - [Hard Limits](docs/hard-limits.md)
+- [Provable Loops](docs/provable-loops.md)
 - [WebAssembly ES Module Integration](docs/esm-integration.md)
 - [qip CLI](docs/qip-cli.md)
 - [QIP Component Compliance](docs/comply.md)
@@ -472,6 +473,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 ## TODO
 
 - [ ] Add CSV to chart SVG example
+- [ ] Allow `qip comply` to be run against arbitrary shell command. This would internally call out to the underlying command by copying the input when the comply task calls `impl.render`.
 - [ ] Add Email render example (do we use an existing layout system?)
   - See https://www.joshwcomeau.com/react/wonderful-emails-with-mjml-and-mdx/
   - See https://react.email/components and https://demo.react.email/preview/05-Studio/welcome
@@ -498,6 +500,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
 - [x] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
 - [x] Add application/wasm verifier for fixed memory, fixed-bound loop evidence, and no recursion. This is a conservative subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code: loops must compile to a visible counter, monotonic update, and exit bound.
+- [ ] Add a `wasm-fuel-instrument` component that injects deterministic fuel metering as a wasm-to-wasm transform: a decrementing fuel global checked at each loop backedge and call, trapping at zero. Prior art: wasmtime fuel/epochs and Parity's wasm-metering gas injection. Fuel is deterministic (same input, same fuel spend on every host), unlike wall-clock `--timeout-ms`, and browsers cannot preempt a wasm call on the main thread. This gives modules whose loops the static checker cannot prove (for example `commonmark`) a metered tier, while statically proven modules keep the strict tier.
 - [ ] Add tracing by modifying modules:
   - [ ] Trace unreachable by adding calls to memory reads of input so we can check last read which will likely be source reason for the trap.
   - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
@@ -517,6 +520,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
   - [x] Interactive modules use `export fn render(input_size: i32) i32`
   - [x] Interactive modules use `export fn output_rgba8_srgb_bytes() u32` as the primary output-byte export.
 - [ ] Have separate `pointermove` event handler so we can skip expensive `pointermove` listeners and rendering if not needed??
+- [ ] Refine the interactive tick result contract: events return accepted/ignored, but `tick()` currently returns only `next_wake_at_ms`; define how tick also communicates whether `render(0)` is necessary without losing scheduled wakeups. Specify pointer leave/cancel coordinates and button state consistently across hosts.
 - [ ] Retire the web-shaped `Form` framing in favor of a future cross-host `Prompt` contract: sequential prompts with recoverable failure, `submit(input_size, now_ms)` for state changes, and `render(0)` for the current semantic projection/output.
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.

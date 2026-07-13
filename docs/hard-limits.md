@@ -70,13 +70,13 @@ qip score modules/utf8/luhn.wasm
 
 The `fixed_bound_loops` line is a conservative static check. `PASS` means every Wasm loop with a backedge matched the accepted counter pattern. `WARN` means QIP could not prove the bound from the binary.
 
-Use the safety checker component when the Wasm artifact itself should enforce the strict profile:
+Use the checker components when the Wasm artifact itself should enforce the strict profile:
 
 ```bash
-qip run -i component.wasm -- modules/application/wasm/wasm-safety-check.wasm
+qip run -i component.wasm -- modules/application/wasm/wasm-strict-profile.wasm modules/application/wasm/wasm-bounded-loops.wasm
 ```
 
-The checker currently rejects ambient imports, missing memory maximums, `memory.grow`, shared memory, atomics, indirect calls, recursion, and loops whose fixed bound cannot be proven.
+The checks are split into two stages so hosts can pick a tier. `wasm-strict-profile` enforces the factual rules: no ambient imports, declared memory maximums, no `memory.grow`, no shared memory, no atomics, no indirect calls, and no recursion (the direct call graph must be acyclic, which the indirect-call ban makes fully visible). `wasm-bounded-loops` runs the flow analysis: every loop with a backedge must show a fixed bound. Run both for the full strict tier; run only the profile stage for a tier that will bound execution another way, such as fuel metering.
 
 ## Why Budgets Help
 
@@ -113,11 +113,31 @@ qip run --max-memory 1048576 --fixed-memory component.wasm
 
 A loop bound has to be visible in the compiled Wasm, not only obvious in the source language.
 
-The safety checker accepts the common counter-loop shape: compare a local counter with a limit, branch out of the loop when the limit is reached, update the same counter by `+1` or `-1`, then branch back. This covers ordinary loops such as `while (i < input.len) : (i += 1)` after compilation.
+The verifier works from per-loop evidence, in the spirit of the eBPF verifier's bounded-loop rule: it looks for a local whose writes inside the loop are all recognized monotonic steps in one direction, plus an exit comparison in the matching direction. This covers ordinary loops such as `while (i < input.len) : (i += 1)` after compilation.
+
+Recognized update steps:
+
+- add or subtract a constant: `i += 1`, `i -= 4`
+- shrink toward zero: `x = x / 10` or `x = x >> 3`, the itoa shape
+- either step routed through a temp local: `t = x / 10; ... x = t`
+- an extra add of a known non-negative narrow value beside a strict
+  increment, the parser stride `i += 1 + len` where `len` is a byte load,
+  whether written as separate adds or fused into one expression
+
+Recognized exit evidence:
+
+- signed and unsigned comparisons, 32-bit and 64-bit, against a constant, another local, a global, or a computed value
+- comparisons where the counter sits inside a small expression, such as `i + 4 > n`
+- `i32.eqz` countdown tests
+- branches that leave the loop, branch back to the loop header, or conditionally return via the function label
+- branches to a block whose end path leaves the function or the loop, including chains through further unconditional branches and block ends
+- any conditional branch or `if` where must-exit analysis shows every path from the taken (or fall-through) edge leaves the function, even through further conditionals
+
+Any other write to the candidate local inside the loop disqualifies it. A reset like `i = next_pos` means the bound cannot be proven from that local, because the write could move it away from the exit bound.
 
 It rejects a loop like `loop { br 0 }` because there is a backedge but no counter, no update, and no exit bound.
 
-This is not a general termination proof. If a loop is safe but compiled into a shape the checker does not understand, rewrite the loop into a simpler counter form or treat the warning as a review item.
+This is not a general termination proof. If a loop is safe but compiled into a shape the checker does not understand, rewrite the loop into a simpler counter form or treat the warning as a review item. [Provable Loops](provable-loops.md) shows verified before/after rewrites for the common failing shapes.
 
 ## Zig
 

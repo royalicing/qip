@@ -84,7 +84,7 @@ recipe chain becomes a single distributable, benchable, pinnable artifact.
 ### P5. Certified generation (verify-then-instantiate)
 
 ```
-qip run -i config.txt generator.wasm -- modules/application/wasm/wasm-safety-check.wasm
+qip run -i config.txt generator.wasm -- modules/application/wasm/wasm-strict-profile.wasm modules/application/wasm/wasm-bounded-loops.wasm
 ```
 
 This composes **today**: the generated component flows through the safety checker in
