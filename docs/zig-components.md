@@ -276,7 +276,7 @@ wasm-objdump -x modules/bytes/your-module.wasm
 qip run -i modules/application/wasm/your-module.wasm -- modules/application/wasm/wasm-score.wasm
 ```
 
-Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use stricter validator modules such as `modules/application/wasm/wasm-safety-check.wasm` when the module should obey the fixed-memory/no-import/no-recursion/fixed-bound-loop profile.
+Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use the stricter validator modules `modules/application/wasm/wasm-strict-profile.wasm` (fixed memory, no imports, no banned instructions, no recursion) and `modules/application/wasm/wasm-bounded-loops.wasm` (fixed-bound loops) when the module should obey the strict profile.
 
 ## Checklist
 

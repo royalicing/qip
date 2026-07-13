@@ -82,7 +82,7 @@ Current CLI guardrails:
 - `run`, `bench`, and `image` can reject modules whose declared memory exceeds a byte cap with `--max-memory <bytes>`.
 - `run`, `bench`, and `image` can enforce fixed memory with `--fixed-memory`, rejecting modules that can grow linear memory while they run.
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
-- `modules/application/wasm/wasm-safety-check.wasm` enforces the strict artifact profile as a QIP component.
+- `modules/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `modules/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier.
 
 The browser JavaScript hosts expose a matching policy shape with `max-memory="<bytes>"` and `fixed-memory`; see [Browser Elements](/docs/qip-elements) and [Interactive ABI](/docs/interactive).
 

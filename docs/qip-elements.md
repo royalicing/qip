@@ -117,12 +117,12 @@ A `<source name="input">` declares the input. The runtime fetches it, and its `t
 </qip-edit>
 ```
 
-Every other `<source>` is a pipeline stage. The naming follows the element's existing `name="output"` and `name="uniform-*"` wiring, and the input can itself be a wasm module — for example, feeding one into `wasm-safety-check.wasm`:
+Every other `<source>` is a pipeline stage. The naming follows the element's existing `name="output"` and `name="uniform-*"` wiring, and the input can itself be a wasm module — for example, feeding one into `wasm-strict-profile.wasm`:
 
 ```html
 <qip-edit>
   <source name="input" src="/components/utf8/luhn.wasm" type="application/wasm" />
-  <source src="/components/application/wasm/wasm-safety-check.wasm" type="application/wasm" />
+  <source src="/components/application/wasm/wasm-strict-profile.wasm" type="application/wasm" />
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
 ```
