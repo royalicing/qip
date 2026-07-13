@@ -109,8 +109,13 @@ const (
 )
 
 type loopCounterEvidence struct {
-	update loopCounterDirection
-	exit   loopCounterDirection
+	update  loopCounterDirection
+	exit    loopCounterDirection
+	tainted bool
+	// weakInc records an add of a known non-negative local (a byte load or a
+	// masked value). It cannot prove progress by itself, but it does not
+	// break monotonicity when the strict updates all increase.
+	weakInc bool
 }
 
 type loopEvidence struct {
@@ -122,6 +127,10 @@ type loopEvidence struct {
 type controlFrame struct {
 	op      byte
 	loopIdx int
+	// pending holds exit candidates from conditional branches that target this
+	// frame's end. If the code after the end leaves the function, those
+	// branches were loop exits even though they never crossed a loop frame.
+	pending []boundCandidate
 }
 
 type instrTrace struct {
@@ -133,6 +142,190 @@ type instrTrace struct {
 type boundCandidate struct {
 	local     uint32
 	direction loopCounterDirection
+}
+
+type derivedUpdate struct {
+	src uint32
+	dir loopCounterDirection
+}
+
+func copySourceLocal(recent []instrTrace) (uint32, bool) {
+	if len(recent) == 0 {
+		return 0, false
+	}
+	return traceLocalGet(recent[len(recent)-1])
+}
+
+// addChain flattens a fused add tree such as (X + load8(p)) + 1, the shape
+// LLVM emits when it merges split stride updates back into one expression.
+type addChain struct {
+	localCount int
+	local      uint32
+	posConst   int
+	negConst   int
+	nonneg     int
+	other      int
+}
+
+// operandNetPush is the stack effect of instructions the fused-chain walk
+// may skip over. Unknown instructions return ok=false and abort the walk.
+func operandNetPush(op byte) (pops int, pushes int, ok bool) {
+	switch {
+	case op == 0x20 || op == 0x23 || op == 0x41 || op == 0x42 || op == 0x43 || op == 0x44:
+		return 0, 1, true // local.get, global.get, constants
+	case op >= 0x28 && op <= 0x35: // loads
+		return 1, 1, true
+	case op == 0x45 || op == 0x50 || op == 0x22: // eqz, local.tee
+		return 1, 1, true
+	case op >= 0x67 && op <= 0x69, op >= 0x79 && op <= 0x7b: // clz/ctz/popcnt
+		return 1, 1, true
+	case op == 0xa7 || op == 0xac || op == 0xad, op >= 0xc0 && op <= 0xc4: // wrap/extend
+		return 1, 1, true
+	case op >= 0x46 && op <= 0x4f, op >= 0x51 && op <= 0x5a: // compares
+		return 2, 1, true
+	case op >= 0x6a && op <= 0x78, op >= 0x7c && op <= 0x8a: // binary arithmetic
+		return 2, 1, true
+	case op == 0x1b: // select
+		return 3, 1, true
+	default:
+		return 0, 0, false
+	}
+}
+
+// operandStart finds the first instruction of the self-contained operand
+// whose last instruction is recent[e], by walking the stack effect backward.
+func operandStart(recent []instrTrace, e int) (int, bool) {
+	needed := 1
+	j := e
+	for needed > 0 {
+		if j < 0 {
+			return 0, false
+		}
+		pops, pushes, ok := operandNetPush(recent[j].op)
+		if !ok {
+			return 0, false
+		}
+		needed = needed - pushes + pops
+		j--
+	}
+	return j + 1, true
+}
+
+// collectAddChain flattens the fused add tree ending at recent[e] — the
+// shape LLVM emits when it merges split stride updates back into one
+// expression, such as (X + load8(p)) + 1 — walking backward iteratively.
+func collectAddChain(recent []instrTrace, e int, chain *addChain) bool {
+	pending := 1 // operands still to consume at the current chain level
+	i := e
+	for pending > 0 {
+		if i < 0 {
+			return false
+		}
+		t := recent[i]
+		switch t.op {
+		case 0x6a, 0x7c: // add: flatten, one node becomes two operands
+			pending++
+			i--
+		case 0x6b, 0x7d: // sub: only with a constant subtrahend, sign-flipped
+			if i < 1 {
+				return false
+			}
+			c, ok := traceConst(recent[i-1])
+			if !ok {
+				return false
+			}
+			if c > 0 {
+				chain.negConst++
+			} else if c < 0 {
+				chain.posConst++
+			}
+			pending++ // minuend still pending; subtrahend consumed here
+			i -= 2
+		case 0x20: // local.get leaf
+			if !t.hasImm {
+				return false
+			}
+			if chain.localCount == 0 {
+				chain.local = uint32(t.imm)
+			} else if chain.local != uint32(t.imm) {
+				chain.other++
+			}
+			chain.localCount++
+			pending--
+			i--
+		case 0x41, 0x42: // constant leaf
+			if !t.hasImm {
+				return false
+			}
+			if t.imm > 0 {
+				chain.posConst++
+			} else if t.imm < 0 {
+				chain.negConst++
+			}
+			pending--
+			i--
+		case 0x2d, 0x2f: // load8_u/load16_u leaf: non-negative narrow value
+			start, ok := operandStart(recent, i-1)
+			if !ok {
+				return false
+			}
+			chain.nonneg++
+			pending--
+			i = start - 1
+		case 0x71: // and leaf: non-negative if either side is a const >= 0
+			rightStart, ok := operandStart(recent, i-1)
+			if !ok {
+				return false
+			}
+			leftStart, ok := operandStart(recent, rightStart-1)
+			if !ok {
+				return false
+			}
+			rc, rOK := traceConst(recent[i-1])
+			lc, lOK := traceConst(recent[rightStart-1])
+			if (rOK && rc >= 0) || (lOK && lc >= 0) {
+				chain.nonneg++
+			} else {
+				chain.other++
+			}
+			pending--
+			i = leftStart - 1
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// detectFusedUpdate recognizes a monotonic step written as one fused
+// expression: exactly one occurrence of the stored local plus positive
+// constants and non-negative narrow values (strict increase), only negative
+// constants (strict decrease), or only non-negative values (weak increase).
+func detectFusedUpdate(recent []instrTrace, setLocal uint32) (dir loopCounterDirection, weak bool, ok bool) {
+	if len(recent) < 3 {
+		return 0, false, false
+	}
+	top := recent[len(recent)-1]
+	if top.op != 0x6a && top.op != 0x7c && top.op != 0x6b && top.op != 0x7d {
+		return 0, false, false
+	}
+	var chain addChain
+	if !collectAddChain(recent, len(recent)-1, &chain) {
+		return 0, false, false
+	}
+	if chain.other != 0 || chain.localCount != 1 || chain.local != setLocal {
+		return 0, false, false
+	}
+	switch {
+	case chain.posConst > 0 && chain.negConst == 0:
+		return loopCounterInc, false, true
+	case chain.negConst > 0 && chain.posConst == 0 && chain.nonneg == 0:
+		return loopCounterDec, false, true
+	case chain.posConst == 0 && chain.negConst == 0 && chain.nonneg > 0:
+		return loopCounterInc, true, true
+	default:
+		return 0, false, false
+	}
 }
 
 // Exported aliases for shared use by commands.
@@ -254,66 +447,116 @@ func traceLocalGet(t instrTrace) (uint32, bool) {
 	return uint32(t.imm), true
 }
 
-func traceI32Const(t instrTrace) (int32, bool) {
-	if t.op != 0x41 || !t.hasImm {
+func traceConst(t instrTrace) (int64, bool) {
+	if (t.op != 0x41 && t.op != 0x42) || !t.hasImm { // i32.const, i64.const
 		return 0, false
 	}
-	return int32(t.imm), true
+	return t.imm, true
+}
+
+// traceSinglePushOperand reports whether the instruction pushes exactly one
+// value and pops none, so it forms a complete compare operand on its own:
+// local.get, global.get, or a constant.
+func traceSinglePushOperand(t instrTrace) bool {
+	if t.op == 0x20 || t.op == 0x23 { // local.get, global.get
+		return t.hasImm
+	}
+	_, ok := traceConst(t)
+	return ok
 }
 
 func detectCounterUpdate(recent []instrTrace, setLocal uint32) (loopCounterDirection, bool) {
-	if len(recent) < 3 {
+	src, dir, ok := detectValueUpdate(recent)
+	if !ok || src != setLocal {
 		return 0, false
+	}
+	return dir, true
+}
+
+// detectValueUpdate recognizes a value on top of the stack computed as a
+// monotonic step from a local: local.get X; const C; add/sub/div/shr_u.
+func detectValueUpdate(recent []instrTrace) (uint32, loopCounterDirection, bool) {
+	if len(recent) < 3 {
+		return 0, 0, false
 	}
 	a := recent[len(recent)-3]
 	b := recent[len(recent)-2]
 	op := recent[len(recent)-1]
 
-	if op.op != 0x6a && op.op != 0x6b { // i32.add, i32.sub
-		return 0, false
-	}
+	isAdd := op.op == 0x6a || op.op == 0x7c // i32.add, i64.add
+	isSub := op.op == 0x6b || op.op == 0x7d // i32.sub, i64.sub
 
-	if local, ok := traceLocalGet(a); ok && local == setLocal {
-		if delta, ok := traceI32Const(b); ok {
-			return counterDirection(op.op, delta)
+	if local, ok := traceLocalGet(a); ok {
+		if c, ok := traceConst(b); ok {
+			if isAdd || isSub {
+				dir, ok := counterDirection(isAdd, c)
+				return local, dir, ok
+			}
+			dir, ok := shrinkDirection(op.op, c)
+			return local, dir, ok
 		}
 	}
-	if op.op == 0x6a {
-		if delta, ok := traceI32Const(a); ok {
-			if local, ok := traceLocalGet(b); ok && local == setLocal {
-				return counterDirection(op.op, delta)
+	if isAdd {
+		if delta, ok := traceConst(a); ok {
+			if local, ok := traceLocalGet(b); ok {
+				dir, ok := counterDirection(isAdd, delta)
+				return local, dir, ok
 			}
+		}
+	}
+	return 0, 0, false
+}
+
+func counterDirection(isAdd bool, delta int64) (loopCounterDirection, bool) {
+	if delta == 0 {
+		return 0, false
+	}
+	if isAdd == (delta > 0) {
+		return loopCounterInc, true
+	}
+	return loopCounterDec, true
+}
+
+// shrinkDirection recognizes updates that strictly shrink a value's magnitude
+// toward zero each iteration, such as the x = x / 10 in itoa-style loops.
+// i32.shr_s is excluded: shifting a negative value right saturates at -1.
+func shrinkDirection(op byte, c int64) (loopCounterDirection, bool) {
+	switch op {
+	case 0x6d, 0x6e, 0x7f, 0x80: // i32.div_s/div_u, i64.div_s/div_u
+		if c >= 2 || c <= -2 {
+			return loopCounterDec, true
+		}
+	case 0x76: // i32.shr_u; shift counts are taken modulo the bit width
+		if c&31 >= 1 {
+			return loopCounterDec, true
+		}
+	case 0x88: // i64.shr_u
+		if c&63 >= 1 {
+			return loopCounterDec, true
 		}
 	}
 	return 0, false
 }
 
-func counterDirection(op byte, delta int32) (loopCounterDirection, bool) {
-	if delta == 0 {
-		return 0, false
-	}
-	switch op {
-	case 0x6a: // i32.add
-		if delta > 0 {
-			return loopCounterInc, true
-		}
-		return loopCounterDec, true
-	case 0x6b: // i32.sub
-		if delta > 0 {
-			return loopCounterDec, true
-		}
-		return loopCounterInc, true
-	default:
-		return 0, false
-	}
-}
+type compareKind int
 
-func isI32Compare(op byte) bool {
+const (
+	cmpNone compareKind = iota
+	cmpEq               // eq, ne
+	cmpLt               // lt, le: exit branch taken when left < right
+	cmpGt               // gt, ge: exit branch taken when left > right
+)
+
+func compareKindOf(op byte) compareKind {
 	switch op {
-	case 0x46, 0x47, 0x48, 0x49, 0x4b, 0x4d, 0x4f:
-		return true
+	case 0x46, 0x47, 0x51, 0x52: // i32.eq/ne, i64.eq/ne
+		return cmpEq
+	case 0x48, 0x49, 0x4c, 0x4d, 0x53, 0x54, 0x57, 0x58: // i32/i64 lt_s/lt_u/le_s/le_u
+		return cmpLt
+	case 0x4a, 0x4b, 0x4e, 0x4f, 0x55, 0x56, 0x59, 0x5a: // i32/i64 gt_s/gt_u/ge_s/ge_u
+		return cmpGt
 	default:
-		return false
+		return cmpNone
 	}
 }
 
@@ -323,15 +566,17 @@ func detectBoundCandidates(recent []instrTrace, branchBack bool) []boundCandidat
 	}
 	last := recent[len(recent)-1]
 	prev := recent[len(recent)-2]
-	if last.op == 0x45 { // i32.eqz
+	if last.op == 0x45 || last.op == 0x50 { // i32.eqz, i64.eqz
 		if branchBack {
 			return nil
 		}
 		if local, ok := traceLocalGet(prev); ok {
 			return []boundCandidate{{local: local, direction: loopCounterDec}}
 		}
+		return nil
 	}
-	if !isI32Compare(last.op) {
+	kind := compareKindOf(last.op)
+	if kind == cmpNone {
 		return nil
 	}
 
@@ -339,16 +584,27 @@ func detectBoundCandidates(recent []instrTrace, branchBack bool) []boundCandidat
 		leftLocal, leftLocalOK := traceLocalGet(recent[len(recent)-3])
 		rightLocal, rightLocalOK := traceLocalGet(recent[len(recent)-2])
 		if leftLocalOK && rightLocalOK {
-			return compareBoundCandidates(last.op, leftLocal, rightLocal, branchBack)
+			return compareBoundCandidates(kind, leftLocal, rightLocal, branchBack)
 		}
-		if leftLocalOK {
-			if _, ok := traceI32Const(recent[len(recent)-2]); ok {
-				return compareLocalConstBoundCandidates(last.op, leftLocal, false, branchBack)
-			}
+		if leftLocalOK && traceSinglePushOperand(recent[len(recent)-2]) {
+			return oneSidedBoundCandidates(kind, leftLocal, false, branchBack)
 		}
-		if rightLocalOK {
-			if _, ok := traceI32Const(recent[len(recent)-3]); ok {
-				return compareLocalConstBoundCandidates(last.op, rightLocal, true, branchBack)
+		if rightLocalOK && traceSinglePushOperand(recent[len(recent)-3]) {
+			return oneSidedBoundCandidates(kind, rightLocal, true, branchBack)
+		}
+	}
+
+	// Left operand as a monotonic expression of a local, such as
+	// local.get i; i32.const 4; i32.add; local.get n; i32.gt_u. The three
+	// instructions form one complete operand (two pushes, one pop-2-push-1),
+	// so the single-push instruction after them must be the right operand.
+	if len(recent) >= 5 {
+		if traceSinglePushOperand(recent[len(recent)-2]) {
+			if x, _, ok := detectValueUpdate(recent[:len(recent)-2]); ok {
+				if rightLocal, ok := traceLocalGet(recent[len(recent)-2]); ok {
+					return compareBoundCandidates(kind, x, rightLocal, branchBack)
+				}
+				return oneSidedBoundCandidates(kind, x, false, branchBack)
 			}
 		}
 	}
@@ -373,47 +629,57 @@ func detectBoundCandidates(recent []instrTrace, branchBack bool) []boundCandidat
 			}
 		}
 	}
+
+	// Right operand as a monotonic expression of a local: the three
+	// instructions before the compare form the complete right operand.
+	if len(recent) >= 4 {
+		if x, _, ok := detectValueUpdate(recent[:len(recent)-1]); ok {
+			return oneSidedBoundCandidates(kind, x, true, branchBack)
+		}
+	}
+
+	// One-sided fallback: a lone local.get directly before a binary compare must
+	// be the complete right operand, whatever produced the left operand. The
+	// mirror case (visible left, computed right) is not safe: the instruction at
+	// recent[-3] may be part of the right operand's computation, such as the
+	// address feeding a load. Ordered compares only; an equality test against an
+	// unknown, possibly moving value says nothing about termination.
+	if kind != cmpEq {
+		if rightLocal, ok := traceLocalGet(prev); ok {
+			return oneSidedBoundCandidates(kind, rightLocal, true, branchBack)
+		}
+	}
 	return nil
 }
 
-func compareLocalConstBoundCandidates(op byte, local uint32, localOnRight bool, branchBack bool) []boundCandidate {
-	if localOnRight {
-		switch op {
-		case 0x46, 0x47: // i32.eq, i32.ne
-			return []boundCandidate{{local: local, direction: loopCounterInc | loopCounterDec}}
-		case 0x4f, 0x4b: // const >= local, const > local
-			return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterDec, branchBack)}}
-		case 0x4d, 0x49: // const <= local, const < local
-			return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterInc, branchBack)}}
-		default:
-			return nil
-		}
-	}
-	switch op {
-	case 0x46, 0x47: // i32.eq, i32.ne
+func oneSidedBoundCandidates(kind compareKind, local uint32, localOnRight bool, branchBack bool) []boundCandidate {
+	switch kind {
+	case cmpEq:
 		return []boundCandidate{{local: local, direction: loopCounterInc | loopCounterDec}}
-	case 0x4f, 0x4b: // local >= const, local > const
-		return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterInc, branchBack)}}
-	case 0x4d, 0x49: // local <= const, local < const
-		return []boundCandidate{{local: local, direction: chooseBoundDirection(loopCounterDec, branchBack)}}
+	case cmpLt, cmpGt:
+		exit := loopCounterDec // left of lt, right of gt
+		if (kind == cmpLt) == localOnRight {
+			exit = loopCounterInc
+		}
+		return []boundCandidate{{local: local, direction: chooseBoundDirection(exit, branchBack)}}
 	default:
 		return nil
 	}
 }
 
-func compareBoundCandidates(op byte, left uint32, right uint32, branchBack bool) []boundCandidate {
-	switch op {
-	case 0x46, 0x47: // i32.eq, i32.ne
+func compareBoundCandidates(kind compareKind, left uint32, right uint32, branchBack bool) []boundCandidate {
+	switch kind {
+	case cmpEq:
 		return []boundCandidate{
 			{local: left, direction: loopCounterInc | loopCounterDec},
 			{local: right, direction: loopCounterInc | loopCounterDec},
 		}
-	case 0x4f, 0x4b: // i32.ge_u, i32.gt_u
+	case cmpGt:
 		return []boundCandidate{
 			{local: left, direction: chooseBoundDirection(loopCounterInc, branchBack)},
 			{local: right, direction: chooseBoundDirection(loopCounterDec, branchBack)},
 		}
-	case 0x4d, 0x49: // i32.le_u, i32.lt_u
+	case cmpLt:
 		return []boundCandidate{
 			{local: left, direction: chooseBoundDirection(loopCounterDec, branchBack)},
 			{local: right, direction: chooseBoundDirection(loopCounterInc, branchBack)},
@@ -455,6 +721,91 @@ func markLoopCounterUpdate(loops []loopEvidence, controlStack []controlFrame, lo
 	}
 }
 
+// markLoopCounterTaint records a write to a local that is not a recognized
+// monotonic constant update. A tainted local cannot prove the loop: some
+// write could move it away from the exit bound.
+func markLoopCounterTaint(loops []loopEvidence, controlStack []controlFrame, local uint32) {
+	for _, frame := range controlStack {
+		if frame.op != 0x03 || frame.loopIdx < 0 || frame.loopIdx >= len(loops) {
+			continue
+		}
+		loop := &loops[frame.loopIdx]
+		if loop.counters == nil {
+			loop.counters = map[uint32]loopCounterEvidence{}
+		}
+		evidence := loop.counters[local]
+		evidence.tainted = true
+		loop.counters[local] = evidence
+	}
+}
+
+func markLoopCounterWeakInc(loops []loopEvidence, controlStack []controlFrame, local uint32) {
+	for _, frame := range controlStack {
+		if frame.op != 0x03 || frame.loopIdx < 0 || frame.loopIdx >= len(loops) {
+			continue
+		}
+		loop := &loops[frame.loopIdx]
+		if loop.counters == nil {
+			loop.counters = map[uint32]loopCounterEvidence{}
+		}
+		evidence := loop.counters[local]
+		evidence.weakInc = true
+		loop.counters[local] = evidence
+	}
+}
+
+// detectNonnegLocalStep matches local.get X; local.get T; i32.add (either
+// operand order) storing back into X, where T is known non-negative.
+func detectNonnegLocalStep(recent []instrTrace, setLocal uint32, smallNonneg map[uint32]bool) bool {
+	if len(recent) < 3 {
+		return false
+	}
+	a := recent[len(recent)-3]
+	b := recent[len(recent)-2]
+	op := recent[len(recent)-1]
+	if op.op != 0x6a && op.op != 0x7c { // i32.add, i64.add
+		return false
+	}
+	aLocal, aOK := traceLocalGet(a)
+	bLocal, bOK := traceLocalGet(b)
+	if !aOK || !bOK {
+		return false
+	}
+	if aLocal == setLocal && smallNonneg[bLocal] {
+		return true
+	}
+	if bLocal == setLocal && smallNonneg[aLocal] {
+		return true
+	}
+	return false
+}
+
+// isSmallNonnegSource reports whether the value about to be stored is known
+// non-negative and far below the wrap boundary: a narrow load or a mask by a
+// non-negative constant.
+func isSmallNonnegSource(recent []instrTrace) bool {
+	if len(recent) == 0 {
+		return false
+	}
+	last := recent[len(recent)-1]
+	switch last.op {
+	case 0x2d, 0x2f: // i32.load8_u, i32.load16_u
+		return true
+	case 0x71: // i32.and with a non-negative constant on either side
+		if len(recent) >= 2 {
+			if c, ok := traceConst(recent[len(recent)-2]); ok && c >= 0 {
+				return true
+			}
+		}
+		if len(recent) >= 3 {
+			if c, ok := traceConst(recent[len(recent)-3]); ok && c >= 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func markLoopCounterExit(loop *loopEvidence, candidate boundCandidate) {
 	if candidate.direction == 0 {
 		return
@@ -469,6 +820,17 @@ func markLoopCounterExit(loop *loopEvidence, candidate boundCandidate) {
 
 func loopHasBoundedCounter(loop loopEvidence) bool {
 	for _, evidence := range loop.counters {
+		if evidence.tainted {
+			continue
+		}
+		// Updates in both directions are not monotonic.
+		if evidence.update != loopCounterInc && evidence.update != loopCounterDec {
+			continue
+		}
+		// A non-negative extra step only preserves monotonic increase.
+		if evidence.weakInc && evidence.update != loopCounterInc {
+			continue
+		}
 		if evidence.update&evidence.exit != 0 {
 			return true
 		}
@@ -1273,6 +1635,244 @@ func parseCodeSection(
 	return edges, funcMetrics, loopFailures, nil
 }
 
+// bodyExitInfo holds the results of the must-exit prepass over a function
+// body. mustExit[i] means every path starting at instruction ordinal i
+// leaves the function: no path reaches a loop backedge or runs on. The
+// virtual index past the final end is true (falling off returns).
+// takenExit[i] is, for a br/br_if at ordinal i, whether the taken edge must
+// exit; false for backedges and unhandled shapes (under-approximation is
+// sound: it only credits less exit evidence).
+type bodyExitInfo struct {
+	mustExit  []bool
+	takenExit []bool
+	// elseExit[i] is, for an if at ordinal i, whether the false edge (the
+	// else body, or the code after the end when there is no else) must exit.
+	elseExit []bool
+}
+
+const (
+	auxBackedge  = -1
+	auxFuncLabel = -2
+)
+
+type preFrame struct {
+	isLoop  bool
+	ifOrd   int // ordinal of the frame's if instruction, -1 otherwise
+	brSites []int
+}
+
+// computeBodyExit decodes the body once to resolve every forward branch to
+// its continuation ordinal, then computes must-exit backward. Structured
+// control flow makes one reverse pass sufficient: every edge except loop
+// backedges points forward, and backedges are simply "not an exit".
+func computeBodyExit(body []byte) (bodyExitInfo, error) {
+	r := newWasmReader(body)
+	localDecls, err := r.readVarU32()
+	if err != nil {
+		return bodyExitInfo{}, err
+	}
+	for i := 0; i < int(localDecls); i++ {
+		if _, err := r.readVarU32(); err != nil {
+			return bodyExitInfo{}, err
+		}
+		if _, err := r.readByte(); err != nil {
+			return bodyExitInfo{}, err
+		}
+	}
+
+	ops := make([]byte, 0, 64)
+	aux := make([]int32, 0, 64)
+	frames := make([]preFrame, 0, 16)
+	ifElseCont := map[int]int{} // if ordinal -> ordinal of its false edge
+
+	appendInstr := func(op byte, a int32) {
+		ops = append(ops, op)
+		aux = append(aux, a)
+	}
+
+	for {
+		op, err := r.readByte()
+		if err != nil {
+			return bodyExitInfo{}, err
+		}
+		ord := len(ops)
+		switch op {
+		case 0x02, 0x03, 0x04:
+			if err := readBlockType(r); err != nil {
+				return bodyExitInfo{}, err
+			}
+			ifOrd := -1
+			if op == 0x04 {
+				ifOrd = ord
+			}
+			frames = append(frames, preFrame{isLoop: op == 0x03, ifOrd: ifOrd})
+			appendInstr(op, 0)
+		case 0x05:
+			// The then-arm jumps from here to after the if's end; the if's
+			// false edge enters the else body at ord+1.
+			if len(frames) > 0 {
+				f := &frames[len(frames)-1]
+				if f.ifOrd >= 0 {
+					ifElseCont[f.ifOrd] = ord + 1
+					f.brSites = append(f.brSites, ord) // resolve else's jump at end
+				}
+			}
+			appendInstr(op, 0)
+		case 0x0b:
+			appendInstr(op, 0)
+			if len(frames) == 0 {
+				if r.remaining() != 0 {
+					return bodyExitInfo{}, errors.New("trailing bytes after final end")
+				}
+				return finishBodyExit(ops, aux, ifElseCont), nil
+			}
+			f := frames[len(frames)-1]
+			frames = frames[:len(frames)-1]
+			for _, site := range f.brSites {
+				aux[site] = int32(ord + 1)
+			}
+			if f.ifOrd >= 0 {
+				if _, has := ifElseCont[f.ifOrd]; !has {
+					ifElseCont[f.ifOrd] = ord + 1
+				}
+			}
+		case 0x0c, 0x0d:
+			depth, err := r.readVarU32()
+			if err != nil {
+				return bodyExitInfo{}, err
+			}
+			a := int32(auxFuncLabel)
+			if int(depth) < len(frames) {
+				target := len(frames) - 1 - int(depth)
+				if frames[target].isLoop {
+					a = auxBackedge
+				} else {
+					a = 0
+					frames[target].brSites = append(frames[target].brSites, ord)
+				}
+			}
+			appendInstr(op, a)
+		case 0x0e:
+			targetCount, err := r.readVarU32()
+			if err != nil {
+				return bodyExitInfo{}, err
+			}
+			for i := 0; i <= int(targetCount); i++ {
+				if _, err := r.readVarU32(); err != nil {
+					return bodyExitInfo{}, err
+				}
+			}
+			appendInstr(op, 0)
+		default:
+			if err := skipInstrImmediates(r, op); err != nil {
+				return bodyExitInfo{}, err
+			}
+			appendInstr(op, 0)
+		}
+	}
+}
+
+func finishBodyExit(ops []byte, aux []int32, ifElseCont map[int]int) bodyExitInfo {
+	n := len(ops)
+	mustExit := make([]bool, n+1)
+	takenExit := make([]bool, n)
+	elseExit := make([]bool, n)
+	mustExit[n] = true
+	for i := n - 1; i >= 0; i-- {
+		switch ops[i] {
+		case 0x00, 0x0f: // unreachable, return
+			mustExit[i] = true
+		case 0x0c: // br
+			takenExit[i] = branchEdgeExits(aux[i], mustExit)
+			mustExit[i] = takenExit[i]
+		case 0x0d: // br_if
+			takenExit[i] = branchEdgeExits(aux[i], mustExit)
+			mustExit[i] = takenExit[i] && mustExit[i+1]
+		case 0x0e: // br_table: not tracked, under-approximate
+			mustExit[i] = false
+		case 0x04: // if: both edges must exit
+			elseCont, has := ifElseCont[i]
+			elseExit[i] = has && mustExit[elseCont]
+			mustExit[i] = mustExit[i+1] && elseExit[i]
+		case 0x05: // else marker: the then-arm's jump to after the end
+			if aux[i] > 0 {
+				mustExit[i] = mustExit[aux[i]]
+			}
+		default:
+			mustExit[i] = mustExit[i+1]
+		}
+	}
+	return bodyExitInfo{mustExit: mustExit, takenExit: takenExit, elseExit: elseExit}
+}
+
+func branchEdgeExits(a int32, mustExit []bool) bool {
+	switch a {
+	case auxBackedge:
+		return false
+	case auxFuncLabel:
+		return true
+	default:
+		return mustExit[a]
+	}
+}
+
+// skipInstrImmediates consumes the immediates of every instruction the
+// must-exit prepass does not model explicitly.
+func skipInstrImmediates(r *wasmReader, op byte) error {
+	switch op {
+	case 0x01, 0x0f, 0x1a, 0x1b, 0xd1, 0x00:
+		return nil
+	case 0x10, 0x12, 0x3f, 0x40, 0xd2:
+		_, err := r.readVarU32()
+		return err
+	case 0x11, 0x13:
+		if _, err := r.readVarU32(); err != nil {
+			return err
+		}
+		_, err := r.readVarU32()
+		return err
+	case 0x14:
+		_, err := r.readVarU32()
+		return err
+	case 0x1c:
+		count, err := r.readVarU32()
+		if err != nil {
+			return err
+		}
+		_, err = r.readN(int(count))
+		return err
+	case 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26:
+		_, err := r.readVarU32()
+		return err
+	case 0x41:
+		_, err := r.readVarS32()
+		return err
+	case 0x42:
+		_, err := r.readVarS64(10)
+		return err
+	case 0x43:
+		_, err := r.readN(4)
+		return err
+	case 0x44:
+		_, err := r.readN(8)
+		return err
+	case 0xd0:
+		_, err := r.readByte()
+		return err
+	case 0xfc:
+		return readFCImmediate(r)
+	case 0xfd:
+		return readFDImmediate(r)
+	case 0xfe:
+		return readFEImmediate(r)
+	default:
+		if op >= 0x28 && op <= 0x3e {
+			return readMemArg(r)
+		}
+		return nil
+	}
+}
+
 func parseFunctionBody(
 	body []byte,
 	funcIdx int,
@@ -1309,6 +1909,22 @@ func parseFunctionBody(
 	loops := make([]loopEvidence, 0, 8)
 	loopFailures := make([]LoopBoundFailure, 0)
 	recent := make([]instrTrace, 0, 8)
+	// derived[T] means local T currently holds a monotonic step of local src,
+	// as in the itoa shape: local.tee T (i64.div_u (local.get X) (i64.const 10))
+	// ... local.set X (local.get T). The copy back closes the update on X.
+	derived := map[uint32]derivedUpdate{}
+	// smallNonneg[T] means local T holds a known non-negative narrow value,
+	// so x += T is a weak (non-taint) increase, as in i += 1 + len strides.
+	smallNonneg := map[uint32]bool{}
+	// armed carries a just-ended block's pending exit candidates. If control
+	// then leaves the function before any other control flow, the branches
+	// that targeted that block exited every enclosing loop.
+	var armed []boundCandidate
+	exitInfo, err := computeBodyExit(body)
+	if err != nil {
+		return functionMetrics{}, nil, err
+	}
+	ord := -1
 
 	addInstr := func() {
 		metrics.InstructionTotal++
@@ -1353,6 +1969,7 @@ func parseFunctionBody(
 		if err != nil {
 			return functionMetrics{}, nil, err
 		}
+		ord++
 		addInstr()
 		trace := instrTrace{op: op}
 
@@ -1362,12 +1979,32 @@ func parseFunctionBody(
 			if op == 0x1b {
 				fm.ControlFlowOps++
 			}
+			if op == 0x00 || op == 0x0f {
+				applyArmedExits(loops, controlStack, armed)
+				armed = nil
+			}
+			if op == opElse {
+				armed = nil
+			}
 		case opBlock, opLoop, opIf:
 			if err := readBlockType(r); err != nil {
 				return functionMetrics{}, nil, err
 			}
+			armed = nil
 			if op == opIf {
 				addBranch()
+				// The if body runs when the condition is true; if it leaves
+				// the function before other control flow, the condition was
+				// an exit test, as in: if (i >= n) return.
+				armed = detectBoundCandidates(recent, false)
+				// Must-exit generalizes that through nested control flow,
+				// and covers the inverse edge: an else arm that exits.
+				if exitInfo.mustExit[ord+1] {
+					applyArmedExits(loops, controlStack, detectBoundCandidates(recent, false))
+				}
+				if exitInfo.elseExit[ord] {
+					applyArmedExits(loops, controlStack, detectBoundCandidates(recent, true))
+				}
 			} else {
 				fm.ControlFlowOps++
 			}
@@ -1385,7 +2022,11 @@ func parseFunctionBody(
 			}
 			frame := controlStack[len(controlStack)-1]
 			controlStack = controlStack[:len(controlStack)-1]
+			// A still-armed fall-through path converges with branches to this
+			// frame's end, so both candidate sets stay live.
+			armed = append(frame.pending, armed...)
 			if frame.op == opLoop && frame.loopIdx >= 0 && frame.loopIdx < len(loops) {
+				armed = nil
 				loop := loops[frame.loopIdx]
 				if loop.hasBackedge && !loopHasBoundedCounter(loop) {
 					loopFailures = append(loopFailures, LoopBoundFailure{
@@ -1407,6 +2048,8 @@ func parseFunctionBody(
 				addLoopBack()
 			}
 			markBranchLoopEvidence(loops, controlStack, depth, nil, nil)
+			transferArmedOnBr(loops, controlStack, depth, armed)
+			armed = nil
 		case 0x0d:
 			depth, err := r.readVarU32()
 			if err != nil {
@@ -1421,6 +2064,19 @@ func parseFunctionBody(
 				addLoopBack()
 			}
 			markBranchLoopEvidence(loops, controlStack, depth, exitCandidates, continueCandidates)
+			// The fall-through path holds the inverted condition; if it
+			// leaves the function, the branch skipped past an exit, as in:
+			// loop { block { br_if 0 (i != n); return } ... }.
+			armed = continueCandidates
+			// Must-exit covers both edges through arbitrary forward flow:
+			// a taken edge whose target's continuation leaves the function,
+			// and a fall-through that leaves via later conditional paths.
+			if exitInfo.takenExit[ord] {
+				applyArmedExits(loops, controlStack, exitCandidates)
+			}
+			if exitInfo.mustExit[ord+1] {
+				applyArmedExits(loops, controlStack, continueCandidates)
+			}
 		case 0x0e:
 			targetCount, err := r.readVarU32()
 			if err != nil {
@@ -1453,6 +2109,7 @@ func parseFunctionBody(
 			if hasLoopTarget {
 				addLoopBack()
 			}
+			armed = nil
 		case 0x10, 0x12:
 			idx, err := r.readVarU32()
 			if err != nil {
@@ -1510,9 +2167,36 @@ func parseFunctionBody(
 				fm.LocalOps++
 			}
 			if op == 0x21 || op == 0x22 {
-				if dir, ok := detectCounterUpdate(recent, idx); ok {
-					markLoopCounterUpdate(loops, controlStack, idx, dir)
+				newDerived, hasNewDerived := derivedUpdate{}, false
+				if src, dir, ok := detectValueUpdate(recent); ok {
+					if src == idx {
+						markLoopCounterUpdate(loops, controlStack, idx, dir)
+					} else {
+						markLoopCounterTaint(loops, controlStack, idx)
+						newDerived, hasNewDerived = derivedUpdate{src: src, dir: dir}, true
+					}
+				} else if dir, weakStep, ok := detectFusedUpdate(recent, idx); ok {
+					if weakStep {
+						markLoopCounterWeakInc(loops, controlStack, idx)
+					} else {
+						markLoopCounterUpdate(loops, controlStack, idx, dir)
+					}
+				} else if detectNonnegLocalStep(recent, idx, smallNonneg) {
+					markLoopCounterWeakInc(loops, controlStack, idx)
+				} else if from, ok := copySourceLocal(recent); ok {
+					if d, exists := derived[from]; exists && d.src == idx {
+						markLoopCounterUpdate(loops, controlStack, idx, d.dir)
+					} else if from != idx {
+						markLoopCounterTaint(loops, controlStack, idx)
+					}
+				} else {
+					markLoopCounterTaint(loops, controlStack, idx)
 				}
+				delete(derived, idx)
+				if hasNewDerived {
+					derived[idx] = newDerived
+				}
+				smallNonneg[idx] = isSmallNonnegSource(recent)
 			}
 		case 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
 			0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
@@ -1537,9 +2221,12 @@ func parseFunctionBody(
 			trace.imm = int64(v)
 			trace.hasImm = true
 		case 0x42:
-			if _, err := r.readVarS64(10); err != nil {
+			v, err := r.readVarS64(10)
+			if err != nil {
 				return functionMetrics{}, nil, err
 			}
+			trace.imm = v
+			trace.hasImm = true
 		case 0x43:
 			if _, err := r.readN(4); err != nil {
 				return functionMetrics{}, nil, err
@@ -1802,6 +2489,11 @@ func readFEImmediate(r *wasmReader) error {
 func markBranchLoopEvidence(loops []loopEvidence, controlStack []controlFrame, depth uint32, exitCandidates []boundCandidate, continueCandidates []boundCandidate) {
 	d := int(depth)
 	if d < 0 || d >= len(controlStack) {
+		// A branch to the implicit function label is a conditional return,
+		// exiting every open loop.
+		if d == len(controlStack) {
+			applyArmedExits(loops, controlStack, exitCandidates)
+		}
 		return
 	}
 	targetIndex := len(controlStack) - 1 - d
@@ -1825,6 +2517,51 @@ func markBranchLoopEvidence(loops []loopEvidence, controlStack []controlFrame, d
 		for _, candidate := range exitCandidates {
 			markLoopCounterExit(loop, candidate)
 		}
+	}
+	controlStack[targetIndex].pending = append(controlStack[targetIndex].pending, exitCandidates...)
+}
+
+func applyArmedExits(loops []loopEvidence, controlStack []controlFrame, candidates []boundCandidate) {
+	if len(candidates) == 0 {
+		return
+	}
+	for _, frame := range controlStack {
+		if frame.op != 0x03 || frame.loopIdx < 0 || frame.loopIdx >= len(loops) {
+			continue
+		}
+		loop := &loops[frame.loopIdx]
+		for _, candidate := range candidates {
+			markLoopCounterExit(loop, candidate)
+		}
+	}
+}
+
+// transferArmedOnBr follows an unconditional branch taken while armed exit
+// candidates are live. Loops the branch crosses are exited by the armed
+// path; a forward target inherits the candidates so multi-hop exit ladders
+// (block end, br out, another block end, return) keep their evidence.
+func transferArmedOnBr(loops []loopEvidence, controlStack []controlFrame, depth uint32, armed []boundCandidate) {
+	if len(armed) == 0 {
+		return
+	}
+	d := int(depth)
+	if d >= len(controlStack) {
+		applyArmedExits(loops, controlStack, armed)
+		return
+	}
+	targetIndex := len(controlStack) - 1 - d
+	for i := len(controlStack) - 1; i > targetIndex; i-- {
+		frame := controlStack[i]
+		if frame.op != 0x03 || frame.loopIdx < 0 || frame.loopIdx >= len(loops) {
+			continue
+		}
+		loop := &loops[frame.loopIdx]
+		for _, candidate := range armed {
+			markLoopCounterExit(loop, candidate)
+		}
+	}
+	if controlStack[targetIndex].op != 0x03 {
+		controlStack[targetIndex].pending = append(controlStack[targetIndex].pending, armed...)
 	}
 }
 

@@ -248,6 +248,296 @@ func TestValidateModulePolicyAcceptsBoundedCounterLoop(t *testing.T) {
 	}
 }
 
+func TestLoopBoundAcceptsSignedCompare(t *testing.T) {
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, // local.get 0
+		0x41, 0x0a, // i32.const 10
+		0x4e,       // i32.ge_s
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsI64Counter(t *testing.T) {
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, // local.get 0
+		0x42, 0xe4, 0x00, // i64.const 100
+		0x5a,       // i64.ge_u
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x42, 0x01, 0x7c, 0x21, 0x00, // local 0 += 1 (i64)
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsDivShrink(t *testing.T) {
+	// itoa shape: x = x / 10 until x == 0
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, // local.get 0
+		0x45,       // i32.eqz
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x0a, 0x6e, 0x21, 0x00, // local 0 = local 0 / 10
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsCopyChainUpdate(t *testing.T) {
+	// temp := x / 10 ... x := temp closes the update on x
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, // local.get 0
+		0x45,       // i32.eqz
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x0a, 0x6e, // local.get 0; i32.const 10; i32.div_u
+		0x22, 0x01, // local.tee 1
+		0x1a,       // drop
+		0x20, 0x01, // local.get 1
+		0x21, 0x00, // local.set 0
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsExitViaReturn(t *testing.T) {
+	// br_if to a block whose end path returns out of the function
+	assertLoopBoundFailures(t, 0, []byte{
+		0x03, 0x40, // loop
+		0x02, 0x40, // block
+		0x20, 0x00, // local.get 0
+		0x41, 0x0a, // i32.const 10
+		0x46,       // i32.eq
+		0x0d, 0x00, // br_if 0 (to block end)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x01, // br 1 (backedge)
+		0x0b, // end block
+		0x0f, // return
+		0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsExpressionOperand(t *testing.T) {
+	// exit when local0 + 4 > local1
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x41, 0x04, 0x6a, // local.get 0; i32.const 4; i32.add
+		0x20, 0x01, // local.get 1
+		0x4b,       // i32.gt_u
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x04, 0x6a, 0x21, 0x00, // local 0 += 4
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsOneSidedCompare(t *testing.T) {
+	// exit when load8(local2) < local0; counter local0 += 1
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x02, // local.get 2
+		0x2d, 0x00, 0x00, // i32.load8_u
+		0x20, 0x00, // local.get 0
+		0x49,       // i32.lt_u
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundRejectsTaintedCounter(t *testing.T) {
+	// local 0 has a recognized increment but also an unrecognized reset
+	assertLoopBoundFailures(t, 1, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, // local.get 0
+		0x41, 0x0a, // i32.const 10
+		0x4f,       // i32.ge_u
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x41, 0x00, 0x21, 0x00, // local 0 = 0
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsGlobalBound(t *testing.T) {
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, // local.get 0
+		0x23, 0x00, // global.get 0
+		0x4f,       // i32.ge_u
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsConditionalReturnBranch(t *testing.T) {
+	// br_if to the implicit function label is a conditional return
+	assertLoopBoundFailures(t, 0, []byte{
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
+		0x0d, 0x01, // br_if 1 (function label)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsArmedExitThroughBr(t *testing.T) {
+	// br_if to inner block end, then unconditional br crossing the loop
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block (outer)
+		0x03, 0x40, // loop
+		0x02, 0x40, // block (inner)
+		0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
+		0x0d, 0x00, // br_if 0 (to inner block end)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x01, // br 1 (backedge)
+		0x0b,       // end inner block
+		0x0c, 0x01, // br 1 (crosses loop to outer block end)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsIfReturnExit(t *testing.T) {
+	// if (i >= n) with a body that returns
+	assertLoopBoundFailures(t, 0, []byte{
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x41, 0x0a, 0x4f, // local0 >= 10
+		0x04, 0x40, // if
+		0x0f,                                     // return
+		0x0b,                                     // end if
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsBrIfSkippingReturn(t *testing.T) {
+	// br_if past a return: the exit fires when the condition is false
+	assertLoopBoundFailures(t, 0, []byte{
+		0x03, 0x40, // loop
+		0x02, 0x40, // block
+		0x20, 0x00, 0x41, 0x0a, 0x47, // local0 != 10
+		0x0d, 0x00, // br_if 0 (skip the return)
+		0x0f,                                     // return
+		0x0b,                                     // end block
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsNonnegStride(t *testing.T) {
+	// i += load8(p) is a weak increase; the strict i += 1 keeps it monotonic
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x20, 0x01, 0x4f, // local0 >= local1
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x02, 0x2d, 0x00, 0x00, 0x21, 0x03, // local3 = load8_u(local2)
+		0x20, 0x00, 0x20, 0x03, 0x6a, 0x21, 0x00, // local0 += local3
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local0 += 1
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundRejectsNonnegStrideAlone(t *testing.T) {
+	// without a strict update the weak stride cannot prove progress
+	assertLoopBoundFailures(t, 1, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x20, 0x01, 0x4f, // local0 >= local1
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x02, 0x2d, 0x00, 0x00, 0x21, 0x03, // local3 = load8_u(local2)
+		0x20, 0x00, 0x20, 0x03, 0x6a, 0x21, 0x00, // local0 += local3
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsFusedStride(t *testing.T) {
+	// i = i + load8(i) + 1 fused into one add chain, as LLVM emits
+	assertLoopBoundFailures(t, 0, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x20, 0x01, 0x4f, // local0 >= local1
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, // local.get 0
+		0x20, 0x00, 0x2d, 0x00, 0x00, // load8_u(local0)
+		0x6a,       // i32.add
+		0x41, 0x01, // i32.const 1
+		0x6a,       // i32.add
+		0x21, 0x00, // local.set 0
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundRejectsFusedWeakAlone(t *testing.T) {
+	// i = i + load8(i) with no strict component cannot prove progress
+	assertLoopBoundFailures(t, 1, []byte{
+		0x02, 0x40, // block
+		0x03, 0x40, // loop
+		0x20, 0x00, 0x20, 0x01, 0x4f, // local0 >= local1
+		0x0d, 0x01, // br_if 1 (exit)
+		0x20, 0x00, // local.get 0
+		0x20, 0x00, 0x2d, 0x00, 0x00, // load8_u(local0)
+		0x6a,       // i32.add
+		0x21, 0x00, // local.set 0
+		0x0c, 0x00, // br 0 (backedge)
+		0x0b, 0x0b, 0x0b,
+	})
+}
+
+func TestLoopBoundAcceptsMustExitLadder(t *testing.T) {
+	// br_if to a block whose end path exits on every branch of a following
+	// if: only must-exit analysis can see through the conditional.
+	assertLoopBoundFailures(t, 0, []byte{
+		0x03, 0x40, // loop
+		0x02, 0x40, // block
+		0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
+		0x0d, 0x00, // br_if 0 (to block end)
+		0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local0 += 1
+		0x0c, 0x01, // br 1 (backedge)
+		0x0b,       // end block
+		0x20, 0x01, // local.get 1
+		0x04, 0x40, // if
+		0x0f, // return
+		0x0b, // end if
+		0x0f, // return
+		0x0b, 0x0b,
+	})
+}
+
+func assertLoopBoundFailures(t *testing.T, want int, body []byte) {
+	t.Helper()
+	module := buildTestModule(testModuleConfig{FunctionBodies: [][]byte{body}})
+	analysis, err := AnalyzeModule(module)
+	if err != nil {
+		t.Fatalf("AnalyzeModule: %v", err)
+	}
+	if len(analysis.LoopBoundFailures) != want {
+		t.Fatalf("loop bound failures=%+v, want %d", analysis.LoopBoundFailures, want)
+	}
+}
+
 func TestValidateModulePolicyRejectsUnboundedLoop(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		FunctionBodies: [][]byte{{
