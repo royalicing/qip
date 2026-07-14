@@ -146,6 +146,7 @@ test-node: qip modules
 	node --test test/qip-edit-stats.mjs
 	node --test test/sudoku-ui.mjs
 	node --test test/html-id-validator.mjs
+	node --test test/html-to-accessibility-tree.mjs
 	node --test test/luhn.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
@@ -160,7 +161,7 @@ fuzz-zlib: modules/bytes/zlib-compress.wasm modules/bytes/zlib-compress-fixed-hu
 test-deno: qip modules
 	deno check site/qip-runner.js
 	deno run --allow-read test/qip-runner-smoke.mjs
-	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
+	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip modules compliance
 	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm
