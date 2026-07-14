@@ -144,14 +144,14 @@ QIP Interactive Components receive keyboard & pointer events and render out pixe
 
 Use `<qip-play>` to render them in the browser, or use our SDK to render them in Swift.
 
-<qip-play canvas-width="820px" canvas-height="auto">
-  <source src="/components/interactive/openai-anthropic-arr.wasm" type="application/wasm" />
+<qip-play canvas-width="720px" canvas-height="auto">
+  <source src="/components/interactive/cover-flow.wasm" type="application/wasm" />
 </qip-play>
 
 ---
 
-<qip-play canvas-width="720px" canvas-height="auto">
-  <source src="/components/interactive/cover-flow.wasm" type="application/wasm" />
+<qip-play canvas-width="820px" canvas-height="auto">
+  <source src="/components/interactive/openai-anthropic-arr.wasm" type="application/wasm" />
 </qip-play>
 
 ---
