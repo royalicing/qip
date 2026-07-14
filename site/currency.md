@@ -2,7 +2,7 @@
 
 # Currency formatter
 
-Format a decimal amount for five pinned locales, with currency selected by its ISO 4217 numeric code. Formatting runs locally in your browser with the same fixed-locale WebAssembly components used by the CLI.
+Format a decimal amount with currency selected by its ISO 4217 numeric code. Runs locally in your browser via WebAssembly.
 
 <style>
 .currency-tool {
@@ -21,10 +21,6 @@ Format a decimal amount for five pinned locales, with currency selected by its I
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
-.currency-output {
-  font-size: 2em;
-  font-variant-numeric: tabular-nums;
-}
 .currency-actions {
   display: flex;
   flex-wrap: wrap;
@@ -36,7 +32,7 @@ Format a decimal amount for five pinned locales, with currency selected by its I
 }
 </style>
 
-<div class="currency-tool">
+<form class="currency-tool">
   <label class="currency-field">
     <strong>Decimal amount</strong>
     <input id="currency-input" value="1234567.895" inputmode="decimal" spellcheck="false" autocomplete="off">
@@ -49,6 +45,9 @@ Format a decimal amount for five pinned locales, with currency selected by its I
       <option value="es-es">es-ES · Spanish</option>
       <option value="de-de">de-DE · German</option>
       <option value="ar-eg">ar-EG · Arabic digits</option>
+      <option value="fr-fr">fr-FR · French</option>
+      <option value="pt-br">pt-BR · Brazilian Portuguese</option>
+      <option value="ja-jp">ja-JP · Japanese</option>
     </select>
   </label>
   <label class="currency-field">
@@ -213,25 +212,27 @@ Format a decimal amount for five pinned locales, with currency selected by its I
     </select>
   </label>
   <div>
-    <strong id="currency-locale-label">en-US</strong>
     <output id="currency-output" class="currency-output" for="currency-input" dir="auto"></output>
   </div>
   <div class="currency-actions">
-    <button type="button" data-amount="1234.5">Grouping</button>
-    <button type="button" data-amount="-9876543.21">Negative</button>
-    <button type="button" data-amount="0.005">Small fraction</button>
-    <button type="button" data-amount="999.995">Rounding carry</button>
+    <button type="button" value="1234.5">Grouping</button>
+    <button type="button" value="-9876543.21">Negative</button>
+    <button type="button" value="0.005">Small fraction</button>
+    <button type="button" value="999.995">Rounding carry</button>
     <span id="currency-status" class="currency-status" role="status"></span>
   </div>
-</div>
+</form>
 
 <script type="module">
 const input = document.getElementById("currency-input");
 const locale = document.getElementById("currency-locale");
-const localeLabel = document.getElementById("currency-locale-label");
 const currency = document.getElementById("currency-select");
 const output = document.getElementById("currency-output");
 const status = document.getElementById("currency-status");
+const cliExample = document.querySelector("#currency-cli-example code");
+const jsExample = document.querySelector("#currency-js-example code");
+const cliExampleTemplate = cliExample.innerHTML;
+const jsExampleTemplate = jsExample.innerHTML;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const modules = new Map();
@@ -249,6 +250,33 @@ function loadLocale(name) {
 const readI32 = (wasm, name) =>
   typeof wasm[name] === "function" ? wasm[name]() : wasm[name].value;
 
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function replaceExampleLiteral(html, literal, value) {
+  const escaped = value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  return html.replaceAll(literal, () => escaped);
+}
+
+function updateExamples(formatted) {
+  const moduleName = `currency-format-${locale.value}.wasm`;
+  const result = formatted ?? "";
+
+  let cli = replaceExampleLiteral(cliExampleTemplate, "currency-format-en-us.wasm", moduleName);
+  cli = replaceExampleLiteral(cli, "'1234567.895'", shellQuote(input.value));
+  cli = replaceExampleLiteral(cli, "?currency=840", `?currency=${currency.value}`);
+  cliExample.innerHTML = replaceExampleLiteral(cli, "$1,234,567.90", result);
+
+  let js = replaceExampleLiteral(jsExampleTemplate, "currency-format-en-us.wasm", moduleName);
+  js = replaceExampleLiteral(js, "1234567.895", JSON.stringify(input.value).slice(1, -1));
+  js = replaceExampleLiteral(js, "840", currency.value);
+  jsExample.innerHTML = replaceExampleLiteral(js, "$1,234,567.90", result);
+}
+
 async function formatAmount(value) {
   const wasm = await loadLocale(locale.value);
   const bytes = encoder.encode(value);
@@ -264,22 +292,23 @@ async function formatAmount(value) {
 
 async function format() {
   const version = ++formatVersion;
-  localeLabel.textContent = locale.options[locale.selectedIndex].textContent.slice(0, 5);
   try {
     const formatted = await formatAmount(input.value);
     if (version !== formatVersion) return;
     output.value = formatted;
     status.textContent = "";
+    updateExamples(formatted);
   } catch {
     if (version !== formatVersion) return;
     output.value = "";
     status.textContent = "Enter digits with an optional leading minus sign and decimal fraction.";
+    updateExamples();
   }
 }
 
-for (const button of document.querySelectorAll("[data-amount]")) {
+for (const button of document.querySelectorAll('button[type="button"][value]')) {
   button.addEventListener("click", () => {
-    input.value = button.dataset.amount;
+    input.value = button.value;
     format();
   });
 }
@@ -289,25 +318,61 @@ currency.addEventListener("change", format);
 format();
 </script>
 
-Each component accepts one ASCII decimal matching `-?[0-9]+(\.[0-9]+)?`. It applies its locale's grouping, uses the selected currency's ISO minor-unit count, and rounds halfway values away from zero. It reads decimal text rather than an IEEE-754 number, so inputs such as `0.005` are not changed by binary floating-point conversion before formatting. Invalid syntax and unsupported codes trap instead of producing a plausible amount. The page fetches a locale component only when you select it.
+## CLI
 
-## Use the component
+<section id="currency-cli-example">
 
 ```bash
-printf %s '1234567.895' | qip run modules/utf8/currency-format-en-us.wasm '?currency=392'
-# ¥1,234,568
-
-printf %s '1234567.895' | qip run modules/utf8/currency-format-en-in.wasm '?currency=356'
-# ₹12,34,567.90
-
-printf %s '1234567.895' | qip run modules/utf8/currency-format-es-es.wasm '?currency=978'
-# 1.234.567,90 €
-
-printf %s '1234567.895' | qip run modules/utf8/currency-format-ar-eg.wasm '?currency=818'
-# ‏١٬٢٣٤٬٥٦٧٫٩٠ ج.م.‏
+printf %s '1234567.895' | qip run modules/utf8/currency-format-en-us.wasm '?currency=840'
+# $1,234,567.90
 ```
 
-Each `currency-format-<locale>.wasm` keeps its locale and formatting data fixed while the integer uniform selects one of 155 current country currencies plus XDR. Metals, testing, no-currency, fund, accounting-unit, and indexed-unit codes remain outside their scope. Components range from 2.2 to 2.6 KiB and have no dependency on the browser, operating system locale, or host ICU version. The earlier `currency-format-usd-en-us.wasm` remains as a fixed-USD compatibility component.
+</section>
+
+## JavaScript
+
+<section id="currency-js-example">
+
+```js
+const currencyFormatter = await WebAssembly.instantiateStreaming(
+  fetch("/components/utf8/currency-format-en-us.wasm"),
+);
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+
+function formatCurrency(amount, currency) {
+  const { memory, input_ptr, output_ptr, uniform_set_currency, render } = currencyFormatter.instance.exports;
+  const input = encoder.encode(amount);
+  uniform_set_currency(currency);
+  new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
+  const outputSize = render(input.length);
+  return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
+}
+
+console.log(formatCurrency("1234567.895", 840));
+// $1,234,567.90
+```
+
+</section>
+
+The amount is ASCII decimal text, not a JavaScript `Number`, so the component performs decimal rounding without an intervening binary floating-point conversion.
+
+## Download
+
+- <a href="/components/utf8/currency-format-en-us.wasm" download>currency-format-en-US.wasm</a> — 2.26 kB
+- <a href="/components/utf8/currency-format-en-in.wasm" download>currency-format-en-IN.wasm</a> — 2.26 kB
+- <a href="/components/utf8/currency-format-es-es.wasm" download>currency-format-es-ES.wasm</a> — 2.23 kB
+- <a href="/components/utf8/currency-format-de-de.wasm" download>currency-format-de-DE.wasm</a> — 2.30 kB
+- <a href="/components/utf8/currency-format-ar-eg.wasm" download>currency-format-ar-EG.wasm</a> — 2.63 kB
+- <a href="/components/utf8/currency-format-fr-fr.wasm" download>currency-format-fr-FR.wasm</a> — 2.39 kB
+- <a href="/components/utf8/currency-format-pt-br.wasm" download>currency-format-pt-BR.wasm</a> — 2.30 kB
+- <a href="/components/utf8/currency-format-ja-jp.wasm" download>currency-format-ja-JP.wasm</a> — 2.26 kB
+- <a href="/components/utf8/iso-4217-alpha-to-numeric.wasm" download>iso-4217-alpha-to-numeric.wasm</a> — 1.83 kB
+
+## Details
+
+Each `currency-format-<locale>.wasm` keeps its locale and formatting data fixed while the integer uniform selects one of 155 current country currencies plus XDR. Metals, testing, no-currency, fund, accounting-unit, and indexed-unit codes remain outside their scope. Components range from 2.2 to 2.6 KiB and have no dependency on the browser, operating system locale, or host ICU version.
+
+Amounts are ASCII decimals matching `-?[0-9]+(\.[0-9]+)?`, avoiding JavaScript floating-point conversion. Each module applies its locale's grouping and the currency's ISO minor units. Invalid input and unsupported codes trap. The page loads locale modules on demand.
 
 Each locale has an independent `compliance/currency-format-<locale>.comply.wasm` executable specification. Every supported currency is dueled against JavaScript `Intl.NumberFormat`, including locale-specific grouping thresholds, separators, affix placement, Arabic-Indic digits, bidi markers, zero- and three-digit currencies, negative zero, rounding carries, and generated decimal inputs.
 
@@ -324,14 +389,5 @@ printf %s BHD | qip run modules/utf8/iso-4217-alpha-to-numeric.wasm
 ```
 
 Input is exactly three uppercase ASCII letters. Unknown, lowercase, or malformed codes trap. Its compliance component exhaustively declares all 178 mappings from the SIX Group ISO 4217 List One published 2026-01-01, plus rejection cases.
-
-## Where this can go next
-
-The next variants should force the design to handle real differences rather than add more names for the same rules:
-
-- **Cash rounding:** the formatter uses standard fraction digits. Currency-specific cash increments, such as rounding to the nearest five cents, remain a separate policy.
-- **More locale families:** `fr-FR` adds narrow no-break grouping; East Asian locales exercise their own symbol fallbacks; accounting formats introduce parentheses and sign-placement differences.
-- **Pinned CLDR generation:** once those dimensions are understood, a generator can read a committed CLDR release and emit the tables, components, and compliance fixtures. The CLDR revision should then become part of the artifact identity so an upgrade is reviewable.
-- **A broader number formatter:** decimal and percent styles can reuse parsing, grouping, digits, and rounding. Compact notation and arbitrary option bags should wait until the smaller components show which shared runtime is actually useful.
 
 This component is intentionally narrower than `Intl.NumberFormat`. It does not accept exponent notation, `NaN`, infinity, signs other than a leading minus, configurable fraction digits, or runtime locale selection. Use host `Intl` when ambient platform behavior is acceptable and you need its full option surface.
