@@ -170,6 +170,7 @@ We believe small functions should not need a massive application environment to 
 
 - [Markdown to HTML](/markdown-to-html)
 - [JSON prettifier](/json-prettify)
+- [Unicode transforms](/unicode)
 - [CSS minifier](/css-minifier)
 - [JPEG location stripper](/jpeg-location-stripper)
 - [Image color palette extractor](/image-color-palette)

@@ -1,0 +1,254 @@
+[
+  {
+    "name": "empty",
+    "input_b64": "",
+    "want_b64": "",
+    "oracle_matches": true
+  },
+  {
+    "name": "ascii",
+    "input_b64": "SGVsbG8sIFdvcmxkISBRSVAgMTIz",
+    "want_b64": "aGVsbG8sIHdvcmxkISBxaXAgMTIz",
+    "oracle_matches": true
+  },
+  {
+    "name": "german-caps-eszett",
+    "input_b64": "U1RSQVNTRSDhup4gR1JP4bqe",
+    "want_b64": "c3RyYXNzZSDDnyBncm/Dnw==",
+    "oracle_matches": true
+  },
+  {
+    "name": "dotted-I-en",
+    "input_b64": "xLBzdGFuYnVsIMSwIEkgxLE=",
+    "want_b64": "acyHc3RhbmJ1bCBpzIcgaSDEsQ==",
+    "oracle_matches": true
+  },
+  {
+    "name": "greek-final-sigma",
+    "input_b64": "zpjOlc6jzqPOkc6bzp/Onc6KzprOlyDOo86fzqbOn86jIM6jzp/Ops6fzqMuIM6fzpTOpc6jzqPOlc6lzqM=",
+    "want_b64": "zrjOtc+Dz4POsc67zr/Ovc6vzrrOtyDPg86/z4bOv8+CIM+Dzr/Phs6/z4IuIM6/zrTPhc+Dz4POtc+Fz4I=",
+    "oracle_matches": true
+  },
+  {
+    "name": "greek-sigma-contexts",
+    "input_b64": "zqMgzpHOoyDOkc6jLiDOkc6jzpIgzpHOo8yBIM6RzqPMgc6SIM6jzqMgMc6jMiDOkc6j4oCZ",
+    "want_b64": "z4MgzrHPgiDOsc+CLiDOsc+DzrIgzrHPgsyBIM6xz4PMgc6yIM+Dz4IgMc+DMiDOsc+C4oCZ",
+    "oracle_matches": true
+  },
+  {
+    "name": "titlecase-digraphs",
+    "input_b64": "x4V1bmdsYSDHsSDHhCDHiA==",
+    "want_b64": "x4Z1bmdsYSDHsyDHhiDHiQ==",
+    "oracle_matches": true
+  },
+  {
+    "name": "ij-digraph",
+    "input_b64": "xLJTU0VMTUVFUg==",
+    "want_b64": "xLNzc2VsbWVlcg==",
+    "oracle_matches": true
+  },
+  {
+    "name": "cherokee",
+    "input_b64": "4Y+j4Y6z4Y6pIOGOo+GPj+GPsg==",
+    "want_b64": "6q6z6q6D6q25IOqts+qun+GPug==",
+    "oracle_matches": true
+  },
+  {
+    "name": "deseret-plane1",
+    "input_b64": "8JCQgPCQkIHwkJCC",
+    "want_b64": "8JCQqPCQkKnwkJCq",
+    "oracle_matches": true
+  },
+  {
+    "name": "garay-unicode16",
+    "input_b64": "8JC1kPCQtZHwkLWS",
+    "want_b64": "8JC1sPCQtbHwkLWy",
+    "oracle_matches": false
+  },
+  {
+    "name": "mixed-scripts",
+    "input_b64": "0J/QoNCY0JLQldCiIM6TzpXOmc6RIEhFTExPINmF2LHYrdio2Kcg5L2g5aW9INCB0JbQmNCa",
+    "want_b64": "0L/RgNC40LLQtdGCIM6zzrXOuc6xIGhlbGxvINmF2LHYrdio2Kcg5L2g5aW9INGR0LbQuNC6",
+    "oracle_matches": true
+  },
+  {
+    "name": "armenian-georgian",
+    "input_b64": "1LXVkNS11Y7UsdWGIOGykOGykeGykiDhgqDhgqHhgqI=",
+    "want_b64": "1aXWgNWl1b7VodW2IOGDkOGDkeGDkiDitIDitIHitII=",
+    "oracle_matches": true
+  },
+  {
+    "name": "invalid-lone-ff",
+    "input_b64": "Qf9C",
+    "want_b64": "Yf9i",
+    "oracle_matches": true
+  },
+  {
+    "name": "invalid-truncated-c3",
+    "input_b64": "Y2Fmww==",
+    "want_b64": "Y2Fmww==",
+    "oracle_matches": true
+  },
+  {
+    "name": "invalid-overlong",
+    "input_b64": "wK9BQkM=",
+    "want_b64": "wK9hYmM=",
+    "oracle_matches": true
+  },
+  {
+    "name": "invalid-lone-continuation",
+    "input_b64": "gIHOow==",
+    "want_b64": "gIHPgw==",
+    "oracle_matches": true
+  },
+  {
+    "name": "surrogate-encoded",
+    "input_b64": "Qe2ggEI=",
+    "want_b64": "Ye2ggGI=",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-00",
+    "input_b64": "6p+QSMyBzqPqnoDMgcyB4aSow4PhspZLzIHhs43Oo86jzIHRpHPqmZDhgaLMgeG+mCvOo86jaA==",
+    "want_b64": "6p+RaMyBz4PqnoHMgcyB4aSow6Phg5ZrzIHhs43Pg8+DzIHRpXPqmZHhgaLMgeG+kCvPg8+DaA==",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-01",
+    "input_b64": "4ZON4aGd",
+    "want_b64": "4ZON4aGd",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-02",
+    "input_b64": "RcyB8Ja5hM6j",
+    "want_b64": "ZcyB8Ja5pM+C",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-03",
+    "input_b64": "4aG6zIHMgSzOo86j8JCyls6jzIHOo86jzIHhpqLOo86jKOGtqOG4hMyByYPOo3c6zIHwkaKtzqPMgcyBzqPhu5DOo/CQspzMgQ==",
+    "want_b64": "4aG6zIHMgSzPg8+D8JCzls+DzIHPg8+CzIHhpqLPg8+CKOGtqOG4hcyBxoDPg3c6zIHwkaONz4PMgcyBz4Phu5HPg/CQs5zMgQ==",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-04",
+    "input_b64": "4rCD4YGOzqPhnonOo+GypsyB1LPOo+G5tlfMgc6j4rKS",
+    "want_b64": "4rCz4YGOz4PhnonPg+GDpsyB1aPPg+G5t3fMgc+D4rKT",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-05",
+    "input_b64": "4Lal8JC1ksWD8JCTjuGPoMmEzIHQmdKKzqPOo8yBzqPwnqSANl7Oo/CQlb7MgcyBzIHgprrMgdOq3bDMgc6j",
+    "want_b64": "4Lal8JC1ssWE8JCTtuqusMqJzIHQudKLz4PPg8yBz4PwnqSiNl7Pg/CQlqXMgcyBzIHgprrMgdOr3bDMgc+D",
+    "oracle_matches": false
+  },
+  {
+    "name": "random-06",
+    "input_b64": "4ZSV",
+    "want_b64": "4ZSV",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-07",
+    "input_b64": "4ZuGzIEz8JC1lMyB77yiWeKwh8SAzIHYm1DhoZnOo+CyreGAuM6jzIHSis6j4Lm83r3hnZDQnOGcqlfMgeGyi86jzIHIiUDOow==",
+    "want_b64": "4ZuGzIEz8JC1tMyB772CeeKwt8SBzIHYm3DhoZnPg+CyreGAuM+DzIHSi8+C4Lm83r3hnZDQvOGcqnfMgeGyi8+DzIHIiUDPgw==",
+    "oracle_matches": false
+  },
+  {
+    "name": "random-08",
+    "input_b64": "4KSI",
+    "want_b64": "4KSI",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-09",
+    "input_b64": "zqNQ4aKR8J6kjc6jzqPMgc6jzIHOssWKzqPMgfCQk4V2xLvhuKjisrDMgQ==",
+    "want_b64": "z4Nw4aKR8J6kr8+Dz4PMgc+DzIHOssWLz4PMgfCQk612xLzhuKnisrHMgQ==",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-10",
+    "input_b64": "4LqSzIHOo+KEqs6jzqPMgc6jT8yB4bKu4amE0rDgsr7Mgc6jzqPOo1LMgXrgq6PMgUfhvYxx4b6B4rGt",
+    "want_b64": "4LqSzIHPg2vPg8+DzIHPg2/MgeGDruGphNKx4LK+zIHPg8+Dz4NyzIF64KujzIFn4b2EceG+gcmR",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-11",
+    "input_b64": "zIHvvKRSzIHMgc6jzIHOo86jzIHOo+qescaUzIHwlrqrzqPKilzOo+Gsuz5Q4K+d",
+    "want_b64": "zIHvvYRyzIHMgc+DzIHPg8+DzIHPg8qHyaPMgfCWu4bPg8qKXM+D4ay7PnDgr50=",
+    "oracle_matches": false
+  },
+  {
+    "name": "random-12",
+    "input_b64": "4bW5zqPgt5fOo+Cqss6jzIHOo2zhn4oiRs6j4b+MzIE=",
+    "want_b64": "4bW5z4Lgt5fPg+Cqss+DzIHPg2zhn4oiZs+D4b+DzIE=",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-13",
+    "input_b64": "ccyBzqMxzqNw4ZSJx4Vc8JC1mcyB4Le4zIFg",
+    "want_b64": "ccyBz4Ixz4Nw4ZSJx4Zc8JC1ucyB4Le4zIFg",
+    "oracle_matches": false
+  },
+  {
+    "name": "random-14",
+    "input_b64": "zIE=",
+    "want_b64": "zIE=",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-15",
+    "input_b64": "4bqH16nMgeGrnsyBzIHisJzMgXPhtL7Oo1zhsqnhj6DMgcS44ZGsw5DMgWHEjPCQkJzMgc6jNs6j4K2a4Y216p6ozqPwkJCJOjE=",
+    "want_b64": "4bqH16nMgeGrnsyBzIHisYzMgXPhtL7Pglzhg6nqrrDMgcS44ZGsw7DMgWHEjfCQkYTMgc+CNs+D4K2a4Y216p6pz4PwkJCxOjE=",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-16",
+    "input_b64": "4YaoJFLhhL854LuN0KgtUOG8m0jhgrbhhp/Oo8yBMXjMgcyB4YWh",
+    "want_b64": "4YaoJHLhhL854LuN0YgtcOG8k2jitJbhhp/Pg8yBMXjMgcyB4YWh",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-17",
+    "input_b64": "QMOLzIHOo9uww4vMgcyB4Y+sKeCpts6jzIEj4rCWzIFDzIHKkMyByJYu",
+    "want_b64": "QMOrzIHPgtuww6vMgcyB6q68KeCpts+DzIEj4rGGzIFjzIHKkMyByJcu",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-18",
+    "input_b64": "4buOzqXMgSck6pmiRs6jzqPguZXOow==",
+    "want_b64": "4buPz4XMgSck6pmjZs+Dz4LguZXPgw==",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-19",
+    "input_b64": "zqPMgc6jzIHMgc6jzqPhoYjhsphj4LK1zqPhho3MgeGTgcyBNvCRoqjRrMyBzIHMgc6jzIHwlrmD4biUzIHMgU3MgcuY8JCTiX3hvYt434Hhk5/MgeGPvQ==",
+    "want_b64": "z4PMgc+DzIHMgc+Dz4LhoYjhg5hj4LK1z4Phho3MgeGTgcyBNvCRo4jRrcyBzIHMgc+DzIHwlrmj4biVzIHMgW3MgcuY8JCTsX3hvYN434Hhk5/MgeGPvQ==",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-20",
+    "input_b64": "zIEvzqPeiEjMgcykcGbSns6jzqPSnOGDhcyBzqPhvqzhibzMgcyBzqPMgeGup33Mgeqeug==",
+    "want_b64": "zIEvz4PeiGjMgcykcGbSn8+Dz4PSneK0pcyBz4PhvqThibzMgcyBz4PMgeGup33Mgeqeuw==",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-21",
+    "input_b64": "4Y6kzqMx4b+6zqPgsLHOo/CQtZdEzIHho4jMgeqcqs6j4LGo8JC1oinMgdS78JCStOGOtc6j6p254YSZzIHMgTHMgUXMgfCWuYPhuYjhnpfMgVw=",
+    "want_b64": "6q20z4Ix4b28z4LgsLHPg/CQtbdkzIHho4jMgeqcq8+C4LGo8JC2ginMgdWr8JCTnOquhc+D6p264YSZzIHMgTHMgWXMgfCWuaPhuYnhnpfMgVw=",
+    "oracle_matches": false
+  },
+  {
+    "name": "random-22",
+    "input_b64": "4oGd4YC0McyBO8eb4LiXzIFizIHisId/zIHhgqzgqZXhtofOo+GCktKUzqPgp47Oo8yB8JCQpcyB4b6JUc+izqPhsoA=",
+    "want_b64": "4oGd4YC0McyBO8ec4LiXzIFizIHisLd/zIHitIzgqZXhtofPguGCktKVz4Lgp47Pg8yB8JCRjcyB4b6Bcc+jz4PhsoA=",
+    "oracle_matches": true
+  },
+  {
+    "name": "random-23",
+    "input_b64": "x7PMgfCQsrHOo8yB4bqia+CqluCsm8yByLx2zqfMgdWBYNaszqPDlcyBxo/gs7M=",
+    "want_b64": "x7PMgfCQs7HPg8yB4bqja+CqluCsm8yByLx2z4fMgdWxYNasz4PDtcyByZngs7M=",
+    "oracle_matches": true
+  }
+]
