@@ -2,7 +2,7 @@
 
 # Unicode transforms
 
-Case conversion pinned to **Unicode 17.0.0**, running locally in your browser as QIP components. The version is in the component's name — `unicode-17-lowercase.wasm` — so the same bytes produce the same result in this page, in your CI, on your server, and in five years. No locale lottery: your OS, browser ICU revision, and `LC_ALL` are never consulted.
+Type or paste text below. Conversion runs locally in your browser.
 
 <style>
 .tool-grid {
@@ -41,11 +41,11 @@ Case conversion pinned to **Unicode 17.0.0**, running locally in your browser as
     <textarea id="case-input" spellcheck="false">Straße İstanbul ΘΕΣΣΑΛΟΝΊΚΗ — ΣΟΦΟΣ ΟΔΥΣΣΕΥΣ! ﬁne ǅungla</textarea>
   </label>
   <label class="tool-panel">
-    <strong>Lowercase (unicode-17-lowercase.wasm)</strong>
+    <strong>Lowercase</strong>
     <textarea id="case-lower" spellcheck="false" readonly></textarea>
   </label>
   <label class="tool-panel">
-    <strong>Uppercase (unicode-17-uppercase.wasm)</strong>
+    <strong>Uppercase</strong>
     <textarea id="case-upper" spellcheck="false" readonly></textarea>
   </label>
 </div>
@@ -57,8 +57,6 @@ Case conversion pinned to **Unicode 17.0.0**, running locally in your browser as
   <button type="button" data-sample="𐐐𐐨 𐵰𐵐 ꭰꮣ ᏣᎳᎩ">Deseret, Garay, Cherokee</button>
   <span id="case-status" class="tool-status" role="status"></span>
 </p>
-
-Things to try: `ΣΟΦΟΣ` lowercases with a final sigma (`σοφος` ends in ς, not σ — the Final_Sigma context rule). `straße` uppercases to `STRASSE` — a full case mapping, one that Go's `strings.ToUpper` gets wrong because it only applies simple per-character mappings. `İ` lowercases to `i̇` (i + combining dot, the non-Turkish rule). The Garay sample needs Unicode 16+ data — older platforms silently leave it unchanged.
 
 <script type="module">
 import { contentComponent, contentContract } from "/qip-runner.js";
@@ -95,19 +93,17 @@ input.addEventListener("input", transform);
 transform();
 </script>
 
-## Why pin the Unicode version?
+The samples exercise rules that ASCII-only conversion misses. `ΣΟΦΟΣ` ends with the final sigma `ς`; `straße` becomes `STRASSE`; and `İ` becomes `i̇` (an `i` followed by a combining dot). Garay casing requires Unicode 16 or newer.
 
-Every platform carries its own Unicode data at its own revision: your browser's ICU, your server's distro `libicu`, your database's collation tables, your game engine's frozen copy. They disagree — about digit shapes, about calendar days, about whether a script's characters have case at all. These components end that by carrying their own data: **the identifier states its data revision** (the same move as MySQL's `utf8mb4_0900_ai_ci` collation naming), and a future Unicode 18 build will be a visibly different artifact, `unicode-18-lowercase.wasm`, so upgrading is an explicit, diffable act instead of silent drift.
+## Why the Unicode version is explicit
 
-Both components implement Unicode Default Case Conversion for the root locale — byte-identical behavior for English, French, German, Spanish, and every language without a casing tailoring. Only Turkish/Azerbaijani (dotted/dotless i) and Lithuanian differ, and those would ship as separate components (`unicode-17-lowercase-turkic.wasm`).
+Browsers, operating systems, programming languages, databases, and server distributions ship different revisions of Unicode data. Many use ICU and CLDR, but they do not all update together. The same application can therefore see different case mappings, normalization, collation, or locale formatting depending on where it runs. Newer scripts are a visible example: an older runtime may leave their letters unchanged because it does not yet know they have case.
 
-## Conformance you can run yourself
+These components carry their own Unicode 17 data. The revision is part of each filename—`unicode-17-lowercase.wasm` and `unicode-17-uppercase.wasm`—so upgrading to Unicode 18 will be an explicit component change rather than an incidental platform update.
 
-The uppercase contract ships as an executable spec: a *Content Compliance component* (`compliance/unicode-17-uppercase.comply.wasm`) that declares 100 deterministic cases — curated inputs, seeded fuzz cases, and algebraic properties like idempotence — through a five-function host bridge. Any implementation in any language can be tested against it; a failing case is reproducible from just *(component hash, seed, ordinal)*.
+Both implement Unicode Default Case Conversion for the root locale. Locale-specific casing for Turkish, Azerbaijani, and Lithuanian belongs in separate, explicitly named components.
 
-The repo includes two self-contained examples: Node.js's `toUpperCase` (ICU 78, Unicode 17) **passes all 100 cases**; Go's stdlib `unicode.ToUpper` **fails 38** — simple mappings only, Unicode 15 tables — with each divergence pinpointed by ordinal. See `examples/comply-uppercase-node/` and `examples/comply-uppercase-go/`.
-
-## CLI equivalent
+## Use the components
 
 ```bash
 echo "ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ" | qip run modules/utf8/unicode-17-lowercase.wasm
@@ -117,57 +113,7 @@ echo "straße" | qip run modules/utf8/unicode-17-uppercase.wasm
 # STRASSE
 ```
 
-## Run it in Node.js
-
-No SDK, no dependencies — the QIP contract is small enough to drive with the
-platform's own WebAssembly API:
-
-```js
-import { readFile } from "node:fs/promises";
-
-const wasm = await readFile("modules/utf8/unicode-17-lowercase.wasm");
-const { instance } = await WebAssembly.instantiate(wasm);
-const { memory, input_ptr, input_utf8_cap, output_ptr, render } = instance.exports;
-
-function lowercase(text) {
-  const bytes = new TextEncoder().encode(text);
-  if (bytes.length > input_utf8_cap()) throw new Error("input too large");
-  new Uint8Array(memory.buffer, input_ptr(), bytes.length).set(bytes);
-  const size = render(bytes.length);
-  return new TextDecoder().decode(new Uint8Array(memory.buffer, output_ptr(), size));
-}
-
-console.log(lowercase("ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ")); // θεσσαλονίκη σοφος
-```
-
-The instance is reusable: call `lowercase()` as many times as you like — same
-component, same bytes, no matter which Node (or ICU) version is underneath.
-
-## Run it in the browser
-
-The same contract, driven the same way — only the loading differs:
-
-```html
-<script type="module">
-const { instance } = await WebAssembly.instantiateStreaming(
-  fetch("/components/utf8/unicode-17-lowercase.wasm"),
-);
-const { memory, input_ptr, input_utf8_cap, output_ptr, render } = instance.exports;
-
-function lowercase(text) {
-  const bytes = new TextEncoder().encode(text);
-  if (bytes.length > input_utf8_cap()) throw new Error("input too large");
-  new Uint8Array(memory.buffer, input_ptr(), bytes.length).set(bytes);
-  const size = render(bytes.length);
-  return new TextDecoder().decode(new Uint8Array(memory.buffer, output_ptr(), size));
-}
-
-console.log(lowercase("İstanbul")); // i̇stanbul
-</script>
-```
-
-This page itself uses the small helper from [`/qip-runner.js`](/qip-runner.js),
-which wraps the same steps:
+In a browser, the helper used by this page wraps the component's small memory-and-render contract:
 
 ```js
 import { contentComponent, contentContract } from "/qip-runner.js";
@@ -181,6 +127,12 @@ const lowercase = contentComponent(text, module, text);
 lowercase("ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ"); // "θεσσαλονίκη σοφος"
 ```
 
-You can also [import a component directly as a WebAssembly ES module](/docs/esm-integration).
+The same component runs in Node or any other WebAssembly host. You can also [import it directly as a WebAssembly ES module](/docs/esm-integration).
 
-More Unicode and locale-aware components are planned — normalization, per-locale date/number/currency formatting with pinned CLDR data — following the same rule: the data revision lives in the artifact, not in the environment.
+## Check another implementation
+
+The uppercase component has an executable compliance component at `compliance/unicode-17-uppercase.comply.wasm`. Its 100 deterministic cases combine examples, seeded fuzzing, and properties such as idempotence. A failure can be reproduced from the component hash, seed, and case ordinal.
+
+The repository includes Node and Go examples. Node's `toUpperCase`, backed here by ICU 78 and Unicode 17, passes all 100 cases. Go's standard library fails 38 because it uses Unicode 15 tables and simple per-rune mappings rather than full mappings. See `examples/comply-uppercase-node/` and `examples/comply-uppercase-go/`.
+
+Normalization and locale-aware date, number, and currency components can follow the same model: the Unicode or CLDR revision belongs in the artifact rather than being inherited silently from the environment.
