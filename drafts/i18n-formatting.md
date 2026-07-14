@@ -67,7 +67,7 @@ Each `{locale}` variant comes from the same codegen; the site gets a demo page f
 
 ## Plan
 
-1. `tools/cldr-gen/`: pin a CLDR version, generate Zig tables for date patterns + number symbols + plural rules for an initial locale set (en, de, fr, ja, ar, hi — chosen to force RTL digits, non-Latin, and plural-rule diversity early).
+1. `tools/cldr-gen/`: pin a CLDR version, generate Zig tables for date patterns + number symbols + plural rules for an initial locale set (en, de, fr, ja, ar, hi, id — chosen to force RTL digits, non-Latin, plural-rule diversity, Japanese eras, Indian digit grouping, and the `in`→`id` identifier trap early). Per the market analysis in drafts/locale-versions-survey.md, ar/hi/id/ja are where drift is most visible and pinned formatting most valuable — treat them as first-class proof locales, not stretch goals.
 2. Ship `date-format.{en,de,ja}.wasm` + `plural-select.ar.wasm` with golden-output tests (goldens are stable *by construction* — the tests double as the marketing claim).
 3. Duel-vs-`Intl` conformance report in `test/` (Node host): documented divergences or byte-agreement, either way explicit.
 4. Site demo page (multi-locale timestamp) + a docs page making the "pinned formatting" and "upgrade-as-diff" arguments with the U+202F story.
