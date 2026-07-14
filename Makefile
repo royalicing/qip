@@ -33,6 +33,7 @@ compliance/currency-format-usd-en-us.comply.wasm: compliance/currency-format-usd
 compliance/currency-format-en-us.comply.wasm: compliance/currency-format-en-us.comply.zig compliance/currency-format-en-us-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+modules/utf8/currency-format-en-us.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 modules/utf8/currency-format-en-us.wasm: modules/utf8/lib/currency-format-en-us-table.zig
 
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig

@@ -270,7 +270,7 @@ printf %s '1234567.895' | qip run modules/utf8/currency-format-en-us.wasm '?curr
 # ¥1,234,568
 ```
 
-`currency-format-en-us.wasm` keeps the locale and its formatting data fixed while the integer uniform selects one of 155 current country currencies plus XDR. Metals, testing, no-currency, fund, accounting-unit, and indexed-unit codes remain outside its scope. The 4.7 KiB component has no dependency on the browser, operating system locale, or host ICU version. The earlier `currency-format-usd-en-us.wasm` remains as a fixed-USD compatibility component.
+`currency-format-en-us.wasm` keeps the locale and its formatting data fixed while the integer uniform selects one of 155 current country currencies plus XDR. Metals, testing, no-currency, fund, accounting-unit, and indexed-unit codes remain outside its scope. The 2.2 KiB component has no dependency on the browser, operating system locale, or host ICU version. The earlier `currency-format-usd-en-us.wasm` remains as a fixed-USD compatibility component.
 
 Its executable specification is `compliance/currency-format-en-us.comply.wasm`. Each supported currency is dueled against JavaScript `Intl.NumberFormat`, including zero-digit JPY and KRW, three-digit BHD, non-breaking spacing for alphabetic symbols, negative zero, rounding carries, and generated decimal inputs.
 

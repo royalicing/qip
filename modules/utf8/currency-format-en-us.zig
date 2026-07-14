@@ -6,6 +6,71 @@ const OUTPUT_CAP: usize = 144;
 const MAX_INTEGER_DIGITS: usize = 96;
 const currency_data = @import("lib/currency-format-en-us-table.zig");
 
+// The source table stays readable while the emitted representation fits each
+// lookup entry in one u32. Most en-US prefixes are the alphabetic code plus a
+// non-breaking space, so those three letters live directly in the entry. Only
+// exceptional display prefixes occupy the concatenated byte array.
+const PackedCurrency = packed struct(u32) {
+    numeric: u10,
+    fraction_digits: u2,
+    prefix_payload: u15,
+    prefix_len: u4,
+    has_custom_prefix: bool,
+};
+
+fn hasAlphabeticPrefix(currency: currency_data.Currency) bool {
+    if (currency.prefix.len != 5) return false;
+    for (currency.prefix[0..3]) |byte| {
+        if (byte < 'A' or byte > 'Z') return false;
+    }
+    return currency.prefix[3] == 0xc2 and currency.prefix[4] == 0xa0;
+}
+
+fn packedAlphabeticPrefix(prefix: []const u8) u15 {
+    return @as(u15, prefix[0] - 'A') |
+        (@as(u15, prefix[1] - 'A') << 5) |
+        (@as(u15, prefix[2] - 'A') << 10);
+}
+
+const custom_prefix_data_size: usize = size: {
+    var total: usize = 0;
+    for (currency_data.currencies) |currency| {
+        if (!hasAlphabeticPrefix(currency)) total += currency.prefix.len;
+    }
+    break :size total;
+};
+
+const custom_prefix_data: [custom_prefix_data_size]u8 = data: {
+    var result: [custom_prefix_data_size]u8 = undefined;
+    var offset: usize = 0;
+    for (currency_data.currencies) |currency| {
+        if (hasAlphabeticPrefix(currency)) continue;
+        @memcpy(result[offset .. offset + currency.prefix.len], currency.prefix);
+        offset += currency.prefix.len;
+    }
+    break :data result;
+};
+
+const packed_currencies: [currency_data.currencies.len]PackedCurrency = entries: {
+    var result: [currency_data.currencies.len]PackedCurrency = undefined;
+    var offset: usize = 0;
+    for (currency_data.currencies, 0..) |currency, index| {
+        const alphabetic_prefix = hasAlphabeticPrefix(currency);
+        result[index] = .{
+            .numeric = @intCast(currency.numeric),
+            .fraction_digits = @intCast(currency.fraction_digits),
+            .prefix_payload = if (alphabetic_prefix)
+                packedAlphabeticPrefix(currency.prefix)
+            else
+                @intCast(offset),
+            .prefix_len = if (alphabetic_prefix) 0 else @intCast(currency.prefix.len),
+            .has_custom_prefix = !alphabetic_prefix,
+        };
+        if (!alphabetic_prefix) offset += currency.prefix.len;
+    }
+    break :entries result;
+};
+
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var integer_buf: [MAX_INTEGER_DIGITS + 1]u8 = undefined;
@@ -32,12 +97,12 @@ export fn uniform_set_currency(value: u32) u32 {
     return currency_numeric;
 }
 
-fn selectedCurrency() ?currency_data.Currency {
+fn selectedCurrency() ?PackedCurrency {
     var low: usize = 0;
-    var high: usize = currency_data.currencies.len;
+    var high: usize = packed_currencies.len;
     while (low < high) {
         const middle = low + (high - low) / 2;
-        const currency = currency_data.currencies[middle];
+        const currency = packed_currencies[middle];
         if (currency.numeric == currency_numeric) return currency;
         if (currency.numeric < currency_numeric) {
             low = middle + 1;
@@ -144,9 +209,20 @@ export fn render(input_size_in: u32) u32 {
         output_buf[out] = '-';
         out += 1;
     }
-    for (currency.prefix) |byte| {
-        output_buf[out] = byte;
-        out += 1;
+    if (currency.has_custom_prefix) {
+        const prefix_start: usize = @intCast(currency.prefix_payload);
+        const prefix_end = prefix_start + currency.prefix_len;
+        for (custom_prefix_data[prefix_start..prefix_end]) |byte| {
+            output_buf[out] = byte;
+            out += 1;
+        }
+    } else {
+        output_buf[out] = 'A' + @as(u8, @intCast(currency.prefix_payload & 0x1f));
+        output_buf[out + 1] = 'A' + @as(u8, @intCast((currency.prefix_payload >> 5) & 0x1f));
+        output_buf[out + 2] = 'A' + @as(u8, @intCast(currency.prefix_payload >> 10));
+        output_buf[out + 3] = 0xc2;
+        output_buf[out + 4] = 0xa0;
+        out += 5;
     }
     for (integer_buf[0..integer_len], 0..) |digit, i| {
         if (i > 0 and (integer_len - i) % 3 == 0) {
