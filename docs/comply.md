@@ -2,7 +2,7 @@
 
 `qip comply` is for turning a QIP component contract into an executable conformance check.
 
-A comply module is a small conformance suite. It is not the implementation's own unit test suite, and it is not a wrapper around `qip run`. It is a WebAssembly component that imports the implementation component module as `impl`, drives the public QIP interface, and reports whether the implementation obeys a reusable contract.
+A comply module is a small conformance suite. It is not the implementation's own unit test suite, and it is not a wrapper around `qip run`. Current Compliance components drive the implementation through the host-owned `qip` bridge; legacy checkers import the implementation as `impl`. Both report whether the implementation obeys a reusable contract.
 
 Use comply modules for behavior that more than one component may need to satisfy: "preserve empty input", "reject invalid UTF-8", "normalize phone numbers", or "accept exactly the Luhn-valid account numbers".
 
@@ -77,6 +77,23 @@ qip comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm
 - `input_bytes_cap` as exported global or function returning `i32`
 
 ## Memory Model
+
+### Current bridge components
+
+Current Content Compliance components own their memory and export `comply() -> i32`. They declare cases through imports from the `qip` module rather than importing implementation memory directly:
+
+- `render_must_equal(ordinal, input_ptr, input_size, expected_ptr, expected_size) -> i32`
+- `render_must_trap(ordinal, input_ptr, input_size) -> i32`
+- `render_examine(ordinal, input_ptr, input_size, output_ptr, output_capacity) -> i32`
+- `render_examine_pass(ordinal) -> i32`
+- `render_examine_fail(ordinal) -> i32`
+- `set_uniform_u32(name_ptr, name_size, value) -> i32`
+
+`set_uniform_u32` lets a compliance component exercise configuration as part of its corpus. The name is a lowercase uniform key such as `currency`; the host calls `uniform_set_currency(i32) -> i32` on the implementation and returns the applied value to the compliance component. The call must happen between cases, not while an examination is open. It does not consume an ordinal or count as a case.
+
+The compliance component remains responsible for changing its own oracle state after selecting an implementation uniform. A formatter checker can therefore select currency `392`, declare its JPY cases, select `840`, and declare its USD cases during one run without exporting a currency uniform itself.
+
+### Legacy shared-memory components
 
 A comply module shares the implementation's linear memory. It usually imports:
 

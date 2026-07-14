@@ -1,0 +1,626 @@
+[
+  {
+    "alpha": "ALL",
+    "numeric": 8
+  },
+  {
+    "alpha": "DZD",
+    "numeric": 12
+  },
+  {
+    "alpha": "ARS",
+    "numeric": 32
+  },
+  {
+    "alpha": "AUD",
+    "numeric": 36
+  },
+  {
+    "alpha": "BSD",
+    "numeric": 44
+  },
+  {
+    "alpha": "BHD",
+    "numeric": 48
+  },
+  {
+    "alpha": "BDT",
+    "numeric": 50
+  },
+  {
+    "alpha": "AMD",
+    "numeric": 51
+  },
+  {
+    "alpha": "BBD",
+    "numeric": 52
+  },
+  {
+    "alpha": "BMD",
+    "numeric": 60
+  },
+  {
+    "alpha": "BTN",
+    "numeric": 64
+  },
+  {
+    "alpha": "BOB",
+    "numeric": 68
+  },
+  {
+    "alpha": "BWP",
+    "numeric": 72
+  },
+  {
+    "alpha": "BZD",
+    "numeric": 84
+  },
+  {
+    "alpha": "SBD",
+    "numeric": 90
+  },
+  {
+    "alpha": "BND",
+    "numeric": 96
+  },
+  {
+    "alpha": "MMK",
+    "numeric": 104
+  },
+  {
+    "alpha": "BIF",
+    "numeric": 108
+  },
+  {
+    "alpha": "KHR",
+    "numeric": 116
+  },
+  {
+    "alpha": "CAD",
+    "numeric": 124
+  },
+  {
+    "alpha": "CVE",
+    "numeric": 132
+  },
+  {
+    "alpha": "KYD",
+    "numeric": 136
+  },
+  {
+    "alpha": "LKR",
+    "numeric": 144
+  },
+  {
+    "alpha": "CLP",
+    "numeric": 152
+  },
+  {
+    "alpha": "CNY",
+    "numeric": 156
+  },
+  {
+    "alpha": "COP",
+    "numeric": 170
+  },
+  {
+    "alpha": "KMF",
+    "numeric": 174
+  },
+  {
+    "alpha": "CRC",
+    "numeric": 188
+  },
+  {
+    "alpha": "CUP",
+    "numeric": 192
+  },
+  {
+    "alpha": "CZK",
+    "numeric": 203
+  },
+  {
+    "alpha": "DKK",
+    "numeric": 208
+  },
+  {
+    "alpha": "DOP",
+    "numeric": 214
+  },
+  {
+    "alpha": "SVC",
+    "numeric": 222
+  },
+  {
+    "alpha": "ETB",
+    "numeric": 230
+  },
+  {
+    "alpha": "ERN",
+    "numeric": 232
+  },
+  {
+    "alpha": "FKP",
+    "numeric": 238
+  },
+  {
+    "alpha": "FJD",
+    "numeric": 242
+  },
+  {
+    "alpha": "DJF",
+    "numeric": 262
+  },
+  {
+    "alpha": "GMD",
+    "numeric": 270
+  },
+  {
+    "alpha": "GIP",
+    "numeric": 292
+  },
+  {
+    "alpha": "GTQ",
+    "numeric": 320
+  },
+  {
+    "alpha": "GNF",
+    "numeric": 324
+  },
+  {
+    "alpha": "GYD",
+    "numeric": 328
+  },
+  {
+    "alpha": "HTG",
+    "numeric": 332
+  },
+  {
+    "alpha": "HNL",
+    "numeric": 340
+  },
+  {
+    "alpha": "HKD",
+    "numeric": 344
+  },
+  {
+    "alpha": "HUF",
+    "numeric": 348
+  },
+  {
+    "alpha": "ISK",
+    "numeric": 352
+  },
+  {
+    "alpha": "INR",
+    "numeric": 356
+  },
+  {
+    "alpha": "IDR",
+    "numeric": 360
+  },
+  {
+    "alpha": "IRR",
+    "numeric": 364
+  },
+  {
+    "alpha": "IQD",
+    "numeric": 368
+  },
+  {
+    "alpha": "ILS",
+    "numeric": 376
+  },
+  {
+    "alpha": "JMD",
+    "numeric": 388
+  },
+  {
+    "alpha": "JPY",
+    "numeric": 392
+  },
+  {
+    "alpha": "KZT",
+    "numeric": 398
+  },
+  {
+    "alpha": "JOD",
+    "numeric": 400
+  },
+  {
+    "alpha": "KES",
+    "numeric": 404
+  },
+  {
+    "alpha": "KPW",
+    "numeric": 408
+  },
+  {
+    "alpha": "KRW",
+    "numeric": 410
+  },
+  {
+    "alpha": "KWD",
+    "numeric": 414
+  },
+  {
+    "alpha": "KGS",
+    "numeric": 417
+  },
+  {
+    "alpha": "LAK",
+    "numeric": 418
+  },
+  {
+    "alpha": "LBP",
+    "numeric": 422
+  },
+  {
+    "alpha": "LSL",
+    "numeric": 426
+  },
+  {
+    "alpha": "LRD",
+    "numeric": 430
+  },
+  {
+    "alpha": "LYD",
+    "numeric": 434
+  },
+  {
+    "alpha": "MOP",
+    "numeric": 446
+  },
+  {
+    "alpha": "MWK",
+    "numeric": 454
+  },
+  {
+    "alpha": "MYR",
+    "numeric": 458
+  },
+  {
+    "alpha": "MVR",
+    "numeric": 462
+  },
+  {
+    "alpha": "MUR",
+    "numeric": 480
+  },
+  {
+    "alpha": "MXN",
+    "numeric": 484
+  },
+  {
+    "alpha": "MNT",
+    "numeric": 496
+  },
+  {
+    "alpha": "MDL",
+    "numeric": 498
+  },
+  {
+    "alpha": "MAD",
+    "numeric": 504
+  },
+  {
+    "alpha": "OMR",
+    "numeric": 512
+  },
+  {
+    "alpha": "NAD",
+    "numeric": 516
+  },
+  {
+    "alpha": "NPR",
+    "numeric": 524
+  },
+  {
+    "alpha": "XCG",
+    "numeric": 532
+  },
+  {
+    "alpha": "AWG",
+    "numeric": 533
+  },
+  {
+    "alpha": "VUV",
+    "numeric": 548
+  },
+  {
+    "alpha": "NZD",
+    "numeric": 554
+  },
+  {
+    "alpha": "NIO",
+    "numeric": 558
+  },
+  {
+    "alpha": "NGN",
+    "numeric": 566
+  },
+  {
+    "alpha": "NOK",
+    "numeric": 578
+  },
+  {
+    "alpha": "PKR",
+    "numeric": 586
+  },
+  {
+    "alpha": "PAB",
+    "numeric": 590
+  },
+  {
+    "alpha": "PGK",
+    "numeric": 598
+  },
+  {
+    "alpha": "PYG",
+    "numeric": 600
+  },
+  {
+    "alpha": "PEN",
+    "numeric": 604
+  },
+  {
+    "alpha": "PHP",
+    "numeric": 608
+  },
+  {
+    "alpha": "QAR",
+    "numeric": 634
+  },
+  {
+    "alpha": "RUB",
+    "numeric": 643
+  },
+  {
+    "alpha": "RWF",
+    "numeric": 646
+  },
+  {
+    "alpha": "SHP",
+    "numeric": 654
+  },
+  {
+    "alpha": "SAR",
+    "numeric": 682
+  },
+  {
+    "alpha": "SCR",
+    "numeric": 690
+  },
+  {
+    "alpha": "SGD",
+    "numeric": 702
+  },
+  {
+    "alpha": "VND",
+    "numeric": 704
+  },
+  {
+    "alpha": "SOS",
+    "numeric": 706
+  },
+  {
+    "alpha": "ZAR",
+    "numeric": 710
+  },
+  {
+    "alpha": "SSP",
+    "numeric": 728
+  },
+  {
+    "alpha": "SZL",
+    "numeric": 748
+  },
+  {
+    "alpha": "SEK",
+    "numeric": 752
+  },
+  {
+    "alpha": "CHF",
+    "numeric": 756
+  },
+  {
+    "alpha": "SYP",
+    "numeric": 760
+  },
+  {
+    "alpha": "THB",
+    "numeric": 764
+  },
+  {
+    "alpha": "TOP",
+    "numeric": 776
+  },
+  {
+    "alpha": "TTD",
+    "numeric": 780
+  },
+  {
+    "alpha": "AED",
+    "numeric": 784
+  },
+  {
+    "alpha": "TND",
+    "numeric": 788
+  },
+  {
+    "alpha": "UGX",
+    "numeric": 800
+  },
+  {
+    "alpha": "MKD",
+    "numeric": 807
+  },
+  {
+    "alpha": "EGP",
+    "numeric": 818
+  },
+  {
+    "alpha": "GBP",
+    "numeric": 826
+  },
+  {
+    "alpha": "TZS",
+    "numeric": 834
+  },
+  {
+    "alpha": "USD",
+    "numeric": 840
+  },
+  {
+    "alpha": "UYU",
+    "numeric": 858
+  },
+  {
+    "alpha": "UZS",
+    "numeric": 860
+  },
+  {
+    "alpha": "WST",
+    "numeric": 882
+  },
+  {
+    "alpha": "YER",
+    "numeric": 886
+  },
+  {
+    "alpha": "TWD",
+    "numeric": 901
+  },
+  {
+    "alpha": "ZWG",
+    "numeric": 924
+  },
+  {
+    "alpha": "SLE",
+    "numeric": 925
+  },
+  {
+    "alpha": "VED",
+    "numeric": 926
+  },
+  {
+    "alpha": "VES",
+    "numeric": 928
+  },
+  {
+    "alpha": "MRU",
+    "numeric": 929
+  },
+  {
+    "alpha": "STN",
+    "numeric": 930
+  },
+  {
+    "alpha": "BYN",
+    "numeric": 933
+  },
+  {
+    "alpha": "TMT",
+    "numeric": 934
+  },
+  {
+    "alpha": "GHS",
+    "numeric": 936
+  },
+  {
+    "alpha": "SDG",
+    "numeric": 938
+  },
+  {
+    "alpha": "RSD",
+    "numeric": 941
+  },
+  {
+    "alpha": "MZN",
+    "numeric": 943
+  },
+  {
+    "alpha": "AZN",
+    "numeric": 944
+  },
+  {
+    "alpha": "RON",
+    "numeric": 946
+  },
+  {
+    "alpha": "TRY",
+    "numeric": 949
+  },
+  {
+    "alpha": "XAF",
+    "numeric": 950
+  },
+  {
+    "alpha": "XCD",
+    "numeric": 951
+  },
+  {
+    "alpha": "XOF",
+    "numeric": 952
+  },
+  {
+    "alpha": "XPF",
+    "numeric": 953
+  },
+  {
+    "alpha": "XDR",
+    "numeric": 960
+  },
+  {
+    "alpha": "ZMW",
+    "numeric": 967
+  },
+  {
+    "alpha": "SRD",
+    "numeric": 968
+  },
+  {
+    "alpha": "MGA",
+    "numeric": 969
+  },
+  {
+    "alpha": "AFN",
+    "numeric": 971
+  },
+  {
+    "alpha": "TJS",
+    "numeric": 972
+  },
+  {
+    "alpha": "AOA",
+    "numeric": 973
+  },
+  {
+    "alpha": "CDF",
+    "numeric": 976
+  },
+  {
+    "alpha": "BAM",
+    "numeric": 977
+  },
+  {
+    "alpha": "EUR",
+    "numeric": 978
+  },
+  {
+    "alpha": "UAH",
+    "numeric": 980
+  },
+  {
+    "alpha": "GEL",
+    "numeric": 981
+  },
+  {
+    "alpha": "PLN",
+    "numeric": 985
+  },
+  {
+    "alpha": "BRL",
+    "numeric": 986
+  }
+]

@@ -27,9 +27,23 @@ compliance/unicode-17-lowercase.comply.wasm: compliance/unicode-17-lowercase.com
 compliance/unicode-17-uppercase.comply.wasm: compliance/unicode-17-uppercase.comply.zig compliance/unicode-17-uppercase-tables.zig compliance/unicode-17-uppercase-fixtures.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/currency-format-usd-en-us.comply.wasm: compliance/currency-format-usd-en-us.comply.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/currency-format-en-us.comply.wasm: compliance/currency-format-en-us.comply.zig compliance/currency-format-en-us-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+modules/utf8/currency-format-en-us.wasm: modules/utf8/lib/currency-format-en-us-table.zig
+
+compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 compliance: $(patsubst compliance/%.wat,compliance/%.wasm,$(wildcard compliance/*.wat))
 compliance: compliance/unicode-17-lowercase.comply.wasm
 compliance: compliance/unicode-17-uppercase.comply.wasm
+compliance: compliance/currency-format-usd-en-us.comply.wasm
+compliance: compliance/currency-format-en-us.comply.wasm
+compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
@@ -113,6 +127,7 @@ modules/image/png/png-to-bmp.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 
 modules/utf8/unicode-17-lowercase.wasm: modules/utf8/lib/unicode-17-lowercase-tables.zig modules/utf8/lib/utf8.zig
 modules/utf8/unicode-17-uppercase.wasm: modules/utf8/lib/unicode-17-uppercase-tables.zig modules/utf8/lib/utf8.zig
+modules/utf8/iso-4217-alpha-to-numeric.wasm: modules/utf8/lib/iso-4217-alpha-numeric-table.zig
 
 modules/bytes/zlib-compress-dynamic-huffman-opt.wasm: modules/bytes/lib/deflate.zig
 modules/image/bmp/bmp-to-png.wasm: modules/image/bmp/lib/deflate.zig
@@ -162,6 +177,9 @@ test-node: qip modules
 	node --test test/unicode-17-lowercase.mjs
 	node --test test/unicode-17-uppercase-comply.mjs
 	node --test test/unicode-17-lowercase-comply.mjs
+	node --test test/currency-format-usd-en-us-comply.mjs
+	node --test test/currency-format-en-us-comply.mjs
+	node --test test/iso-4217-alpha-to-numeric-comply.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
 	node --test test/qip-wasm-policy.mjs
@@ -181,6 +199,9 @@ test-comply: qip modules compliance
 	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm --legacy
 	$(QIP_BIN) comply modules/utf8/unicode-17-lowercase.wasm --with compliance/unicode-17-lowercase.comply.wasm
 	$(QIP_BIN) comply modules/utf8/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-usd-en-us.wasm --with compliance/currency-format-usd-en-us.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-en-us.wasm --with compliance/currency-format-en-us.comply.wasm
+	$(QIP_BIN) comply modules/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 
 test-snapshot: qip modules
 	@mkdir -p test

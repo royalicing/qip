@@ -9,6 +9,7 @@
 //	render_examine(ordinal, in_ptr, in_len, out_ptr, out_cap) -> i32
 //	render_examine_pass(ordinal) -> i32
 //	render_examine_fail(ordinal) -> i32
+//	set_uniform_u32(name_ptr, name_len, value) -> i32
 //
 // The component exports comply() -> i32 (declared-case count) and optionally
 // uniform_set_seed(i32). The host owns all data movement (memcpy between the
@@ -163,8 +164,49 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 		}
 		return true
 	}
+	setUniformU32 := func(callCtx context.Context, m api.Module, namePtr, nameLen, value uint32) uint32 {
+		if state.openExamine != nil {
+			state.protocolViolation("set_uniform_u32 called inside open examination %d", *state.openExamine)
+			return 0
+		}
+		if nameLen == 0 || nameLen > 128 {
+			state.protocolViolation("set_uniform_u32 name length %d is outside 1..128", nameLen)
+			return 0
+		}
+		nameBytes, ok := readChecker(m, namePtr, nameLen)
+		if !ok {
+			state.protocolViolation("set_uniform_u32 name pointer out of range")
+			return 0
+		}
+		for _, b := range nameBytes {
+			if !((b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '_') {
+				state.protocolViolation("set_uniform_u32 name %q is not a lowercase uniform key", string(nameBytes))
+				return 0
+			}
+		}
+
+		exportName := "uniform_set_" + string(nameBytes)
+		setter := state.implMod.ExportedFunction(exportName)
+		if setter == nil {
+			state.protocolViolation("implementation does not export %s", exportName)
+			return 0
+		}
+		if err := requireSignature(setter.Definition(), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}, exportName); err != nil {
+			state.protocolViolation("%v", err)
+			return 0
+		}
+		result, err := setter.Call(callCtx, uint64(value))
+		if err != nil {
+			state.protocolViolation("%s trapped: %v", exportName, err)
+			return 0
+		}
+		return api.DecodeU32(result[0])
+	}
 
 	_, err = r.NewHostModuleBuilder(bridgeHostModuleName).
+		NewFunctionBuilder().
+		WithFunc(setUniformU32).
+		Export("set_uniform_u32").
 		NewFunctionBuilder().
 		WithFunc(func(callCtx context.Context, m api.Module, ordinal uint64, inPtr, inLen, expPtr, expLen uint32) int32 {
 			if !caseOpen(ordinal, "render_must_equal") {
@@ -298,13 +340,12 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 
 	complyFn := checkerMod.ExportedFunction(bridgeExportComply)
 	res, err := complyFn.Call(ctx)
-	if err != nil {
-		out.err = fmt.Errorf("comply() trapped: %w", err)
-		return out
-	}
-
 	if state.protocolErr != nil {
 		out.err = fmt.Errorf("bridge protocol violation: %w", state.protocolErr)
+		return out
+	}
+	if err != nil {
+		out.err = fmt.Errorf("comply() trapped: %w", err)
 		return out
 	}
 	if state.openExamine != nil {

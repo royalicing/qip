@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 // Drives the component with a given impl function (bytes -> bytes, or null
 // to echo input as a null impl). Records equality cases (the extractable
 // corpus) and examination verdicts separately.
-export async function runComplianceComponent(wasmBytes, { seed, impl } = {}) {
+export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform } = {}) {
   const cases = [];
   const predicates = [];
   let memory;
@@ -23,6 +23,9 @@ export async function runComplianceComponent(wasmBytes, { seed, impl } = {}) {
   const applyImpl = (input) => (impl ? impl(input) : input);
   let hostOrdinal = 0n;
   let openExamination = null;
+  const activeUniforms = {};
+  const uniformNameDecoder = new TextDecoder("utf-8", { fatal: true });
+  const uniformSnapshot = () => Object.freeze({ ...activeUniforms });
   const checkOrdinal = (declared) => {
     assert.equal(declared, hostOrdinal, "component and host disagree on case ordinal");
     hostOrdinal++;
@@ -43,6 +46,7 @@ export async function runComplianceComponent(wasmBytes, { seed, impl } = {}) {
           ordinal: Number(declaredOrdinal),
           input: bytes(inputPtr, inputLen),
           expected: bytes(expectedPtr, expectedLen),
+          uniforms: uniformSnapshot(),
         });
         return 1;
       },
@@ -53,6 +57,7 @@ export async function runComplianceComponent(wasmBytes, { seed, impl } = {}) {
           ordinal: Number(declaredOrdinal),
           input: bytes(inputPtr, inputLen),
           expected: null, // must trap
+          uniforms: uniformSnapshot(),
         });
         return 1;
       },
@@ -75,6 +80,16 @@ export async function runComplianceComponent(wasmBytes, { seed, impl } = {}) {
       render_examine_fail(declaredOrdinal) {
         return closeExamination(declaredOrdinal, false);
       },
+      set_uniform_u32(namePtr, nameLen, value) {
+        assert.equal(openExamination, null, "uniform cannot change inside an examination");
+        const name = uniformNameDecoder.decode(view(namePtr, nameLen));
+        assert.match(name, /^[a-z0-9_]{1,128}$/, "uniform name must be a lowercase key");
+        const unsignedValue = value >>> 0;
+        const applied = setUniform ? setUniform(name, unsignedValue) : unsignedValue;
+        const unsignedApplied = applied >>> 0;
+        activeUniforms[name] = unsignedApplied;
+        return unsignedApplied;
+      },
     },
   });
   memory = instance.exports.memory;
@@ -92,6 +107,7 @@ function assertSameDeclarations(a, b) {
   for (let i = 0; i < a.cases.length; i++) {
     assert.deepEqual(a.cases[i].input, b.cases[i].input, `case ${a.cases[i].ordinal} input`);
     assert.deepEqual(a.cases[i].expected, b.cases[i].expected, `case ${a.cases[i].ordinal} expected`);
+    assert.deepEqual(a.cases[i].uniforms, b.cases[i].uniforms, `case ${a.cases[i].ordinal} uniforms`);
   }
 }
 
