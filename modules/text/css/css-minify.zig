@@ -20,9 +20,14 @@ fn isIdentChar(b: u8) bool {
 
 fn isPunct(b: u8) bool {
     return switch (b) {
-        '{', '}', ':', ';', ',', '>', '+', '~', '(', ')', '[', ']', '=' => true,
+        '{', '}', ':', ';', ',', '>', '~', '(', ')', '[', ']', '=' => true,
         else => false,
     };
+}
+
+fn needsSpace(left: u8, right: u8, in_function: bool) bool {
+    return (isIdentChar(left) and isIdentChar(right)) or
+        (in_function and (left == '+' or left == '-' or right == '+' or right == '-'));
 }
 
 fn writeByte(output: []u8, out_idx: *usize, b: u8) MinifyError!void {
@@ -36,8 +41,10 @@ fn minifyCss(input: []const u8, output: []u8) MinifyError!usize {
     var out: usize = 0;
     var pending_space = false;
     var last: u8 = 0;
+    var paren_depth: usize = 0;
+    var steps: usize = 0;
 
-    while (i < input.len) {
+    while (i < input.len and steps < INPUT_CAP) : (steps += 1) {
         const b = input[i];
         if (b == '/' and i + 1 < input.len and input[i + 1] == '*') {
             i += 2;
@@ -53,13 +60,14 @@ fn minifyCss(input: []const u8, output: []u8) MinifyError!usize {
             continue;
         }
         if (b == '"' or b == '\'') {
-            if (pending_space and out > 0 and isIdentChar(last)) try writeByte(output, &out, ' ');
+            if (pending_space and out > 0 and needsSpace(last, b, paren_depth > 0)) try writeByte(output, &out, ' ');
             pending_space = false;
             const quote = b;
             try writeByte(output, &out, b);
             last = b;
             i += 1;
-            while (i < input.len) {
+            var string_steps: usize = 0;
+            while (i < input.len and string_steps < INPUT_CAP) : (string_steps += 1) {
                 const c = input[i];
                 try writeByte(output, &out, c);
                 last = c;
@@ -74,7 +82,7 @@ fn minifyCss(input: []const u8, output: []u8) MinifyError!usize {
             } else return error.UnterminatedString;
             continue;
         }
-        if (pending_space and out > 0 and isIdentChar(last) and isIdentChar(b)) {
+        if (pending_space and out > 0 and needsSpace(last, b, paren_depth > 0)) {
             try writeByte(output, &out, ' ');
             last = ' ';
         }
@@ -89,6 +97,8 @@ fn minifyCss(input: []const u8, output: []u8) MinifyError!usize {
             }
         }
         try writeByte(output, &out, b);
+        if (b == '(') paren_depth += 1;
+        if (b == ')' and paren_depth > 0) paren_depth -= 1;
         last = b;
         i += 1;
     }
@@ -143,4 +153,10 @@ test "preserves strings" {
     var out: [256]u8 = undefined;
     const len = try minifyCss(".x{content:\"a  b /* not comment */\"}", out[0..]);
     try std.testing.expectEqualStrings(".x{content:\"a  b /* not comment */\"}", out[0..len]);
+}
+
+test "preserves required calc operator whitespace" {
+    var out: [256]u8 = undefined;
+    const len = try minifyCss(".x { width: calc(100% - 1rem); height: calc(1px + 2px); }", out[0..]);
+    try std.testing.expectEqualStrings(".x{width:calc(100% - 1rem);height:calc(1px + 2px)}", out[0..len]);
 }

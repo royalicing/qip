@@ -43,7 +43,7 @@ static int is_ws(unsigned char c) {
 }
 
 static int is_url_stop(unsigned char c) {
-    return is_ws(c) || c == '<' || c == '>' || c == '"' || c == '\'';
+    return is_ws(c) || c == '<' || c == '>' || c == '"' || c == '\'' || c == '`';
 }
 
 static unsigned char ascii_lower(unsigned char c) {
@@ -55,11 +55,11 @@ static unsigned char ascii_lower(unsigned char c) {
 
 static int starts_with_https(const unsigned char *s, uint32_t i, uint32_t n) {
     return i + 7 < n &&
-           s[i] == 'h' &&
-           s[i + 1] == 't' &&
-           s[i + 2] == 't' &&
-           s[i + 3] == 'p' &&
-           s[i + 4] == 's' &&
+           ascii_lower(s[i]) == 'h' &&
+           ascii_lower(s[i + 1]) == 't' &&
+           ascii_lower(s[i + 2]) == 't' &&
+           ascii_lower(s[i + 3]) == 'p' &&
+           ascii_lower(s[i + 4]) == 's' &&
            s[i + 5] == ':' &&
            s[i + 6] == '/' &&
            s[i + 7] == '/';
@@ -67,7 +67,7 @@ static int starts_with_https(const unsigned char *s, uint32_t i, uint32_t n) {
 
 static int equals_ci(const unsigned char *s, uint32_t len, const char *lit) {
     uint32_t i = 0;
-    while (lit[i] != '\0') {
+    while (lit[i] != '\0' && i < 32) {
         if (i >= len) return 0;
         if (ascii_lower(s[i]) != (unsigned char)lit[i]) return 0;
         i++;
@@ -75,17 +75,10 @@ static int equals_ci(const unsigned char *s, uint32_t len, const char *lit) {
     return i == len;
 }
 
-static int is_self_closing_tag(const unsigned char *s, uint32_t tag_start, uint32_t tag_end) {
-    if (tag_end <= tag_start + 1) return 0;
-    uint32_t p = tag_end;
-    while (p > tag_start + 1 && is_ws(s[p - 1])) p--;
-    if (p <= tag_start + 1) return 0;
-    return s[p - 1] == '/';
-}
-
-static void update_html_context(const unsigned char *s, uint32_t tag_start, uint32_t tag_end, int *raw_text_mode, int *anchor_depth, int *pre_depth) {
+static void update_html_context(const unsigned char *s, uint32_t tag_start, uint32_t tag_end, int *raw_text_mode, int *anchor_depth, int *literal_depth) {
     uint32_t p = tag_start + 1;
-    while (p < tag_end && is_ws(s[p])) p++;
+    uint32_t steps = 0;
+    while (p < tag_end && is_ws(s[p]) && steps < INPUT_CAP) { p++; steps++; }
     if (p >= tag_end) return;
     if (s[p] == '!' || s[p] == '?') return;
 
@@ -94,15 +87,18 @@ static void update_html_context(const unsigned char *s, uint32_t tag_start, uint
         closing = 1;
         p++;
     }
-    while (p < tag_end && is_ws(s[p])) p++;
+    steps = 0;
+    while (p < tag_end && is_ws(s[p]) && steps < INPUT_CAP) { p++; steps++; }
     if (p >= tag_end) return;
 
     uint32_t name_start = p;
-    while (p < tag_end) {
+    steps = 0;
+    while (p < tag_end && steps < INPUT_CAP) {
         unsigned char c = s[p];
         int alpha_num = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
         if (!alpha_num) break;
         p++;
+        steps++;
     }
     uint32_t name_len = p - name_start;
     if (name_len == 0) return;
@@ -121,26 +117,57 @@ static void update_html_context(const unsigned char *s, uint32_t tag_start, uint
     if (equals_ci(s + name_start, name_len, "a")) {
         if (closing) {
             if (*anchor_depth > 0) *anchor_depth -= 1;
-        } else if (!is_self_closing_tag(s, tag_start, tag_end)) {
+        } else {
             *anchor_depth += 1;
         }
         return;
     }
 
-    if (equals_ci(s + name_start, name_len, "pre")) {
+    if (equals_ci(s + name_start, name_len, "pre") ||
+        equals_ci(s + name_start, name_len, "code") ||
+        equals_ci(s + name_start, name_len, "textarea")) {
         if (closing) {
-            if (*pre_depth > 0) *pre_depth -= 1;
-        } else if (!is_self_closing_tag(s, tag_start, tag_end)) {
-            *pre_depth += 1;
+            if (*literal_depth > 0) *literal_depth -= 1;
+        } else {
+            *literal_depth += 1;
         }
     }
+}
+
+static uint32_t trim_url_end(const unsigned char *s, uint32_t start, uint32_t end) {
+    uint32_t steps = 0;
+    while (end > start + 8 && steps < INPUT_CAP) {
+        unsigned char c = s[end - 1];
+        if (c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?') {
+            end--;
+            steps++;
+            continue;
+        }
+        if (c == ')' || c == ']' || c == '}') {
+            unsigned char open = c == ')' ? '(' : (c == ']' ? '[' : '{');
+            uint32_t opens = 0;
+            uint32_t closes = 0;
+            uint32_t scan_steps = 0;
+            for (uint32_t p = start + 8; p < end && scan_steps < INPUT_CAP; p++, scan_steps++) {
+                if (s[p] == open) opens++;
+                if (s[p] == c) closes++;
+            }
+            if (closes > opens) {
+                end--;
+                steps++;
+                continue;
+            }
+        }
+        break;
+    }
+    return end;
 }
 
 static int write_slice(uint32_t *out_idx, const unsigned char *s, uint32_t len) {
     if (*out_idx + len > OUTPUT_CAP) {
         return 0;
     }
-    for (uint32_t i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len && i < OUTPUT_CAP; i++) {
         output_buffer[*out_idx + i] = s[i];
     }
     *out_idx += len;
@@ -148,7 +175,7 @@ static int write_slice(uint32_t *out_idx, const unsigned char *s, uint32_t len) 
 }
 
 static int write_escaped_attr(uint32_t *out_idx, const unsigned char *s, uint32_t len) {
-    for (uint32_t i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len && i < INPUT_CAP; i++) {
         unsigned char c = s[i];
         if (c == '&') {
             if (!write_slice(out_idx, (const unsigned char *)"&amp;", 5)) return 0;
@@ -178,9 +205,11 @@ uint32_t render(uint32_t input_size) {
     unsigned char tag_quote = 0;
     int raw_text_mode = 0; /* 0=none, 1=script, 2=style */
     int anchor_depth = 0;
-    int pre_depth = 0;
+    int literal_depth = 0;
+    uint32_t render_steps = 0;
 
-    while (i < input_size) {
+    while (i < input_size && render_steps < INPUT_CAP) {
+        render_steps++;
         unsigned char c = input_buffer[i];
 
         if (in_tag) {
@@ -194,7 +223,7 @@ uint32_t render(uint32_t input_size) {
                     tag_quote = c;
                 } else if (c == '>') {
                     in_tag = 0;
-                    update_html_context(input_buffer, tag_start, i, &raw_text_mode, &anchor_depth, &pre_depth);
+                    update_html_context(input_buffer, tag_start, i, &raw_text_mode, &anchor_depth, &literal_depth);
                 }
             }
             i++;
@@ -210,19 +239,27 @@ uint32_t render(uint32_t input_size) {
             continue;
         }
 
-        if (raw_text_mode == 0 && anchor_depth == 0 && pre_depth == 0 && starts_with_https(input_buffer, i, input_size)) {
+        if (raw_text_mode == 0 && anchor_depth == 0 && literal_depth == 0 && starts_with_https(input_buffer, i, input_size)) {
             uint32_t start = i;
             uint32_t j = i + 8;
-            while (j < input_size && !is_url_stop(input_buffer[j])) {
+            uint32_t url_steps = 0;
+            while (j < input_size && !is_url_stop(input_buffer[j]) && url_steps < INPUT_CAP) {
                 j++;
+                url_steps++;
             }
-            uint32_t url_len = j - start;
+            uint32_t url_end = trim_url_end(input_buffer, start, j);
+            uint32_t url_len = url_end - start;
+            if (url_len == 8) {
+                if (!write_slice(&out_idx, &c, 1)) return 0;
+                i++;
+                continue;
+            }
             if (!write_slice(&out_idx, (const unsigned char *)"<a href=\"", 9)) return 0;
             if (!write_escaped_attr(&out_idx, input_buffer + start, url_len)) return 0;
             if (!write_slice(&out_idx, (const unsigned char *)"\">", 2)) return 0;
             if (!write_slice(&out_idx, input_buffer + start, url_len)) return 0;
             if (!write_slice(&out_idx, (const unsigned char *)"</a>", 4)) return 0;
-            i = j;
+            i = url_end;
             continue;
         }
         if (!write_slice(&out_idx, &c, 1)) return 0;

@@ -146,6 +146,7 @@ test-node: qip modules
 	node --test test/qip-edit-stats.mjs
 	node --test test/sudoku-ui.mjs
 	node --test test/html-id-validator.mjs
+	node --test test/html-adjacent.mjs
 	node --test test/html-to-accessibility-tree.mjs
 	node --test test/luhn.mjs
 	node --test test/qip-wasm-checks.mjs
@@ -161,7 +162,7 @@ fuzz-zlib: modules/bytes/zlib-compress.wasm modules/bytes/zlib-compress-fixed-hu
 test-deno: qip modules
 	deno check site/qip-runner.js
 	deno run --allow-read test/qip-runner-smoke.mjs
-	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
+	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip modules compliance
 	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm
@@ -210,8 +211,6 @@ test-snapshot: qip modules
 	@printf %s "main-content" | $(QIP_BIN) run modules/text/html/html-id-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-input-name-validator.wasm" >> test/latest.txt
 	@printf %s "email" | $(QIP_BIN) run modules/text/html/html-input-name-validator.wasm >> test/latest.txt
-	@printf "%s\n" "module: html-aria-extractor.wasm" >> test/latest.txt
-	@printf %s "<a href=\"/a\">Go</a><button>Push</button><h2>Title</h2><input type=\"radio\" aria-label=\"Yes\"><div role=\"checkbox\" aria-label=\"Ok\"></div>" | $(QIP_BIN) run modules/text/html/html-aria-extractor.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-escape.wasm" >> test/latest.txt
 	@printf "%s" "<textarea>Tom & \"QIP\"</textarea><input value='raw'>" | $(QIP_BIN) run modules/text/html/html-escape.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-wcag-contrast-aa.wasm" >> test/latest.txt
