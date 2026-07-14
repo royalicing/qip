@@ -12,7 +12,7 @@ func TestNormalizeComplyArgs(t *testing.T) {
 		"a.wasm",
 		"--with",
 		"b.wasm",
-		"--timeout-ms",
+		"--seed",
 		"500",
 	}
 	got := normalizeComplyArgs(in)
@@ -21,7 +21,7 @@ func TestNormalizeComplyArgs(t *testing.T) {
 		"a.wasm",
 		"--with",
 		"b.wasm",
-		"--timeout-ms",
+		"--seed",
 		"500",
 		"impl.wasm",
 	}

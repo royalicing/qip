@@ -15,6 +15,17 @@ func New(ctx context.Context) wazero.Runtime {
 	return wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 }
 
+// NewRunToCompletion returns a runtime with no cancellation checkpoints:
+// module execution always runs to completion, so a non-terminating module
+// hangs the caller rather than timing out. `qip comply` uses this because
+// compliance is a question of correctness, not speed — a hang is a legible
+// verdict — and because WithCloseOnContextDone instrumentation miscompiles
+// some modules on the compiler backend (observed on darwin/arm64 with wazero
+// v1.11.0 and v1.12.0: a Zig-compiled store loop wrote wrong bytes).
+func NewRunToCompletion(ctx context.Context) wazero.Runtime {
+	return wazero.NewRuntime(ctx)
+}
+
 type executionTimeoutKey struct{}
 
 // WithExecutionTimeout returns a context with timeout and attaches the duration

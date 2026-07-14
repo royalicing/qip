@@ -21,8 +21,15 @@ qip: go.mod go.sum $(QIP_GO_DEPS)
 compliance/%.wasm: compliance/%.wat
 	wat2wasm $< -o $@
 
+compliance/unicode-17-lowercase.comply.wasm: compliance/unicode-17-lowercase.comply.zig compliance/unicode-17-lowercase-tables.zig compliance/unicode-17-lowercase-fixtures.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/unicode-17-uppercase.comply.wasm: compliance/unicode-17-uppercase.comply.zig compliance/unicode-17-uppercase-tables.zig compliance/unicode-17-uppercase-fixtures.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 compliance: $(patsubst compliance/%.wat,compliance/%.wasm,$(wildcard compliance/*.wat))
+compliance: compliance/unicode-17-lowercase.comply.wasm
+compliance: compliance/unicode-17-uppercase.comply.wasm
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
@@ -104,6 +111,9 @@ modules/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 modules/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 modules/image/png/png-to-bmp.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 
+modules/utf8/unicode-17-lowercase.wasm: modules/utf8/lib/unicode-17-lowercase-tables.zig modules/utf8/lib/utf8.zig
+modules/utf8/unicode-17-uppercase.wasm: modules/utf8/lib/unicode-17-uppercase-tables.zig modules/utf8/lib/utf8.zig
+
 modules/bytes/zlib-compress-dynamic-huffman-opt.wasm: modules/bytes/lib/deflate.zig
 modules/image/bmp/bmp-to-png.wasm: modules/image/bmp/lib/deflate.zig
 modules/bytes/zlib-decompress.wasm: modules/bytes/lib/inflate.zig modules/bytes/lib/deflate.zig
@@ -149,6 +159,9 @@ test-node: qip modules
 	node --test test/html-adjacent.mjs
 	node --test test/html-to-accessibility-tree.mjs
 	node --test test/luhn.mjs
+	node --test test/unicode-17-lowercase.mjs
+	node --test test/unicode-17-uppercase-comply.mjs
+	node --test test/unicode-17-lowercase-comply.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
 	node --test test/qip-wasm-policy.mjs
@@ -165,7 +178,9 @@ test-deno: qip modules
 	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip modules compliance
-	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm
+	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm --legacy
+	$(QIP_BIN) comply modules/utf8/unicode-17-lowercase.wasm --with compliance/unicode-17-lowercase.comply.wasm
+	$(QIP_BIN) comply modules/utf8/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
 
 test-snapshot: qip modules
 	@mkdir -p test
