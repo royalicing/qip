@@ -48,6 +48,7 @@ Format a decimal amount with currency selected by its ISO 4217 numeric code. Run
       <option value="fr-fr">fr-FR · French</option>
       <option value="pt-br">pt-BR · Brazilian Portuguese</option>
       <option value="ja-jp">ja-JP · Japanese</option>
+      <option value="zh-cn">zh-CN · Simplified Chinese</option>
     </select>
   </label>
   <label class="currency-field">
@@ -323,7 +324,8 @@ format();
 <section id="currency-cli-example">
 
 ```bash
-printf %s '1234567.895' | qip run modules/utf8/currency-format-en-us.wasm '?currency=840'
+go install github.com/royalicing/qip@latest
+printf %s '1234567.895' | qip run currency-format-en-us.wasm '?currency=840'
 # $1,234,567.90
 ```
 
@@ -366,6 +368,7 @@ The amount is ASCII decimal text, not a JavaScript `Number`, so the component pe
 - <a href="/components/utf8/currency-format-fr-fr.wasm" download>currency-format-fr-FR.wasm</a> — 2.39 kB
 - <a href="/components/utf8/currency-format-pt-br.wasm" download>currency-format-pt-BR.wasm</a> — 2.30 kB
 - <a href="/components/utf8/currency-format-ja-jp.wasm" download>currency-format-ja-JP.wasm</a> — 2.26 kB
+- <a href="/components/utf8/currency-format-zh-cn.wasm" download>currency-format-zh-CN.wasm</a> — 2.26 kB
 - <a href="/components/utf8/iso-4217-alpha-to-numeric.wasm" download>iso-4217-alpha-to-numeric.wasm</a> — 1.83 kB
 
 ## Details
@@ -381,10 +384,10 @@ Each locale has an independent `compliance/currency-format-<locale>.comply.wasm`
 The companion component converts all 178 current ISO 4217 alphabetic codes to three-digit ASCII numeric codes. It keeps leading zeroes, which are significant in the standard representation:
 
 ```bash
-printf %s AUD | qip run modules/utf8/iso-4217-alpha-to-numeric.wasm
+printf %s AUD | qip run iso-4217-alpha-to-numeric.wasm
 # 036
 
-printf %s BHD | qip run modules/utf8/iso-4217-alpha-to-numeric.wasm
+printf %s BHD | qip run iso-4217-alpha-to-numeric.wasm
 # 048
 ```
 

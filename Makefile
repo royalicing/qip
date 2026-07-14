@@ -54,6 +54,9 @@ compliance/currency-format-pt-br.comply.wasm: compliance/currency-format-pt-br.c
 compliance/currency-format-ja-jp.comply.wasm: compliance/currency-format-ja-jp.comply.zig compliance/currency-format-ja-jp-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/currency-format-zh-cn.comply.wasm: compliance/currency-format-zh-cn.comply.zig compliance/currency-format-zh-cn-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 modules/utf8/currency-format-en-us.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 modules/utf8/currency-format-en-us.wasm: modules/utf8/lib/currency-format-en-us-table.zig
 modules/utf8/currency-format-en-in.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
@@ -70,6 +73,8 @@ modules/utf8/currency-format-pt-br.wasm: ZIG_WASM_FLAGS += --stack 1024 --global
 modules/utf8/currency-format-pt-br.wasm: modules/utf8/lib/currency-format-pt-br-table.zig
 modules/utf8/currency-format-ja-jp.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 modules/utf8/currency-format-ja-jp.wasm: modules/utf8/lib/currency-format-ja-jp-table.zig
+modules/utf8/currency-format-zh-cn.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+modules/utf8/currency-format-zh-cn.wasm: modules/utf8/lib/currency-format-zh-cn-table.zig
 
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -86,6 +91,7 @@ compliance: compliance/currency-format-ar-eg.comply.wasm
 compliance: compliance/currency-format-fr-fr.comply.wasm
 compliance: compliance/currency-format-pt-br.comply.wasm
 compliance: compliance/currency-format-ja-jp.comply.wasm
+compliance: compliance/currency-format-zh-cn.comply.wasm
 compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
@@ -229,6 +235,7 @@ test-node: qip modules
 	node --test test/currency-format-fr-fr-comply.mjs
 	node --test test/currency-format-pt-br-comply.mjs
 	node --test test/currency-format-ja-jp-comply.mjs
+	node --test test/currency-format-zh-cn-comply.mjs
 	node --test test/iso-4217-alpha-to-numeric-comply.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
@@ -258,6 +265,7 @@ test-comply: qip modules compliance
 	$(QIP_BIN) comply modules/utf8/currency-format-fr-fr.wasm --with compliance/currency-format-fr-fr.comply.wasm
 	$(QIP_BIN) comply modules/utf8/currency-format-pt-br.wasm --with compliance/currency-format-pt-br.comply.wasm
 	$(QIP_BIN) comply modules/utf8/currency-format-ja-jp.wasm --with compliance/currency-format-ja-jp.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
 	$(QIP_BIN) comply modules/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 
 test-snapshot: qip modules
