@@ -33,8 +33,28 @@ compliance/currency-format-usd-en-us.comply.wasm: compliance/currency-format-usd
 compliance/currency-format-en-us.comply.wasm: compliance/currency-format-en-us.comply.zig compliance/currency-format-en-us-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/currency-format-en-in.comply.wasm: compliance/currency-format-en-in.comply.zig compliance/currency-format-en-in-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/currency-format-es-es.comply.wasm: compliance/currency-format-es-es.comply.zig compliance/currency-format-es-es-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/currency-format-de-de.comply.wasm: compliance/currency-format-de-de.comply.zig compliance/currency-format-de-de-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/currency-format-ar-eg.comply.wasm: compliance/currency-format-ar-eg.comply.zig compliance/currency-format-ar-eg-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 modules/utf8/currency-format-en-us.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 modules/utf8/currency-format-en-us.wasm: modules/utf8/lib/currency-format-en-us-table.zig
+modules/utf8/currency-format-en-in.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+modules/utf8/currency-format-en-in.wasm: modules/utf8/lib/currency-format-en-in-table.zig
+modules/utf8/currency-format-es-es.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+modules/utf8/currency-format-es-es.wasm: modules/utf8/lib/currency-format-es-es-table.zig
+modules/utf8/currency-format-de-de.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+modules/utf8/currency-format-de-de.wasm: modules/utf8/lib/currency-format-de-de-table.zig
+modules/utf8/currency-format-ar-eg.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+modules/utf8/currency-format-ar-eg.wasm: modules/utf8/lib/currency-format-ar-eg-table.zig
 
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -44,6 +64,10 @@ compliance: compliance/unicode-17-lowercase.comply.wasm
 compliance: compliance/unicode-17-uppercase.comply.wasm
 compliance: compliance/currency-format-usd-en-us.comply.wasm
 compliance: compliance/currency-format-en-us.comply.wasm
+compliance: compliance/currency-format-en-in.comply.wasm
+compliance: compliance/currency-format-es-es.comply.wasm
+compliance: compliance/currency-format-de-de.comply.wasm
+compliance: compliance/currency-format-ar-eg.comply.wasm
 compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
@@ -180,6 +204,10 @@ test-node: qip modules
 	node --test test/unicode-17-lowercase-comply.mjs
 	node --test test/currency-format-usd-en-us-comply.mjs
 	node --test test/currency-format-en-us-comply.mjs
+	node --test test/currency-format-en-in-comply.mjs
+	node --test test/currency-format-es-es-comply.mjs
+	node --test test/currency-format-de-de-comply.mjs
+	node --test test/currency-format-ar-eg-comply.mjs
 	node --test test/iso-4217-alpha-to-numeric-comply.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
@@ -202,6 +230,10 @@ test-comply: qip modules compliance
 	$(QIP_BIN) comply modules/utf8/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
 	$(QIP_BIN) comply modules/utf8/currency-format-usd-en-us.wasm --with compliance/currency-format-usd-en-us.comply.wasm
 	$(QIP_BIN) comply modules/utf8/currency-format-en-us.wasm --with compliance/currency-format-en-us.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-en-in.wasm --with compliance/currency-format-en-in.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-es-es.wasm --with compliance/currency-format-es-es.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-de-de.wasm --with compliance/currency-format-de-de.comply.wasm
+	$(QIP_BIN) comply modules/utf8/currency-format-ar-eg.wasm --with compliance/currency-format-ar-eg.comply.wasm
 	$(QIP_BIN) comply modules/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 
 test-snapshot: qip modules
