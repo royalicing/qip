@@ -662,7 +662,7 @@ func TestResolveRecipeSourceResponse(t *testing.T) {
 }
 
 func TestRunDelayedStdinDoesNotFailExportResolution(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=TestHelperRunModuleCLI", "--", "examples/html-aria-extractor.wasm")
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperRunModuleCLI", "--", "examples/html-link-extractor.wasm")
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 
 	stdin, err := cmd.StdinPipe()
@@ -689,7 +689,7 @@ func TestRunDelayedStdinDoesNotFailExportResolution(t *testing.T) {
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("helper failed: %v\nstderr: %s\nstdout: %s", err, stderr.String(), stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "link: X") {
+	if !strings.Contains(stdout.String(), "/x X") {
 		t.Fatalf("unexpected output: %q", stdout.String())
 	}
 }
@@ -1124,11 +1124,11 @@ func TestContentTypeCheckingModesForRunModule(t *testing.T) {
 	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
-	compiled := compileWasmModuleForTest(t, ctx, runtime, "examples/html-aria-extractor.wasm")
+	compiled := compileWasmModuleForTest(t, ctx, runtime, "examples/html-link-extractor.wasm")
 	defer compiled.Close(ctx)
 
 	input := []byte(`<a href="/x">X</a>`)
-	moduleName := "test-html-aria"
+	moduleName := "test-html-link-extractor"
 
 	_, err := executeModuleWithInput(
 		ctx,
