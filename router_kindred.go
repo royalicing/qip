@@ -1,0 +1,166 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+
+	qinternal "github.com/royalicing/qip/internal"
+)
+
+func resolveDevBaseRouteResponse(ctx context.Context, current *RouterServerState, requestPath string, requestID uint64, timeouts routeHandlerTimeouts) (qinternal.InProcessHTTPResponse, bool, error) {
+	if current == nil {
+		return qinternal.InProcessHTTPResponse{}, false, errors.New("runtime state is unavailable")
+	}
+	route, ok := qinternal.ResolveContentRoute(current.contentRoutes, requestPath, current.routeOptions)
+	if !ok {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	}
+	contentRead := current.contentRead
+	if contentRead == nil {
+		contentRead = func(_ context.Context, route qinternal.ContentRoute) ([]byte, error) {
+			return os.ReadFile(route.FilePath)
+		}
+	}
+	inputBytes, err := contentRead(ctx, route)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	if route.SourceMIME == "text/uri-list" {
+		location, ok := firstURIListTarget(inputBytes)
+		if !ok {
+			return qinternal.InProcessHTTPResponse{}, false, fmt.Errorf("%s: text/uri-list missing redirect target", route.FilePath)
+		}
+		return qinternal.InProcessHTTPResponse{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{location}},
+		}, true, nil
+	}
+
+	hasRecipes := shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains)
+	var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
+	if hasRecipes {
+		pipeline := current.recipeChains[route.SourceMIME]
+		execCtx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
+		defer cancel()
+		result, err = pipeline.Process(execCtx, result, requestID)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, false, err
+		}
+	}
+	result, body, err := ensureRawContent(result)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	contentType := devResponseContentType(route.SourceMIME, hasRecipes, result, body)
+	if strings.HasPrefix(contentType, "text/html") {
+		body, _, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, false, err
+		}
+		body = injectQIPEditRuntime(body)
+		body = injectQIPPlayRuntime(body)
+	}
+	return qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       body,
+	}, true, nil
+}
+
+func resolveKindredStaticRoute(ctx context.Context, current *RouterServerState, requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+	if current == nil {
+		return qinternal.InProcessHTTPResponse{}, false, errors.New("runtime state is unavailable")
+	}
+	if asset, ok := current.componentAssets[requestPath]; ok {
+		return qinternal.InProcessHTTPResponse{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{asset.contentType}},
+			Body:       asset.body,
+		}, true, nil
+	}
+
+	route, ok := qinternal.ResolveContentRoute(current.contentRoutes, requestPath, current.routeOptions)
+	if !ok {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	}
+	sourceMIME := mediaTypeOnly(route.SourceMIME)
+	if route.SourceMIME == "text/uri-list" || sourceMIME == "text/html" || sourceMIME == "application/xhtml+xml" || shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains) {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	}
+	contentRead := current.contentRead
+	if contentRead == nil {
+		contentRead = func(_ context.Context, route qinternal.ContentRoute) ([]byte, error) {
+			return os.ReadFile(route.FilePath)
+		}
+	}
+	body, err := contentRead(ctx, route)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	contentType := route.SourceMIME
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	} else if strings.HasPrefix(contentType, "text/") {
+		contentType += "; charset=utf-8"
+	}
+	return qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       body,
+	}, true, nil
+}
+
+func transformRouteResponseWithKindredRoutes(
+	ctx context.Context,
+	pipeline *qinternal.Pipeline,
+	requestPath string,
+	response qinternal.InProcessHTTPResponse,
+	requestID uint64,
+	resolveParent qinternal.KindredRouteResolver,
+	resolveStatic qinternal.KindredRouteResolver,
+) (qinternal.InProcessHTTPResponse, error) {
+	if pipeline == nil {
+		return response, nil
+	}
+	requestURI := buildWARCRequestURI("qip.local", requestPath)
+	archive, err := buildKindredWARCArchive(requestPath, response, resolveParent, resolveStatic)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, err
+	}
+
+	transformedWARC, err := processApplicationWARCArchive(ctx, pipeline, archive, requestID)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, err
+	}
+	transformedResponse, err := extractWARCResponseRecordByTargetURI(transformedWARC, requestURI)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to parse transformed WARC response for %q: %w", requestPath, err)
+	}
+	return transformedResponse, nil
+}
+
+func buildKindredWARCArchive(
+	requestPath string,
+	response qinternal.InProcessHTTPResponse,
+	resolveParent qinternal.KindredRouteResolver,
+	resolveStatic qinternal.KindredRouteResolver,
+) ([]byte, error) {
+	routes, err := qinternal.KindredRoutes(requestPath, response, resolveParent, resolveStatic)
+	if err != nil {
+		return nil, err
+	}
+	var archive bytes.Buffer
+	for _, route := range routes {
+		record, err := buildMinimalWARCResponseRecord(buildWARCRequestURI("qip.local", route.RequestPath), route.Response)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build Kindred Route WARC record for %q: %w", route.RequestPath, err)
+		}
+		archive.Write(record)
+	}
+	return archive.Bytes(), nil
+}

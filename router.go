@@ -156,18 +156,15 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	componentsRoot = projectConfig.ComponentsRoot
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
 	if err != nil {
 		gameOver("%v", err)
 	}
-	var stateMu sync.RWMutex
+	stateSlot := newRouterServerStateSlot(state)
 	defer func() {
-		stateMu.Lock()
-		current := state
-		state = nil
-		stateMu.Unlock()
+		current := stateSlot.clear()
 		if current != nil {
-			closePipelines(context.Background(), current.recipeChains)
+			current.close(context.Background())
 		}
 	}()
 
@@ -175,7 +172,7 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		contentRecipe:   defaultRouteRecipeTimeout,
 		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
-	handler := newDevRequestHandler(logPrefix, &stateMu, &state, nil, nil, routeOptions, handlerTimeouts)
+	handler := newDevRequestHandler(logPrefix, stateSlot, nil, nil, routeOptions, handlerTimeouts)
 	requestCtx := context.Background()
 	var traceRecorder *routeTraceRecorder
 	if routeVerbose {
@@ -266,11 +263,11 @@ func routeListCmd(args []string) {
 	componentsRoot = projectConfig.ComponentsRoot
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
 	if err != nil {
 		gameOver("%v", err)
 	}
-	defer closePipelines(context.Background(), state.recipeChains)
+	defer state.close(context.Background())
 
 	entries := buildRouteListEntries(state)
 	for _, entry := range entries {
@@ -278,7 +275,7 @@ func routeListCmd(args []string) {
 	}
 }
 
-func buildRouteListEntries(state *devRuntimeState) []routeListEntry {
+func buildRouteListEntries(state *RouterServerState) []routeListEntry {
 	if state == nil {
 		return nil
 	}
@@ -404,7 +401,7 @@ func routerCmd(args []string) {
 	}
 
 	type routeRuntime struct {
-		state        *devRuntimeState
+		state        *RouterServerState
 		routeOptions qinternal.RouteOptions
 	}
 	handlerTimeouts := routeHandlerTimeouts{
@@ -440,7 +437,7 @@ func routerCmd(args []string) {
 		}
 
 		routeOptions := qinternal.DefaultRouteOptions()
-		state, err := loadDevRuntimeState(ctx, request.ContentRoot, projectConfig.RecipesRoot, projectConfig.FormsRoot, projectConfig.ComponentsRoot, opts, routeOptions)
+		state, err := loadRouterServerState(ctx, request.ContentRoot, projectConfig.RecipesRoot, projectConfig.FormsRoot, projectConfig.ComponentsRoot, opts, routeOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -456,7 +453,7 @@ func routerCmd(args []string) {
 		if runtime == nil || runtime.state == nil {
 			return
 		}
-		closePipelines(context.Background(), runtime.state.recipeChains)
+		runtime.state.close(context.Background())
 		runtime.state = nil
 	}()
 

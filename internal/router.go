@@ -2,11 +2,121 @@ package qinternal
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+const maxKindredStaticRoutes = 256
+
+type KindredRouteResolver func(requestPath string) (InProcessHTTPResponse, bool, error)
+
+type KindredRoute struct {
+	RequestPath string
+	Response    InProcessHTTPResponse
+}
+
+// KindredRoutes returns the routes available to an application/warc recipe for
+// one routed response. Parents provide layout ancestry. Direct site-relative
+// src references provide sibling resources when they resolve to eligible
+// non-HTML routes. Routes are included once and are not scanned recursively.
+func KindredRoutes(
+	requestPath string,
+	response InProcessHTTPResponse,
+	resolveParent KindredRouteResolver,
+	resolveStatic KindredRouteResolver,
+) ([]KindredRoute, error) {
+	routes := make([]KindredRoute, 0)
+	seen := make(map[string]struct{})
+
+	for _, parentPath := range kindredParentRoutePaths(requestPath) {
+		canonical, _ := CanonicalRequestPath(parentPath, DefaultRouteOptions())
+		if canonical == requestPath {
+			continue
+		}
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		if resolveParent == nil {
+			continue
+		}
+		parentResponse, ok, err := resolveParent(canonical)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || parentResponse.StatusCode != http.StatusOK || !isHTMLMediaType(parentResponse.Header.Get("Content-Type")) {
+			continue
+		}
+		routes = append(routes, KindredRoute{RequestPath: canonical, Response: parentResponse})
+	}
+
+	if response.StatusCode == http.StatusOK && isHTMLMediaType(response.Header.Get("Content-Type")) && resolveStatic != nil {
+		staticRouteCount := 0
+		for _, sourcePath := range prescanHTMLSourcePaths(response.Body, requestPath) {
+			canonical, _ := CanonicalRequestPath(sourcePath, DefaultRouteOptions())
+			if canonical == requestPath {
+				continue
+			}
+			if _, ok := seen[canonical]; ok {
+				continue
+			}
+			seen[canonical] = struct{}{}
+			staticRouteCount++
+			if staticRouteCount > maxKindredStaticRoutes {
+				return nil, fmt.Errorf("HTML for %q references more than %d Kindred Routes", requestPath, maxKindredStaticRoutes)
+			}
+			staticResponse, ok, err := resolveStatic(canonical)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || staticResponse.StatusCode != http.StatusOK || isHTMLMediaType(staticResponse.Header.Get("Content-Type")) {
+				continue
+			}
+			routes = append(routes, KindredRoute{RequestPath: canonical, Response: staticResponse})
+		}
+	}
+
+	routes = append(routes, KindredRoute{RequestPath: requestPath, Response: response})
+	return routes, nil
+}
+
+func isHTMLMediaType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil {
+		mediaType = strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])
+	}
+	switch strings.ToLower(mediaType) {
+	case "text/html", "application/xhtml+xml":
+		return true
+	default:
+		return false
+	}
+}
+
+func kindredParentRoutePaths(requestPath string) []string {
+	canonical, _ := CanonicalRequestPath(requestPath, DefaultRouteOptions())
+	if canonical == "" {
+		canonical = "/"
+	}
+	out := []string{"/"}
+	if canonical == "/" {
+		return out
+	}
+	trimmed := strings.Trim(canonical, "/")
+	if trimmed == "" {
+		return out
+	}
+	parts := strings.Split(trimmed, "/")
+	var prefix strings.Builder
+	for i := 0; i < len(parts)-1; i++ {
+		prefix.WriteString("/" + parts[i])
+		out = append(out, prefix.String())
+	}
+	return out
+}
 
 const ReservedRecipesDir = "_recipes"
 const ReservedFormsDir = "_forms"

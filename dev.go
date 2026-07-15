@@ -90,21 +90,18 @@ func devCmd(args []string) {
 	}()
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
 	if err != nil {
 		_ = listener.Close()
 		removeDevServerIdentity(port, devIdentity)
 		gameOver("%v", err)
 	}
-	var stateMu sync.RWMutex
+	stateSlot := newRouterServerStateSlot(state)
 	var reloadMu sync.Mutex
-	swapRuntimeState := func(nextState *devRuntimeState) {
-		stateMu.Lock()
-		previous := state
-		state = nextState
-		stateMu.Unlock()
+	swapRuntimeState := func(nextState *RouterServerState) {
+		previous := stateSlot.swap(nextState)
 		if previous != nil {
-			closePipelines(context.Background(), previous.recipeChains)
+			previous.close(context.Background())
 		}
 	}
 	reloadRuntimeState := func(reason string) {
@@ -112,7 +109,7 @@ func devCmd(args []string) {
 		defer reloadMu.Unlock()
 
 		reloadStart := time.Now()
-		nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+		nextState, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
 		if err != nil {
 			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
 			return
@@ -135,16 +132,16 @@ func devCmd(args []string) {
 			return
 		}
 
-		stateMu.RLock()
-		currentStamps := state.recipeStamps
+		stateSlot.mu.RLock()
+		currentStamps := stateSlot.state.recipeStamps
 		unchanged := recipeModuleStampsEqual(currentStamps, stamps)
-		stateMu.RUnlock()
+		stateSlot.mu.RUnlock()
 		if unchanged {
 			return
 		}
 
 		reloadStart := time.Now()
-		nextState, err := loadDevRuntimeState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+		nextState, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
 		if err != nil {
 			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
 			return
@@ -155,12 +152,9 @@ func devCmd(args []string) {
 	}
 
 	defer func() {
-		stateMu.Lock()
-		current := state
-		state = nil
-		stateMu.Unlock()
+		current := stateSlot.clear()
 		if current != nil {
-			closePipelines(context.Background(), current.recipeChains)
+			current.close(context.Background())
 		}
 	}()
 
@@ -189,7 +183,7 @@ func devCmd(args []string) {
 		reloadRuntimeState("request_hard_reload")
 	}
 
-	handler := newDevRequestHandler("dev", &stateMu, &state, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
+	handler := newDevRequestHandler("dev", stateSlot, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
 	handlerWithIdentity := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/.qip/dev-server" {
 			w.Header().Set("Content-Type", "application/json")
