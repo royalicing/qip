@@ -37,6 +37,40 @@ The properties worth proving, roughly in order of value per effort:
 
 One determinism footnote the profile doesn't currently cover: wasm NaN *bit patterns* are nondeterministic across engines. A component that stores raw float results into output bytes can violate "same input, same output" across hosts. Either ban float→byte flows in the strict profile, require NaN canonicalization, or document it.
 
+### The render obligations — candidate formal contract
+
+The informal list above is prioritization; this is the candidate *canonical obligation list* — the machine-readable form of the contract that the conformance suite, the harness generator, and the proofs should all reference. Notation: `ip`/`ic` = input pointer/cap, `op`/`oc` = output pointer/cap, `N` = linear memory size, `n` = input size, `m` = render's return value.
+
+Two-level input quantification, which keeps O3 falsifiable: an input is **permitted** when `n ≤ ic` (a host-level size fact), and **valid** when it satisfies the component's *declared validity predicate* (a component-level content fact, e.g. "well-formed UTF-8" — which must be machine-readable per component, else every trap can be retroactively excused as "the input must have been invalid" and a bug is indistinguishable from a rejection).
+
+For every permitted input and every uniform assignment within declared ranges:
+
+- **O1 — Region well-formedness.** `ip + ic ≤ N` and `op + oc ≤ N`, with no 32-bit wraparound in either sum. Statically checkable at load time — the exports are constant functions — so this belongs in `wasm-safety-check`, not only in proofs.
+- **O2 — Bounded termination.** `render(n)` terminates within the declared execution budget (the fuel bound from the certificate story below).
+- **O3 — Total or honestly partial.** `render` either (a) traps, and the input violates the declared validity predicate; or (b) returns `m ≤ oc`.
+- **O4 — No memory-access traps.** Every load and store is provably in bounds. (Wasm semantics already guarantee containment — an out-of-bounds access traps rather than escapes — so "stays in linear memory" is a tautology at runtime; the verification property is the *absence of the trap*, which is what keeps O3(b) reachable.)
+- **O5 — Write-set discipline.** Stores land only in the declared output, scratch, and explicit persistent-state regions.
+- **O6 — Information-flow discipline.** `output[0:m]` depends only on `input[0:n]`, explicit uniforms, declared persistent state, and immutable module data. The `[0:n]` slice matters: stale bytes between `n` and `ic` left by a previous longer render must not influence output — exactly what the sentinel-byte test in the noninterference section detects.
+- **O7 — Deterministic replay.** Repeating the call from an equivalent pre-state produces equivalent output and equivalent observable post-state, where *equivalent* means byte-equality over declared regions with scratch excluded. Scoped per-engine; cross-engine is O8.
+- **O8 — Cross-host determinism.** O7's equality holds across conforming engines. This is where NaN bit-pattern nondeterminism lives: a component can satisfy O7 on every engine individually while violating O8. Discharged by banning float→byte flows, requiring NaN canonicalization, or proving floats never reach output.
+
+O5 and O6 factor cleanly: O5 restricts *where writes go*, O6 restricts *where information flows from* — loads need no restriction because O6 already bounds their influence.
+
+Two consequences for the existing contract, both new surface:
+
+1. **O5 requires region declarations that don't exist yet.** Today's contract declares only input and output regions; scratch and persistent state would need exports (`scratch_ptr`/`scratch_cap`, …) or a custom section. It also collides with [drafts/output-slice-optimization.md](output-slice-optimization.md): in-place output has `output_ptr` aliasing the input buffer, so "stores limited to declared output" and "input is host-owned" must be reconciled by declaration (e.g. the input region is declared writable-after-read for aliasing components).
+2. **O6's "declared persistent state" quietly legalizes stateful components** (memoizers, caches). Fine — but that state must then appear in O7's pre-state definition and in the conformance tests, or the statefulness is unobservable and unverifiable.
+
+### Open contract decisions (blockers, not caveats)
+
+Three of the obligations can't be checked until a contract decision is made. Each blocks a specific downstream artifact:
+
+1. **Validity-predicate format** (for O3a). How does a component declare what inputs it rejects — a named predicate in a custom section? a companion spec file? a reserved export? *Blocks:* the generated conformance harness (can't distinguish bug-trap from rejection-trap) and any "no traps for valid input" proof.
+2. **Region declarations** (for O5/O6). How do components declare scratch and persistent-state regions, and how does the declaration reconcile with in-place output aliasing? *Blocks:* the write-set assertions in both the Owi harness and the instrumenter's runtime-verification mode, and consequence 2's stateful-component testing.
+3. **Float determinism policy** (for O8). Ban float→byte flows in the strict profile, require NaN canonicalization, or accept per-engine scope and document it? *Blocks:* honest wording of the cross-host determinism claim, and decides whether the cross-engine differential suite treats NaN-payload diffs as failures.
+
+Simplest defaults if deciding today: (1) start with a small enum of named predicates (`any-bytes`, `utf8`, `wasm`, …) in a custom section, growing as needed; (2) two optional exports mirroring the existing `*_ptr`/`*_cap` convention, with aliasing declared rather than inferred; (3) canonicalize NaNs at the component boundary — it's the only option that keeps O8 both true and checkable.
+
 ## Ladder 1 — Existing tooling against component wasm
 
 ### Source-level (verify what you wrote)
@@ -117,12 +151,13 @@ Related cheap win: differential-test the Zig component against `internal/wasmins
 
 ### 6. Contract-conformance suite generated from a machine-readable contract
 
-The component contract (call `render` before `output_ptr`, return current not cumulative length, repeated renders must be deliberate, content-type composition rules) lives as prose. Writing it as precise property definitions lets one generated harness run against *every* module in the catalog:
+The component contract (call `render` before `output_ptr`, return current not cumulative length, repeated renders must be deliberate, content-type composition rules) lives as prose. The render obligations O1–O8 above are the precise form; one generated harness can then test their observable faces against *every* module in the catalog:
 
-- render twice with same input → same bytes;
-- render A, B, A → third output equals the first (catches state leaks between renders, which the contract explicitly worries about);
-- returned length ≤ output cap;
-- trap rather than truncate on overflow.
+- render twice with same input → same bytes (O7);
+- render A, B, A → third output equals the first (O6/O7 — catches state leaks between renders, which the contract explicitly worries about);
+- returned length ≤ output cap (O3b);
+- trap rather than truncate on overflow (O3a);
+- sentinel bytes beyond `input_size` never surface in output (O6's `[0:n]` slice).
 
 One harness, whole catalog, runs forever in CI. This also gives the Go CLI and the JavaScript runner a shared host-side conformance target.
 
@@ -161,7 +196,7 @@ QIP bounds memory (fixed), time (loop bounds → fuel), and I/O (caps), but not 
 
 ### Cross-render noninterference
 
-The contract lets hosts reuse one instance across many renders, and Zig components use `undefined` static buffers — so can bytes from render N−1 leak into render N's output via a stale-length bug or uninitialized scratch? In a pipeline pushing different users' data through a shared instance, that's an information-disclosure bug class. Testable now: render sentinel-filled input A, then short input B; scan B's output for A's bytes, across the whole corpus. Provable later: noninterference is exactly what the [Iris-Wasm](https://dl.acm.org/doi/abs/10.1145/3591265) line formalizes. This upgrades the idempotence property from "same output for same input" to "output depends *only* on current input and uniforms."
+The contract lets hosts reuse one instance across many renders, and Zig components use `undefined` static buffers — so can bytes from render N−1 leak into render N's output via a stale-length bug or uninitialized scratch? In a pipeline pushing different users' data through a shared instance, that's an information-disclosure bug class. Testable now: render sentinel-filled input A, then short input B; scan B's output for A's bytes, across the whole corpus. Provable later: noninterference is exactly what the [Iris-Wasm](https://dl.acm.org/doi/abs/10.1145/3591265) line formalizes. This is obligation **O6** — the upgrade from "same output for same input" (O7) to "output depends *only* on `input[0:n]`, uniforms, and declared persistent state."
 
 ### Evidence bundles — what enterprise procurement actually buys
 
