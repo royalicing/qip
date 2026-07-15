@@ -75,8 +75,16 @@ modules/utf8/currency-format-ja-jp.wasm: ZIG_WASM_FLAGS += --stack 1024 --global
 modules/utf8/currency-format-ja-jp.wasm: modules/utf8/lib/currency-format-ja-jp-table.zig
 modules/utf8/currency-format-zh-cn.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 modules/utf8/currency-format-zh-cn.wasm: modules/utf8/lib/currency-format-zh-cn-table.zig
+modules/image/svg+xml/svg-to-data-uri.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+modules/text/uri-list/data-uri-to-css-url.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/svg-to-data-uri.comply.wasm: compliance/svg-to-data-uri.comply.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+compliance/data-uri-to-css-url.comply.wasm: compliance/data-uri-to-css-url.comply.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 compliance: $(patsubst compliance/%.wat,compliance/%.wasm,$(wildcard compliance/*.wat))
@@ -93,6 +101,8 @@ compliance: compliance/currency-format-pt-br.comply.wasm
 compliance: compliance/currency-format-ja-jp.comply.wasm
 compliance: compliance/currency-format-zh-cn.comply.wasm
 compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
+compliance: compliance/svg-to-data-uri.comply.wasm
+compliance: compliance/data-uri-to-css-url.comply.wasm
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
@@ -267,6 +277,8 @@ test-comply: qip modules compliance
 	$(QIP_BIN) comply modules/utf8/currency-format-ja-jp.wasm --with compliance/currency-format-ja-jp.comply.wasm
 	$(QIP_BIN) comply modules/utf8/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
 	$(QIP_BIN) comply modules/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
+	$(QIP_BIN) comply modules/image/svg+xml/svg-to-data-uri.wasm --with compliance/svg-to-data-uri.comply.wasm
+	$(QIP_BIN) comply modules/text/uri-list/data-uri-to-css-url.wasm --with compliance/data-uri-to-css-url.comply.wasm
 
 test-snapshot: qip modules
 	@mkdir -p test
