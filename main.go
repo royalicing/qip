@@ -2521,6 +2521,8 @@ func newDevRequestHandler(logPrefix string, stateMu *sync.RWMutex, state **devRu
 				defer cancel()
 				response, err = transformRouteResponseWithApplicationWARCContext(ctx, applicationWARCPipeline, r.URL.Path, response, reqID, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
 					return resolveDevBaseRouteResponse(ctx, current, requestPath, reqID, timeouts)
+				}, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+					return resolveDevStaticAssetResponse(ctx, current, requestPath)
 				})
 				if err != nil {
 					stateMu.RUnlock()
@@ -3153,6 +3155,14 @@ func processApplicationWARCArchive(ctx context.Context, pipeline *qinternal.Pipe
 }
 
 type devBaseRouteResolver func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error)
+type devStaticAssetResolver func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error)
+
+type contextualWARCResource struct {
+	requestPath string
+	response    qinternal.InProcessHTTPResponse
+}
+
+const maxContextualWARCStaticAssets = 256
 
 func resolveDevBaseRouteResponse(ctx context.Context, current *devRuntimeState, requestPath string, requestID uint64, timeouts routeHandlerTimeouts) (qinternal.InProcessHTTPResponse, bool, error) {
 	if current == nil {
@@ -3214,6 +3224,48 @@ func resolveDevBaseRouteResponse(ctx context.Context, current *devRuntimeState, 
 	}, true, nil
 }
 
+func resolveDevStaticAssetResponse(ctx context.Context, current *devRuntimeState, requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+	if current == nil {
+		return qinternal.InProcessHTTPResponse{}, false, errors.New("runtime state is unavailable")
+	}
+	if asset, ok := current.componentAssets[requestPath]; ok {
+		if isHTMLMediaType(asset.contentType) {
+			return qinternal.InProcessHTTPResponse{}, false, nil
+		}
+		return qinternal.InProcessHTTPResponse{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{asset.contentType}},
+			Body:       asset.body,
+		}, true, nil
+	}
+
+	route, ok := qinternal.ResolveContentRoute(current.contentRoutes, requestPath, current.routeOptions)
+	if !ok || route.SourceMIME == "text/uri-list" || isHTMLMediaType(route.SourceMIME) || shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains) {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	}
+	contentRead := current.contentRead
+	if contentRead == nil {
+		contentRead = func(_ context.Context, route qinternal.ContentRoute) ([]byte, error) {
+			return os.ReadFile(route.FilePath)
+		}
+	}
+	body, err := contentRead(ctx, route)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	contentType := route.SourceMIME
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	} else if strings.HasPrefix(contentType, "text/") {
+		contentType += "; charset=utf-8"
+	}
+	return qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       body,
+	}, true, nil
+}
+
 func transformRouteResponseWithApplicationWARC(
 	ctx context.Context,
 	pipeline *qinternal.Pipeline,
@@ -3247,12 +3299,61 @@ func transformRouteResponseWithApplicationWARCContext(
 	response qinternal.InProcessHTTPResponse,
 	requestID uint64,
 	resolveBase devBaseRouteResolver,
+	resolveStatic devStaticAssetResolver,
 ) (qinternal.InProcessHTTPResponse, error) {
 	if pipeline == nil {
 		return response, nil
 	}
 	requestURI := buildWARCRequestURI("qip.local", requestPath)
+	archive, err := buildContextualWARCArchive(requestPath, response, resolveBase, resolveStatic)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, err
+	}
+
+	transformedWARC, err := processApplicationWARCArchive(ctx, pipeline, archive, requestID)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, err
+	}
+	transformedResponse, err := extractWARCResponseRecordByTargetURI(transformedWARC, requestURI)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to parse transformed WARC response for %q: %w", requestPath, err)
+	}
+	return transformedResponse, nil
+}
+
+func buildContextualWARCArchive(
+	requestPath string,
+	response qinternal.InProcessHTTPResponse,
+	resolveBase devBaseRouteResolver,
+	resolveStatic devStaticAssetResolver,
+) ([]byte, error) {
+	resources, err := contextualWARCResources(requestPath, response, resolveBase, resolveStatic)
+	if err != nil {
+		return nil, err
+	}
 	var archive bytes.Buffer
+	for _, resource := range resources {
+		record, err := buildMinimalWARCResponseRecord(buildWARCRequestURI("qip.local", resource.requestPath), resource.response)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build WARC context record for %q: %w", resource.requestPath, err)
+		}
+		archive.Write(record)
+	}
+	return archive.Bytes(), nil
+}
+
+// contextualWARCResources returns the records available to an application/warc
+// recipe for one routed response. It includes HTML ancestors, direct site-relative
+// src references that resolve to untransformed non-HTML filesystem assets, and
+// the requested response. References are resolved like browser URLs, included
+// once, and are not scanned recursively.
+func contextualWARCResources(
+	requestPath string,
+	response qinternal.InProcessHTTPResponse,
+	resolveBase devBaseRouteResolver,
+	resolveStatic devStaticAssetResolver,
+) ([]contextualWARCResource, error) {
+	resources := make([]contextualWARCResource, 0)
 	seen := make(map[string]struct{})
 
 	for _, contextPath := range contextualWARCRequestPaths(requestPath) {
@@ -3269,33 +3370,258 @@ func transformRouteResponseWithApplicationWARCContext(
 		}
 		contextResponse, ok, err := resolveBase(canonical)
 		if err != nil {
-			return qinternal.InProcessHTTPResponse{}, err
+			return nil, err
 		}
-		if !ok || contextResponse.StatusCode != http.StatusOK || !strings.HasPrefix(mediaTypeOnly(contextResponse.Header.Get("Content-Type")), "text/html") {
+		if !ok || contextResponse.StatusCode != http.StatusOK || !isHTMLMediaType(contextResponse.Header.Get("Content-Type")) {
 			continue
 		}
-		record, err := buildMinimalWARCResponseRecord(buildWARCRequestURI("qip.local", canonical), contextResponse)
-		if err != nil {
-			return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to build WARC context record for %q: %w", canonical, err)
+		resources = append(resources, contextualWARCResource{requestPath: canonical, response: contextResponse})
+	}
+
+	if response.StatusCode == http.StatusOK && isHTMLMediaType(response.Header.Get("Content-Type")) && resolveStatic != nil {
+		assetCount := 0
+		for _, assetPath := range scanHTMLSourcePaths(response.Body, requestPath) {
+			canonical, _ := qinternal.CanonicalRequestPath(assetPath, qinternal.DefaultRouteOptions())
+			if canonical == requestPath {
+				continue
+			}
+			if _, ok := seen[canonical]; ok {
+				continue
+			}
+			seen[canonical] = struct{}{}
+			assetCount++
+			if assetCount > maxContextualWARCStaticAssets {
+				return nil, fmt.Errorf("HTML for %q references more than %d contextual static assets", requestPath, maxContextualWARCStaticAssets)
+			}
+			assetResponse, ok, err := resolveStatic(canonical)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || assetResponse.StatusCode != http.StatusOK || isHTMLMediaType(assetResponse.Header.Get("Content-Type")) {
+				continue
+			}
+			resources = append(resources, contextualWARCResource{requestPath: canonical, response: assetResponse})
 		}
-		archive.Write(record)
 	}
 
-	record, err := buildMinimalWARCResponseRecord(requestURI, response)
-	if err != nil {
-		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to build WARC record for %q: %w", requestPath, err)
-	}
-	archive.Write(record)
+	resources = append(resources, contextualWARCResource{requestPath: requestPath, response: response})
+	return resources, nil
+}
 
-	transformedWARC, err := processApplicationWARCArchive(ctx, pipeline, archive.Bytes(), requestID)
-	if err != nil {
-		return qinternal.InProcessHTTPResponse{}, err
+func isHTMLMediaType(contentType string) bool {
+	switch mediaTypeOnly(contentType) {
+	case "text/html", "application/xhtml+xml":
+		return true
+	default:
+		return false
 	}
-	transformedResponse, err := extractWARCResponseRecordByTargetURI(transformedWARC, requestURI)
+}
+
+func scanHTMLSourcePaths(body []byte, documentPath string) []string {
+	base, err := url.Parse("http://qip.local" + documentPath)
 	if err != nil {
-		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("failed to parse transformed WARC response for %q: %w", requestPath, err)
+		return nil
 	}
-	return transformedResponse, nil
+	paths := make([]string, 0)
+	seen := make(map[string]struct{})
+	for offset := 0; offset < len(body); {
+		lt := bytes.IndexByte(body[offset:], '<')
+		if lt < 0 {
+			break
+		}
+		lt += offset
+		if bytes.HasPrefix(body[lt:], []byte("<!--")) {
+			end := bytes.Index(body[lt+4:], []byte("-->"))
+			if end < 0 {
+				break
+			}
+			offset = lt + 4 + end + 3
+			continue
+		}
+		tagEnd := scanHTMLTagEnd(body, lt+1)
+		if tagEnd < 0 {
+			break
+		}
+		tag := body[lt+1 : tagEnd]
+		tagName, closing := scanHTMLTagName(tag)
+		if tagName == "" || closing {
+			offset = tagEnd + 1
+			continue
+		}
+		for _, value := range scanHTMLTagSourceAttributes(tag) {
+			ref, err := url.Parse(html.UnescapeString(value))
+			if err != nil || ref.Scheme != "" || ref.Host != "" {
+				continue
+			}
+			resolved := base.ResolveReference(ref)
+			if resolved.Host != "qip.local" || resolved.Path == "" || !strings.HasPrefix(resolved.Path, "/") {
+				continue
+			}
+			if _, ok := seen[resolved.Path]; ok {
+				continue
+			}
+			seen[resolved.Path] = struct{}{}
+			paths = append(paths, resolved.Path)
+		}
+		offset = tagEnd + 1
+		if tagName == "plaintext" {
+			break
+		}
+		if isHTMLRawTextElement(tagName) {
+			if end := indexHTMLRawTextEnd(body[offset:], tagName); end >= 0 {
+				offset += end
+			} else {
+				break
+			}
+		}
+	}
+	return paths
+}
+
+func scanHTMLTagName(tag []byte) (string, bool) {
+	i := 0
+	for i < len(tag) && isHTMLSpace(tag[i]) {
+		i++
+	}
+	closing := i < len(tag) && tag[i] == '/'
+	if closing {
+		i++
+		for i < len(tag) && isHTMLSpace(tag[i]) {
+			i++
+		}
+	}
+	start := i
+	for i < len(tag) && isHTMLNameByte(tag[i]) {
+		i++
+	}
+	if start == i {
+		return "", closing
+	}
+	return strings.ToLower(string(tag[start:i])), closing
+}
+
+func isHTMLRawTextElement(tagName string) bool {
+	switch tagName {
+	case "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes":
+		return true
+	default:
+		return false
+	}
+}
+
+func indexHTMLRawTextEnd(haystack []byte, tagName string) int {
+	needle := []byte("</" + tagName)
+	for i := 0; i+len(needle) < len(haystack); i++ {
+		matched := true
+		for j := range needle {
+			a, b := haystack[i+j], needle[j]
+			if a >= 'A' && a <= 'Z' {
+				a += 'a' - 'A'
+			}
+			if b >= 'A' && b <= 'Z' {
+				b += 'a' - 'A'
+			}
+			if a != b {
+				matched = false
+				break
+			}
+		}
+		if matched && (isHTMLSpace(haystack[i+len(needle)]) || haystack[i+len(needle)] == '/' || haystack[i+len(needle)] == '>') {
+			return i
+		}
+	}
+	return -1
+}
+
+func scanHTMLTagEnd(body []byte, start int) int {
+	quote := byte(0)
+	for i := start; i < len(body); i++ {
+		switch body[i] {
+		case '\'', '"':
+			if quote == 0 {
+				quote = body[i]
+			} else if quote == body[i] {
+				quote = 0
+			}
+		case '>':
+			if quote == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func scanHTMLTagSourceAttributes(tag []byte) []string {
+	values := make([]string, 0, 1)
+	i := 0
+	for i < len(tag) && (isHTMLSpace(tag[i]) || tag[i] == '/') {
+		i++
+	}
+	for i < len(tag) && isHTMLNameByte(tag[i]) {
+		i++
+	}
+	for i < len(tag) {
+		for i < len(tag) && (isHTMLSpace(tag[i]) || tag[i] == '/') {
+			i++
+		}
+		nameStart := i
+		for i < len(tag) && isHTMLNameByte(tag[i]) {
+			i++
+		}
+		if nameStart == i {
+			i++
+			continue
+		}
+		name := tag[nameStart:i]
+		for i < len(tag) && isHTMLSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag) || tag[i] != '=' {
+			continue
+		}
+		i++
+		for i < len(tag) && isHTMLSpace(tag[i]) {
+			i++
+		}
+		valueStart := i
+		valueEnd := i
+		if i < len(tag) && (tag[i] == '\'' || tag[i] == '"') {
+			quote := tag[i]
+			i++
+			valueStart = i
+			for i < len(tag) && tag[i] != quote {
+				i++
+			}
+			valueEnd = i
+			if i < len(tag) {
+				i++
+			}
+		} else {
+			valueStart = i
+			for i < len(tag) && !isHTMLSpace(tag[i]) {
+				i++
+			}
+			valueEnd = i
+		}
+		if len(name) == 3 && strings.EqualFold(string(name), "src") && valueEnd > valueStart {
+			values = append(values, string(tag[valueStart:valueEnd]))
+		}
+	}
+	return values
+}
+
+func isHTMLSpace(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\n', '\r', '\f':
+		return true
+	default:
+		return false
+	}
+}
+
+func isHTMLNameByte(ch byte) bool {
+	return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '-' || ch == '_' || ch == ':'
 }
 
 func contextualWARCRequestPaths(requestPath string) []string {

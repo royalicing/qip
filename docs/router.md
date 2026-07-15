@@ -225,12 +225,21 @@ In `qip router warc`, qip must:
 
 In `qip dev`, `qip router get`, and `qip router head`, qip should apply the same WARC recipe layer to the single requested response so local preview matches archive export.
 
-For single-response WARC transformation, qip may include context records before the target record:
+### Kindred Routes
+
+For a single-response WARC transformation, qip adds the target's kindred routes before its record. These are its parent pages and the sibling resources connected through `src`:
 
 - `/`
 - each parent page path of the target, such as `/docs` for `/docs/router`
+- static assets referenced by any `src` attribute in the target HTML
 
-Only context paths that resolve to `200 OK` HTML responses should be included. The target response must be selected from the transformed WARC by exact target URI.
+Parent pages must be `200 OK` HTML. They let WARC recipes copy navigation and other shared structure into descendant pages, serving a role similar to layouts in other routers.
+
+The shallow `src` scan follows browser URL resolution and ignores comments and raw text such as script bodies. It includes site-relative, non-HTML files served directly from the filesystem without a content recipe; component WASM files qualify. HTML, redirects, missing or external targets, synthetic routes, and recipe-transformed content are ignored. Paths are deduplicated after dropping queries and fragments, referenced assets are not scanned recursively, and a page may contribute at most 256 unique paths.
+
+These rules give WARC recipes access to direct static dependencies without turning a single-route request into a whole-site build.
+
+The target response must be selected from the transformed WARC by exact target URI.
 
 ## Route Listing
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"image"
 	"net/http"
 	"os"
@@ -1858,6 +1859,157 @@ func TestContextualWARCRequestPaths(t *testing.T) {
 		got := contextualWARCRequestPaths(tt.requestPath)
 		if !reflect.DeepEqual(got, tt.want) {
 			t.Fatalf("contextualWARCRequestPaths(%q)=%v, want %v", tt.requestPath, got, tt.want)
+		}
+	}
+}
+
+func TestScanHTMLSourcePaths(t *testing.T) {
+	body := []byte(`
+		<img src="/images/hero.png?width=2#preview">
+		<script SRC='../app.js'></script>
+		<custom-element src=/components/tool.wasm></custom-element>
+		<img src="/images/hero.png">
+		<img src="https://cdn.example/image.png">
+		<img src="data:image/png;base64,AA==">
+		<!-- <img src="/ignored-comment.png"> -->
+		<script>const example = '</scripture><img src="/ignored-script.png">';</script>
+		<iframe src="/frame"><img src="/ignored-fallback.png"></iframe>
+	`)
+	want := []string{"/images/hero.png", "/app.js", "/components/tool.wasm", "/frame"}
+	if got := scanHTMLSourcePaths(body, "/docs/page"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("scanHTMLSourcePaths()=%v, want %v", got, want)
+	}
+}
+
+func TestContextualWARCResources(t *testing.T) {
+	htmlResponse := func(body string) qinternal.InProcessHTTPResponse {
+		return qinternal.InProcessHTTPResponse{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+			Body:       []byte(body),
+		}
+	}
+	staticResponse := func(contentType, body string) qinternal.InProcessHTTPResponse {
+		return qinternal.InProcessHTTPResponse{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{contentType}},
+			Body:       []byte(body),
+		}
+	}
+
+	page := htmlResponse(`
+		<img src="/assets/hero.png">
+		<script src="../app.js"></script>
+		<iframe src="/other-page"></iframe>
+		<img src="/generated.css">
+		<source src="/components/tool.wasm">
+		<img src="/assets/hero.png?again=1">
+	`)
+	baseResponses := map[string]qinternal.InProcessHTTPResponse{
+		"/":     htmlResponse("home"),
+		"/docs": htmlResponse("docs"),
+	}
+	staticResponses := map[string]qinternal.InProcessHTTPResponse{
+		"/assets/hero.png":      staticResponse("image/png", "png"),
+		"/app.js":               staticResponse("text/javascript", "js"),
+		"/other-page":           htmlResponse("other"),
+		"/components/tool.wasm": staticResponse("application/wasm", "wasm"),
+	}
+	resources, err := contextualWARCResources(
+		"/docs/page",
+		page,
+		func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+			response, ok := baseResponses[requestPath]
+			return response, ok, nil
+		},
+		func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+			response, ok := staticResponses[requestPath]
+			return response, ok, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("contextualWARCResources: %v", err)
+	}
+	got := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		got = append(got, resource.requestPath)
+	}
+	want := []string{"/", "/docs", "/assets/hero.png", "/app.js", "/components/tool.wasm", "/docs/page"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resource paths=%v, want %v", got, want)
+	}
+}
+
+func TestContextualWARCResourcesDoesNotScanNonHTML(t *testing.T) {
+	response := qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
+		Body:       []byte(`<img src="/not-an-html-reference.png">`),
+	}
+	staticCalls := 0
+	resources, err := contextualWARCResources("/plain.txt", response, nil, func(string) (qinternal.InProcessHTTPResponse, bool, error) {
+		staticCalls++
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	})
+	if err != nil {
+		t.Fatalf("contextualWARCResources: %v", err)
+	}
+	if staticCalls != 0 {
+		t.Fatalf("static resolver called %d times, want 0", staticCalls)
+	}
+	if len(resources) != 1 || resources[0].requestPath != "/plain.txt" {
+		t.Fatalf("resources=%v, want only requested response", resources)
+	}
+}
+
+func TestContextualWARCResourcesLimitsSourceReferences(t *testing.T) {
+	var body strings.Builder
+	for i := 0; i <= maxContextualWARCStaticAssets; i++ {
+		fmt.Fprintf(&body, `<img src="/asset-%d.bin">`, i)
+	}
+	response := qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/html"}},
+		Body:       []byte(body.String()),
+	}
+	_, err := contextualWARCResources("/page", response, nil, func(string) (qinternal.InProcessHTTPResponse, bool, error) {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "more than 256") {
+		t.Fatalf("error=%v, want static asset limit error", err)
+	}
+}
+
+func TestResolveDevStaticAssetResponseOnlyReturnsRawNonHTMLFiles(t *testing.T) {
+	state := &devRuntimeState{
+		contentRoutes: map[string]qinternal.ContentRoute{
+			"/raw.txt":   {FilePath: "raw", SourceMIME: "text/plain"},
+			"/page.html": {FilePath: "html", SourceMIME: "text/html"},
+			"/generated": {FilePath: "markdown", SourceMIME: "text/markdown"},
+			"/redirect":  {FilePath: "redirect", SourceMIME: "text/uri-list"},
+		},
+		routeOptions: qinternal.DefaultRouteOptions(),
+		recipeChains: map[string]*qinternal.Pipeline{
+			"text/markdown": &qinternal.Pipeline{},
+		},
+		componentAssets: map[string]componentAsset{
+			"/components/tool.wasm": {body: []byte("wasm"), contentType: "application/wasm"},
+		},
+		contentRead: func(_ context.Context, route qinternal.ContentRoute) ([]byte, error) {
+			return []byte(route.FilePath), nil
+		},
+	}
+
+	for _, requestPath := range []string{"/raw.txt", "/components/tool.wasm"} {
+		response, ok, err := resolveDevStaticAssetResponse(context.Background(), state, requestPath)
+		if err != nil || !ok || response.StatusCode != http.StatusOK {
+			t.Fatalf("resolve %q: ok=%v status=%d err=%v", requestPath, ok, response.StatusCode, err)
+		}
+	}
+	for _, requestPath := range []string{"/page.html", "/generated", "/redirect", "/missing"} {
+		_, ok, err := resolveDevStaticAssetResponse(context.Background(), state, requestPath)
+		if err != nil || ok {
+			t.Fatalf("resolve %q: ok=%v err=%v, want excluded", requestPath, ok, err)
 		}
 	}
 }
