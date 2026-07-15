@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -23,19 +23,58 @@ const (
 	stageKindTile
 )
 
-func buildPipeline(ctx context.Context, modules []string, opts options) (*qinternal.Pipeline, error) {
-	specs := make([]moduleSpec, len(modules))
-	for i, modulePath := range modules {
-		specs[i] = moduleSpec{
-			path:     modulePath,
-			uniforms: make(map[string]string),
-		}
-	}
-	return buildPipelineFromSpecs(ctx, specs, opts)
+// ComponentInvocation describes user intent: resolve this component source
+// and run it with these uniform values.
+type ComponentInvocation struct {
+	Source        string
+	UniformValues map[string]string
 }
 
-func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts options) (*qinternal.Pipeline, error) {
-	if len(specs) == 0 {
+// ResolvedComponent is the runtime input produced by resolving an invocation
+// or by loading a recipe from RouterFileState.
+type ResolvedComponent struct {
+	Name          string
+	WASM          []byte
+	UniformValues map[string]string
+}
+
+func buildPipeline(ctx context.Context, modules []string, opts options) (*qinternal.Pipeline, error) {
+	invocations := make([]ComponentInvocation, len(modules))
+	for i, modulePath := range modules {
+		invocations[i] = ComponentInvocation{
+			Source:        modulePath,
+			UniformValues: make(map[string]string),
+		}
+	}
+	return buildPipelineFromInvocations(ctx, invocations, opts)
+}
+
+func buildPipelineFromInvocations(ctx context.Context, invocations []ComponentInvocation, opts options) (*qinternal.Pipeline, error) {
+	components, err := resolveComponentInvocations(invocations)
+	if err != nil {
+		return nil, err
+	}
+	return buildPipelineFromResolvedComponents(ctx, components, opts)
+}
+
+func resolveComponentInvocations(invocations []ComponentInvocation) ([]ResolvedComponent, error) {
+	components := make([]ResolvedComponent, len(invocations))
+	for i, invocation := range invocations {
+		body, err := readModuleSource(invocation.Source)
+		if err != nil {
+			return nil, err
+		}
+		components[i] = ResolvedComponent{
+			Name:          invocation.Source,
+			WASM:          body,
+			UniformValues: maps.Clone(invocation.UniformValues),
+		}
+	}
+	return components, nil
+}
+
+func buildPipelineFromResolvedComponents(ctx context.Context, components []ResolvedComponent, opts options) (*qinternal.Pipeline, error) {
+	if len(components) == 0 {
 		return &qinternal.Pipeline{}, nil
 	}
 
@@ -48,7 +87,7 @@ func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts option
 		kind     stageKind
 		uniforms map[string]string
 	}
-	infos := make([]moduleInfo, len(specs))
+	infos := make([]moduleInfo, len(components))
 
 	var stages []qinternal.Stage
 	cleanup := func() {
@@ -63,36 +102,22 @@ func buildPipelineFromSpecs(ctx context.Context, specs []moduleSpec, opts option
 		_ = runtime.Close(ctx)
 	}
 
-	for i, spec := range specs {
-		body := spec.body
-		if body == nil {
-			var err error
-			body, err = readModulePath(spec.path, opts)
-			if err != nil {
-				cleanup()
-				return nil, err
-			}
-		} else {
-			if opts.verbose {
-				moduleDigest := sha256.Sum256(body)
-				vlogf(opts, "module %s sha256: %x", spec.path, moduleDigest)
-			}
-			if err := validateModulePolicy(spec.path, body, opts.modulePolicy); err != nil {
-				cleanup()
-				return nil, err
-			}
+	for i, component := range components {
+		if err := logAndValidateModule(component.Name, component.WASM, opts); err != nil {
+			cleanup()
+			return nil, err
 		}
-		cm, err := runtime.CompileModule(ctx, body)
+		cm, err := runtime.CompileModule(ctx, component.WASM)
 		if err != nil {
 			cleanup()
-			return nil, fmt.Errorf("wasm module %q could not be compiled: %w", spec.path, err)
+			return nil, fmt.Errorf("wasm module %q could not be compiled: %w", component.Name, err)
 		}
 
 		kind := stageKindRun
 		if _, ok := cm.ExportedFunctions()["tile_rgba32float_64x64"]; ok {
 			kind = stageKindTile
 		}
-		infos[i] = moduleInfo{path: spec.path, body: body, cm: cm, kind: kind, uniforms: spec.uniforms}
+		infos[i] = moduleInfo{path: component.Name, body: component.WASM, cm: cm, kind: kind, uniforms: maps.Clone(component.UniformValues)}
 	}
 
 	for i := 0; i < len(infos); {

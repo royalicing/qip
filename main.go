@@ -18,7 +18,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"io/fs"
 	"log"
 	"math"
 	"mime"
@@ -34,7 +33,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 	"unsafe"
 
 	qcmd "github.com/royalicing/qip/cmd"
@@ -60,11 +58,6 @@ const (
 	defaultRouteWARCTransformTimeout = 5 * time.Second
 )
 
-type routeHandlerTimeouts struct {
-	contentRecipe   time.Duration
-	applicationWARC time.Duration
-}
-
 type tileStage struct {
 	mod         api.Module
 	mem         api.Memory
@@ -75,12 +68,6 @@ type tileStage struct {
 	inputCap    uint64
 	haloPx      int
 	tileSpan    int
-}
-
-type moduleSpec struct {
-	path     string
-	body     []byte
-	uniforms map[string]string
 }
 
 type contentData struct {
@@ -314,6 +301,17 @@ func scoreCmd(args []string) {
 }
 
 func readModulePath(path string, opts options) ([]byte, error) {
+	body, err := readModuleSource(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := logAndValidateModule(path, body, opts); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+func readModuleSource(path string) ([]byte, error) {
 	var body []byte
 
 	if strings.HasPrefix(path, "https://") {
@@ -335,15 +333,18 @@ func readModulePath(path string, opts options) ([]byte, error) {
 		}
 	}
 
+	return body, nil
+}
+
+func logAndValidateModule(path string, body []byte, opts options) error {
 	if opts.verbose {
 		moduleDigest := sha256.Sum256(body)
 		vlogf(opts, "module %s sha256: %x", path, moduleDigest)
 	}
 	if err := validateModulePolicy(path, body, opts.modulePolicy); err != nil {
-		return nil, err
+		return err
 	}
-
-	return body, nil
+	return nil
 }
 
 func validateModulePolicy(path string, body []byte, policy wasminspect.ModulePolicy) error {
@@ -381,11 +382,11 @@ func runCmd(args []string) {
 	opts.verbose = opts.verbose || runVerbose
 	applyModulePolicyFlags(&opts, maxMemoryBytes, fixedMemory)
 
-	moduleSpecs, parseErr := parseModuleSpecs(fs.Args(), "run")
+	componentInvocations, parseErr := parseComponentInvocations(fs.Args(), "run")
 	if parseErr != nil {
 		gameOver("Invalid render module args: %v", parseErr)
 	}
-	if len(moduleSpecs) == 0 {
+	if len(componentInvocations) == 0 {
 		gameOver(usageRun)
 	}
 	if timeoutMS <= 0 {
@@ -425,8 +426,8 @@ func runCmd(args []string) {
 		vlogf(opts, "input sha256: %x", inputDigest)
 	}
 
-	if len(moduleSpecs) == 1 {
-		handled, bmpBytes, err := tryRunInteractiveModuleFirstFrame(context.Background(), moduleSpecs[0], opts, timeoutMS)
+	if len(componentInvocations) == 1 {
+		handled, bmpBytes, err := tryRunInteractiveModuleFirstFrame(context.Background(), componentInvocations[0], opts, timeoutMS)
 		if err != nil {
 			gameOver("%v", err)
 		}
@@ -446,7 +447,7 @@ func runCmd(args []string) {
 		}
 	}()
 
-	pipeline, err := buildPipelineFromSpecs(context.Background(), moduleSpecs, opts)
+	pipeline, err := buildPipelineFromInvocations(context.Background(), componentInvocations, opts)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -1099,8 +1100,8 @@ func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, 
 	fmt.Printf("\n")
 }
 
-func parseModuleSpecs(args []string, commandName string) ([]moduleSpec, error) {
-	specs := make([]moduleSpec, 0, len(args))
+func parseComponentInvocations(args []string, commandName string) ([]ComponentInvocation, error) {
+	specs := make([]ComponentInvocation, 0, len(args))
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "?") {
 			if len(specs) == 0 {
@@ -1124,14 +1125,14 @@ func parseModuleSpecs(args []string, commandName string) ([]moduleSpec, error) {
 				if len(vals) == 0 {
 					return nil, fmt.Errorf("invalid %s uniform query %q: missing value for %q", commandName, arg, key)
 				}
-				last.uniforms[key] = vals[len(vals)-1]
+				last.UniformValues[key] = vals[len(vals)-1]
 			}
 			continue
 		}
 
-		specs = append(specs, moduleSpec{
-			path:     arg,
-			uniforms: make(map[string]string),
+		specs = append(specs, ComponentInvocation{
+			Source:        arg,
+			UniformValues: make(map[string]string),
 		})
 	}
 	return specs, nil
@@ -1816,20 +1817,20 @@ func imageCmd(args []string) {
 	}
 	opts.verbose = opts.verbose || imageVerbose
 	applyModulePolicyFlags(&opts, maxMemoryBytes, fixedMemory)
-	moduleSpecs, parseErr := parseModuleSpecs(fs.Args(), "image")
+	componentInvocations, parseErr := parseComponentInvocations(fs.Args(), "image")
 	if parseErr != nil {
 		gameOver("Invalid image module args: %v", parseErr)
 	}
-	if len(moduleSpecs) == 0 || inputImagePath == "" || outputImagePath == "" {
+	if len(componentInvocations) == 0 || inputImagePath == "" || outputImagePath == "" {
 		gameOver(usageImage)
 	}
 	if timeoutMS <= 0 {
 		gameOver("Invalid timeout-ms: %d", timeoutMS)
 	}
 
-	moduleBodies := make([][]byte, len(moduleSpecs))
-	for i, spec := range moduleSpecs {
-		body, err := readModulePath(spec.path, opts)
+	moduleBodies := make([][]byte, len(componentInvocations))
+	for i, spec := range componentInvocations {
+		body, err := readModulePath(spec.Source, opts)
 		if err != nil {
 			gameOver("%v", err)
 		}
@@ -1888,7 +1889,7 @@ func imageCmd(args []string) {
 		if err != nil {
 			gameOver("Wasm module could not be compiled")
 		}
-		if err := applyModuleUniforms(execCtx, mod, moduleSpecs[i].uniforms); err != nil {
+		if err := applyModuleUniforms(execCtx, mod, componentInvocations[i].UniformValues); err != nil {
 			gameOver("%v", err)
 		}
 		stage, err := loadTileStage(execCtx, mod)
@@ -2028,8 +2029,8 @@ func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wa
 	return exec.output, exec.instantiation, nil
 }
 
-func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec, opts options, timeoutMS int) (bool, []byte, error) {
-	body, err := readModulePath(spec.path, opts)
+func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec ComponentInvocation, opts options, timeoutMS int) (bool, []byte, error) {
+	body, err := readModulePath(spec.Source, opts)
 	if err != nil {
 		return false, nil, err
 	}
@@ -2081,7 +2082,7 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 		return false, nil, nil
 	}
 
-	if err := applyModuleUniforms(execCtx, mod, spec.uniforms); err != nil {
+	if err := applyModuleUniforms(execCtx, mod, spec.UniformValues); err != nil {
 		return false, nil, err
 	}
 
@@ -2096,36 +2097,36 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	renderWidth := int(int32(renderWidthVal))
 	renderHeight := int(int32(renderHeightVal))
 	if renderWidth <= 0 || renderHeight <= 0 {
-		return true, nil, fmt.Errorf("%s: interactive module reported invalid render size %dx%d", spec.path, renderWidth, renderHeight)
+		return true, nil, fmt.Errorf("%s: interactive module reported invalid render size %dx%d", spec.Source, renderWidth, renderHeight)
 	}
 
 	tickFunc := mod.ExportedFunction("tick")
 	// Interactive snapshot contract: first tick is always tick(0).
 	// Runtime hosts then pass monotonic elapsed milliseconds and schedule by returned next_wake_at_ms.
 	if _, err := tickFunc.Call(execCtx, 0); err != nil {
-		return true, nil, fmt.Errorf("%s: tick(0) failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
+		return true, nil, fmt.Errorf("%s: tick(0) failed: %w", spec.Source, wasmruntime.HumanizeExecutionError(execCtx, err))
 	}
 	renderFunc := mod.ExportedFunction("render")
 	renderResult, err := renderFunc.Call(execCtx, 0)
 	if err != nil {
-		return true, nil, fmt.Errorf("%s: render(0) failed: %w", spec.path, wasmruntime.HumanizeExecutionError(execCtx, err))
+		return true, nil, fmt.Errorf("%s: render(0) failed: %w", spec.Source, wasmruntime.HumanizeExecutionError(execCtx, err))
 	}
 	if len(renderResult) != 1 {
-		return true, nil, fmt.Errorf("%s: render(0) returned %d values, want 1", spec.path, len(renderResult))
+		return true, nil, fmt.Errorf("%s: render(0) returned %d values, want 1", spec.Source, len(renderResult))
 	}
 
 	outputLen := int(int32(renderResult[0]))
 	expectedLen := renderWidth * renderHeight * 4
 	if outputLen != expectedLen {
-		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.path, outputLen, expectedLen)
+		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.Source, outputLen, expectedLen)
 	}
 
 	outputBytes := int(int32(outputBytesValue))
 	if outputBytes != expectedLen {
-		return true, nil, fmt.Errorf("%s: output_rgba8_srgb_bytes returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.path, outputBytes, expectedLen)
+		return true, nil, fmt.Errorf("%s: output_rgba8_srgb_bytes returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.Source, outputBytes, expectedLen)
 	}
 	if outputLen != outputBytes {
-		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected output_rgba8_srgb_bytes=%d", spec.path, outputLen, outputBytes)
+		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected output_rgba8_srgb_bytes=%d", spec.Source, outputLen, outputBytes)
 	}
 
 	outputPtrValue, ok, err := getExportedValue(execCtx, mod, "output_ptr")
@@ -2133,12 +2134,12 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
 	}
 	if !ok {
-		return true, nil, fmt.Errorf("%s: interactive module missing output_ptr export", spec.path)
+		return true, nil, fmt.Errorf("%s: interactive module missing output_ptr export", spec.Source)
 	}
 	outputPtr := uint32(outputPtrValue)
 	outputRaw, ok := mod.Memory().Read(outputPtr, uint32(outputLen))
 	if !ok {
-		return true, nil, fmt.Errorf("%s: could not read output frame", spec.path)
+		return true, nil, fmt.Errorf("%s: could not read output frame", spec.Source)
 	}
 	rgbaBytes := slices.Clone(outputRaw)
 
@@ -2146,7 +2147,7 @@ func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec moduleSpec,
 	copy(frame.Pix, rgbaBytes)
 	bmp, err := encodeBMP(frame)
 	if err != nil {
-		return true, nil, fmt.Errorf("%s: could not encode first interactive frame as BMP: %w", spec.path, err)
+		return true, nil, fmt.Errorf("%s: could not encode first interactive frame as BMP: %w", spec.Source, err)
 	}
 	return true, bmp, nil
 }
@@ -2428,185 +2429,6 @@ func parseRuntimeMode(raw string) (runtimeMode, error) {
 	default:
 		return "", fmt.Errorf("invalid mode %q (expected dev or prod)", raw)
 	}
-}
-
-func walkFilesFollowingSymlinks(root string, entryKind string, visit func(fullPath string, info fs.FileInfo) error) error {
-	seenDirs := make(map[string]uint8)
-	var walkDir func(readDir string) error
-	walkDir = func(readDir string) error {
-		realDir, err := filepath.EvalSymlinks(readDir)
-		if err != nil {
-			return err
-		}
-		realDir, err = filepath.Abs(realDir)
-		if err != nil {
-			return err
-		}
-		realDir = filepath.Clean(realDir)
-		if seenDirs[realDir] > 0 {
-			// Avoid infinite recursion when a symlink points back to an ancestor.
-			return nil
-		}
-		seenDirs[realDir]++
-		defer func() {
-			seenDirs[realDir]--
-		}()
-
-		entries, err := os.ReadDir(readDir)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			fullPath := filepath.Join(readDir, entry.Name())
-			mode := entry.Type()
-			if mode.IsRegular() {
-				info, err := entry.Info()
-				if err != nil {
-					return err
-				}
-				if err := visit(fullPath, info); err != nil {
-					return err
-				}
-				continue
-			}
-			if mode.IsDir() {
-				if err := walkDir(fullPath); err != nil {
-					return err
-				}
-				continue
-			}
-			if mode&fs.ModeSymlink == 0 {
-				return fmt.Errorf("%s entry %q must be a regular file", entryKind, fullPath)
-			}
-
-			targetInfo, err := os.Stat(fullPath)
-			if err != nil {
-				return err
-			}
-			if targetInfo.Mode().IsRegular() {
-				if err := visit(fullPath, targetInfo); err != nil {
-					return err
-				}
-				continue
-			}
-			if targetInfo.IsDir() {
-				if err := walkDir(fullPath); err != nil {
-					return err
-				}
-				continue
-			}
-			return fmt.Errorf("%s entry %q must be a regular file", entryKind, fullPath)
-		}
-		return nil
-	}
-
-	return walkDir(root)
-}
-
-func loadComponentAssets(componentsRoot string) (map[string]componentAsset, []string, error) {
-	assets := make(map[string]componentAsset)
-	if componentsRoot == "" {
-		return assets, nil, nil
-	}
-
-	err := walkFilesFollowingSymlinks(componentsRoot, "component", func(fullPath string, _ fs.FileInfo) error {
-		relPath, err := filepath.Rel(componentsRoot, fullPath)
-		if err != nil {
-			return err
-		}
-		relPath = filepath.ToSlash(relPath)
-		if !utf8.ValidString(relPath) {
-			return fmt.Errorf("component path %q must be valid UTF-8", relPath)
-		}
-		if strings.HasPrefix(relPath, "/") {
-			return fmt.Errorf("component path %q must not start with /", relPath)
-		}
-		cleanRel := path.Clean(relPath)
-		if cleanRel != relPath || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
-			return fmt.Errorf("component path %q is not canonical", relPath)
-		}
-		if strings.ToLower(path.Ext(relPath)) != ".wasm" {
-			return nil
-		}
-
-		requestPath := "/components/" + cleanRel
-		if _, exists := assets[requestPath]; exists {
-			return fmt.Errorf("duplicate component request path %q", requestPath)
-		}
-
-		body, err := os.ReadFile(fullPath)
-		if err != nil {
-			return err
-		}
-		assets[requestPath] = componentAsset{
-			body:        body,
-			contentType: "application/wasm",
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	requestPaths := make([]string, 0, len(assets))
-	for requestPath := range assets {
-		requestPaths = append(requestPaths, requestPath)
-	}
-	sort.Strings(requestPaths)
-	return assets, requestPaths, nil
-}
-
-func loadFormModules(formsRoot string) (map[string][]byte, map[string][32]byte, error) {
-	modules := make(map[string][]byte)
-	digests := make(map[string][32]byte)
-	if formsRoot == "" {
-		return modules, digests, nil
-	}
-
-	modulePaths := make(map[string]string)
-	err := walkFilesFollowingSymlinks(formsRoot, "form", func(fullPath string, _ fs.FileInfo) error {
-		relPath, err := filepath.Rel(formsRoot, fullPath)
-		if err != nil {
-			return err
-		}
-		relPath = filepath.ToSlash(relPath)
-		if !utf8.ValidString(relPath) {
-			return fmt.Errorf("form path %q must be valid UTF-8", relPath)
-		}
-		if strings.HasPrefix(relPath, "/") {
-			return fmt.Errorf("form path %q must not start with /", relPath)
-		}
-		cleanRel := path.Clean(relPath)
-		if cleanRel != relPath || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
-			return fmt.Errorf("form path %q is not canonical", relPath)
-		}
-		if strings.ToLower(path.Ext(relPath)) != ".wasm" {
-			return nil
-		}
-
-		formName := strings.TrimSuffix(relPath, path.Ext(relPath))
-		if formName == "" {
-			return fmt.Errorf("form path %q must include a name before .wasm", relPath)
-		}
-
-		if prev, exists := modulePaths[formName]; exists {
-			return fmt.Errorf("duplicate form component name %q in %q and %q", formName, prev, fullPath)
-		}
-
-		body, err := os.ReadFile(fullPath)
-		if err != nil {
-			return err
-		}
-		modules[formName] = body
-		digests[formName] = sha256.Sum256(body)
-		modulePaths[formName] = fullPath
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return modules, digests, nil
 }
 
 func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte, formDigests [][32]byte) string {
@@ -3036,7 +2858,7 @@ var qipEditClientRuntimeModuleJS string
 //go:embed embedded/qip-play-client-runtime.js
 var qipPlayClientRuntimeModuleJS string
 
-func devResponseContentType(sourceMIME string, recipesApplied bool, output qinternal.Content, body []byte) string {
+func routerResponseContentType(sourceMIME string, recipesApplied bool, output qinternal.Content, body []byte) string {
 	if recipesApplied && sourceMIME == "text/markdown" {
 		return "text/html; charset=utf-8"
 	}

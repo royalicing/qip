@@ -26,11 +26,7 @@ func TestRouterFileStateCapturesRecipeBytesWithoutCompilingThem(t *testing.T) {
 
 	files, err := loadRouterFileState(
 		context.Background(),
-		contentRoot,
-		recipesRoot,
-		"",
-		"",
-		options{},
+		RouterFileLayout{ContentRoot: contentRoot, RecipesRoot: recipesRoot},
 		qinternal.DefaultRouteOptions(),
 	)
 	if err != nil {

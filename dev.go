@@ -75,6 +75,13 @@ func devCmd(args []string) {
 	if opts.viewSource && recipesRoot == "" {
 		gameOver("--view-source requires --recipes <recipes_dir>")
 	}
+	layout := RouterFileLayout{
+		ContentRoot:    contentRoot,
+		RecipesRoot:    recipesRoot,
+		FormsRoot:      formsRoot,
+		ComponentsRoot: componentsRoot,
+		ViewSource:     opts.viewSource,
+	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	listener, devIdentity, err := listenOrReloadDevServer(addr, port)
@@ -90,7 +97,7 @@ func devCmd(args []string) {
 	}()
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), layout, opts, routeOptions)
 	if err != nil {
 		_ = listener.Close()
 		removeDevServerIdentity(port, devIdentity)
@@ -109,7 +116,7 @@ func devCmd(args []string) {
 		defer reloadMu.Unlock()
 
 		reloadStart := time.Now()
-		nextState, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+		nextState, err := loadRouterServerState(context.Background(), layout, opts, routeOptions)
 		if err != nil {
 			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
 			return
@@ -141,7 +148,7 @@ func devCmd(args []string) {
 		}
 
 		reloadStart := time.Now()
-		nextState, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+		nextState, err := loadRouterServerState(context.Background(), layout, opts, routeOptions)
 		if err != nil {
 			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
 			return
@@ -169,7 +176,7 @@ func devCmd(args []string) {
 		log.Printf("dev: loaded %d browser components from %s", len(state.componentAssets), componentsRoot)
 	}
 
-	handlerTimeouts := routeHandlerTimeouts{
+	handlerTimeouts := RouterServerTimeouts{
 		contentRecipe:   defaultRouteRecipeTimeout,
 		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
@@ -183,7 +190,7 @@ func devCmd(args []string) {
 		reloadRuntimeState("request_hard_reload")
 	}
 
-	handler := newDevRequestHandler("dev", stateSlot, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
+	handler := newRouterRequestHandler("dev", stateSlot, reloadRecipesIfChanged, reloadStateIfHardRefresh, routeOptions, handlerTimeouts)
 	handlerWithIdentity := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/.qip/dev-server" {
 			w.Header().Set("Content-Type", "application/json")

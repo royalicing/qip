@@ -268,9 +268,9 @@ func TestScaleRouteWARCTransformTimeout(t *testing.T) {
 	}
 }
 
-func TestParseModuleSpecs(t *testing.T) {
+func TestParseComponentInvocations(t *testing.T) {
 	t.Run("associates uniform queries with prior module", func(t *testing.T) {
-		specs, err := parseModuleSpecs([]string{
+		specs, err := parseComponentInvocations([]string{
 			"a.wasm",
 			"?alpha=1&beta=2",
 			"b.wasm",
@@ -278,27 +278,27 @@ func TestParseModuleSpecs(t *testing.T) {
 			"?gamma=4",
 		}, "run")
 		if err != nil {
-			t.Fatalf("parseModuleSpecs error: %v", err)
+			t.Fatalf("parseComponentInvocations error: %v", err)
 		}
 		if len(specs) != 2 {
 			t.Fatalf("len(specs)=%d, want 2", len(specs))
 		}
-		if specs[0].path != "a.wasm" {
-			t.Fatalf("specs[0].path=%q, want %q", specs[0].path, "a.wasm")
+		if specs[0].Source != "a.wasm" {
+			t.Fatalf("specs[0].Source=%q, want %q", specs[0].Source, "a.wasm")
 		}
-		if specs[0].uniforms["alpha"] != "1" || specs[0].uniforms["beta"] != "2" {
-			t.Fatalf("unexpected uniforms for first module: %+v", specs[0].uniforms)
+		if specs[0].UniformValues["alpha"] != "1" || specs[0].UniformValues["beta"] != "2" {
+			t.Fatalf("unexpected uniforms for first module: %+v", specs[0].UniformValues)
 		}
-		if specs[1].path != "b.wasm" {
-			t.Fatalf("specs[1].path=%q, want %q", specs[1].path, "b.wasm")
+		if specs[1].Source != "b.wasm" {
+			t.Fatalf("specs[1].Source=%q, want %q", specs[1].Source, "b.wasm")
 		}
-		if specs[1].uniforms["gamma"] != "4" {
-			t.Fatalf("specs[1].uniforms[gamma]=%q, want %q", specs[1].uniforms["gamma"], "4")
+		if specs[1].UniformValues["gamma"] != "4" {
+			t.Fatalf("specs[1].UniformValues[gamma]=%q, want %q", specs[1].UniformValues["gamma"], "4")
 		}
 	})
 
 	t.Run("rejects uniform query before component path", func(t *testing.T) {
-		_, err := parseModuleSpecs([]string{"?x=1"}, "run")
+		_, err := parseComponentInvocations([]string{"?x=1"}, "run")
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
@@ -1168,9 +1168,9 @@ func TestLoadRecipeChainsRejectsDuplicatePrefix(t *testing.T) {
 	}
 }
 
-func TestParseImageModuleSpecs(t *testing.T) {
+func TestParseImageComponentInvocations(t *testing.T) {
 	t.Run("module with query", func(t *testing.T) {
-		specs, err := parseModuleSpecs([]string{
+		specs, err := parseComponentInvocations([]string{
 			"examples/rgba/color-halftone.wasm",
 			"?max_radius=2.0",
 			"examples/rgba/brightness.wasm",
@@ -1182,28 +1182,28 @@ func TestParseImageModuleSpecs(t *testing.T) {
 		if len(specs) != 2 {
 			t.Fatalf("spec count=%d, want 2", len(specs))
 		}
-		if specs[0].path != "examples/rgba/color-halftone.wasm" {
-			t.Fatalf("spec[0].path=%q", specs[0].path)
+		if specs[0].Source != "examples/rgba/color-halftone.wasm" {
+			t.Fatalf("spec[0].Source=%q", specs[0].Source)
 		}
-		if got := specs[0].uniforms["max_radius"]; got != "2.0" {
+		if got := specs[0].UniformValues["max_radius"]; got != "2.0" {
 			t.Fatalf("spec[0] max_radius=%q, want 2.0", got)
 		}
-		if specs[1].path != "examples/rgba/brightness.wasm" {
-			t.Fatalf("spec[1].path=%q", specs[1].path)
+		if specs[1].Source != "examples/rgba/brightness.wasm" {
+			t.Fatalf("spec[1].Source=%q", specs[1].Source)
 		}
-		if got := specs[1].uniforms["brightness"]; got != "0.2" {
+		if got := specs[1].UniformValues["brightness"]; got != "0.2" {
 			t.Fatalf("spec[1] brightness=%q, want 0.2", got)
 		}
 	})
 
 	t.Run("query before module is error", func(t *testing.T) {
-		if _, err := parseModuleSpecs([]string{"?max_radius=2.0"}, "image"); err == nil {
+		if _, err := parseComponentInvocations([]string{"?max_radius=2.0"}, "image"); err == nil {
 			t.Fatal("expected error for query before module")
 		}
 	})
 
 	t.Run("empty query is error", func(t *testing.T) {
-		if _, err := parseModuleSpecs([]string{"examples/rgba/brightness.wasm", "?"}, "image"); err == nil {
+		if _, err := parseComponentInvocations([]string{"examples/rgba/brightness.wasm", "?"}, "image"); err == nil {
 			t.Fatal("expected error for empty query")
 		}
 	})
@@ -1480,9 +1480,9 @@ func TestInjectQIPPlayRuntimeNoTag(t *testing.T) {
 }
 
 func TestTryRunInteractiveModuleFirstFrame(t *testing.T) {
-	handled, bmp, err := tryRunInteractiveModuleFirstFrame(context.Background(), moduleSpec{
-		path:     "modules/interactive/tile-world-12x12.wasm",
-		uniforms: map[string]string{},
+	handled, bmp, err := tryRunInteractiveModuleFirstFrame(context.Background(), ComponentInvocation{
+		Source:        "modules/interactive/tile-world-12x12.wasm",
+		UniformValues: map[string]string{},
 	}, options{}, 2000)
 	if err != nil {
 		t.Fatalf("tryRunInteractiveModuleFirstFrame: %v", err)

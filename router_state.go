@@ -12,6 +12,16 @@ type componentAsset struct {
 	contentType string
 }
 
+// RouterFileLayout names the source roots used by QIP Router's file-based
+// routing context. Empty optional roots disable that source category.
+type RouterFileLayout struct {
+	ContentRoot    string
+	RecipesRoot    string
+	FormsRoot      string
+	ComponentsRoot string
+	ViewSource     bool
+}
+
 // RouterFileState is a complete snapshot of the file-based router inputs.
 // It contains discovered source data, but no live WASM runtime resources.
 type RouterFileState struct {
@@ -61,24 +71,24 @@ func (slot *routerServerStateSlot) clear() *RouterServerState {
 	return slot.swap(nil)
 }
 
-func loadRouterFileState(ctx context.Context, contentRoot string, recipesRoot string, formsRoot string, componentsRoot string, opts options, routeOptions qinternal.RouteOptions) (*RouterFileState, error) {
-	contentRoutes, contentRead, err := loadContentRoutesAndReader(ctx, contentRoot, routeOptions)
+func loadRouterFileState(ctx context.Context, layout RouterFileLayout, routeOptions qinternal.RouteOptions) (*RouterFileState, error) {
+	contentRoutes, contentRead, err := loadContentRoutesAndReader(ctx, layout.ContentRoot, routeOptions)
 	if err != nil {
 		return nil, err
 	}
-	recipeFiles, recipeDigests, err := loadRecipeFileSet(recipesRoot)
+	recipeFiles, recipeDigests, err := loadRecipeFileSet(layout.RecipesRoot)
 	if err != nil {
 		return nil, err
 	}
-	recipeStamps, err := scanRecipeModuleStamps(recipesRoot)
+	recipeStamps, err := scanRecipeModuleStamps(layout.RecipesRoot)
 	if err != nil {
 		return nil, err
 	}
-	formModules, formDigests, err := loadFormModules(formsRoot)
+	formModules, formDigests, err := loadFormModules(layout.FormsRoot)
 	if err != nil {
 		return nil, err
 	}
-	componentAssets, componentRequestPaths, err := loadComponentAssets(componentsRoot)
+	componentAssets, componentRequestPaths, err := loadComponentAssets(layout.ComponentsRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -87,12 +97,12 @@ func loadRouterFileState(ctx context.Context, contentRoot string, recipesRoot st
 	componentSourceAssets := make([]qinternal.RecipeSourceAsset, 0)
 	recipeSourceByPath := make(map[string]qinternal.RecipeSourceAsset)
 	var recipeSourceIndex []byte
-	if opts.viewSource && recipesRoot != "" {
-		recipeSourceAssets, err = qinternal.CollectRecipeSourceAssets(recipesRoot)
+	if layout.ViewSource && layout.RecipesRoot != "" {
+		recipeSourceAssets, err = qinternal.CollectRecipeSourceAssets(layout.RecipesRoot)
 		if err != nil {
 			return nil, err
 		}
-		componentSourceAssets, err = qinternal.CollectComponentSourceAssets(componentsRoot)
+		componentSourceAssets, err = qinternal.CollectComponentSourceAssets(layout.ComponentsRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -136,8 +146,8 @@ func buildRouterServerState(ctx context.Context, files *RouterFileState, opts op
 	}, nil
 }
 
-func loadRouterServerState(ctx context.Context, contentRoot string, recipesRoot string, formsRoot string, componentsRoot string, opts options, routeOptions qinternal.RouteOptions) (*RouterServerState, error) {
-	files, err := loadRouterFileState(ctx, contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+func loadRouterServerState(ctx context.Context, layout RouterFileLayout, opts options, routeOptions qinternal.RouteOptions) (*RouterServerState, error) {
+	files, err := loadRouterFileState(ctx, layout, routeOptions)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,12 @@ import (
 	qinternal "github.com/royalicing/qip/internal"
 )
 
-func newDevRequestHandler(logPrefix string, stateSlot *routerServerStateSlot, reloadRecipesIfChanged func(), reloadStateForRequest func(*http.Request), routeOptions qinternal.RouteOptions, timeouts routeHandlerTimeouts) http.Handler {
+type RouterServerTimeouts struct {
+	contentRecipe   time.Duration
+	applicationWARC time.Duration
+}
+
+func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot, reloadRecipesIfChanged func(), reloadStateForRequest func(*http.Request), routeOptions qinternal.RouteOptions, timeouts RouterServerTimeouts) http.Handler {
 	return qinternal.NewRequestHandler(qinternal.RequestHandlerConfig{
 		LogPrefix:    logPrefix,
 		RouteOptions: routeOptions,
@@ -108,7 +113,7 @@ func newDevRequestHandler(logPrefix string, stateSlot *routerServerStateSlot, re
 					return qinternal.RoutedResponse{}, err
 				}
 
-				contentType = devResponseContentType(route.SourceMIME, hasRecipes, result, body)
+				contentType = routerResponseContentType(route.SourceMIME, hasRecipes, result, body)
 				if strings.HasPrefix(contentType, "text/html") {
 					body, formDigests, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
 					if err != nil {
@@ -134,7 +139,7 @@ func newDevRequestHandler(logPrefix string, stateSlot *routerServerStateSlot, re
 				ctx, cancel := withExecutionTimeout(ctx, timeouts.applicationWARC)
 				defer cancel()
 				response, err = transformRouteResponseWithKindredRoutes(ctx, applicationWARCPipeline, r.URL.Path, response, reqID, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
-					return resolveDevBaseRouteResponse(ctx, current, requestPath, reqID, timeouts)
+					return resolveRouterBaseResponse(ctx, current, requestPath, reqID, timeouts)
 				}, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
 					return resolveKindredStaticRoute(ctx, current, requestPath)
 				})

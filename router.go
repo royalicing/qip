@@ -156,7 +156,12 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	componentsRoot = projectConfig.ComponentsRoot
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), RouterFileLayout{
+		ContentRoot:    contentRoot,
+		RecipesRoot:    recipesRoot,
+		FormsRoot:      formsRoot,
+		ComponentsRoot: componentsRoot,
+	}, opts, routeOptions)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -168,11 +173,11 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		}
 	}()
 
-	handlerTimeouts := routeHandlerTimeouts{
+	handlerTimeouts := RouterServerTimeouts{
 		contentRecipe:   defaultRouteRecipeTimeout,
 		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
-	handler := newDevRequestHandler(logPrefix, stateSlot, nil, nil, routeOptions, handlerTimeouts)
+	handler := newRouterRequestHandler(logPrefix, stateSlot, nil, nil, routeOptions, handlerTimeouts)
 	requestCtx := context.Background()
 	var traceRecorder *routeTraceRecorder
 	if routeVerbose {
@@ -263,7 +268,12 @@ func routeListCmd(args []string) {
 	componentsRoot = projectConfig.ComponentsRoot
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadRouterServerState(context.Background(), contentRoot, recipesRoot, formsRoot, componentsRoot, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), RouterFileLayout{
+		ContentRoot:    contentRoot,
+		RecipesRoot:    recipesRoot,
+		FormsRoot:      formsRoot,
+		ComponentsRoot: componentsRoot,
+	}, opts, routeOptions)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -303,7 +313,7 @@ func buildRouteListEntries(state *RouterServerState) []routeListEntry {
 	for _, requestPath := range paths {
 		route := canonicalRoutes[requestPath]
 		hasRecipes := shouldApplyRecipesForRequestPath(requestPath, route, state.recipeChains)
-		contentType := devResponseContentType(route.SourceMIME, hasRecipes, qinternal.NewRawBytesContent(nil), nil)
+		contentType := routerResponseContentType(route.SourceMIME, hasRecipes, qinternal.NewRawBytesContent(nil), nil)
 		if hasRecipes {
 			if recipeType := state.recipeOutput[route.SourceMIME]; recipeType != "" {
 				contentType = recipeType
@@ -404,7 +414,7 @@ func routerCmd(args []string) {
 		state        *RouterServerState
 		routeOptions qinternal.RouteOptions
 	}
-	handlerTimeouts := routeHandlerTimeouts{
+	handlerTimeouts := RouterServerTimeouts{
 		contentRecipe:   defaultRouteRecipeTimeout,
 		applicationWARC: defaultRouteWARCTransformTimeout,
 	}
@@ -437,7 +447,13 @@ func routerCmd(args []string) {
 		}
 
 		routeOptions := qinternal.DefaultRouteOptions()
-		state, err := loadRouterServerState(ctx, request.ContentRoot, projectConfig.RecipesRoot, projectConfig.FormsRoot, projectConfig.ComponentsRoot, opts, routeOptions)
+		state, err := loadRouterServerState(ctx, RouterFileLayout{
+			ContentRoot:    request.ContentRoot,
+			RecipesRoot:    projectConfig.RecipesRoot,
+			FormsRoot:      projectConfig.FormsRoot,
+			ComponentsRoot: projectConfig.ComponentsRoot,
+			ViewSource:     request.ViewSource,
+		}, opts, routeOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -501,7 +517,7 @@ func routerCmd(args []string) {
 				traceRecorder = &routeTraceRecorder{}
 				requestCtx = qinternal.WithPipelineTrace(requestCtx, traceRecorder.Record)
 			}
-			response, ok, err := resolveDevBaseRouteResponse(requestCtx, loaded.state, request.RequestPath, 0, handlerTimeouts)
+			response, ok, err := resolveRouterBaseResponse(requestCtx, loaded.state, request.RequestPath, 0, handlerTimeouts)
 			if err != nil {
 				return qinternal.InProcessHTTPResponse{}, err
 			}

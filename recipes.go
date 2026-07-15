@@ -176,15 +176,15 @@ func compileRecipeFileSet(ctx context.Context, files recipeFileSet, opts options
 
 	for _, mimeType := range mimeTypes {
 		candidates := files[mimeType]
-		specs := make([]moduleSpec, len(candidates))
+		components := make([]ResolvedComponent, len(candidates))
 		for i, candidate := range candidates {
-			specs[i] = moduleSpec{
-				path:     candidate.path,
-				body:     candidate.body,
-				uniforms: make(map[string]string),
+			components[i] = ResolvedComponent{
+				Name:          candidate.path,
+				WASM:          candidate.body,
+				UniformValues: make(map[string]string),
 			}
 		}
-		pipeline, err := buildPipelineFromSpecs(ctx, specs, opts)
+		pipeline, err := buildPipelineFromResolvedComponents(ctx, components, opts)
 		if err != nil {
 			closePipelines(ctx, chains)
 			return nil, err

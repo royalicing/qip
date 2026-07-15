@@ -12,7 +12,7 @@ import (
 	qinternal "github.com/royalicing/qip/internal"
 )
 
-func resolveDevBaseRouteResponse(ctx context.Context, current *RouterServerState, requestPath string, requestID uint64, timeouts routeHandlerTimeouts) (qinternal.InProcessHTTPResponse, bool, error) {
+func resolveRouterBaseResponse(ctx context.Context, current *RouterServerState, requestPath string, requestID uint64, timeouts RouterServerTimeouts) (qinternal.InProcessHTTPResponse, bool, error) {
 	if current == nil {
 		return qinternal.InProcessHTTPResponse{}, false, errors.New("runtime state is unavailable")
 	}
@@ -56,7 +56,7 @@ func resolveDevBaseRouteResponse(ctx context.Context, current *RouterServerState
 	if err != nil {
 		return qinternal.InProcessHTTPResponse{}, false, err
 	}
-	contentType := devResponseContentType(route.SourceMIME, hasRecipes, result, body)
+	contentType := routerResponseContentType(route.SourceMIME, hasRecipes, result, body)
 	if strings.HasPrefix(contentType, "text/html") {
 		body, _, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
 		if err != nil {

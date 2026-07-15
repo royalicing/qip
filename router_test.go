@@ -110,7 +110,7 @@ func TestDevHandlerServesURIListRedirect(t *testing.T) {
 		recipeChains: map[string]*qinternal.Pipeline{},
 	}
 	stateSlot := newRouterServerStateSlot(state)
-	handler := newDevRequestHandler("test", stateSlot, nil, nil, qinternal.DefaultRouteOptions(), routeHandlerTimeouts{})
+	handler := newRouterRequestHandler("test", stateSlot, nil, nil, qinternal.DefaultRouteOptions(), RouterServerTimeouts{})
 
 	resp, err := qinternal.ServeInProcessHTTP(handler, http.MethodGet, "/how-it-works", nil)
 	if err != nil {
