@@ -360,16 +360,16 @@ The amount is ASCII decimal text, not a JavaScript `Number`, so the component pe
 
 ## Download
 
-- <a href="/components/utf8/currency-format-en-us.wasm" download>currency-format-en-US.wasm</a> — 2.26 kB
-- <a href="/components/utf8/currency-format-en-in.wasm" download>currency-format-en-IN.wasm</a> — 2.26 kB
-- <a href="/components/utf8/currency-format-es-es.wasm" download>currency-format-es-ES.wasm</a> — 2.23 kB
-- <a href="/components/utf8/currency-format-de-de.wasm" download>currency-format-de-DE.wasm</a> — 2.30 kB
-- <a href="/components/utf8/currency-format-ar-eg.wasm" download>currency-format-ar-EG.wasm</a> — 2.63 kB
-- <a href="/components/utf8/currency-format-fr-fr.wasm" download>currency-format-fr-FR.wasm</a> — 2.39 kB
-- <a href="/components/utf8/currency-format-pt-br.wasm" download>currency-format-pt-BR.wasm</a> — 2.30 kB
-- <a href="/components/utf8/currency-format-ja-jp.wasm" download>currency-format-ja-JP.wasm</a> — 2.26 kB
-- <a href="/components/utf8/currency-format-zh-cn.wasm" download>currency-format-zh-CN.wasm</a> — 2.26 kB
-- <a href="/components/utf8/iso-4217-alpha-to-numeric.wasm" download>iso-4217-alpha-to-numeric.wasm</a> — 1.83 kB
+- <a href="/components/utf8/currency-format-en-us.wasm" download>currency-format-en-US.wasm</a> — <qip-content-size src="/components/utf8/currency-format-en-us.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-en-in.wasm" download>currency-format-en-IN.wasm</a> — <qip-content-size src="/components/utf8/currency-format-en-in.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-es-es.wasm" download>currency-format-es-ES.wasm</a> — <qip-content-size src="/components/utf8/currency-format-es-es.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-de-de.wasm" download>currency-format-de-DE.wasm</a> — <qip-content-size src="/components/utf8/currency-format-de-de.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-ar-eg.wasm" download>currency-format-ar-EG.wasm</a> — <qip-content-size src="/components/utf8/currency-format-ar-eg.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-fr-fr.wasm" download>currency-format-fr-FR.wasm</a> — <qip-content-size src="/components/utf8/currency-format-fr-fr.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-pt-br.wasm" download>currency-format-pt-BR.wasm</a> — <qip-content-size src="/components/utf8/currency-format-pt-br.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-ja-jp.wasm" download>currency-format-ja-JP.wasm</a> — <qip-content-size src="/components/utf8/currency-format-ja-jp.wasm"></qip-content-size>
+- <a href="/components/utf8/currency-format-zh-cn.wasm" download>currency-format-zh-CN.wasm</a> — <qip-content-size src="/components/utf8/currency-format-zh-cn.wasm"></qip-content-size>
+- <a href="/components/utf8/iso-4217-alpha-to-numeric.wasm" download>iso-4217-alpha-to-numeric.wasm</a> — <qip-content-size src="/components/utf8/iso-4217-alpha-to-numeric.wasm"></qip-content-size>
 
 ## Details
 
@@ -377,20 +377,20 @@ Each `currency-format-<locale>.wasm` keeps its locale and formatting data fixed 
 
 Amounts are ASCII decimals matching `-?[0-9]+(\.[0-9]+)?`, avoiding JavaScript floating-point conversion. Each module applies its locale's grouping and the currency's ISO minor units. Invalid input and unsupported codes trap. The page loads locale modules on demand.
 
-Each locale has an independent `compliance/currency-format-<locale>.comply.wasm` executable specification. Every supported currency is dueled against JavaScript `Intl.NumberFormat`, including locale-specific grouping thresholds, separators, affix placement, Arabic-Indic digits, bidi markers, zero- and three-digit currencies, negative zero, rounding carries, and generated decimal inputs.
+Each locale has an independent `compliance/currency-format-<locale>.comply.wasm` executable specification. Every supported currency is dueled against JavaScript [`Intl.NumberFormat`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/NumberFormat), including locale-specific grouping thresholds, separators, affix placement, Arabic-Indic digits, bidi markers, zero- and three-digit currencies, negative zero, rounding carries, and generated decimal inputs.
 
 ## Convert alphabetic codes
 
 The companion component converts all 178 current ISO 4217 alphabetic codes to three-digit ASCII numeric codes. It keeps leading zeroes, which are significant in the standard representation:
 
 ```bash
-printf %s AUD | qip run iso-4217-alpha-to-numeric.wasm
+echo -n AUD | qip run iso-4217-alpha-to-numeric.wasm
 # 036
 
-printf %s BHD | qip run iso-4217-alpha-to-numeric.wasm
+echo -n BHD | qip run iso-4217-alpha-to-numeric.wasm
 # 048
 ```
 
 Input is exactly three uppercase ASCII letters. Unknown, lowercase, or malformed codes trap. Its compliance component exhaustively declares all 178 mappings from the SIX Group ISO 4217 List One published 2026-01-01, plus rejection cases.
 
-This component is intentionally narrower than `Intl.NumberFormat`. It does not accept exponent notation, `NaN`, infinity, signs other than a leading minus, configurable fraction digits, or runtime locale selection. Use host `Intl` when ambient platform behavior is acceptable and you need its full option surface.
+This component is intentionally narrower than [`Intl.NumberFormat`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/NumberFormat). It does not accept exponent notation, `NaN`, infinity, signs other than a leading minus, configurable fraction digits, or runtime locale selection. Use host `Intl` when differing platform behavior is acceptable and you need its full range of options.

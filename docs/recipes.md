@@ -31,6 +31,22 @@ Given MIME `type/subtype`, recipe directory is:
   - `30-warc-to-sitemap.wasm`
   - `40-warc-add-open-graph-image-meta.wasm`
 
+### Rendering referenced content sizes
+
+`recipes/application/warc/25-add-content-size.wasm` fills
+`<qip-content-size>` elements from the response body stored at an absolute
+site path:
+
+```html
+<qip-content-size src="/components/example.wasm"></qip-content-size>
+```
+
+Bodies below 1,000 bytes render as bytes. Larger bodies render as decimal
+kilobytes with two fractional digits. The recipe updates the enclosing HTTP
+and WARC content lengths. During single-route development, the router adds
+direct static `src` dependencies to the subset WARC. An unresolved size path
+is an error instead of producing a plausible size.
+
 ## Execution Context
 
 WARC recipes can run in two useful scopes. Pick the scope based on the question you are answering.

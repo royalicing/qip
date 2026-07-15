@@ -180,6 +180,7 @@ modules/application/warc/warc-check-broken-module-imports.wasm: ZIG_WASM_MAX_MEM
 modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 modules/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 modules/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 modules/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 modules/image/png/png-to-bmp.wasm: ZIG_WASM_MAX_MEMORY = 134217728
@@ -223,7 +224,7 @@ modules: modules-wat-wasm modules-c-wasm modules-zig-wasm
 
 test: qip modules test-go test-node test-zig test-snapshot test-comply
 
-test-node: qip modules
+test-node: qip modules recipes/application/warc/25-add-content-size.wasm
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
 	node --test test/qip-play-debug-stats.mjs
@@ -247,6 +248,8 @@ test-node: qip modules
 	node --test test/currency-format-ja-jp-comply.mjs
 	node --test test/currency-format-zh-cn-comply.mjs
 	node --test test/iso-4217-alpha-to-numeric-comply.mjs
+	node --test test/svg-data-uri-comply.mjs
+	node --test test/warc-content-size.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
 	node --test test/qip-wasm-policy.mjs
