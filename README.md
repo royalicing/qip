@@ -472,7 +472,15 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 
 ## TODO
 
+- [x] Add a custom element such as `<qip-content-size src="/components/example.wasm">` that resolves a WARC site path and renders its byte or kilobyte size, so download lists do not hard-code artifact sizes.
 - [ ] Add CSV to chart SVG example
+- [ ] Add god rays, metaballs, dithering, grain gradient, mesh gradient, heatmap, liquid metal, halftone from https://github.com/paper-design/shaders/tree/main/packages/shaders/src/shaders
+  - See https://shaders.paper.design
+- [ ] Add `application/edifact` example
+- [ ] Add Command Palette example, combining `<input>` and `<canvas>`
+- [ ] Add Wuffs example
+  - See: https://github.com/google/wuffs/blob/main/doc/getting-started.md
+  - See roadmap of examples: https://github.com/google/wuffs/blob/main/doc/roadmap.md
 - [ ] Allow `qip comply` to be run against arbitrary shell command. This would internally call out to the underlying command by copying the input when the comply task calls `impl.render`.
 - [ ] Add Email render example (do we use an existing layout system?)
   - See https://www.joshwcomeau.com/react/wonderful-emails-with-mjml-and-mdx/
@@ -484,7 +492,8 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
   - See https://developer.mozilla.org/en-US/docs/Web/MathML/Reference/Element/semantics
   - See https://asciimath.org/#syntax
   - Have `/math-to-html` demo like https://katex.org/#demo
-- [ ] Rename CLI command to `qip router dev`
+- [ ] Rename `qip dev` command to `qip router dev`
+- [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
 - [x] Add max-memory and fixed-memory policies to CLI and custom elements.
 - [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
