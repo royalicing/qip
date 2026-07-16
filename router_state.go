@@ -134,8 +134,8 @@ func loadRouterFileState(ctx context.Context, layout RouterFileLayout, routeOpti
 	}, nil
 }
 
-func buildRouterServerState(ctx context.Context, files *RouterFileState, opts options) (*RouterServerState, error) {
-	recipeChains, err := compileRecipeFileSet(ctx, files.recipeFiles, opts)
+func buildRouterServerState(ctx context.Context, files *RouterFileState, compiler PipelineCompiler) (*RouterServerState, error) {
+	recipeChains, err := compileRecipeFileSet(ctx, files.recipeFiles, compiler)
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +146,12 @@ func buildRouterServerState(ctx context.Context, files *RouterFileState, opts op
 	}, nil
 }
 
-func loadRouterServerState(ctx context.Context, layout RouterFileLayout, opts options, routeOptions qinternal.RouteOptions) (*RouterServerState, error) {
+func loadRouterServerState(ctx context.Context, layout RouterFileLayout, compiler PipelineCompiler, routeOptions qinternal.RouteOptions) (*RouterServerState, error) {
 	files, err := loadRouterFileState(ctx, layout, routeOptions)
 	if err != nil {
 		return nil, err
 	}
-	return buildRouterServerState(ctx, files, opts)
+	return buildRouterServerState(ctx, files, compiler)
 }
 
 func (state *RouterServerState) close(ctx context.Context) {

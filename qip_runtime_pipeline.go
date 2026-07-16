@@ -46,34 +46,22 @@ func buildPipeline(ctx context.Context, modules []string, opts options) (*qinter
 			UniformValues: make(map[string]string),
 		}
 	}
-	return buildPipelineFromInvocations(ctx, invocations, opts)
+	return newQIPRuntime(opts).CompileInvocations(ctx, invocations)
 }
 
 func buildPipelineFromInvocations(ctx context.Context, invocations []ComponentInvocation, opts options) (*qinternal.Pipeline, error) {
-	components, err := resolveComponentInvocations(invocations)
-	if err != nil {
-		return nil, err
-	}
-	return buildPipelineFromResolvedComponents(ctx, components, opts)
+	return newQIPRuntime(opts).CompileInvocations(ctx, invocations)
 }
 
 func resolveComponentInvocations(invocations []ComponentInvocation) ([]ResolvedComponent, error) {
-	components := make([]ResolvedComponent, len(invocations))
-	for i, invocation := range invocations {
-		body, err := readModuleSource(invocation.Source)
-		if err != nil {
-			return nil, err
-		}
-		components[i] = ResolvedComponent{
-			Name:          invocation.Source,
-			WASM:          body,
-			UniformValues: maps.Clone(invocation.UniformValues),
-		}
-	}
-	return components, nil
+	return newQIPRuntime(options{}).ResolveComponents(invocations)
 }
 
 func buildPipelineFromResolvedComponents(ctx context.Context, components []ResolvedComponent, opts options) (*qinternal.Pipeline, error) {
+	return newQIPRuntime(opts).CompilePipeline(ctx, components)
+}
+
+func compileResolvedComponents(ctx context.Context, components []ResolvedComponent, opts options) (*qinternal.Pipeline, error) {
 	if len(components) == 0 {
 		return &qinternal.Pipeline{}, nil
 	}

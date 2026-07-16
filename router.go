@@ -161,7 +161,7 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		RecipesRoot:    recipesRoot,
 		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
-	}, opts, routeOptions)
+	}, newQIPRuntime(opts), routeOptions)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -273,7 +273,7 @@ func routeListCmd(args []string) {
 		RecipesRoot:    recipesRoot,
 		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
-	}, opts, routeOptions)
+	}, newQIPRuntime(opts), routeOptions)
 	if err != nil {
 		gameOver("%v", err)
 	}
@@ -453,7 +453,7 @@ func routerCmd(args []string) {
 			FormsRoot:      projectConfig.FormsRoot,
 			ComponentsRoot: projectConfig.ComponentsRoot,
 			ViewSource:     request.ViewSource,
-		}, opts, routeOptions)
+		}, newQIPRuntime(opts), routeOptions)
 		if err != nil {
 			return nil, err
 		}

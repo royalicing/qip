@@ -4,10 +4,21 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qinternal "github.com/royalicing/qip/internal"
 )
+
+type recordingPipelineCompiler struct {
+	components []ResolvedComponent
+	pipeline   *qinternal.Pipeline
+}
+
+func (compiler *recordingPipelineCompiler) CompilePipeline(_ context.Context, components []ResolvedComponent) (*qinternal.Pipeline, error) {
+	compiler.components = slices.Clone(components)
+	return compiler.pipeline, nil
+}
 
 func TestRouterFileStateCapturesRecipeBytesWithoutCompilingThem(t *testing.T) {
 	contentRoot := t.TempDir()
@@ -43,7 +54,7 @@ func TestRouterFileStateCapturesRecipeBytesWithoutCompilingThem(t *testing.T) {
 		t.Fatalf("replace recipe after snapshot: %v", err)
 	}
 
-	if _, err := buildRouterServerState(context.Background(), files, options{}); err == nil {
+	if _, err := buildRouterServerState(context.Background(), files, newQIPRuntime(options{})); err == nil {
 		t.Fatal("expected server-state construction to compile the invalid bytes captured in the file snapshot")
 	}
 }
@@ -68,5 +79,39 @@ func TestRouterServerStateSlotSwapsCompleteGenerations(t *testing.T) {
 	}
 	if _, ok := current.contentRoutes["/second"]; !ok {
 		t.Fatal("current generation does not contain its complete route state")
+	}
+}
+
+func TestBuildRouterServerStateMapsRecipeFilesThroughCompiler(t *testing.T) {
+	pipeline := &qinternal.Pipeline{}
+	compiler := &recordingPipelineCompiler{pipeline: pipeline}
+	files := &RouterFileState{
+		recipeFiles: recipeFileSet{
+			"text/markdown": {{
+				path: "recipes/text/markdown/10-render.wasm",
+				body: []byte("captured wasm"),
+			}},
+		},
+	}
+
+	state, err := buildRouterServerState(context.Background(), files, compiler)
+	if err != nil {
+		t.Fatalf("buildRouterServerState: %v", err)
+	}
+	if state.RouterFileState != files {
+		t.Fatal("server state does not retain its source file generation")
+	}
+	if state.recipeChains["text/markdown"] != pipeline {
+		t.Fatal("server state does not contain the compiler result")
+	}
+	if got := len(compiler.components); got != 1 {
+		t.Fatalf("compiler component count=%d, want 1", got)
+	}
+	component := compiler.components[0]
+	if component.Name != "recipes/text/markdown/10-render.wasm" {
+		t.Fatalf("component name=%q", component.Name)
+	}
+	if string(component.WASM) != "captured wasm" {
+		t.Fatalf("component Wasm=%q, want captured file bytes", component.WASM)
 	}
 }

@@ -82,6 +82,7 @@ func devCmd(args []string) {
 		ComponentsRoot: componentsRoot,
 		ViewSource:     opts.viewSource,
 	}
+	qipRuntime := newQIPRuntime(opts)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	listener, devIdentity, err := listenOrReloadDevServer(addr, port)
@@ -97,7 +98,7 @@ func devCmd(args []string) {
 	}()
 
 	routeOptions := qinternal.DefaultRouteOptions()
-	state, err := loadRouterServerState(context.Background(), layout, opts, routeOptions)
+	state, err := loadRouterServerState(context.Background(), layout, qipRuntime, routeOptions)
 	if err != nil {
 		_ = listener.Close()
 		removeDevServerIdentity(port, devIdentity)
@@ -116,7 +117,7 @@ func devCmd(args []string) {
 		defer reloadMu.Unlock()
 
 		reloadStart := time.Now()
-		nextState, err := loadRouterServerState(context.Background(), layout, opts, routeOptions)
+		nextState, err := loadRouterServerState(context.Background(), layout, qipRuntime, routeOptions)
 		if err != nil {
 			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
 			return
@@ -148,7 +149,7 @@ func devCmd(args []string) {
 		}
 
 		reloadStart := time.Now()
-		nextState, err := loadRouterServerState(context.Background(), layout, opts, routeOptions)
+		nextState, err := loadRouterServerState(context.Background(), layout, qipRuntime, routeOptions)
 		if err != nil {
 			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
 			return

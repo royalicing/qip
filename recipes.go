@@ -76,7 +76,7 @@ func loadRecipeChains(ctx context.Context, recipesRoot string, opts options) (ma
 	if err != nil {
 		return nil, nil, err
 	}
-	chains, err := compileRecipeFileSet(ctx, files, opts)
+	chains, err := compileRecipeFileSet(ctx, files, newQIPRuntime(opts))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,7 +166,7 @@ func loadRecipeFileSet(recipesRoot string) (recipeFileSet, map[string][][32]byte
 	return files, digestsByMIME, nil
 }
 
-func compileRecipeFileSet(ctx context.Context, files recipeFileSet, opts options) (map[string]*qinternal.Pipeline, error) {
+func compileRecipeFileSet(ctx context.Context, files recipeFileSet, compiler PipelineCompiler) (map[string]*qinternal.Pipeline, error) {
 	chains := make(map[string]*qinternal.Pipeline, len(files))
 	mimeTypes := make([]string, 0, len(files))
 	for mimeType := range files {
@@ -184,7 +184,7 @@ func compileRecipeFileSet(ctx context.Context, files recipeFileSet, opts options
 				UniformValues: make(map[string]string),
 			}
 		}
-		pipeline, err := buildPipelineFromResolvedComponents(ctx, components, opts)
+		pipeline, err := compiler.CompilePipeline(ctx, components)
 		if err != nil {
 			closePipelines(ctx, chains)
 			return nil, err
