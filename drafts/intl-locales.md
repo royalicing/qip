@@ -137,7 +137,7 @@ CLDR `parentLocales` exception table (e.g., `es_AR → es_419 → es`, `en_AU �
 people notice.
 
 **Memory:** blob lives in data segments; fixed buffers; compile with
-`--initial-memory=--max-memory`, pass `qip run --fixed-memory` and the safety checker.
+`--initial-memory=--max-memory`, pass the default runtime policy and the safety checker.
 Binary-search + direct-offset access means no unpack step and no heap.
 
 ## 5. Scope ladder (which Intl features, in order)
@@ -172,7 +172,7 @@ scripting, no runtime code.
 - PluralRules, all locales: **< 16 KB** wasm.
 - NumberFormat (decimal/percent/currency-basic), all locales: **< 96 KB** wasm.
 - DateTimeFormat (style presets, Gregorian), all locales: **< 256 KB** wasm.
-- Every component passes `qip run --fixed-memory --max-memory` and the safety checker.
+- Every component passes `qip run --max-memory` and the safety checker.
 - Correctness oracle: differential test against Node's `Intl` (which is ICU) over a
   generated matrix of (locale × options × values); snapshot the outputs as comply-style
   fixtures so components are testable without Node afterward.

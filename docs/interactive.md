@@ -140,13 +140,14 @@ For debug instrumentation, add `debug` to `<qip-play>`. In debug mode the host c
 `<qip-play>` can reject modules before `WebAssembly.instantiate`:
 
 ```html
-<qip-play max-memory="1048576" fixed-memory>
+<qip-play max-memory="67108864">
   <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>
 ```
 
 - `max-memory="<bytes>"` rejects a module whose declared memory minimum or maximum exceeds the cap. If a module has memory but no declared maximum, it is rejected.
-- `fixed-memory` rejects a module that can grow linear memory while it runs.
+- Modules containing `memory.grow` are rejected by default.
+- `allow-memory-grow` permits `memory.grow` and requires `max-memory` on the same element.
 
 ## Why This Shape
 

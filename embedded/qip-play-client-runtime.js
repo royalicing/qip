@@ -116,10 +116,11 @@ class QIPPlayWasmReader {
 function qipPlayReadModulePolicy(rootElement) {
   const maxMemoryRaw = rootElement.getAttribute("max-memory");
   const maxMemoryBytes = maxMemoryRaw === null ? 0 : qipPlayParsePolicyBytes(maxMemoryRaw, "max-memory");
-  const rejectOpcodes = [];
-  if (rootElement.hasAttribute("fixed-memory")) {
-    rejectOpcodes.push(QIP_PLAY_OPCODE_MEMORY_GROW);
+  const allowMemoryGrow = rootElement.hasAttribute("allow-memory-grow");
+  if (allowMemoryGrow && maxMemoryBytes === 0) {
+    throw new Error("allow-memory-grow requires max-memory=\"<bytes>\"");
   }
+  const rejectOpcodes = allowMemoryGrow ? [] : [QIP_PLAY_OPCODE_MEMORY_GROW];
   return { maxMemoryBytes, rejectOpcodes };
 }
 
@@ -737,12 +738,13 @@ function qipPlayPresentation(element, renderWidth) {
 /**
  * <qip-play> is a light-DOM browser host for interactive RGBA components.
  *
- * Optional static module policy attributes:
+ * Static module policy:
  *
+ * - Modules containing memory.grow are rejected by default.
  * - max-memory="<bytes>" rejects modules whose declared memory minimum or
  *   maximum exceeds the byte cap. A module with memory but no declared maximum
  *   is rejected when this attribute is set.
- * - fixed-memory rejects modules that can grow linear memory while they run.
+ * - allow-memory-grow permits memory.grow and requires max-memory.
  */
 class QIPPlayElement extends HTMLElement {
   constructor() {

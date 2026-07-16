@@ -297,9 +297,9 @@ That is often intentional. Analytics and tracking scripts are added to help prod
 
 QIP is meant to sit on the stricter side of this spectrum. A component should not assume it can read global page context, discover tokens, call network APIs, or grow into a larger runtime. The host passes input explicitly and reads output explicitly.
 
-The CLI and browser custom elements now expose that boundary as policy. `qip run`, `qip bench`, and `qip image` can reject modules with `--max-memory <bytes>` and `--fixed-memory`. `<qip-edit>` and `<qip-play>` can do the same before browser compilation with `max-memory="<bytes>"` and `fixed-memory`.
+The CLI and browser custom elements enforce fixed memory by default. `qip run`, `qip bench`, and `qip image` reject modules containing `memory.grow`; `<qip-edit>` and `<qip-play>` do the same before browser compilation. `--allow-memory-grow` and `allow-memory-grow` opt out when paired with an explicit `--max-memory <bytes>` or `max-memory="<bytes>"` cap.
 
-Those checks are opt-in. That is deliberate for now: current components do not use `memory.grow`, but some older artifacts still need explicit memory maxima before a max-memory rule can become painless by default.
+The cap remains opt-in for fixed-memory modules because their initial memory requirements vary. It is mandatory when growth is allowed.
 
 ## How WebAssembly Changes The Shape
 

@@ -375,7 +375,7 @@ config-then-payload specialization keeps using the two-step expand flow rather t
 inventing multi-input pipeline syntax now.
 
 **Phase 3 — browser and router.**
-`<qip-preview follow-wasm="1" max-memory=... fixed-memory>` with the CSP caveat
+`<qip-preview follow-wasm="1" max-memory=...>` with the CSP caveat
 documented; recipes that emit `application/wasm` let the router build per-route
 specialized components. Add content-addressed memoization everywhere: cache key =
 `hash(generator) ⊕ hash(input)` → generated component. Specialization becomes
@@ -527,7 +527,7 @@ pay-once, and the cache doubles as the audit trail.
   browsers share one resolution scheme?
 - Receive-side policy defaults: a host accepting components over the network should
   probably gate harder than a local `qip run` (mandatory safety check, mandatory
-  `--fixed-memory`, tighter timeouts). Is that a named profile — e.g. a "remote
+  fixed memory, tighter timeouts). Is that a named profile — e.g. a "remote
   profile" — in the docs?
 - Determinism-based auditing (D4) assumes bit-identical wasm execution across
   runtimes; that holds for the strict profile (no NaN-payload games, no threads), but

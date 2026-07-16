@@ -13,11 +13,13 @@ globalThis.customElements = {
 
 vm.runInThisContext(
   readFileSync("embedded/qip-edit-client-runtime.js", "utf8") +
+    "\nglobalThis.__qipEditReadModulePolicy = qipEditReadModulePolicy;" +
     "\nglobalThis.__qipEditValidateWasmModulePolicy = qipEditValidateWasmModulePolicy;",
   { filename: "embedded/qip-edit-client-runtime.js" },
 );
 vm.runInThisContext(
   readFileSync("embedded/qip-play-client-runtime.js", "utf8") +
+    "\nglobalThis.__qipPlayReadModulePolicy = qipPlayReadModulePolicy;" +
     "\nglobalThis.__qipPlayValidateWasmModulePolicy = qipPlayValidateWasmModulePolicy;",
   { filename: "embedded/qip-play-client-runtime.js" },
 );
@@ -69,6 +71,57 @@ function validateWithBoth(moduleBytes, policy) {
   __qipEditValidateWasmModulePolicy(moduleBytes.buffer, policy, "test.wasm");
   __qipPlayValidateWasmModulePolicy(moduleBytes.buffer, policy, "test.wasm");
 }
+
+function policyElement(attributes = {}) {
+  return {
+    getAttribute(name) {
+      return Object.hasOwn(attributes, name) ? attributes[name] : null;
+    },
+    hasAttribute(name) {
+      return Object.hasOwn(attributes, name);
+    },
+  };
+}
+
+function readPolicyWithBoth(attributes) {
+  const element = policyElement(attributes);
+  return [
+    __qipEditReadModulePolicy(element),
+    __qipPlayReadModulePolicy(element),
+  ];
+}
+
+test("browser wasm policy rejects memory.grow by default", () => {
+  for (const policy of readPolicyWithBoth()) {
+    assert.deepEqual(policy, fixedMemoryPolicy);
+  }
+});
+
+test("browser wasm policy requires a cap when memory growth is allowed", () => {
+  assert.throws(
+    () => readPolicyWithBoth({ "allow-memory-grow": "" }),
+    /allow-memory-grow requires max-memory/,
+  );
+});
+
+test("browser wasm policy allows capped memory growth explicitly", () => {
+  const moduleBytes = buildModule({
+    memory: { min: 1, hasMax: true, max: 2 },
+    ops: [
+      0x41, 0x01, // i32.const 1
+      0x40, 0x00, // memory.grow 0
+      0x1a, // drop
+      0x0b, // end
+    ],
+  });
+  for (const policy of readPolicyWithBoth({
+    "allow-memory-grow": "",
+    "max-memory": String(2 * page),
+  })) {
+    assert.deepEqual(policy, { maxMemoryBytes: 2 * page, rejectOpcodes: [] });
+    assert.doesNotThrow(() => validateWithBoth(moduleBytes, policy));
+  }
+});
 
 test("browser wasm policy rejects memory.grow", () => {
   const moduleBytes = buildModule({

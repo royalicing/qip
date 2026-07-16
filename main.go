@@ -93,18 +93,22 @@ type options struct {
 	modulePolicy           wasminspect.ModulePolicy
 }
 
-func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, fixedMemory bool) {
+func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGrow bool) error {
+	if allowMemoryGrow && maxMemoryBytes == 0 {
+		return errors.New("--allow-memory-grow requires --max-memory <bytes>")
+	}
 	opts.modulePolicy.MaxMemoryBytes = maxMemoryBytes
-	if fixedMemory {
+	if !allowMemoryGrow {
 		opts.modulePolicy.RejectOpcodes = []wasminspect.InstructionOpcode{wasminspect.OpcodeMemoryGrow}
 	}
+	return nil
 }
 
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  dev      Start a dev server for a content directory with optional recipes\n  router   Resolve routed paths and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
-const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--fixed-memory] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
-const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] [--max-memory <bytes>] [--fixed-memory] <component1> [component2 ...]"
+const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
-const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--fixed-memory] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]"
 const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
 const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site and write a minimal WARC file"
@@ -120,7 +124,7 @@ var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\
 var qipEditTagPattern = regexp.MustCompile(`(?is)<qip-(edit|view)\b[^>]*>`)
 var qipPlayTagPattern = regexp.MustCompile(`(?is)<qip-play\b[^>]*>`)
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--fixed-memory] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n  - --fixed-memory rejects modules that can grow linear memory while they run.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]
 
 What qip comply does:
@@ -306,7 +310,7 @@ func runCmd(args []string) {
 	outputPath := "-"
 	timeoutMS := 5000
 	var maxMemoryBytes uint64
-	var fixedMemory bool
+	var allowMemoryGrow bool
 	fs.BoolVar(&runVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&runVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&inputPath, "i", "", "input file path")
@@ -315,12 +319,14 @@ func runCmd(args []string) {
 	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "per-run timeout in milliseconds")
 	fs.StringVar(&opts.traceWith, "trace-with", "", "application/wasm component used to instrument a module after a trap")
 	fs.Uint64Var(&maxMemoryBytes, "max-memory", 0, "reject modules whose declared memory exceeds this byte cap")
-	fs.BoolVar(&fixedMemory, "fixed-memory", false, "reject modules that can grow linear memory at runtime")
+	fs.BoolVar(&allowMemoryGrow, "allow-memory-grow", false, "allow memory.grow; requires --max-memory")
 	if err := fs.Parse(normalizeRunArgs(args)); err != nil {
 		gameOver("%s %v", usageRun, err)
 	}
 	opts.verbose = opts.verbose || runVerbose
-	applyModulePolicyFlags(&opts, maxMemoryBytes, fixedMemory)
+	if err := applyModulePolicyFlags(&opts, maxMemoryBytes, allowMemoryGrow); err != nil {
+		gameOver("Invalid module policy: %v", err)
+	}
 
 	componentInvocations, parseErr := parseComponentInvocations(fs.Args(), "run")
 	if parseErr != nil {
@@ -465,7 +471,7 @@ func benchCmd(args []string) {
 	benchtimeStr := ""
 	timeoutMS := 250
 	var maxMemoryBytes uint64
-	var fixedMemory bool
+	var allowMemoryGrow bool
 
 	fs.BoolVar(&benchVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&benchVerbose, "verbose", false, "enable verbose logging")
@@ -474,13 +480,15 @@ func benchCmd(args []string) {
 	fs.StringVar(&benchtimeStr, "benchtime", benchtimeStr, "target measured time per module (e.g. 3s)")
 	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "per-run timeout in milliseconds")
 	fs.Uint64Var(&maxMemoryBytes, "max-memory", 0, "reject modules whose declared memory exceeds this byte cap")
-	fs.BoolVar(&fixedMemory, "fixed-memory", false, "reject modules that can grow linear memory at runtime")
+	fs.BoolVar(&allowMemoryGrow, "allow-memory-grow", false, "allow memory.grow; requires --max-memory")
 
 	if err := fs.Parse(normalizeBenchArgs(args)); err != nil {
 		gameOver("%s %v", usageBench, err)
 	}
 	opts.verbose = benchVerbose
-	applyModulePolicyFlags(&opts, maxMemoryBytes, fixedMemory)
+	if err := applyModulePolicyFlags(&opts, maxMemoryBytes, allowMemoryGrow); err != nil {
+		gameOver("Invalid module policy: %v", err)
+	}
 
 	modules := fs.Args()
 	if inputPath == "" || len(modules) < 1 {
@@ -1634,7 +1642,7 @@ func imageCmd(args []string) {
 	var outputImagePath string
 	timeoutMS := 4000
 	var maxMemoryBytes uint64
-	var fixedMemory bool
+	var allowMemoryGrow bool
 	fs := flag.NewFlagSet("image", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var imageVerbose bool
@@ -1644,12 +1652,14 @@ func imageCmd(args []string) {
 	fs.StringVar(&outputImagePath, "o", "", "output image path")
 	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "module execution timeout in milliseconds")
 	fs.Uint64Var(&maxMemoryBytes, "max-memory", 0, "reject modules whose declared memory exceeds this byte cap")
-	fs.BoolVar(&fixedMemory, "fixed-memory", false, "reject modules that can grow linear memory at runtime")
+	fs.BoolVar(&allowMemoryGrow, "allow-memory-grow", false, "allow memory.grow; requires --max-memory")
 	if err := fs.Parse(normalizeImageArgs(args)); err != nil {
 		gameOver("%s %v", usageImage, err)
 	}
 	opts.verbose = opts.verbose || imageVerbose
-	applyModulePolicyFlags(&opts, maxMemoryBytes, fixedMemory)
+	if err := applyModulePolicyFlags(&opts, maxMemoryBytes, allowMemoryGrow); err != nil {
+		gameOver("Invalid module policy: %v", err)
+	}
 	componentInvocations, parseErr := parseComponentInvocations(fs.Args(), "image")
 	if parseErr != nil {
 		gameOver("Invalid image module args: %v", parseErr)

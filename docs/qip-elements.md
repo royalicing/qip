@@ -144,10 +144,10 @@ Precedence: a chosen file wins, then the input `<source>`, then the input elemen
 
 ### Module Policy
 
-Use module policy attributes when a page runs code you want to keep inside a tighter resource boundary:
+Components use fixed memory by default. Add a byte cap when the page needs a tighter resource boundary:
 
 ```html
-<qip-edit max-memory="1048576" fixed-memory>
+<qip-edit max-memory="67108864">
   <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
   <textarea name="input"># Hello</textarea>
   <output name="output"><pre><code></code></pre></output>
@@ -155,7 +155,7 @@ Use module policy attributes when a page runs code you want to keep inside a tig
 ```
 
 - `max-memory="<bytes>"` rejects a module whose declared memory minimum or maximum exceeds the cap. If a module has memory but no declared maximum, it is rejected.
-- `fixed-memory` rejects a module that can grow linear memory while it runs.
+- `allow-memory-grow` permits `memory.grow` and requires `max-memory` on the same element.
 
 These checks run after the module bytes are fetched and before `WebAssembly.compile`. `<qip-view>` and `<qip-play>` accept the same attributes.
 

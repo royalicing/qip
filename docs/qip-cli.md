@@ -80,22 +80,22 @@ Current CLI guardrails:
 - Input size is checked against module-advertised input capacity.
 - Output size is checked against module-advertised output capacity when output buffers are exported.
 - `run`, `bench`, and `image` can reject modules whose declared memory exceeds a byte cap with `--max-memory <bytes>`.
-- `run`, `bench`, and `image` can enforce fixed memory with `--fixed-memory`, rejecting modules that can grow linear memory while they run.
+- `run`, `bench`, and `image` reject modules containing `memory.grow` by default.
+- `--allow-memory-grow` permits growth when paired with `--max-memory <bytes>`.
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
 - `modules/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `modules/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier.
 
-The browser JavaScript hosts expose a matching policy shape with `max-memory="<bytes>"` and `fixed-memory`; see [Browser Elements](/docs/qip-elements) and [Interactive ABI](/docs/interactive).
+The browser JavaScript hosts expose the same policy with `max-memory="<bytes>"` and `allow-memory-grow`; see [Browser Elements](/docs/qip-elements) and [Interactive ABI](/docs/interactive).
 
 Current limitations:
 
-- Memory policy is opt-in. It is not enabled by default for existing pipelines.
 - A module can declare large initial linear memory; instantiation may still reserve significant address space.
 
 Recommendation:
 
 - Components should declare a fixed memory maximum at build time. Zig components should use `--max-memory=<bytes>`; see [Writing QIP Components In Zig](/docs/zig-components).
 - Use `--max-memory` when running unreviewed modules or CI checks. A module with memory but no declared maximum is rejected when this flag is set.
-- Use `--fixed-memory` when you want the module to stay within the linear memory it starts with.
+- Use `--allow-memory-grow` only for components whose allocator requires it, and set `--max-memory` in the same command.
 - Use `qip score <component.wasm>` when you want a readable static report before deciding whether to enforce the stricter safety checker.
 - See [Hard Limits](/docs/hard-limits) for build flags and language-specific guidance.
 

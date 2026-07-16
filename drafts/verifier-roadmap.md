@@ -204,8 +204,8 @@ Follow-ups that still apply:
 1. The checkers should pass their own checks. The call-graph DFS and a
    few analysis loops are work-stack shapes that need fuel guards before
    wasm-bounded-loops accepts itself. The authority should be self-clean.
-2. Host policy flags (max-memory, fixed-memory) can later move onto the
-   components as uniforms.
+2. Host memory policy (fixed by default, with explicit capped growth) can later
+   move onto the components as uniforms.
 
 Cheaper invariant wins that need no new engine:
 

@@ -15,37 +15,46 @@ QIP therefore separates three controls:
 | Control | What it limits | How QIP applies it |
 | --- | --- | --- |
 | Host access | What the component can observe or change | No WASI or other host imports |
-| Linear memory | How much memory the component can declare or grow | `--max-memory` and `--fixed-memory` |
+| Linear memory | How much memory the component can declare or grow | Fixed by default; optional `--max-memory` cap |
 | Execution time | How long a CLI stage may run | `--timeout-ms` |
 
-The host-access boundary is the normal component model. The memory flags are
-currently opt-in, so a host must select them when loading unreviewed modules or
-when enforcing a production budget.
+The host-access boundary and fixed-memory policy are the normal component model.
+A host may permit memory growth explicitly, but it must also set a byte cap.
 
 ## Apply A Runtime Policy
 
-The same policy flags work with text, binary, and image components:
+The same policy controls work with text, binary, and image components:
 
 ```bash
-qip run --timeout-ms 1000 --max-memory 1048576 --fixed-memory modules/utf8/trim.wasm
-qip bench -i input.txt --timeout-ms 1000 --max-memory 1048576 --fixed-memory modules/utf8/trim.wasm
-qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 --fixed-memory modules/rgba/invert.wasm
+qip run --timeout-ms 1000 --max-memory 67108864 modules/utf8/trim.wasm
+qip bench -i input.txt --timeout-ms 1000 --max-memory 67108864 modules/utf8/trim.wasm
+qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 modules/rgba/invert.wasm
 ```
 
 - `--max-memory <bytes>` rejects a module when its declared memory minimum or
   maximum exceeds the cap. It also rejects a module that declares memory without
   a maximum.
-- `--fixed-memory` rejects a module containing `memory.grow`. Equal initial and
-  maximum memory declarations are not enough: the instruction may still exist
-  in allocator or runtime code, even though it can only fail.
+- Modules containing `memory.grow` are rejected by default. Equal initial and
+  maximum memory declarations are not enough: allocator or runtime code may
+  still contain the instruction, even though it can only fail.
+- `--allow-memory-grow` permits `memory.grow` and requires `--max-memory` in the
+  same command.
 - `--timeout-ms <ms>` limits the execution time of each CLI stage. It deals with
   runaway execution, not allocation.
 
 Browser hosts expose the memory controls as attributes:
 
 ```html
-<qip-edit max-memory="1048576" fixed-memory>
+<qip-edit max-memory="67108864">
   <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+</qip-edit>
+```
+
+Use `allow-memory-grow` only with an explicit cap:
+
+```html
+<qip-edit allow-memory-grow max-memory="16777216">
+  <source src="/components/example.wasm" type="application/wasm" />
 </qip-edit>
 ```
 
@@ -183,21 +192,33 @@ the linker semantics.
 
 ### Rust
 
-Rust can produce a small freestanding component, but crate selection can
-quietly reintroduce allocation. Start with `no_std` and abort on panic. Avoid
-`alloc`, `Vec`, `String`, `Box`, allocating formatting, and allocator-dependent
-crates unless a fixed allocator is part of the design.
+Rust's `wasm32-unknown-unknown` target uses `dlmalloc` as its default allocator.
+Allocator-using programs may therefore contain `memory.grow`. The linker option
+`--no-growable-memory` only makes maximum memory equal initial memory; it does
+not remove that instruction from allocator code.
 
-Pass the memory setting to the linker:
+For fixed-memory components, prefer `wasm32v1-none`, `no_std`, and either static
+buffers or an allocator backed by a fixed static region. Set the memory shape at
+link time, then let QIP inspect the final artifact:
 
 ```bash
-RUSTFLAGS="-C link-arg=--no-growable-memory" \
-  cargo build --release --target wasm32-unknown-unknown
+RUSTFLAGS="-C link-arg=--initial-memory=1048576 -C link-arg=--max-memory=1048576" \
+  cargo build --release --target wasm32v1-none
+
+qip run target/wasm32v1-none/release/component.wasm
+```
+
+If an existing Rust component depends on a growable allocator, give it an
+explicit host cap:
+
+```bash
+qip run --allow-memory-grow --max-memory 16777216 component.wasm
 ```
 
 The [`wasm32-unknown-unknown` target notes](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
-describe the target's supported features. A minimal target does not imply that
-the resulting program avoids allocation.
+describe its default allocator. The [`wasm32v1-none` target](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html)
+provides `core` and `alloc` without `std`; using `alloc` still requires a
+component-supplied allocator.
 
 ### WebAssembly Text
 
@@ -227,7 +248,7 @@ with its own resource controls.
 For production components:
 
 1. Set a memory maximum at link time.
-2. Run the final artifact with `--max-memory` and `--fixed-memory` in CI.
+2. Run the final artifact with `--max-memory` in CI; fixed memory is the default.
 3. Keep ambient capabilities in the host and pass required data as bytes.
 4. Use `--timeout-ms` for untrusted or expensive CLI stages.
 5. Benchmark with `qip bench` after the contract and limits are stable.

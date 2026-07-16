@@ -495,7 +495,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Rename `qip dev` command to `qip router dev`
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
-- [x] Add max-memory and fixed-memory policies to CLI and custom elements.
+- [x] Enforce fixed memory by default, with capped memory growth as an explicit opt-in.
 - [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
 - [ ] Add optional field telemetry for deployed QIP components: user-experience metrics such as component hash, host/runtime/device class, time to first QIP paint p75/p95/p99, render-to-paint delay p75/p95/p99, interactive event-to-painted-frame p75/p95/p99, sampled pipeline render p95/p99, frame-budget miss rate, trap/timeout rate, and slowest device classes so production performance can be compared without changing the component contract.
 - [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
