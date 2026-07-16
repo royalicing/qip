@@ -91,10 +91,58 @@ of WebAssembly</a>.
   </qip-edit>
 </form>
 
-## CLI equivalent
+## Download
+
+- <a href="/components/text/markdown/gfm-commonmark.0.31.2.wasm" download>gfm-commonmark.0.31.2.wasm</a> — <qip-content-size src="/components/text/markdown/gfm-commonmark.0.31.2.wasm"></qip-content-size>
+- <a href="/components/text/markdown/commonmark.0.31.2.wasm" download>commonmark.0.31.2.wasm</a> — <qip-content-size src="/components/text/markdown/commonmark.0.31.2.wasm"></qip-content-size>
+
+## CLI
 
 ```bash
 go install github.com/royalicing/qip@latest
 qip run modules/text/markdown/gfm-commonmark.0.31.2.wasm < page.md > page.html
 qip run modules/text/markdown/commonmark.0.31.2.wasm < page.md > page.html
 ```
+
+## JavaScript
+
+<copy-code>
+
+```js
+const markdownRenderer = await WebAssembly.instantiateStreaming(
+  fetch("gfm-commonmark.0.31.2.wasm"),
+);
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+
+function renderMarkdown(source) {
+  const {
+    memory,
+    input_ptr,
+    input_utf8_cap,
+    output_ptr,
+    render,
+  } = markdownRenderer.instance.exports;
+  const input = encoder.encode(source);
+  if (input.length > input_utf8_cap()) throw new RangeError("Markdown input is too large");
+  new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
+  const outputSize = render(input.length);
+  return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
+}
+
+const diagram = `# Project status
+
+| Feature | Status |
+| --- | --- |
+| Tables | Ready |
+| Task lists | In progress |
+
+- [x] Render CommonMark 0.31.2
+- [x] Add ~~plain Markdown~~ GFM
+- [ ] Ship it
+
+Visit https://github.github.com/gfm/`;
+
+document.querySelector("main article").innerHTML = renderMarkdown(diagram);
+```
+
+</copy-code>
