@@ -335,6 +335,8 @@ printf %s '1234567.895' | qip run currency-format-en-us.wasm '?currency=840'
 
 <section id="currency-js-example">
 
+<copy-code>
+
 ```js
 const currencyFormatter = await WebAssembly.instantiateStreaming(
   fetch("/components/utf8/currency-format-en-us.wasm"),
@@ -353,6 +355,8 @@ function formatCurrency(amount, currency) {
 console.log(formatCurrency("1234567.895", 840));
 // $1,234,567.90
 ```
+
+</copy-code>
 
 </section>
 
