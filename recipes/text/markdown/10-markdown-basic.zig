@@ -467,6 +467,17 @@ fn unorderedItem(line: []const u8) ?UnorderedItem {
     return .{ .depth = depth, .text = line[spaces + 2 ..] };
 }
 
+fn unorderedItemContinuation(line: []const u8, depth: usize) ?[]const u8 {
+    if (depth == 0) return null;
+
+    const required_spaces = depth * 2;
+    var spaces: usize = 0;
+    while (spaces < line.len and line[spaces] == ' ') : (spaces += 1) {}
+    if (spaces < required_spaces or spaces == line.len) return null;
+
+    return line[required_spaces..];
+}
+
 fn orderedItem(line: []const u8) ?[]const u8 {
     var i: usize = 0;
     while (i < line.len and line[i] >= '0' and line[i] <= '9') : (i += 1) {}
@@ -761,6 +772,15 @@ fn renderMarkdown(input: []const u8, output: []u8) usize {
             continue;
         }
 
+        if (ul_depth > 0 and ul_li_open[ul_depth - 1]) {
+            if (unorderedItemContinuation(line, ul_depth)) |continuation| {
+                w.writeByte('\n');
+                w.writeInline(continuation);
+                prev_blank = false;
+                continue;
+            }
+        }
+
         if (orderedItem(line)) |item| {
             closeParagraph(&w, &in_paragraph);
             closeAllUnorderedLists(&w, &ul_depth, &ul_li_open);
@@ -871,6 +891,16 @@ test "nested unordered list with two-space indent" {
     const written = renderMarkdown(input, out[0..]);
     try std.testing.expectEqualStrings(
         "<ul>\n<li>parent<ul>\n<li>child</li>\n</ul>\n</li>\n<li>sibling</li>\n</ul>\n",
+        out[0..written],
+    );
+}
+
+test "indented line continues unordered list item" {
+    var out: [2048]u8 = undefined;
+    const input = "- **No atomics.** Atomic instructions imply shared-memory coordination, which is\n  outside the normal QIP component model.\n";
+    const written = renderMarkdown(input, out[0..]);
+    try std.testing.expectEqualStrings(
+        "<ul>\n<li><strong>No atomics.</strong> Atomic instructions imply shared-memory coordination, which is\noutside the normal QIP component model.</li>\n</ul>\n",
         out[0..written],
     );
 }
