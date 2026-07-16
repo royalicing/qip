@@ -109,6 +109,15 @@ ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
 ZIG_ENV := ZIG_CACHE_DIR=$(ZIG_CACHE_DIR) ZIG_GLOBAL_CACHE_DIR=$(ZIG_GLOBAL_CACHE_DIR)
 ZIG_WASM_MAX_MEMORY ?= 67108864
 
+HOST_OS ?= $(shell uname -s)
+ifeq ($(HOST_OS),Darwin)
+ZIG_TEST_SYSROOT ?= $(firstword $(wildcard /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk))
+ifneq ($(ZIG_TEST_SYSROOT),)
+ZIG_TEST_FLAGS ?= --sysroot $(ZIG_TEST_SYSROOT)
+endif
+endif
+ZIG_TEST_FLAGS ?=
+
 MODULE_WAT_FILES := $(shell find modules -type f -name '*.wat')
 MODULE_C_FILES := $(shell find modules -type f -name '*.c')
 MODULE_ZIG_FILES := $(shell find modules \( -path 'modules/interactive/assets' -o -type d -name 'lib' \) -prune -o -type f -name '*.zig' -print)
@@ -360,10 +369,12 @@ test-snapshot: qip modules
 ZIG_TEST_FILES := $(MODULE_ZIG_FILES) $(wildcard recipes/text/markdown/*.zig)
 
 test-zig: $(ZIG_TEST_FILES)
-	@for f in $^; do \
+	@status=0; \
+	for f in $^; do \
 		echo "zig test $$f"; \
-		$(ZIG_ENV) zig test $$f; \
-	done
+		$(ZIG_ENV) zig test "$$f" $(ZIG_TEST_FLAGS) || status=1; \
+	done; \
+	exit $$status
 
 test-go:
 	go test $(GO_TEST_PKGS)
