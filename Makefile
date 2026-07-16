@@ -87,6 +87,9 @@ compliance/svg-to-data-uri.comply.wasm: compliance/svg-to-data-uri.comply.zig
 compliance/data-uri-to-css-url.comply.wasm: compliance/data-uri-to-css-url.comply.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-html.comply.zig compliance/mermaid-to-unicode-html.fixtures.txt
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 COMMONMARK_COMPLY_TARGETS := compliance/commonmark-spec-0.31.2.wasm compliance/commonmark-0.31.2-gfm.wasm
 
 compliance/commonmark-spec-0.31.2.wasm: compliance/commonmark-spec-0.31.2.zig compliance/commonmark-spec-0.31.2.txt
@@ -111,6 +114,7 @@ compliance: compliance/currency-format-zh-cn.comply.wasm
 compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
+compliance: compliance/mermaid-to-unicode-html.comply.wasm
 compliance: $(COMMONMARK_COMPLY_TARGETS)
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
@@ -267,6 +271,7 @@ test-node: qip modules recipes/application/warc/25-add-content-size.wasm
 	node --test test/currency-format-zh-cn-comply.mjs
 	node --test test/iso-4217-alpha-to-numeric-comply.mjs
 	node --test test/svg-data-uri-comply.mjs
+	node --test test/mermaid-to-unicode-html.mjs
 	node --test test/warc-content-size.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
@@ -284,6 +289,7 @@ test-deno: qip modules
 	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip modules compliance
+	$(QIP_BIN) comply modules/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --profile strict
 	$(QIP_BIN) comply modules/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --profile strict
 	$(QIP_BIN) comply modules/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --profile strict
 	$(QIP_BIN) comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm --legacy

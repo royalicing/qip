@@ -1,0 +1,653 @@
+=== INPUT ===
+graph TD
+  Start[Request received] --> Auth{Authenticated?}
+  Auth -->|yes| Rate{Rate limit OK?}
+  Auth -->|no| R401[401 Unauthorized]
+  Rate -->|yes| H(Handle request)
+  Rate -->|no| R429[429 Too Many Requests]
+  H -.-> Log[Audit log]
+  H ==> Resp[200 OK]
+=== OUTPUT ===
+                           <span class="b">┌</span><span class="e">──────────────────</span><span class="b">┐</span>
+                           <span class="e">│</span> <span class="n">Request received</span> <span class="e">│</span>
+                           <span class="b">└</span><span class="e">─────────┬────────</span><span class="b">┘</span>
+                                     <span class="e">│</span>
+                                     <span class="e">▼</span>
+                            <span class="b">╭</span><span class="e">────────────────</span><span class="b">╮</span>
+                            <span class="e">│</span> <span class="n">Authenticated?</span> <span class="e">│</span>
+                            <span class="b">╰</span><span class="e">────────┬───────</span><span class="b">╯</span>
+                          <span class="e">┌──────────┴──────────┐</span>
+                          <span class="e">▼</span><span class="el">yes</span>                  <span class="e">▼</span><span class="el">no</span>
+                 <span class="b">╭</span><span class="e">────────────────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">──────────────────</span><span class="b">┐</span>
+                 <span class="e">│</span> <span class="n">Rate limit OK?</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">401 Unauthorized</span> <span class="e">│</span>
+                 <span class="b">╰</span><span class="e">────────┬───────</span><span class="b">╯</span>   <span class="b">└</span><span class="e">──────────────────</span><span class="b">┘</span>
+              <span class="e">┌───────────┴───────────┐</span>
+              <span class="e">▼</span><span class="el">yes</span>                    <span class="e">▼</span><span class="el">no</span>
+     <span class="b">╭</span><span class="e">────────────────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">───────────────────────</span><span class="b">┐</span>
+     <span class="e">│</span> <span class="n">Handle request</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">429 Too Many Requests</span> <span class="e">│</span>
+     <span class="b">╰</span><span class="e">────────┬───────</span><span class="b">╯</span>   <span class="b">└</span><span class="e">───────────────────────</span><span class="b">┘</span>
+       <span class="e">┌╌╌╌╌╌╌┴━━━━━━┓</span>
+       <span class="e">▼</span>             <span class="e">▼</span>
+ <span class="b">┌</span><span class="e">───────────</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">────────</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">Audit log</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">200 OK</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">───────────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A[Start] --> B{Choose}
+ B -->|yes| C{Again}
+ B -->|no| D[Stop]
+ C -->|yes| E(Go)
+ C -->|no| F[No way]
+ E -.-> G[this audit label has enough words to wrap across lines]
+ E ==> H[Done]
+=== OUTPUT ===
+                             <span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>
+                             <span class="e">│</span> <span class="n">Start</span> <span class="e">│</span>
+                             <span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>
+                                 <span class="e">│</span>
+                                 <span class="e">▼</span>
+                            <span class="b">╭</span><span class="e">────────</span><span class="b">╮</span>
+                            <span class="e">│</span> <span class="n">Choose</span> <span class="e">│</span>
+                            <span class="b">╰</span><span class="e">────┬───</span><span class="b">╯</span>
+                           <span class="e">┌─────┴─────┐</span>
+                           <span class="e">▼</span><span class="el">yes</span>        <span class="e">▼</span><span class="el">no</span>
+                       <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+                       <span class="e">│</span> <span class="n">Again</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">Stop</span> <span class="e">│</span>
+                       <span class="b">╰</span><span class="e">───┬───</span><span class="b">╯</span>   <span class="b">└</span><span class="e">──────</span><span class="b">┘</span>
+                      <span class="e">┌────┴─────┐</span>
+                      <span class="e">▼</span><span class="el">yes</span>       <span class="e">▼</span><span class="el">no</span>
+                   <span class="b">╭</span><span class="e">────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">────────</span><span class="b">┐</span>
+                   <span class="e">│</span> <span class="n">Go</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">No way</span> <span class="e">│</span>
+                   <span class="b">╰</span><span class="e">──┬─</span><span class="b">╯</span>   <span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
+            <span class="e">┌╌╌╌╌╌╌╌╌╌┴━━━━━━━━┓</span>
+            <span class="e">▼</span>                  <span class="e">┃</span>
+<span class="b">┌</span><span class="e">──────────────────────</span><span class="b">┐</span>       <span class="e">▼</span>
+<span class="e">│</span> <span class="n">this audit label has</span> <span class="e">│</span>   <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">enough words to wrap</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">Done</span> <span class="e">│</span>
+<span class="e">│</span>     <span class="n">across lines</span>     <span class="e">│</span>   <span class="b">└</span><span class="e">──────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">──────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A[Start] --> B{this decision label contains several words and should wrap}
+ B -->|yes| C{Again}
+ B -->|no| D[Stop]
+ C -->|yes| E(Go)
+ C -->|no| F[No way]
+ E -.-> G[Log]
+ E ==> H[Done]
+=== OUTPUT ===
+                <span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>
+                <span class="e">│</span> <span class="n">Start</span> <span class="e">│</span>
+                <span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>
+                    <span class="e">│</span>
+                    <span class="e">▼</span>
+       <span class="b">╭</span><span class="e">────────────────────────</span><span class="b">╮</span>
+       <span class="e">│</span>  <span class="n">this decision label</span>   <span class="e">│</span>
+       <span class="e">│</span> <span class="n">contains several words</span> <span class="e">│</span>
+       <span class="e">│</span>    <span class="n">and should wrap</span>     <span class="e">│</span>
+       <span class="b">╰</span><span class="e">────────────┬───────────</span><span class="b">╯</span>
+              <span class="e">┌─────┴─────┐</span>
+              <span class="e">▼</span><span class="el">yes</span>        <span class="e">▼</span><span class="el">no</span>
+          <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+          <span class="e">│</span> <span class="n">Again</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">Stop</span> <span class="e">│</span>
+          <span class="b">╰</span><span class="e">───┬───</span><span class="b">╯</span>   <span class="b">└</span><span class="e">──────</span><span class="b">┘</span>
+         <span class="e">┌────┴─────┐</span>
+         <span class="e">▼</span><span class="el">yes</span>       <span class="e">▼</span><span class="el">no</span>
+      <span class="b">╭</span><span class="e">────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">────────</span><span class="b">┐</span>
+      <span class="e">│</span> <span class="n">Go</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">No way</span> <span class="e">│</span>
+      <span class="b">╰</span><span class="e">──┬─</span><span class="b">╯</span>   <span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
+    <span class="e">┌╌╌╌╌┴━━━━┓</span>
+    <span class="e">▼</span>         <span class="e">▼</span>
+ <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">Log</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">Done</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">──────</span><span class="b">┘</span>
+=== END ===
+
+=== INPUT ===
+classDiagram
+ class VeryLongBaseClassIdentifierName {
+ +String field_with_a_very_long_name
+ +method_with_a_very_long_name()
+ }
+ VeryLongBaseClassIdentifierName <|-- One
+ VeryLongBaseClassIdentifierName <|-- Two
+ One : +run()
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">─────────────────────────────────────</span><span class="b">┐</span>
+ <span class="e">│</span>   <span class="n">VeryLongBaseClassIdentifierName</span>   <span class="e">│</span>
+ <span class="b">├─────────────────────────────────────┤</span>
+ <span class="e">│</span> <span class="n">+String field_with_a_very_long_name</span> <span class="e">│</span>
+ <span class="b">├─────────────────────────────────────┤</span>
+ <span class="e">│</span> <span class="n">+method_with_a_very_long_name()</span>     <span class="e">│</span>
+ <span class="b">└</span><span class="e">──────────────────△──────────────────</span><span class="b">┘</span>
+              <span class="e">┌─────┴────┐</span>
+              <span class="e">│</span>          <span class="e">│</span>
+         <span class="b">┌</span><span class="e">────────</span><span class="b">┐</span>      <span class="e">│</span>
+         <span class="e">│</span>  <span class="n">One</span>   <span class="e">│</span>   <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>
+         <span class="b">├────────┤</span>   <span class="e">│</span> <span class="n">Two</span> <span class="e">│</span>
+         <span class="e">│</span> <span class="n">+run()</span> <span class="e">│</span>   <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>
+         <span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+sequenceDiagram
+ participant A as A participant with a very long display name
+ participant B as Browser
+ A->>B: Hello
+ B-->>A: Reply
+=== OUTPUT ===
+<span class="b">┌</span><span class="e">──────────────────────────</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">─────────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">A participant with a ve…</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">Browser</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">─────────────┬────────────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">────┬────</span><span class="b">┘</span>
+              <span class="e">│</span>                    <span class="e">│</span>
+              <span class="e">│</span>       <span class="n">Hello</span>        <span class="e">│</span>
+              <span class="e">├───────────────────▶│</span>
+              <span class="e">│</span>                    <span class="e">│</span>
+              <span class="e">│</span>       <span class="n">Reply</span>        <span class="e">│</span>
+              <span class="e">│◄╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤</span>
+              <span class="e">│</span>                    <span class="e">│</span>
+<span class="b">┌</span><span class="e">─────────────┴────────────</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">────┴────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">A participant with a ve…</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">Browser</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">──────────────────────────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">─────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+sequenceDiagram
+ participant A as Alice
+ participant B as Bob
+ A->>B: This message is deliberately much longer than twenty four columns
+ B-->>A: Reply
+=== OUTPUT ===
+<span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>                                                           <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">Alice</span> <span class="e">│</span>                                                           <span class="e">│</span> <span class="n">Bob</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>                                                           <span class="b">└</span><span class="e">──┬──</span><span class="b">┘</span>
+    <span class="e">│</span>                                                                  <span class="e">│</span>
+    <span class="e">│</span><span class="n">This message is deliberately much longer than twenty four columns</span> <span class="e">│</span>
+    <span class="e">├─────────────────────────────────────────────────────────────────▶│</span>
+    <span class="e">│</span>                                                                  <span class="e">│</span>
+    <span class="e">│</span>                              <span class="n">Reply</span>                               <span class="e">│</span>
+    <span class="e">│◄╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤</span>
+    <span class="e">│</span>                                                                  <span class="e">│</span>
+<span class="b">┌</span><span class="e">───┴───</span><span class="b">┐</span>                                                           <span class="b">┌</span><span class="e">──┴──</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">Alice</span> <span class="e">│</span>                                                           <span class="e">│</span> <span class="n">Bob</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───────</span><span class="b">┘</span>                                                           <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+erDiagram
+ CUSTOMER ||--o{ ORDER : places
+ ORDER ||--|{ LINE_ITEM : contains
+ CUSTOMER {
+ string customer_primary_email_address
+ string customer_display_name
+ }
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───────────────────────────────────────</span><span class="b">┐</span>
+ <span class="e">│</span>               <span class="n">CUSTOMER</span>                <span class="e">│</span>
+ <span class="b">├───────────────────────────────────────┤</span>
+ <span class="e">│</span> <span class="n">string customer_primary_email_address</span> <span class="e">│</span>
+ <span class="e">│</span> <span class="n">string customer_display_name</span>          <span class="e">│</span>
+ <span class="b">└</span><span class="e">───────────────────┬───────────────────</span><span class="b">┘</span>
+                     <span class="e">│</span>
+                     <span class="e">│</span><span class="el">1 places 0..*</span>
+                 <span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>
+                 <span class="e">│</span> <span class="n">ORDER</span> <span class="e">│</span>
+                 <span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>
+                     <span class="e">│</span>
+                     <span class="e">│</span><span class="el">1 contains 1..*</span>
+               <span class="b">┌</span><span class="e">───────────</span><span class="b">┐</span>
+               <span class="e">│</span> <span class="n">LINE_ITEM</span> <span class="e">│</span>
+               <span class="b">└</span><span class="e">───────────</span><span class="b">┘</span>
+=== END ===
+
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">─────────────────────────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">─────────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">││</span> <span class="n">alpha beta gamma delta</span>  <span class="e">│</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span> <span class="n">epsilon zeta eta theta</span>  <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">iota kappa lambda mu nu</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">││</span> <span class="n">xi omicron pi rho sigma</span> <span class="e">│</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="e">│</span><span class="b">└</span><span class="e">─────────────────────────</span><span class="b">┘</span>                      <span class="e">│</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">─────────────────────────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega more words beyond] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">──────────────────────────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">──────────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">││</span>  <span class="n">alpha beta gamma delta</span>  <span class="e">│</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span>  <span class="n">epsilon zeta eta theta</span>  <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">iota kappa lambda mu nu</span>  <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">││</span> <span class="n">xi omicron pi rho sigma…</span> <span class="e">│</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="e">│</span><span class="b">└</span><span class="e">──────────────────────────</span><span class="b">┘</span>                      <span class="e">│</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">──────────────────────────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">──────────────────────────────────────────</span><span class="b">┐</span>
+<span class="e">│</span>                                                  <span class="e">│</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">──────────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span> <span class="n">abcdefghijklmnopqrstuvwx</span> <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">yzABCDEFGHIJKLMNOPQRSTUV</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">││</span>      <span class="n">WXYZ0123456789</span>      <span class="e">│</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="e">│</span><span class="b">└</span><span class="e">──────────────────────────</span><span class="b">┘</span>                      <span class="e">│</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">──────────────────────────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[packages/client.browser-service_worker.module_name/value] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">──────────────────────────────────────────</span><span class="b">┐</span>
+<span class="e">│</span>                                                  <span class="e">│</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">──────────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span> <span class="n">packages/client.browser-</span> <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span>  <span class="n">service_worker.module_</span>  <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">││</span>        <span class="n">name/value</span>        <span class="e">│</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="e">│</span><span class="b">└</span><span class="e">──────────────────────────</span><span class="b">┘</span>                      <span class="e">│</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">──────────────────────────────────────────────────</span><span class="b">┘</span>
+=== END ===
+
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[abcdefghijklmnopqrstuvwx] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">──────────────────────────────────────────</span><span class="b">┐</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span>                                                  <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">──────────────────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">abcdefghijklmnopqrstuvwx</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">│</span><span class="b">└</span><span class="e">──────────────────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="b">└</span><span class="e">──────────────────────────────────────────────────</span><span class="b">┘</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[abcdefghijklmnopqrstuvwxy] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">──────────────────────────────────────────</span><span class="b">┐</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">──────────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span> <span class="n">abcdefghijklmnopqrstuvwx</span> <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span>            <span class="n">y</span>             <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">│</span><span class="b">└</span><span class="e">──────────────────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="b">└</span><span class="e">──────────────────────────────────────────────────</span><span class="b">┘</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[alpha beta gamma delta epsilon zeta eta theta iota kappa] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">────────────────────────────────────────</span><span class="b">┐</span>
+<span class="e">│</span>                                                <span class="e">│</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">────────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span> <span class="n">alpha beta gamma delta</span> <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">epsilon zeta eta theta</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">││</span>       <span class="n">iota kappa</span>       <span class="e">│</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="e">│</span><span class="b">└</span><span class="e">────────────────────────</span><span class="b">┘</span>                      <span class="e">│</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">────────────────────────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[some_really_long_identifier_name_here] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">──────────────────────────────────────</span><span class="b">┐</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">──────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span>  <span class="n">some_really_long_</span>   <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">identifier_name_here</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">│</span><span class="b">└</span><span class="e">──────────────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="b">└</span><span class="e">──────────────────────────────────────────────</span><span class="b">┘</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+=== END ===
+
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[Browser UI adfgdfg dfgdgf dfgd fgdgdfg] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">─────────────────────────────────────</span><span class="b">┐</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">─────────────────────</span><span class="b">┐</span>                      <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">││</span> <span class="n">Browser UI adfgdfg</span>  <span class="e">│</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">dfgdgf dfgd fgdgdfg</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">│</span><span class="b">└</span><span class="e">─────────────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="b">└</span><span class="e">─────────────────────────────────────────────</span><span class="b">┘</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+=== END ===
+
+=== INPUT ===
+sequenceDiagram
+ participant A as Alice
+ participant B as Bob
+ A->>B: Hello
+ B-->>A: Hi
+=== OUTPUT ===
+<span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">Alice</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">Bob</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>  <span class="b">└</span><span class="e">──┬──</span><span class="b">┘</span>
+    <span class="e">│</span>         <span class="e">│</span>
+    <span class="e">│</span>  <span class="n">Hello</span>  <span class="e">│</span>
+    <span class="e">├────────▶│</span>
+    <span class="e">│</span>         <span class="e">│</span>
+    <span class="e">│</span>   <span class="n">Hi</span>    <span class="e">│</span>
+    <span class="e">│◄╌╌╌╌╌╌╌╌┤</span>
+    <span class="e">│</span>         <span class="e">│</span>
+<span class="b">┌</span><span class="e">───┴───</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">──┴──</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">Alice</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">Bob</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+classDiagram
+ class Base {
+ +field
+ +method()
+ }
+ Base <|-- One
+ Base <|-- Two
+ One : +run()
+=== OUTPUT ===
+     <span class="b">┌</span><span class="e">───────────</span><span class="b">┐</span>
+     <span class="e">│</span>   <span class="n">Base</span>    <span class="e">│</span>
+     <span class="b">├───────────┤</span>
+     <span class="e">│</span> <span class="n">+field</span>    <span class="e">│</span>
+     <span class="b">├───────────┤</span>
+     <span class="e">│</span> <span class="n">+method()</span> <span class="e">│</span>
+     <span class="b">└</span><span class="e">─────△─────</span><span class="b">┘</span>
+     <span class="e">┌─────┴─────┐</span>
+     <span class="e">│</span>           <span class="e">│</span>
+<span class="b">┌</span><span class="e">────────</span><span class="b">┐</span>       <span class="e">│</span>
+<span class="e">│</span>  <span class="n">One</span>   <span class="e">│</span>    <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>
+<span class="b">├────────┤</span>    <span class="e">│</span> <span class="n">Two</span> <span class="e">│</span>
+<span class="e">│</span> <span class="n">+run()</span> <span class="e">│</span>    <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+erDiagram
+ USER ||--o{ POST : writes
+ POST ||--|{ COMMENT : has
+ USER {
+ string id
+ }
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───────────</span><span class="b">┐</span>
+ <span class="e">│</span>   <span class="n">USER</span>    <span class="e">│</span>
+ <span class="b">├───────────┤</span>
+ <span class="e">│</span> <span class="n">string id</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">─────┬─────</span><span class="b">┘</span>
+       <span class="e">│</span>
+       <span class="e">│</span><span class="el">1 writes 0..*</span>
+   <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+   <span class="e">│</span> <span class="n">POST</span> <span class="e">│</span>
+   <span class="b">└</span><span class="e">───┬──</span><span class="b">┘</span>
+       <span class="e">│</span>
+       <span class="e">│</span><span class="el">1 has 1..*</span>
+  <span class="b">┌</span><span class="e">─────────</span><span class="b">┐</span>
+  <span class="e">│</span> <span class="n">COMMENT</span> <span class="e">│</span>
+  <span class="b">└</span><span class="e">─────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A[Start] --> B{Choose}
+ B -->|yes| C{Again}
+ B -->|no| D[Stop]
+ C -->|yes| E(Go)
+ C -->|no| F[No way]
+ E -.-> G[Log]
+ E ==> H[Done]
+=== OUTPUT ===
+                <span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>
+                <span class="e">│</span> <span class="n">Start</span> <span class="e">│</span>
+                <span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>
+                    <span class="e">│</span>
+                    <span class="e">▼</span>
+               <span class="b">╭</span><span class="e">────────</span><span class="b">╮</span>
+               <span class="e">│</span> <span class="n">Choose</span> <span class="e">│</span>
+               <span class="b">╰</span><span class="e">────┬───</span><span class="b">╯</span>
+              <span class="e">┌─────┴─────┐</span>
+              <span class="e">▼</span><span class="el">yes</span>        <span class="e">▼</span><span class="el">no</span>
+          <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+          <span class="e">│</span> <span class="n">Again</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">Stop</span> <span class="e">│</span>
+          <span class="b">╰</span><span class="e">───┬───</span><span class="b">╯</span>   <span class="b">└</span><span class="e">──────</span><span class="b">┘</span>
+         <span class="e">┌────┴─────┐</span>
+         <span class="e">▼</span><span class="el">yes</span>       <span class="e">▼</span><span class="el">no</span>
+      <span class="b">╭</span><span class="e">────</span><span class="b">╮</span>   <span class="b">┌</span><span class="e">────────</span><span class="b">┐</span>
+      <span class="e">│</span> <span class="n">Go</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">No way</span> <span class="e">│</span>
+      <span class="b">╰</span><span class="e">──┬─</span><span class="b">╯</span>   <span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
+    <span class="e">┌╌╌╌╌┴━━━━┓</span>
+    <span class="e">▼</span>         <span class="e">▼</span>
+ <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">Log</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">Done</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">──────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+stateDiagram-v2
+ [*] --> A
+ A --> B : go
+ B --> C : yes
+ B --> D : no
+ D --> B : retry
+ C --> [*]
+=== OUTPUT ===
+     <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+     <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+     <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>
+       <span class="e">│</span>
+       <span class="e">▼</span>
+     <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+     <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+     <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>
+       <span class="e">│</span>
+       <span class="e">▼</span><span class="el">go</span>
+     <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>     <span class="el">retry</span>
+     <span class="e">│</span> <span class="n">B</span> <span class="e">│◄──────────┐</span>
+     <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>           <span class="e">│</span>
+   <span class="e">┌───┴───┐</span>         <span class="e">│</span>
+   <span class="e">▼</span><span class="el">yes</span>    <span class="e">▼</span><span class="el">no</span>       <span class="e">│</span>
+ <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>   <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>       <span class="e">│</span>
+ <span class="e">│</span> <span class="n">C</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">D</span> <span class="e">├───────┘</span>
+ <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>   <span class="b">╰</span><span class="e">───</span><span class="b">╯</span>
+   <span class="e">│</span>
+   <span class="e">▼</span>
+ <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+ <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+ <span class="b">╰</span><span class="e">───</span><span class="b">╯</span>
+=== END ===
+=== INPUT ===
+flowchart LR
+ subgraph Left
+ A[One] --> B[Two]
+ end
+ subgraph Right
+ C[Three] --> D[Four]
+ end
+ B -->|via| C
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Left </span><span class="e">────────────</span><span class="b">┐</span>      <span class="b">┌</span><span class="n"> Right </span><span class="e">──────────────</span><span class="b">┐</span>
+<span class="e">│</span>                  <span class="e">│</span>      <span class="e">│</span>                     <span class="e">│</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span><span class="e">│</span> <span class="el">via</span>  <span class="e">│</span><span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">One</span> <span class="e">├───▶│</span> <span class="n">Two</span> <span class="e">│├─────▶││</span> <span class="n">Three</span> <span class="e">├───▶│</span> <span class="n">Four</span> <span class="e">││</span>
+<span class="e">│</span><span class="b">└</span><span class="e">─────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">─────</span><span class="b">┘</span><span class="e">│</span>      <span class="e">│</span><span class="b">└</span><span class="e">───────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────</span><span class="b">┘</span><span class="e">│</span>
+<span class="b">└</span><span class="e">──────────────────</span><span class="b">┘</span>      <span class="b">└</span><span class="e">─────────────────────</span><span class="b">┘</span>
+=== END ===
+
+=== INPUT ===
+flowchart LR
+  subgraph Client
+    UI[Browser UI] --> SW[Service worker]
+  end
+  subgraph Server
+    API[API gateway] --> DB[Postgres]
+  end
+  SW -->|HTTPS| API
+=== OUTPUT ===
+<span class="b">┌</span><span class="n"> Client </span><span class="e">────────────────────────────</span><span class="b">┐</span>        <span class="b">┌</span><span class="n"> Server </span><span class="e">───────────────────────</span><span class="b">┐</span>
+<span class="e">│</span>                                    <span class="e">│</span>        <span class="e">│</span>                               <span class="e">│</span>
+<span class="e">│</span><span class="b">┌</span><span class="e">────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">────────────────</span><span class="b">┐</span><span class="e">│</span> <span class="el">HTTPS</span>  <span class="e">│</span><span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>    <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span><span class="e">│</span>
+<span class="e">││</span> <span class="n">Browser UI</span> <span class="e">├───▶│</span> <span class="n">Service worker</span> <span class="e">│├───────▶││</span> <span class="n">API gateway</span> <span class="e">├───▶│</span> <span class="n">Postgres</span> <span class="e">││</span>
+<span class="e">│</span><span class="b">└</span><span class="e">────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">────────────────</span><span class="b">┘</span><span class="e">│</span>        <span class="e">│</span><span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>    <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span><span class="e">│</span>
+<span class="b">└</span><span class="e">────────────────────────────────────</span><span class="b">┘</span>        <span class="b">└</span><span class="e">───────────────────────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant W as WASM module
+  U->>B: Edit mermaid source
+  B->>W: wasm_render_html()
+  W-->>B: Unicode box art
+  B-->>U: Rendered diagram
+=== OUTPUT ===
+<span class="b">┌</span><span class="e">──────</span><span class="b">┐</span>            <span class="b">┌</span><span class="e">─────────</span><span class="b">┐</span>       <span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">User</span> <span class="e">│</span>            <span class="e">│</span> <span class="n">Browser</span> <span class="e">│</span>       <span class="e">│</span> <span class="n">WASM module</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───┬──</span><span class="b">┘</span>            <span class="b">└</span><span class="e">────┬────</span><span class="b">┘</span>       <span class="b">└</span><span class="e">──────┬──────</span><span class="b">┘</span>
+    <span class="e">│</span>                    <span class="e">│</span>                   <span class="e">│</span>
+    <span class="e">│</span><span class="n">Edit mermaid source</span> <span class="e">│</span>                   <span class="e">│</span>
+    <span class="e">├───────────────────▶│</span>                   <span class="e">│</span>
+    <span class="e">│</span>                    <span class="e">│</span>                   <span class="e">│</span>
+    <span class="e">│</span>                    <span class="e">│</span><span class="n">wasm_render_html()</span> <span class="e">│</span>
+    <span class="e">│</span>                    <span class="e">├──────────────────▶│</span>
+    <span class="e">│</span>                    <span class="e">│</span>                   <span class="e">│</span>
+    <span class="e">│</span>                    <span class="e">│</span>  <span class="n">Unicode box art</span>  <span class="e">│</span>
+    <span class="e">│</span>                    <span class="e">│◄╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤</span>
+    <span class="e">│</span>                    <span class="e">│</span>                   <span class="e">│</span>
+    <span class="e">│</span>  <span class="n">Rendered diagram</span>  <span class="e">│</span>                   <span class="e">│</span>
+    <span class="e">│◄╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤</span>                   <span class="e">│</span>
+    <span class="e">│</span>                    <span class="e">│</span>                   <span class="e">│</span>
+<span class="b">┌</span><span class="e">───┴──</span><span class="b">┐</span>            <span class="b">┌</span><span class="e">────┴────</span><span class="b">┐</span>       <span class="b">┌</span><span class="e">──────┴──────</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">User</span> <span class="e">│</span>            <span class="e">│</span> <span class="n">Browser</span> <span class="e">│</span>       <span class="e">│</span> <span class="n">WASM module</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">──────</span><span class="b">┘</span>            <span class="b">└</span><span class="e">─────────</span><span class="b">┘</span>       <span class="b">└</span><span class="e">─────────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Loading : fetch
+  Loading --> Ready : success
+  Loading --> Error : failure
+  Error --> Loading : retry
+  Ready --> [*]
+=== OUTPUT ===
+         <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+         <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+         <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>
+           <span class="e">│</span>
+           <span class="e">▼</span>
+       <span class="b">╭</span><span class="e">──────</span><span class="b">╮</span>
+       <span class="e">│</span> <span class="n">Idle</span> <span class="e">│</span>
+       <span class="b">╰</span><span class="e">───┬──</span><span class="b">╯</span>
+           <span class="e">│</span>
+           <span class="e">▼</span><span class="el">fetch</span>
+      <span class="b">╭</span><span class="e">─────────</span><span class="b">╮</span>      <span class="el">retry</span>
+      <span class="e">│</span> <span class="n">Loading</span> <span class="e">│◄───────────┐</span>
+      <span class="b">╰</span><span class="e">────┬────</span><span class="b">╯</span>            <span class="e">│</span>
+     <span class="e">┌─────┴─────┐</span>           <span class="e">│</span>
+     <span class="e">▼</span><span class="el">success</span>    <span class="e">▼</span><span class="el">failure</span>    <span class="e">│</span>
+ <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>   <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>       <span class="e">│</span>
+ <span class="e">│</span> <span class="n">Ready</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">Error</span> <span class="e">├───────┘</span>
+ <span class="b">╰</span><span class="e">───┬───</span><span class="b">╯</span>   <span class="b">╰</span><span class="e">───────</span><span class="b">╯</span>
+     <span class="e">│</span>
+     <span class="e">▼</span>
+   <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+   <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+   <span class="b">╰</span><span class="e">───</span><span class="b">╯</span>
+=== END ===
+=== INPUT ===
+classDiagram
+  class Animal {
+    +String name
+    +makeSound()
+  }
+  Animal <|-- Dog
+  Animal <|-- Cat
+  Dog : +fetch()
+=== OUTPUT ===
+    <span class="b">┌</span><span class="e">──────────────</span><span class="b">┐</span>
+    <span class="e">│</span>    <span class="n">Animal</span>    <span class="e">│</span>
+    <span class="b">├──────────────┤</span>
+    <span class="e">│</span> <span class="n">+String name</span> <span class="e">│</span>
+    <span class="b">├──────────────┤</span>
+    <span class="e">│</span> <span class="n">+makeSound()</span> <span class="e">│</span>
+    <span class="b">└</span><span class="e">───────△──────</span><span class="b">┘</span>
+      <span class="e">┌─────┴──────┐</span>
+      <span class="e">│</span>            <span class="e">│</span>
+<span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span>       <span class="e">│</span>
+<span class="e">│</span>   <span class="n">Dog</span>    <span class="e">│</span>    <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>
+<span class="b">├──────────┤</span>    <span class="e">│</span> <span class="n">Cat</span> <span class="e">│</span>
+<span class="e">│</span> <span class="n">+fetch()</span> <span class="e">│</span>    <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>
+<span class="b">└</span><span class="e">──────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+erDiagram
+  CUSTOMER ||--o{ ORDER : places
+  ORDER ||--|{ LINE_ITEM : contains
+  CUSTOMER {
+    string name
+    string email
+  }
+=== OUTPUT ===
+<span class="b">┌</span><span class="e">──────────────</span><span class="b">┐</span>
+<span class="e">│</span>   <span class="n">CUSTOMER</span>   <span class="e">│</span>
+<span class="b">├──────────────┤</span>
+<span class="e">│</span> <span class="n">string name</span>  <span class="e">│</span>
+<span class="e">│</span> <span class="n">string email</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───────┬──────</span><span class="b">┘</span>
+        <span class="e">│</span>
+        <span class="e">│</span><span class="el">1 places 0..*</span>
+    <span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>
+    <span class="e">│</span> <span class="n">ORDER</span> <span class="e">│</span>
+    <span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>
+        <span class="e">│</span>
+        <span class="e">│</span><span class="el">1 contains 1..*</span>
+  <span class="b">┌</span><span class="e">───────────</span><span class="b">┐</span>
+  <span class="e">│</span> <span class="n">LINE_ITEM</span> <span class="e">│</span>
+  <span class="b">└</span><span class="e">───────────</span><span class="b">┘</span>
+=== END ===

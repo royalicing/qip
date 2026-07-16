@@ -169,6 +169,7 @@ See [`/play`](/play) for more interactive examples, or [`/charts`](/charts) for 
 We believe small functions should not need a massive application environment to run. Write or vibe Zig/C then compile to WebAssembly, and you get a deterministic puzzle piece that runs the same everywhere.
 
 - [Markdown to HTML](/markdown-to-html)
+- [Mermaid to Unicode box art](/mermaid)
 - [JSON prettifier](/json-prettify)
 - [Unicode transforms](/unicode)
 - [Currency formatter](/currency)
