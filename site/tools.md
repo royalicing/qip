@@ -2,7 +2,7 @@
 
 # Tools
 
-Browser utilities powered by QIP content components. Processing stays
+Browser utilities powered by [QIP content components](/docs/component-contract). Processing stays
 entirely in the browser. You can run the same `.wasm` files in your shell via the `qip` cli.
 
 - [Markdown to HTML](/markdown-to-html) renders either GitHub Flavored
