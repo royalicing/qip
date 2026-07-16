@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -342,10 +343,38 @@ const WasmPageSizeBytes uint64 = 65536
 
 type InstructionOpcode uint32
 
-const OpcodeMemoryGrow InstructionOpcode = 0x40
+const (
+	OpcodeEnd        InstructionOpcode = 0x0b
+	OpcodeCall       InstructionOpcode = 0x10
+	OpcodeDrop       InstructionOpcode = 0x1a
+	OpcodeMemoryGrow InstructionOpcode = 0x40
+	OpcodeI32Const   InstructionOpcode = 0x41
+	OpcodeI64Const   InstructionOpcode = 0x42
+)
 
 var instructionOpcodeNames = map[InstructionOpcode]string{
+	0x00:             "unreachable",
+	0x01:             "nop",
+	0x02:             "block",
+	0x03:             "loop",
+	0x04:             "if",
+	0x05:             "else",
+	OpcodeEnd:        "end",
+	0x0c:             "br",
+	0x0d:             "br_if",
+	0x0e:             "br_table",
+	0x0f:             "return",
+	OpcodeCall:       "call",
+	0x11:             "call_indirect",
+	0x12:             "return_call",
+	0x13:             "return_call_indirect",
+	0x14:             "call_ref",
+	OpcodeDrop:       "drop",
+	0x1b:             "select",
+	0x1c:             "select_t",
 	OpcodeMemoryGrow: "memory.grow",
+	OpcodeI32Const:   "i32.const",
+	OpcodeI64Const:   "i64.const",
 }
 
 var qipContractExports = []string{
@@ -363,6 +392,69 @@ var qipContractExports = []string{
 
 func AnalyzeModule(wasm []byte) (Analysis, error) {
 	return analyzeWASMModule(wasm)
+}
+
+// ValidateStrictComplyProfile accepts only a single, linear comply function
+// made from constants, direct imported calls, drops, and its final end.
+func ValidateStrictComplyProfile(wasm []byte) error {
+	analysis, err := AnalyzeModule(wasm)
+	if err != nil {
+		return err
+	}
+
+	failures := make([]string, 0)
+	if len(analysis.FuncMetrics) != 1 {
+		failures = append(failures, fmt.Sprintf("defines %d functions; want exactly 1", len(analysis.FuncMetrics)))
+	}
+	if analysis.Metrics.CallLocal > 0 {
+		failures = append(failures, fmt.Sprintf("contains %d local calls", analysis.Metrics.CallLocal))
+	}
+	if analysis.Metrics.CallIndirect > 0 {
+		failures = append(failures, fmt.Sprintf("contains %d indirect calls", analysis.Metrics.CallIndirect))
+	}
+	if analysis.Instantiation.HasStart {
+		failures = append(failures, "defines a start function")
+	}
+	if analysis.ImportedGlobals > 0 {
+		failures = append(failures, fmt.Sprintf("imports %d globals", analysis.ImportedGlobals))
+	}
+	if len(analysis.MemoryLimits) != 1 {
+		failures = append(failures, fmt.Sprintf("defines or imports %d memories; want exactly 1", len(analysis.MemoryLimits)))
+	}
+
+	if len(analysis.Exports) != 2 {
+		failures = append(failures, fmt.Sprintf("exports %d items; want only memory and comply", len(analysis.Exports)))
+	}
+	if exp, ok := analysis.Exports["memory"]; !ok || exp.kind != 0x02 {
+		failures = append(failures, "does not export memory")
+	}
+	if exp, ok := analysis.Exports["comply"]; !ok || exp.kind != 0x00 {
+		failures = append(failures, "does not export comply")
+	}
+
+	allowed := map[InstructionOpcode]bool{
+		OpcodeEnd:      true,
+		OpcodeCall:     true,
+		OpcodeDrop:     true,
+		OpcodeI32Const: true,
+		OpcodeI64Const: true,
+	}
+	rejected := make([]int, 0)
+	for opcode, count := range analysis.InstructionCounts {
+		if count > 0 && !allowed[opcode] {
+			rejected = append(rejected, int(opcode))
+		}
+	}
+	sort.Ints(rejected)
+	for _, rawOpcode := range rejected {
+		opcode := InstructionOpcode(rawOpcode)
+		failures = append(failures, fmt.Sprintf("contains %s (%d)", instructionOpcodeName(opcode), analysis.InstructionCounts[opcode]))
+	}
+
+	if len(failures) > 0 {
+		return errors.New("strict comply profile: " + strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 type ModulePolicy struct {
@@ -1971,6 +2063,7 @@ func parseFunctionBody(
 		}
 		ord++
 		addInstr()
+		instructionCounts[InstructionOpcode(op)]++
 		trace := instrTrace{op: op}
 
 		switch op {
@@ -2208,9 +2301,6 @@ func parseFunctionBody(
 		case 0x3f, 0x40:
 			if _, err := r.readVarU32(); err != nil {
 				return functionMetrics{}, nil, err
-			}
-			if op == 0x40 {
-				instructionCounts[OpcodeMemoryGrow]++
 			}
 			fm.MemoryOps++
 		case 0x41:

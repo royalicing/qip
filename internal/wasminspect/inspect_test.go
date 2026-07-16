@@ -181,6 +181,81 @@ func TestValidateModulePolicyRejectsMemoryGrow(t *testing.T) {
 	}
 }
 
+func TestValidateStrictComplyProfileAcceptsLinearOracleCalls(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		ImportFuncCount: 1,
+		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
+		FunctionBodies: [][]byte{{
+			0x42, 0x00, // i64.const ordinal
+			0x41, 0x00, // i32.const input pointer
+			0x41, 0x00, // i32.const input length
+			0x41, 0x00, // i32.const expected pointer
+			0x41, 0x00, // i32.const expected length
+			0x10, 0x00, // call imported oracle
+			0x1a,       // drop oracle result
+			0x41, 0x01, // i32.const declared count
+			0x0b, // end function
+		}},
+		Exports: []testExport{
+			{Name: "memory", Kind: 0x02, Index: 0},
+			{Name: "comply", Kind: 0x00, Index: 1},
+		},
+	})
+
+	if err := ValidateStrictComplyProfile(module); err != nil {
+		t.Fatalf("ValidateStrictComplyProfile: %v", err)
+	}
+}
+
+func TestValidateStrictComplyProfileRejectsConditionalInstructions(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		ImportFuncCount: 1,
+		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
+		FunctionBodies: [][]byte{{
+			0x41, 0x01, // i32.const true
+			0x04, 0x40, // if
+			0x0b,       // end if
+			0x41, 0x00, // i32.const declared count
+			0x0b, // end function
+		}},
+		Exports: []testExport{
+			{Name: "memory", Kind: 0x02, Index: 0},
+			{Name: "comply", Kind: 0x00, Index: 1},
+		},
+	})
+
+	err := ValidateStrictComplyProfile(module)
+	if err == nil {
+		t.Fatal("expected strict profile rejection")
+	}
+	if !strings.Contains(err.Error(), "contains if (1)") {
+		t.Fatalf("error=%q, want if rejection", err)
+	}
+}
+
+func TestValidateStrictComplyProfileRejectsHelperFunctions(t *testing.T) {
+	module := buildTestModule(testModuleConfig{
+		ImportFuncCount: 1,
+		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
+		FunctionBodies: [][]byte{
+			{0x10, 0x02, 0x41, 0x00, 0x0b}, // comply calls local helper
+			{0x0b},
+		},
+		Exports: []testExport{
+			{Name: "memory", Kind: 0x02, Index: 0},
+			{Name: "comply", Kind: 0x00, Index: 1},
+		},
+	})
+
+	err := ValidateStrictComplyProfile(module)
+	if err == nil {
+		t.Fatal("expected strict profile rejection")
+	}
+	if !strings.Contains(err.Error(), "defines 2 functions") || !strings.Contains(err.Error(), "local calls") {
+		t.Fatalf("error=%q, want helper-function rejection", err)
+	}
+}
+
 func TestValidateModulePolicyMaxMemory(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		Memories:       []testMemory{{MinPages: 1, HasMax: true, MaxPages: 2}},

@@ -8,8 +8,11 @@ extern "qip" fn render_must_equal(
     expected_len: u32,
 ) i32;
 
-const SPEC_TEXT = @embedFile("commonmark-spec-0.31.2.txt");
-const SPEC_EXAMPLE_COUNT: usize = 655;
+const COMMONMARK_SPEC_TEXT = @embedFile("gfm-commonmark-spec-0.31.2.txt");
+const GFM_EXTENSION_SPEC_TEXT = @embedFile("gfm-extensions-0.29.txt");
+const COMMONMARK_EXAMPLE_COUNT: usize = 655;
+const GFM_EXTENSION_EXAMPLE_COUNT: usize = 22;
+const TOTAL_EXAMPLE_COUNT: usize = COMMONMARK_EXAMPLE_COUNT + GFM_EXTENSION_EXAMPLE_COUNT;
 const OPEN_LINE = ("`" ** 32) ++ " example\n";
 const SEPARATOR = "\n.\n";
 const EMPTY_SEPARATOR = ".\n";
@@ -38,7 +41,11 @@ fn findSequence(comptime text: []const u8, start: usize, comptime sequence: []co
     return null;
 }
 
-fn parseSpec(comptime spec_text: []const u8, comptime expected_count: usize) [expected_count]Case {
+fn parseSpec(
+    comptime spec_text: []const u8,
+    comptime expected_count: usize,
+    comptime fixture_name: []const u8,
+) [expected_count]Case {
     @setEvalBranchQuota(1_000_000);
 
     var cases: [expected_count]Case = undefined;
@@ -47,18 +54,18 @@ fn parseSpec(comptime spec_text: []const u8, comptime expected_count: usize) [ex
 
     while (findSequence(spec_text, cursor, OPEN_LINE, &OPEN_SKIP)) |open_start| {
         if (count == expected_count) {
-            @compileError("commonmark-spec-0.31.2.txt contains more examples than expected");
+            @compileError(fixture_name ++ " contains more examples than expected");
         }
         const input_start = open_start + OPEN_LINE.len;
         const input_end, const expected_start = if (std.mem.startsWith(u8, spec_text[input_start..], EMPTY_SEPARATOR))
             .{ input_start, input_start + EMPTY_SEPARATOR.len }
         else blk: {
             const separator_start = findSequence(spec_text, input_start, SEPARATOR, &SEPARATOR_SKIP) orelse
-                @compileError("commonmark-spec-0.31.2.txt example has no separator");
+                @compileError(fixture_name ++ " example has no separator");
             break :blk .{ separator_start + 1, separator_start + SEPARATOR.len };
         };
         const close_start = findSequence(spec_text, expected_start, CLOSE_LINE, &CLOSE_SKIP) orelse
-            @compileError("commonmark-spec-0.31.2.txt example has no closing fence");
+            @compileError(fixture_name ++ " example has no closing fence");
         cases[count] = .{
             .input = .{ .start = input_start, .len = input_end - input_start },
             .expected = .{ .start = expected_start, .len = close_start - expected_start },
@@ -67,7 +74,7 @@ fn parseSpec(comptime spec_text: []const u8, comptime expected_count: usize) [ex
         cursor = close_start + CLOSE_LINE.len;
     }
 
-    if (count != expected_count) @compileError("commonmark-spec-0.31.2.txt example count changed");
+    if (count != expected_count) @compileError(fixture_name ++ " example count changed");
     return cases;
 }
 
@@ -118,15 +125,31 @@ inline fn declareCase(comptime ordinal: usize, comptime input_raw: []const u8, c
     }
 }
 
-const CASES = parseSpec(SPEC_TEXT, SPEC_EXAMPLE_COUNT);
+const COMMONMARK_CASES = parseSpec(
+    COMMONMARK_SPEC_TEXT,
+    COMMONMARK_EXAMPLE_COUNT,
+    "gfm-commonmark-spec-0.31.2.txt",
+);
+const GFM_EXTENSION_CASES = parseSpec(
+    GFM_EXTENSION_SPEC_TEXT,
+    GFM_EXTENSION_EXAMPLE_COUNT,
+    "gfm-extensions-0.29.txt",
+);
 
 export fn comply() i32 {
-    inline for (CASES, 0..) |case, ordinal| {
+    inline for (COMMONMARK_CASES, 0..) |case, ordinal| {
         declareCase(
             ordinal,
-            SPEC_TEXT[case.input.start..][0..case.input.len],
-            SPEC_TEXT[case.expected.start..][0..case.expected.len],
+            COMMONMARK_SPEC_TEXT[case.input.start..][0..case.input.len],
+            COMMONMARK_SPEC_TEXT[case.expected.start..][0..case.expected.len],
         );
     }
-    return SPEC_EXAMPLE_COUNT;
+    inline for (GFM_EXTENSION_CASES, 0..) |case, extension_ordinal| {
+        declareCase(
+            COMMONMARK_EXAMPLE_COUNT + extension_ordinal,
+            GFM_EXTENSION_SPEC_TEXT[case.input.start..][0..case.input.len],
+            GFM_EXTENSION_SPEC_TEXT[case.expected.start..][0..case.expected.len],
+        );
+    }
+    return TOTAL_EXAMPLE_COUNT;
 }

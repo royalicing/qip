@@ -12,6 +12,8 @@ func TestNormalizeComplyArgs(t *testing.T) {
 		"a.wasm",
 		"--with",
 		"b.wasm",
+		"--profile",
+		"strict",
 		"--seed",
 		"500",
 	}
@@ -21,6 +23,8 @@ func TestNormalizeComplyArgs(t *testing.T) {
 		"a.wasm",
 		"--with",
 		"b.wasm",
+		"--profile",
+		"strict",
 		"--seed",
 		"500",
 		"impl.wasm",
