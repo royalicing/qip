@@ -32,7 +32,7 @@ If you want to send someone the current QIP spec, send them these pages:
 
 Then add the relevant extension specs for the component type:
 
-- [Interactive ABI](/docs/interactive) and [Interactive Events](/docs/events) for interactive components.
+- [Interactive ABI](/docs/interactive): the framebuffer, event codes, timing, sizing, and host loop for interactive components.
 - [Form ABI](/docs/form_abi) for form components.
 - [`qip comply`](/docs/comply) when you need reusable conformance checks.
 
@@ -91,7 +91,6 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/hard-limits">Hard Limits</a></li>
 <li><a href="/docs/formats">Formats and Encodings</a></li>
 <li><a href="/docs/interactive">Interactive ABI</a></li>
-<li><a href="/docs/events">Interactive Events</a></li>
 <li><a href="/docs/form_abi">Form ABI</a></li>
 <li><a href="/docs/comply">qip comply</a></li>
 </ol>

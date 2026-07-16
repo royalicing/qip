@@ -41,6 +41,8 @@ We chose `rgba8_srgb` with `stride = width * 4` for direct compatibility with br
 
 ### Event Semantics
 
+The event codes use a small subset inspired by the Remote Framebuffer Protocol ([RFC 6143](https://www.rfc-editor.org/rfc/rfc6143)): keyboard input uses X11 keysyms, while pointer input uses an RFB-style button mask and pixel coordinates. QIP passes events as function calls rather than a binary packet stream.
+
 `key_event(...)`:
 
 - `x11_key` uses X11 keysym values (aligned with VNC Remote Framebuffer `KeyEvent` semantics).
@@ -54,6 +56,20 @@ We chose `rgba8_srgb` with `stride = width * 4` for direct compatibility with br
 - `now_ms` is monotonic elapsed milliseconds (`i64`) from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
 
+Common keysyms:
+
+- Left arrow: `0xFF51`
+- Up arrow: `0xFF52`
+- Right arrow: `0xFF53`
+- Down arrow: `0xFF54`
+- Escape: `0xFF1B`
+- Enter: `0xFF0D`
+- Tab: `0xFF09`
+- Backspace: `0xFF08`
+- Space: `0x0020`
+
+For printable keys, pass Unicode/ASCII code points as keysyms. For example, `A` is `0x41` and `a` is `0x61`.
+
 `pointer_event(...)`:
 
 - `button_mask` uses only the low 3 bits: primary=`1`, middle=`2`, secondary=`4`.
@@ -61,6 +77,12 @@ We chose `rgba8_srgb` with `stride = width * 4` for direct compatibility with br
 - When the pointer leaves the rendering surface, the host sends `button_mask=0`, `x_px=-1`, and `y_px=-1`.
 - `now_ms` is monotonic elapsed milliseconds (`i64`) from the same timeline used by `tick(now_ms)`.
 - Return `1` when accepted, `0` when ignored.
+
+The supported button bits map directly from DOM pointer `buttons` while retaining the RFB pointer-state model:
+
+- bit `0` (`1`): primary / button 1
+- bit `1` (`2`): middle / button 2
+- bit `2` (`4`): secondary / button 3
 
 Track pointer state at the same granularity as the interaction. Normalize pointer coordinates once into a semantic hit target, such as `{ cell_index, subcell_index }`, and use that result for both hover and click handling. Compare the proposed hover target with the current one and ignore moves that would render identical pixels. Entering a different target or leaving it is accepted. This avoids calling `tick` for every raw pointer coordinate while preserving responsive hover feedback.
 
