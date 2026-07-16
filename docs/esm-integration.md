@@ -1,4 +1,4 @@
-# WebAssembly ES Module Integration
+# Running In JavaScript
 
 QIP components fit the WebAssembly ES module proposal because the contract is already a small set of named exports.
 

@@ -53,53 +53,16 @@ qip comply modules/text/markdown/commonmark.0.31.2.wasm --with compliance/common
 qip bench -i page.md --benchtime=2s modules/text/markdown/commonmark.0.31.2.wasm
 ```
 
-## React Example
+## Runtime Guides
 
-When your runtime supports WebAssembly ES module imports, import the component exports directly and call the QIP ABI.
+The QIP memory contract stays the same across hosts. These guides show the loading, memory, failure, and instance-lifetime choices for specific application runtimes:
 
-```jsx
-"use client";
+- [Running QIP In Python](/docs/running-in-python) loads a WebAssembly Core module from disk with Wasmtime.
+- [Running QIP In Java](/docs/running-in-java) loads the same module with the pure-Java Chicory runtime.
+- [Running QIP In .NET](/docs/running-in-dotnet) uses Wasmtime from C# and covers ASP.NET instance ownership.
+- [Running QIP In React](/docs/running-in-react) covers browser Client Components and Next.js Server Components.
 
-import {
-  memory,
-  input_ptr,
-  input_utf8_cap,
-  output_ptr,
-  output_utf8_cap,
-  render,
-} from "/components/text/markdown/commonmark.0.31.2.wasm";
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-function markdownToHtml(markdown) {
-  const inputBytes = encoder.encode(markdown);
-  const inputPtr = input_ptr();
-  const inputCap = input_utf8_cap();
-
-  if (inputBytes.length > inputCap) {
-    throw new RangeError(`markdown input exceeds input_utf8_cap (${inputBytes.length} > ${inputCap})`);
-  }
-
-  new Uint8Array(memory.buffer, inputPtr, inputBytes.length).set(inputBytes);
-
-  const outputLen = render(inputBytes.length);
-  const outputPtr = output_ptr();
-  const outputCap = output_utf8_cap();
-
-  if (outputLen < 0 || outputLen > outputCap) {
-    throw new RangeError(`html output exceeds output_utf8_cap (${outputLen} > ${outputCap})`);
-  }
-
-  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputLen));
-}
-
-export function MarkdownPreview({ source }) {
-  return <div dangerouslySetInnerHTML={{ __html: markdownToHtml(source) }} />;
-}
-```
-
-QIP isolation controls what the component can access; it does not sanitize rendered HTML. For untrusted Markdown, add a sanitizer or validator before using `dangerouslySetInnerHTML`.
+For lower-level JavaScript integration, including direct `.wasm` imports where the runtime supports them, see [Running In JavaScript](/docs/esm-integration).
 
 ## When Not To Use QIP
 

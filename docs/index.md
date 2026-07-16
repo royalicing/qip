@@ -85,31 +85,35 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/architecture-boundaries">Architecture And Boundaries</a></li>
 </ol>
 </li>
-<li><span class="docs-section">Spec</span>
+<li><span class="docs-section">Running</span>
+<ol>
+<li><a href="/docs/qip-cli">qip cli</a></li>
+<li><a href="/docs/qip-elements">Browser Elements</a></li>
+<li><a hidden href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
+<li><a href="/docs/esm-integration">Running In JavaScript</a></li>
+<li><a href="/docs/running-in-react">Running In React</a></li>
+<li><a href="/docs/running-in-python">Running In Python</a></li>
+<li><a href="/docs/running-in-java">Running In Java</a></li>
+<li><a href="/docs/running-in-dotnet">Running In .NET</a></li>
+</ol>
+</li>
+<li><span class="docs-section">QIP spec</span>
 <ol>
 <li><a href="/docs/component-contract">QIP Component Contract</a></li>
 <li><a href="/docs/hard-limits">Hard Limits</a></li>
 <li><a href="/docs/formats">Formats and Encodings</a></li>
 <li><a href="/docs/interactive">Interactive ABI</a></li>
-<li><a href="/docs/form_abi">Form ABI</a></li>
-<li><a href="/docs/comply">qip comply</a></li>
+<li><a hidden href="/docs/form_abi">Form ABI!</a></li>
+<li><a href="/docs/comply">Comply</a></li>
 </ol>
 </li>
-<li><span class="docs-section">Guides</span>
+<li><span class="docs-section">Making components</span>
 <ol>
 <li><a href="/docs/module-patterns">QIP Component Patterns</a></li>
 <li><a href="/docs/zig-components">Writing QIP Components In Zig</a></li>
-<li><a href="/docs/esm-integration">WebAssembly ES Module Integration</a></li>
 <li><a href="/docs/tracing">Tracing</a></li>
 <li><a href="/docs/interactive-rendering-performance">Interactive Rendering Performance</a></li>
 <li><a href="/docs/testing-interactive-components">Testing Interactive Components</a></li>
-</ol>
-</li>
-<li><span class="docs-section">Runtimes</span>
-<ol>
-<li><a href="/docs/qip-cli">qip CLI</a></li>
-<li><a href="/docs/qip-elements">Browser Elements</a></li>
-<li><a href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
 </ol>
 </li>
 <li><span class="docs-section">Router</span>
@@ -118,7 +122,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/recipes">Recipe Layout</a></li>
 <li><a href="/docs/router">Router</a></li>
 <li><a href="/docs/routing-recipes">File Routing & Recipe Orchestration</a></li>
-<li><a href="/docs/visitor_router_abi_v0">Visitor Router ABI v0</a></li>
+<li><a hidden href="/docs/visitor_router_abi_v0">Visitor Router ABI v0</a></li>
 </ol>
 </li>
 </ol>
