@@ -1,46 +1,30 @@
 # Hard Limits
 
-QIP components should run with a small, explicit budget for memory, time, and host access.
+QIP components run behind a byte-oriented interface. The host writes input into
+linear memory, calls a known export, and reads the output. A component does not
+receive a filesystem, network connection, clock, DOM, cookies, environment
+variables, GPU access, or application secrets unless the host explicitly passes
+that information in.
 
-That budget is part of the component contract. The host gives the component input bytes, calls a known export, and reads output bytes back. It does not give the component a filesystem, network, environment variables, cookies, DOM access, GPU APIs, or secrets unless the host deliberately turns some data into input.
+This boundary is useful only if its resource limits are also explicit. A module
+that cannot access the network but can allocate without limit or run forever is
+still difficult to operate safely.
 
-This is stricter than normal application code. A JavaScript file loaded with `<script src>` runs inside a browser sandbox, but once it is page code it can inspect the DOM, make network requests, allocate memory until browser/runtime limits, and load more code. A QIP component should not be able to discover more world by itself. If it needs data, the host passes that data in.
+QIP therefore separates three controls:
 
-## What QIP Enforces
+| Control | What it limits | How QIP applies it |
+| --- | --- | --- |
+| Host access | What the component can observe or change | No WASI or other host imports |
+| Linear memory | How much memory the component can declare or grow | `--max-memory` and `--fixed-memory` |
+| Execution time | How long a CLI stage may run | `--timeout-ms` |
 
-QIP exposes resource policy in two layers.
+The host-access boundary is the normal component model. The memory flags are
+currently opt-in, so a host must select them when loading unreviewed modules or
+when enforcing a production budget.
 
-The default component boundary removes ambient host access:
+## Apply A Runtime Policy
 
-- No WASI by default.
-- No filesystem, network, environment, clock, DOM, cookie, token, or GPU capability.
-- No custom host imports unless the host has intentionally provided them.
-- Input and output must fit the component's advertised capacities.
-
-## Strict WebAssembly Profile
-
-WebAssembly is a broad execution format. QIP uses a constrained subset of it for
-normal components:
-
-- **No ambient imports.** A component should not require WASI, host callbacks,
-  filesystem access, network access, clocks, random sources, secrets, or package
-  loading. The host passes required data as input bytes or explicit uniforms.
-- **No `memory.grow`.** The component should stay inside the linear memory it
-  starts with, so memory use is visible before execution.
-- **No shared memory.** Components should not depend on threads or shared linear
-  memory.
-- **No atomics.** Atomic instructions imply shared-memory coordination, which is
-  outside the normal QIP component model.
-- **Fixed-bound loops for safety-checked modules.** A strict verifier can reject
-  loops unless it can see a local counter, a monotonic update, and an exit bound.
-- **Wasm32 with one linear memory.** QIP pointers and capacities are `i32`
-  values into one memory, which keeps host writes and reads simple.
-
-Compliance modules are a separate testing protocol and intentionally import the
-implementation they are checking. That is not ambient authority for normal QIP
-components.
-
-Execution policies can tighten the module before it runs:
+The same policy flags work with text, binary, and image components:
 
 ```bash
 qip run --timeout-ms 1000 --max-memory 1048576 --fixed-memory modules/utf8/trim.wasm
@@ -48,7 +32,16 @@ qip bench -i input.txt --timeout-ms 1000 --max-memory 1048576 --fixed-memory mod
 qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 --fixed-memory modules/rgba/invert.wasm
 ```
 
-Use the same policy shape in browser hosts:
+- `--max-memory <bytes>` rejects a module when its declared memory minimum or
+  maximum exceeds the cap. It also rejects a module that declares memory without
+  a maximum.
+- `--fixed-memory` rejects a module containing `memory.grow`. Equal initial and
+  maximum memory declarations are not enough: the instruction may still exist
+  in allocator or runtime code, even though it can only fail.
+- `--timeout-ms <ms>` limits the execution time of each CLI stage. It deals with
+  runaway execution, not allocation.
+
+Browser hosts expose the memory controls as attributes:
 
 ```html
 <qip-edit max-memory="1048576" fixed-memory>
@@ -56,94 +49,91 @@ Use the same policy shape in browser hosts:
 </qip-edit>
 ```
 
-`--max-memory <bytes>` rejects modules whose declared linear memory minimum or maximum exceeds the byte cap. A module with memory but no declared maximum is rejected when this flag is set.
+Input and output have separate bounds. The component advertises buffer
+capacities through its ABI exports; the host rejects data that does not fit.
+Those checks prevent a host copy from crossing the advertised buffer. They do
+not impose a useful total-memory budget by themselves.
 
-`--fixed-memory` rejects modules that can grow linear memory while they run. Internally this means rejecting the WebAssembly `memory.grow` instruction. Publicly, call this fixed memory: the component must stay inside the memory it starts with.
+## The Strict Wasm Profile
 
-`--timeout-ms <ms>` bounds how long a CLI stage may run. Use it with memory policy: timeouts handle runaway execution, while fixed memory handles runaway allocation.
+For components that need a statically inspectable execution shape, QIP defines
+a stricter subset of WebAssembly:
 
-Use `qip score` to inspect loop shape:
+- wasm32 with at most one linear memory
+- no imports, including WASI and custom host callbacks
+- a declared memory maximum and no `memory.grow`
+- no shared memory or atomic instructions
+- no indirect calls
+- an acyclic direct call graph, which excludes recursion
+- a statically recognizable bound for every loop backedge
 
-```bash
-qip score modules/utf8/luhn.wasm
-```
+Compliance modules are an exception to the import rule: they import the
+implementation being tested. Ordinary QIP components do not.
 
-The `fixed_bound_loops` line is a conservative static check. `PASS` means every Wasm loop with a backedge matched the accepted counter pattern. `WARN` means QIP could not prove the bound from the binary.
-
-Use the checker components when the Wasm artifact itself should enforce the strict profile:
-
-```bash
-qip run -i component.wasm -- modules/application/wasm/wasm-strict-profile.wasm modules/application/wasm/wasm-bounded-loops.wasm
-```
-
-The checks are split into two stages so hosts can pick a tier. `wasm-strict-profile` enforces the factual rules: no ambient imports, declared memory maximums, no `memory.grow`, no shared memory, no atomics, no indirect calls, and no recursion (the direct call graph must be acyclic, which the indirect-call ban makes fully visible). `wasm-bounded-loops` runs the flow analysis: every loop with a backedge must show a fixed bound. Run both for the full strict tier; run only the profile stage for a tier that will bound execution another way, such as fuel metering.
-
-## Why Budgets Help
-
-Budgets make components easier to run in more than one place.
-
-Determinism is the main reason. If a component cannot read the filesystem, call the network, inspect environment variables, query the clock, or grow into a larger runtime, the same input bytes are much more likely to produce the same output bytes across CLI, browser, server, desktop, and mobile hosts.
-
-That also helps testing. You can snapshot output bytes, run `qip comply`, and benchmark a component without recreating the application environment around it.
-
-The security benefit is narrow blast radius. Sandboxing does not prove the code is correct, but it limits what buggy, malicious, or AI-generated code can touch. The component can transform the bytes it receives. It cannot borrow the user's session, read unrelated app state, scan the disk, phone home, or ask the GPU to do work behind the host's back.
-
-The tradeoff is that QIP asks you to budget work up front. For content transforms, validators, image filters, and small interactive renderers, that is usually a good trade. For components that need open-ended allocation, many system calls, or a large language runtime, QIP may be the wrong boundary.
-
-## Fixed Memory
-
-There are two related but different controls:
-
-- A declared memory maximum tells the host how large linear memory may become.
-- A fixed-memory policy rejects modules that contain `memory.grow`.
-
-Compiler flags can set the memory maximum. They do not always prove the final binary contains no growth instruction. Allocators and language runtimes may still include code paths that try to grow memory, even if growth would fail at runtime.
-
-For QIP, use both sides:
-
-1. Compile with a declared memory budget.
-2. Avoid allocator paths that require runtime growth.
-3. Validate the final `.wasm` with QIP policy.
+Run the artifact checkers as a two-stage pipeline:
 
 ```bash
-qip run --max-memory 1048576 --fixed-memory component.wasm
+qip run -i component.wasm -- \
+  modules/application/wasm/wasm-strict-profile.wasm \
+  modules/application/wasm/wasm-bounded-loops.wasm
 ```
 
-## Fixed-Bound Loops
+`wasm-strict-profile` checks imports, memory shape, banned instructions, indirect
+calls, and recursion. `wasm-bounded-loops` checks loop bounds. Keeping these
+checks separate allows a host to enforce the structural profile while using a
+runtime mechanism for execution, such as a timeout or fuel meter.
 
-A loop bound has to be visible in the compiled Wasm, not only obvious in the source language.
+For a readable inspection report, use:
 
-The verifier works from per-loop evidence, in the spirit of the eBPF verifier's bounded-loop rule: it looks for a local whose writes inside the loop are all recognized monotonic steps in one direction, plus an exit comparison in the matching direction. This covers ordinary loops such as `while (i < input.len) : (i += 1)` after compilation.
+```bash
+qip score component.wasm
+```
 
-Recognized update steps:
+`fixed_bound_loops: PASS` means every backedge matched the verifier's accepted
+patterns. `WARN` means the verifier could not establish a bound. It does not
+prove that the module loops forever.
 
-- add or subtract a constant: `i += 1`, `i -= 4`
-- shrink toward zero: `x = x / 10` or `x = x >> 3`, the itoa shape
-- either step routed through a temp local: `t = x / 10; ... x = t`
-- an extra add of a known non-negative narrow value beside a strict
-  increment, the parser stride `i += 1 + len` where `len` is a byte load,
-  whether written as separate adds or fused into one expression
+## What The Loop Checker Can Prove
 
-Recognized exit evidence:
+A source-level loop bound is irrelevant if the compiler removes or obscures it.
+The checker works on the final Wasm binary. It looks for a local counter that:
 
-- signed and unsigned comparisons, 32-bit and 64-bit, against a constant, another local, a global, or a computed value
-- comparisons where the counter sits inside a small expression, such as `i + 4 > n`
-- `i32.eqz` countdown tests
-- branches that leave the loop, branch back to the loop header, or conditionally return via the function label
-- branches to a block whose end path leaves the function or the loop, including chains through further unconditional branches and block ends
-- any conditional branch or `if` where must-exit analysis shows every path from the taken (or fall-through) edge leaves the function, even through further conditionals
+1. changes monotonically inside the loop; and
+2. participates in an exit comparison in the same direction.
 
-Any other write to the candidate local inside the loop disqualifies it. A reset like `i = next_pos` means the bound cannot be proven from that local, because the write could move it away from the exit bound.
+Accepted updates include adding or subtracting a constant, division or shifts
+toward zero, and those operations routed through a temporary local. The checker
+also recognizes the common parser stride `i += 1 + len` when `len` is a known
+non-negative narrow value.
 
-It rejects a loop like `loop { br 0 }` because there is a backedge but no counter, no update, and no exit bound.
+Exit evidence may use signed or unsigned 32-bit or 64-bit comparisons against a
+constant, local, global, or computed value. Countdown tests with `i32.eqz` are
+also accepted. The exit may branch out of the loop, return from the function, or
+pass through blocks whose paths all leave the loop or function.
 
-This is not a general termination proof. If a loop is safe but compiled into a shape the checker does not understand, rewrite the loop into a simpler counter form or treat the warning as a review item. [Provable Loops](provable-loops.md) shows verified before/after rewrites for the common failing shapes.
+Any unrecognized write to the candidate counter disqualifies it. For example,
+`i = next_pos` might move the counter away from the bound. An unconditional
+`loop { br 0 }` has no counter or exit and is rejected.
 
-## Zig
+This is a deliberately conservative analysis, not a general termination proof.
+If a safe loop compiles into an unsupported shape, simplify its counter, add an
+explicit step budget, or run the component under a runtime execution limit.
+[Provable Loops](provable-loops.md) contains verified source-level rewrites for
+the common cases.
 
-Zig is a good default for QIP components because freestanding WebAssembly is a normal target and the build command can say what memory shape you want.
+## Build With A Memory Budget
 
-Use `--max-memory` so the module declares a maximum. If you want the linker-level equivalent of non-growable memory, set initial and maximum memory to the same value:
+Choose the budget before selecting compiler flags. Account for input, output,
+scratch space, stack, static data, and any allocator arena. Then inspect the
+final `.wasm`; source code and linker settings do not establish the whole policy.
+
+For small transforms, static buffers are usually the simplest arrangement. If
+an API requires an allocator, put it over a fixed buffer. Treat overflow as an
+error or trap rather than silently requesting more memory.
+
+### Zig
+
+Set an explicit initial and maximum memory when both should be 1 MiB:
 
 ```bash
 zig build-exe component.zig \
@@ -157,19 +147,14 @@ zig build-exe component.zig \
   -femit-bin=component.wasm
 ```
 
-Keep ordinary QIP components simple:
+The repository Makefile supplies `--max-memory=$(ZIG_WASM_MAX_MEMORY)` and
+allows individual modules to override the value. `std.heap.FixedBufferAllocator`
+is available when an allocator-shaped interface is useful without a growable
+heap.
 
-- Use static input, output, and scratch buffers.
-- Avoid heap allocation for normal content transforms.
-- Use `std.heap.FixedBufferAllocator` only when an allocator-shaped API is worth it.
-- Trap on input overflow, invalid data, and output overflow.
-- Run the final artifact with `--fixed-memory`.
+### C And Clang
 
-The repo Makefile uses `--max-memory=$(ZIG_WASM_MAX_MEMORY)` for Zig modules and lets individual modules override the value when they need a tighter or larger budget.
-
-## C And Clang
-
-For freestanding C, the LLVM WebAssembly linker has the clearest spelling:
+LLVM's Wasm linker can make maximum memory equal initial memory:
 
 ```bash
 clang --target=wasm32 -nostdlib -Oz component.c \
@@ -185,82 +170,64 @@ clang --target=wasm32 -nostdlib -Oz component.c \
   -o component.wasm
 ```
 
-`--no-growable-memory` sets the maximum memory size to the initial memory size. The explicit form is also valid:
+The explicit equivalent is:
 
 ```bash
 -Wl,--initial-memory=1048576 -Wl,--max-memory=1048576
 ```
 
-These are linker settings, not a substitute for code discipline. Prefer static arrays, avoid `malloc`, avoid libc features that expect a larger runtime, and validate the final module with QIP.
+The same linker flags work through `zig cc`. Avoid `malloc` and libc features
+that assume a larger runtime unless you have provided and budgeted their memory.
+See the [LLVM lld WebAssembly options](https://lld.llvm.org/WebAssembly.html) for
+the linker semantics.
 
-The same linker flags work through `zig cc`:
+### Rust
 
-```bash
-zig cc component.c -target wasm32-freestanding -nostdlib \
-  -Wl,--no-entry \
-  -Wl,--no-growable-memory \
-  -Wl,-z,stack-size=65536 \
-  -Oz -o component.wasm
-```
+Rust can produce a small freestanding component, but crate selection can
+quietly reintroduce allocation. Start with `no_std` and abort on panic. Avoid
+`alloc`, `Vec`, `String`, `Box`, allocating formatting, and allocator-dependent
+crates unless a fixed allocator is part of the design.
 
-See the LLVM lld WebAssembly documentation for `--initial-memory`, `--max-memory`, and `--no-growable-memory`: <https://lld.llvm.org/WebAssembly.html>.
-
-## Rust
-
-Rust can produce QIP-shaped WebAssembly, but you need to be clear about allocation.
-
-Start with `no_std` when you want fixed memory:
-
-```rust
-#![no_std]
-```
-
-Then avoid `alloc` unless you have deliberately provided a fixed allocator. Treat `Vec`, `String`, `Box`, formatting that allocates, and allocator-using crates as signs that the component may no longer be a small fixed-budget transform.
-
-Pass the linker policy through `RUSTFLAGS`:
+Pass the memory setting to the linker:
 
 ```bash
 RUSTFLAGS="-C link-arg=--no-growable-memory" \
   cargo build --release --target wasm32-unknown-unknown
 ```
 
-Or use explicit equal memory values:
+The [`wasm32-unknown-unknown` target notes](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
+describe the target's supported features. A minimal target does not imply that
+the resulting program avoids allocation.
 
-```bash
-RUSTFLAGS="-C link-arg=--initial-memory=1048576 -C link-arg=--max-memory=1048576" \
-  cargo build --release --target wasm32-unknown-unknown
-```
+### WebAssembly Text
 
-For strict QIP components, prefer:
-
-- `#![no_std]`
-- `panic = "abort"`
-- fixed input/output buffers
-- no default allocator
-- no crates that need filesystem, network, time, threads, randomness, or process state
-- final validation with `qip run --max-memory ... --fixed-memory`
-
-The Rust `wasm32-unknown-unknown` target is intentionally minimal, but Rust still supports allocation on that target when the program opts into it. Read the target notes before assuming a crate is QIP-shaped: <https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html>.
-
-## WebAssembly Text
-
-For hand-written `.wat`, declare both initial and maximum memory pages and do not emit `memory.grow`:
+For hand-written WAT, declare equal initial and maximum page counts and omit
+`memory.grow`:
 
 ```wat
 (memory (export "memory") 16 16)
 ```
 
-WebAssembly pages are `64 KiB`, so `16` pages is `1 MiB`.
+A WebAssembly page is 64 KiB, so 16 pages is 1 MiB.
 
-This is the easiest format to inspect, which is why small comply modules and tiny validators are often pleasant to write in WAT.
+## When This Boundary Does Not Fit
 
-## Adoption Checklist
+The restrictions buy a component that is easier to inspect, test, benchmark,
+and run in different hosts. They do not prove correctness or make untrusted
+output safe to consume. The host must still validate output according to how it
+will be used.
 
-- Pick a memory budget before the component grows around accidental allocation.
-- Compile with an explicit memory maximum.
-- Prefer fixed memory for production components and unreviewed code.
-- Keep filesystem, network, GPU, environment, clock, token, and app-state access in the host.
-- Pass required data into the component as bytes.
-- Add `--max-memory` and `--fixed-memory` to CI for modules that should obey the strict profile.
-- Add `--timeout-ms` when running untrusted or expensive components in the CLI.
-- Use `qip bench` after correctness is locked down so performance work stays measurable.
+QIP is a reasonable boundary for content transforms, validators, image filters,
+and small interactive renderers with known input sizes. It is a poor fit for
+work that genuinely needs open-ended allocation, operating-system services,
+threads, recursive or highly irregular control flow, or a large managed
+runtime. Keep that work in the host, or use a less restrictive execution model
+with its own resource controls.
+
+For production components:
+
+1. Set a memory maximum at link time.
+2. Run the final artifact with `--max-memory` and `--fixed-memory` in CI.
+3. Keep ambient capabilities in the host and pass required data as bytes.
+4. Use `--timeout-ms` for untrusted or expensive CLI stages.
+5. Benchmark with `qip bench` after the contract and limits are stable.
