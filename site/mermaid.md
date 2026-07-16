@@ -96,6 +96,10 @@ of WebAssembly</a>. It runs locally in your browser and as a CLI.
 
 This component supports the demonstrated flowchart, subgraph, sequence, state, class, and ER forms and traps on unsupported syntax.
 
+## Download
+
+- <a href="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm" download>mermaid-to-unicode-html.wasm</a> — <qip-content-size src="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"></qip-content-size>
+
 ## CLI
 
 ```bash
