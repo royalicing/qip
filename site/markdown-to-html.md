@@ -129,7 +129,7 @@ function renderMarkdown(source) {
   return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
 }
 
-const diagram = `# Project status
+const markdown = `# Project status
 
 | Feature | Status |
 | --- | --- |
@@ -142,7 +142,7 @@ const diagram = `# Project status
 
 Visit https://github.github.com/gfm/`;
 
-document.querySelector("main article").innerHTML = renderMarkdown(diagram);
+document.querySelector("main article").innerHTML = renderMarkdown(markdown);
 ```
 
 </copy-code>
