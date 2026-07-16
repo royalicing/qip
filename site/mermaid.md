@@ -100,8 +100,58 @@ This component supports the demonstrated flowchart, subgraph, sequence, state, c
 
 ```bash
 go install github.com/royalicing/qip@latest
-qip run modules/text/vnd.mermaid/mermaid-to-unicode-html.wasm < diagram.mmd
+printf '%s\n' \
+  'graph TD' \
+  '  Start[Request received] --> Auth{Authenticated?}' \
+  '  Auth -->|yes| Rate{Rate limit OK?}' \
+  '  Auth -->|no| R401[401 Unauthorized]' \
+  '  Rate -->|yes| H(Handle request)' \
+  '  Rate -->|no| R429[429 Too Many Requests]' \
+  '  H -.-> Log[Audit log]' \
+  '  H ==> Resp[200 OK]' \
+  | qip run modules/text/vnd.mermaid/mermaid-to-unicode-html.wasm > graph.html
 ```
+
+## JavaScript
+
+<copy-code>
+
+```js
+const mermaidRenderer = await WebAssembly.instantiateStreaming(
+  fetch("/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"),
+);
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+
+function renderMermaid(source) {
+  const {
+    memory,
+    input_ptr,
+    input_utf8_cap,
+    output_ptr,
+    render,
+  } = mermaidRenderer.instance.exports;
+  const input = encoder.encode(source);
+  if (input.length > input_utf8_cap()) throw new RangeError("Mermaid input is too large");
+  new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
+  const outputSize = render(input.length);
+  return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
+}
+
+const diagram = `graph TD
+  Start[Request received] --> Auth{Authenticated?}
+  Auth -->|yes| Rate{Rate limit OK?}
+  Auth -->|no| R401[401 Unauthorized]
+  Rate -->|yes| H(Handle request)
+  Rate -->|no| R429[429 Too Many Requests]
+  H -.-> Log[Audit log]
+  H ==> Resp[200 OK]`;
+
+document.querySelector("#diagram").innerHTML = renderMermaid(diagram);
+```
+
+</copy-code>
+
+The component returns an HTML fragment containing the box art and styling spans. Insert it as HTML to preserve the colors, or use the element's `textContent` when you only need plain Unicode text.
 
 ## Notes
 
@@ -205,14 +255,34 @@ for (const button of exampleButtons) {
   });
 }
 
-copyButton.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(output.textContent);
-  status.textContent = "Text copied.";
+function showCopySucceeded(button) {
+  button.classList.remove("succeeded");
+  void button.offsetWidth;
+  button.classList.add("succeeded");
+}
+
+for (const button of [copyButton, copyHtmlButton]) {
+  button.addEventListener("animationend", () => {
+    button.classList.remove("succeeded");
+  });
+}
+
+async function copyOutput(button, value) {
+  try {
+    await navigator.clipboard.writeText(value);
+    status.textContent = "";
+    showCopySucceeded(button);
+  } catch {
+    status.textContent = "Copy failed.";
+  }
+}
+
+copyButton.addEventListener("click", () => {
+  copyOutput(copyButton, output.textContent);
 });
 
-copyHtmlButton.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(output.innerHTML);
-  status.textContent = "HTML copied.";
+copyHtmlButton.addEventListener("click", () => {
+  copyOutput(copyHtmlButton, output.innerHTML);
 });
 
 render();
