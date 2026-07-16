@@ -113,7 +113,7 @@ printf '%s\n' \
   '  Rate -->|no| R429[429 Too Many Requests]' \
   '  H -.-> Log[Audit log]' \
   '  H ==> Resp[200 OK]' \
-  | qip run modules/text/vnd.mermaid/mermaid-to-unicode-html.wasm > graph.html
+  | qip run mermaid-to-unicode-html.wasm > graph.html
 ```
 
 ## JavaScript
@@ -122,7 +122,7 @@ printf '%s\n' \
 
 ```js
 const mermaidRenderer = await WebAssembly.instantiateStreaming(
-  fetch("/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"),
+  fetch("mermaid-to-unicode-html.wasm"),
 );
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 
