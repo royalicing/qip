@@ -15,7 +15,7 @@ QIP therefore separates three controls:
 | Control | What it limits | How QIP applies it |
 | --- | --- | --- |
 | Host access | What the component can observe or change | No WASI or other host imports |
-| Linear memory | How much memory the component can declare or grow | Fixed by default; optional `--max-memory` cap |
+| Linear memory | How much memory the component can declare | Fixed by default; optional `--max-memory` cap |
 | Execution time | How long a CLI stage may run | `--timeout-ms` |
 
 The host-access boundary and fixed-memory policy are the normal component model.

@@ -4,7 +4,7 @@
 
 Render a strict Mermaid subset as terminal-style Unicode box art in
 <a href="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm" download><qip-content-size src="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"></qip-content-size>
-of WebAssembly</a>. It runs locally in your browser and returns a styled HTML fragment.
+of WebAssembly</a>. It runs locally in your browser and as a CLI.
 
 <style>
 .mermaid-examples,
