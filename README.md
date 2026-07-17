@@ -476,7 +476,7 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 ## TODO
 
 - [ ] Update to latest Zig
-- [ ] Add custom elements to QIP Router recipes e.g. `_elements/copy-code.js`
+- [x] Add custom elements to QIP Router recipes e.g. `_elements/copy-code.js`
   - The alternative is for custom elements to be a WARC recipe where it finds all instances of `<copy-code>` and inserts the `<script>`.
 - [x] Rename `./modules` to `./components` and retire `./examples`
 - [ ] Retire the web-shaped `Form` component contract.
@@ -489,7 +489,9 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 - [x] Add a custom element such as `<qip-content-size src="/components/example.wasm">` that resolves a WARC site path and renders its byte or kilobyte size, so download lists do not hard-code artifact sizes.
 - [ ] Add CSV to chart SVG example
 - [ ] Add TCP simulator example, showing segments and allowing you to test failure.
-- [ ] Add god rays, metaballs, dithering, grain gradient, mesh gradient, heatmap, liquid metal, halftone from https://github.com/paper-design/shaders/tree/main/packages/shaders/src/shaders
+- [ ] Add more shader examples from https://github.com/paper-design/shaders/tree/main/packages/shaders/src/shaders:
+  - [x] God rays
+  - [ ] Metaballs, dithering, grain gradient, mesh gradient, heatmap, liquid metal, and halftone
   - See https://shaders.paper.design
 - [ ] Add `application/edifact` example
 - [ ] Add Wuffs example
@@ -518,9 +520,10 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 - [x] Rename `<qip-preview>`: it is now `<qip-edit>`, alongside `<qip-play>` and `<qip-view>`. See [Browser Elements](/docs/qip-elements).
 - [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
 - [ ] Add TypeScript-to-JavaScript type stripper.
-- [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
+- [x] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add DOOM example.
+  - See https://github.com/Daivuk/PureDOOM
 - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
 - [x] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
 - [x] Add application/wasm verifier for fixed memory, fixed-bound loop evidence, and no recursion. This is a conservative subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code: loops must compile to a visible counter, monotonic update, and exit bound.
@@ -530,15 +533,16 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - [ ] Trace any loops by adding calls to an imported function in each iteration. e.g. `trace_loop($func_n, $loop_n)`
   - [ ] Trace any internal calls by adding calls to an imported function. e.g. `trace_will_call($func_n, $call_n)`
   - [ ] Trace any branches by adding calls to an imported function. e.g. `trace_if($func_n, $if_n)` and `trace_block($func_n, $block_n)`
-  - [ ] Trace any memory reads/write by adding calls to an imported function. e.g. `trace_will_read_memory($func_n, $read_n)` and `trace_will_write_memory($func_n, $write_n)`
+  - [x] Trace scalar Wasm32 memory loads/stores with before/after callbacks.
+  - [ ] Extend memory tracing to SIMD, atomic, and bulk-memory operations.
 - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
-- [ ] Add spreadsheet example.
-- [ ] Add bar charts.
+- [x] Add spreadsheet example.
+- [x] Add bar charts.
 - [ ] Add scatter plot charts.
-- [ ] Add pixel editor.
+- [x] Add pixel editor.
 - [x] Add Cover Flow example.
 - [ ] Add Figma vector networks example.
-- [ ] Add localized example in multiple languages.
+- [x] Add localized example in multiple languages.
 - [ ] Add a split interactive pipeline mode with two collaborative modules: state/tick module writes an internal scene buffer, renderer module consumes it via `render(input_size)` with a simple `memcpy` handoff between module instances, enabling presentation variants like language/locale, dark or light mode, font size, DPI scaling, and accessibility-focused rendering.
 - [x] Change render contract to extend existing contract:
   - [x] Interactive modules use `export fn render(input_size: i32) i32`
@@ -546,14 +550,14 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 - [ ] Have separate `pointermove` event handler so we can skip expensive `pointermove` listeners and rendering if not needed??
 - [ ] Refine the interactive tick result contract: events return accepted/ignored, but `tick()` currently returns only `next_wake_at_ms`; define how tick also communicates whether `render(0)` is necessary without losing scheduled wakeups. Specify pointer leave/cancel coordinates and button state consistently across hosts.
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
-- [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
+- [x] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Convert soft-failure validators to trap on invalid input, then add invalid-then-valid same-instance recovery tests:
   - [ ] `components/text/css/css-class-validator.wasm`
   - [x] `components/text/html/html-id-validator.wasm`
-  - [ ] `components/text/html/html-input-name-validator.wasm`
-  - [ ] `components/text/html/html-tag-validator.wasm`
+  - [x] `components/text/html/html-input-name-validator.wasm`
+  - [x] `components/text/html/html-tag-validator.wasm`
   - [ ] `components/utf8/tld-validator.wasm`
-  - [ ] `components/utf8/luhn.wasm`
+  - [x] `components/utf8/luhn.wasm`
 - [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
 - [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
 - [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).
@@ -566,7 +570,9 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - [x] Bridge ABI (piloted in `compliance/unicode-17-uppercase.comply.zig` + `test/unicode-17-uppercase-comply.mjs`): the Compliance component keeps its own memory, exports `comply() -> i32` (declared-case count) and optional `uniform_set_seed`, and imports from module `qip`: `render_must_equal(ordinal: u64, in_ptr, in_len, expected_ptr, expected_len) -> i32` (exact-bytes case), `render_must_trap(ordinal: u64, in_ptr, in_len) -> i32` (negative phase, for validator contracts), `render_examine(ordinal: u64, in_ptr, in_len, out_ptr, out_cap) -> i32` (runs the impl and copies output into the component's memory for inspection; the first call at a new ordinal opens an examination case, same-ordinal calls continue it for multi-render properties), and `render_examine_pass(ordinal: u64)` / `render_examine_fail(ordinal: u64) -> i32` (close the examination with its verdict — one prefix-grouped `render_examine*` family). Every call carries the case ordinal from the component's own counter, so host and component continuously verify they agree on "which case is this?" — the host errors on any mismatch, unclosed examination, or mid-case ordinal change. Ordinals are u64 because deterministic fuzz campaigns can exceed 2^32 cases; JS hosts receive them as BigInt. The uppercase pilot uses `must` for idempotence (upper∘upper = upper) and ASCII-in→ASCII-out properties. No case names in the ABI — identity is (component hash, seed, ordinal). The *host* drives the impl, compares declared expectations, and owns all reporting. Adoption story: developers in any language can consume our compliance specs against their own implementations — the harness dueling JS `toUpperCase` is the first example — and reference bugs as (hash, seed, ordinal) without ever authoring a QIP component.
   - [ ] Case identity = bridge-call ordinal. Checkers are deterministic, so "case 987 of the CommonMark suite" is reproducible by re-running the checker and skipping the first 986 interactions (host returns pass without executing the impl until the target ordinal). `qip comply --case 987` prints that case's name/input/expected without needing any failure ABI; `--continue` counts all divergences instead of stopping.
   - [ ] Corpus extraction for non-QIP implementations: run the checker against a null impl (host records every declared case instead of executing anything) and export the ordered corpus as a tar archive (simple, streaming, ordered, arbitrary binary entries; the repo already speaks tar). Any external harness — a Go test dueling x/text, a Node script dueling `toLocaleLowerCase`, a CLI duel over stdin/stdout — consumes the tar. This makes the emit-a-corpus design a *host feature* of the bridge design rather than a separate module shape.
-  - [ ] Migrate remaining checkers (luhn, e164, commonmark) to the bridge; delete their `failure_*` exports and `--global-base` build notes. unicode-17-lowercase is migrated: its compliance component now owns its memory, embeds a Final_Sigma-aware oracle, fuzzes with a sigma-biased alphabet, and checks idempotence/ASCII properties — the legacy shared-memory module and its wat-rename build pipeline are gone.
+  - [ ] Migrate the remaining legacy checkers (Luhn and E.164) to the bridge; delete their `failure_*` exports and `--global-base` build notes.
+  - [x] Migrate the CommonMark checkers to the bridge.
+  - [x] Migrate unicode-17-lowercase to the bridge: its compliance component now owns its memory, embeds a Final_Sigma-aware oracle, fuzzes with a sigma-biased alphabet, and checks idempotence/ASCII properties — the legacy shared-memory module and its wat-rename build pipeline are gone.
   - [ ] Move the Compliance-component meta-contract checks into `qip comply` base validation (the way static contract checks already run for render components): deterministic declarations across a double null-impl run, sequential u64 ordinals, examination open/continue/close discipline, and seed-varies-fuzz-only. Per-component harnesses must not each re-verify these; `test/lib/compliance-harness.mjs` is the interim JS reference implementation of both the bridge and the generic checks.
   - [ ] Longer term: wasm multi-memory (impl memory imported as a second memory) removes the collision class entirely and is shipped in engines, but producer toolchains (Zig/LLVM) can't comfortably address a second memory yet; revisit when they can.
 - [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/component-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
