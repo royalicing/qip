@@ -46,10 +46,20 @@ fn commentEnd(code: []const u8, start: usize) usize {
 
 fn numberEnd(code: []const u8, start: usize) usize {
     var i = start;
+    if (code[i] == '+' or code[i] == '-') i += 1;
     if (code[i] == '.') i += 1;
     while (i < code.len and ((code[i] >= '0' and code[i] <= '9') or code[i] == '.')) : (i += 1) {}
     while (i < code.len and ((code[i] >= 'a' and code[i] <= 'z') or code[i] == '%' or code[i] == '-')) : (i += 1) {}
     return i;
+}
+
+fn startsNumber(code: []const u8, start: usize) bool {
+    if (code[start] >= '0' and code[start] <= '9') return true;
+    if (code[start] == '.') return start + 1 < code.len and code[start + 1] >= '0' and code[start + 1] <= '9';
+    if (code[start] != '+' and code[start] != '-') return false;
+    if (start + 1 >= code.len) return false;
+    if (code[start + 1] >= '0' and code[start + 1] <= '9') return true;
+    return code[start + 1] == '.' and start + 2 < code.len and code[start + 2] >= '0' and code[start + 2] <= '9';
 }
 
 fn isHexDigit(c: u8) bool {
@@ -142,7 +152,7 @@ pub fn write(code: []const u8, writer: anytype) void {
             i = end;
             continue;
         }
-        if ((code[i] >= '0' and code[i] <= '9') or (code[i] == '.' and i + 1 < code.len and code[i + 1] >= '0' and code[i + 1] <= '9')) {
+        if (startsNumber(code, i)) {
             const end = numberEnd(code, i);
             writer.writeSpan("hljs-number", code[i..end]);
             i = end;

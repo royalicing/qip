@@ -17,10 +17,10 @@
 === END ===
 === INPUT ===
 <code class="language-css">:root { --accent: #7c3aed; }
-#app .button::before { width: 1.5rem; opacity: 0.75; }</code>
+#app .button::before { width: 1.5rem; opacity: 0.75; transform: translateY(-0.125rem); }</code>
 === OUTPUT ===
 <code class="language-css hljs"><span class="hljs-selector-pseudo">:root</span> { <span class="hljs-attribute">--accent</span>: <span class="hljs-number">#7c3aed</span>; }
-<span class="hljs-selector-id">#app</span> <span class="hljs-selector-class">.button</span><span class="hljs-selector-pseudo">::before</span> { <span class="hljs-attribute">width</span>: <span class="hljs-number">1.5rem</span>; <span class="hljs-attribute">opacity</span>: <span class="hljs-number">0.75</span>; }</code>
+<span class="hljs-selector-id">#app</span> <span class="hljs-selector-class">.button</span><span class="hljs-selector-pseudo">::before</span> { <span class="hljs-attribute">width</span>: <span class="hljs-number">1.5rem</span>; <span class="hljs-attribute">opacity</span>: <span class="hljs-number">0.75</span>; <span class="hljs-attribute">transform</span>: <span class="hljs-built_in">translateY</span>(<span class="hljs-number">-0.125rem</span>); }</code>
 === END ===
 === INPUT ===
 <code class="language-css">@keyframes fade {

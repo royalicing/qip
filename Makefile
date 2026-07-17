@@ -201,13 +201,10 @@ modules/text/html/html-add-highlight-stylesheet-night-owl.wasm: modules/text/htm
 recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm: modules/text/html/html-add-highlight-stylesheet-night-owl.wasm
 	cp $< $@
 
-recipes/text/markdown/24-highlight-syntax-highlight-css.wasm: modules/text/html/highlight-syntax-highlight-css.wasm
+recipes/text/markdown/28-highlight-syntax-highlight-css.wasm: modules/text/html/highlight-syntax-highlight-css.wasm
 	cp $< $@
 
 recipes/text/markdown/23-highlight-syntax-highlight-tsx.wasm: modules/text/html/highlight-syntax-highlight-tsx.wasm
-	cp $< $@
-
-recipes/text/markdown/28-highlight-syntax-highlight-html.wasm: modules/text/html/highlight-syntax-highlight-html.wasm
 	cp $< $@
 
 modules/text/markdown/markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.wasm
@@ -266,8 +263,8 @@ recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wa
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 recipes: recipes/application/warc/99-add-custom-element-scripts.wasm
 recipes: recipes/text/markdown/23-highlight-syntax-highlight-tsx.wasm
-recipes: recipes/text/markdown/24-highlight-syntax-highlight-css.wasm
-recipes: recipes/text/markdown/28-highlight-syntax-highlight-html.wasm
+recipes: recipes/text/markdown/24-highlight-syntax-highlight-html.wasm
+recipes: recipes/text/markdown/28-highlight-syntax-highlight-css.wasm
 recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 modules: modules-wat-wasm modules-c-wasm modules-zig-wasm
