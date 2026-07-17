@@ -17,4 +17,6 @@ entirely in the browser. You can run the same `.wasm` files in your shell via th
 - [JSON prettifier](/json-prettify) validates and indents JSON.
 - [CSS minifier](/css-minifier) removes unnecessary CSS whitespace and
   comments.
+- [CSS expression calculator](/css-expression-calculator) resolves viewport units,
+  safe-area insets, and keyboard insets for editable mobile scenarios.
 - [SVG data URI](/svg-data-uri) percent-encodes SVG bytes for HTML or CSS.

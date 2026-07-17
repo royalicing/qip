@@ -174,6 +174,7 @@ We believe small functions should not need a massive application environment to 
 - [Unicode transforms](/unicode)
 - [Currency formatter](/currency)
 - [CSS minifier](/css-minifier)
+- [CSS expression calculator](/css-expression-calculator)
 - [JPEG location stripper](/jpeg-location-stripper)
 - [Image color palette extractor](/image-color-palette)
 - [SQLite as a payload](/sqlite)

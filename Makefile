@@ -282,6 +282,7 @@ test-node: qip modules recipes/application/warc/25-add-content-size.wasm
 	node --test test/qip-form-element.mjs
 	node --test test/sudoku-ui.mjs
 	node --test test/html-id-validator.mjs
+	node --test test/css-expression-to-value.mjs
 	node --test test/html-adjacent.mjs
 	node --test test/html-to-accessibility-tree.mjs
 	node --test test/luhn.mjs
