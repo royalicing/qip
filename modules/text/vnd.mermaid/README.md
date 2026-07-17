@@ -9,26 +9,45 @@ rows; the host supplies the surrounding `<pre>`.
 
 ## Supported subset
 
-- top-to-bottom decision flowcharts with two-way branches, wrapped node labels,
-  and solid, dotted, and thick edges
+- simple top-to-bottom and left-to-right flow edges, plus top-to-bottom
+  decision flowcharts with two-way branches, wrapped node labels, and solid,
+  dotted, and thick edges
 - two left-to-right subgraphs, each containing one edge, joined by one labelled
   edge; node labels wrap at 24 columns for up to four lines
-- sequence diagrams with participants, aliases, adjacent calls, and adjacent
-  dashed replies
-- the start → state → fork → retry/end state-machine form
+- sequence diagrams with `participant`/`actor` declarations, aliases,
+  activation markers, adjacent calls, and adjacent dashed replies
+- the start → state → fork → retry/end state-machine form, with an
+  optional second back-edge to the state before the fork
 - one class with direct subclasses, fields, and methods
 - linear ER chains with attributes, relationship labels, and `1`, `0..*`,
   and `1..*` cardinalities
 
-The parser traps on blank input, invalid UTF-8, unsupported diagram families,
-malformed statements, and graph shapes outside this initial subset. It does not
-fall back to a framed source listing.
+Blank and whitespace-only input produces empty output. The parser traps on
+invalid UTF-8, unsupported diagram families, malformed statements, and graph
+shapes outside this initial subset. Like Simon's parser, a graph statement with
+a valid node and dangling trailing arrow renders the partial graph. It does not
+otherwise fall back to a framed source listing.
+
+Mermaid.js-only `classDef`, `class`, `style`, `linkStyle`, and `click`
+directives are ignored where applicable: they do not change terminal box art.
 
 ## Compatibility
 
-`compliance/mermaid-to-unicode-html.fixtures.txt` contains 27
+`compliance/mermaid-to-unicode-html.fixtures.txt` contains 37 canonical
 byte-for-byte HTML fixtures derived independently from the published reference
-renderer. The strict comply component adds nine rejection cases.
+renderer. The strict comply component adds one embedded trailing-space fixture,
+17 layout-equivalent syntax variations, and six rejection cases, for 61 cases
+in total.
+
+To run the same cases against this module and Simon's reference WASM:
+
+```sh
+node tools/mermaid-duel.mjs /path/to/grok-mermaid.wasm
+```
+
+The duel treats a QIP trap and Simon's framed `mermaid: ...` fallback as
+equivalent rejection outcomes. Successful renders must still match byte for
+byte.
 
 The renderer deliberately preserves several visible reference quirks:
 

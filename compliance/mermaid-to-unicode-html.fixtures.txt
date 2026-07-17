@@ -33,6 +33,40 @@ graph TD
  <span class="b">└</span><span class="e">───────────</span><span class="b">┘</span>  <span class="b">└</span><span class="e">────────</span><span class="b">┘</span>
 === END ===
 === INPUT ===
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Loading : fetch
+  Loading --> Ready : success
+  Loading --> Error : failure
+  Error --> Loading : retry
+  Error --> Idle : reset
+  Ready --> [*]
+=== OUTPUT ===
+         <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+         <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+         <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>
+           <span class="e">│</span>
+           <span class="e">▼</span>
+       <span class="b">╭</span><span class="e">──────</span><span class="b">╮</span>        <span class="el">reset</span>
+       <span class="e">│</span> <span class="n">Idle</span> <span class="e">│◄─────────────┐</span>
+       <span class="b">╰</span><span class="e">───┬──</span><span class="b">╯</span>              <span class="e">│</span>
+           <span class="e">│</span>                 <span class="e">│</span>
+           <span class="e">▼</span><span class="el">fetch</span>            <span class="e">│</span>
+      <span class="b">╭</span><span class="e">─────────</span><span class="b">╮</span>      <span class="el">retry</span> <span class="e">│</span>
+      <span class="e">│</span> <span class="n">Loading</span> <span class="e">│◄───────────┤</span>
+      <span class="b">╰</span><span class="e">────┬────</span><span class="b">╯</span>            <span class="e">│</span>
+     <span class="e">┌─────┴─────┐</span>           <span class="e">│</span>
+     <span class="e">▼</span><span class="el">success</span>    <span class="e">▼</span><span class="el">failure</span>    <span class="e">│</span>
+ <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>   <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>       <span class="e">│</span>
+ <span class="e">│</span> <span class="n">Ready</span> <span class="e">│</span>   <span class="e">│</span> <span class="n">Error</span> <span class="e">├───────┘</span>
+ <span class="b">╰</span><span class="e">───┬───</span><span class="b">╯</span>   <span class="b">╰</span><span class="e">───────</span><span class="b">╯</span>
+     <span class="e">│</span>
+     <span class="e">▼</span>
+   <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+   <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+   <span class="b">╰</span><span class="e">───</span><span class="b">╯</span>
+=== END ===
+=== INPUT ===
 graph TD
  A[Start] --> B{Choose}
  B -->|yes| C{Again}
@@ -650,4 +684,116 @@ erDiagram
   <span class="b">┌</span><span class="e">───────────</span><span class="b">┐</span>
   <span class="e">│</span> <span class="n">LINE_ITEM</span> <span class="e">│</span>
   <span class="b">└</span><span class="e">───────────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+
+=== OUTPUT ===
+=== END ===
+=== INPUT ===
+graph TD
+  A -->
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">───</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A[Start] --> B[End]
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───────</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">Start</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">───┬───</span><span class="b">┘</span>
+     <span class="e">│</span>
+     <span class="e">▼</span>
+  <span class="b">┌</span><span class="e">─────</span><span class="b">┐</span>
+  <span class="e">│</span> <span class="n">End</span> <span class="e">│</span>
+  <span class="b">└</span><span class="e">─────</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A -.-> B
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">─┬─</span><span class="b">┘</span>
+   <span class="e">╎</span>
+   <span class="e">▼</span>
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">B</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">───</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A ==> B
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">─┬─</span><span class="b">┘</span>
+   <span class="e">┃</span>
+   <span class="e">▼</span>
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">B</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">───</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A-->|yes| B
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">─┬─</span><span class="b">┘</span>
+   <span class="e">│</span>
+   <span class="e">▼</span><span class="el">yes</span>
+ <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+ <span class="e">│</span> <span class="n">B</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">───</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+graph TD
+ A{Choose} -->|yes| B(Done)
+=== OUTPUT ===
+<span class="b">╭</span><span class="e">────────</span><span class="b">╮</span>
+<span class="e">│</span> <span class="n">Choose</span> <span class="e">│</span>
+<span class="b">╰</span><span class="e">────┬───</span><span class="b">╯</span>
+     <span class="e">│</span>
+     <span class="e">▼</span><span class="el">yes</span>
+ <span class="b">╭</span><span class="e">──────</span><span class="b">╮</span>
+ <span class="e">│</span> <span class="n">Done</span> <span class="e">│</span>
+ <span class="b">╰</span><span class="e">──────</span><span class="b">╯</span>
+=== END ===
+=== INPUT ===
+sequenceDiagram
+ participant B
+ participant A
+ A->>B: hi
+=== OUTPUT ===
+<span class="b">┌</span><span class="e">───</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">───</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">B</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">─┬─</span><span class="b">┘</span>  <span class="b">└</span><span class="e">─┬─</span><span class="b">┘</span>
+  <span class="e">│</span>      <span class="e">│</span>
+  <span class="e">│</span>  <span class="n">hi</span>  <span class="e">│</span>
+  <span class="e">│◄─────┤</span>
+  <span class="e">│</span>      <span class="e">│</span>
+<span class="b">┌</span><span class="e">─┴─</span><span class="b">┐</span>  <span class="b">┌</span><span class="e">─┴─</span><span class="b">┐</span>
+<span class="e">│</span> <span class="n">B</span> <span class="e">│</span>  <span class="e">│</span> <span class="n">A</span> <span class="e">│</span>
+<span class="b">└</span><span class="e">───</span><span class="b">┘</span>  <span class="b">└</span><span class="e">───</span><span class="b">┘</span>
+=== END ===
+=== INPUT ===
+erDiagram
+ PERSON |o--|| PASSPORT : has
+ PERSON {
+ string name
+ }
+=== OUTPUT ===
+ <span class="b">┌</span><span class="e">─────────────</span><span class="b">┐</span>
+ <span class="e">│</span>   <span class="n">PERSON</span>    <span class="e">│</span>
+ <span class="b">├─────────────┤</span>
+ <span class="e">│</span> <span class="n">string name</span> <span class="e">│</span>
+ <span class="b">└</span><span class="e">──────┬──────</span><span class="b">┘</span>
+        <span class="e">│</span>
+        <span class="e">│</span><span class="el">0..1 has 1</span>
+  <span class="b">┌</span><span class="e">──────────</span><span class="b">┐</span>
+  <span class="e">│</span> <span class="n">PASSPORT</span> <span class="e">│</span>
+  <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span>
 === END ===

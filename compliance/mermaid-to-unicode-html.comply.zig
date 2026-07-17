@@ -28,6 +28,59 @@ comptime {
 
 const fixtures = parseFixtures(corpus);
 
+// Simon preserves a label row above horizontal edges, including its trailing
+// spaces when the edge has no label. Keep that byte-level quirk explicit here
+// rather than putting trailing whitespace in the text fixture file.
+const literal_fixtures = [_]Fixture{
+    .{
+        .input = "flowchart LR\n A[Start] --> B[End]",
+        .expected = "                    \n" ++
+            "<span class=\"b\">┌</span><span class=\"e\">───────</span><span class=\"b\">┐</span>    <span class=\"b\">┌</span><span class=\"e\">─────</span><span class=\"b\">┐</span>\n" ++
+            "<span class=\"e\">│</span> <span class=\"n\">Start</span> <span class=\"e\">├───▶│</span> <span class=\"n\">End</span> <span class=\"e\">│</span>\n" ++
+            "<span class=\"b\">└</span><span class=\"e\">───────</span><span class=\"b\">┘</span>    <span class=\"b\">└</span><span class=\"e\">─────</span><span class=\"b\">┘</span>\n",
+    },
+};
+
+const Variant = struct {
+    input: []const u8,
+    expected_fixture: usize,
+};
+
+// Syntax variations whose layout is intentionally identical to a canonical
+// byte-for-byte fixture above. Keeping them compact lets the corpus cover
+// parser behavior without copying the same large HTML fragment many times.
+const variants = [_]Variant{
+    .{ .input = "   \n\t", .expected_fixture = 28 },
+    // Flowcharts: header aliases, comments, whitespace, and ignored styling.
+    .{ .input = "flowchart TB\n A[Start] --> B{Choose}\n B -->|yes| C{Again}\n B -->|no| D[Stop]\n C -->|yes| E(Go)\n C -->|no| F[No way]\n E -.-> G[Log]\n E ==> H[Done]", .expected_fixture = 20 },
+    .{ .input = "graph TB\n %% entry and decisions\n A[Start] --> B{Choose}\n B -->|yes| C{Again}\n B -->|no| D[Stop]\n %% second decision\n C -->|yes| E(Go)\n C -->|no| F[No way]\n E -.-> G[Log]\n E ==> H[Done]", .expected_fixture = 20 },
+    .{ .input = "\n  graph TD\n\n A[Start] --> B{Choose}\n B -->|yes| C{Again}\n B -->|no| D[Stop]\n C -->|yes| E(Go)\n C -->|no| F[No way]\n E -.-> G[Log]\n E ==> H[Done]\n", .expected_fixture = 20 },
+    .{ .input = "graph TD\n A[Start] --> B{Choose}\n B -->|yes| C{Again}\n B -->|no| D[Stop]\n C -->|yes| E(Go)\n C -->|no| F[No way]\n E -.-> G[Log]\n E ==> H[Done]\n classDef muted fill:#eee\n class A muted", .expected_fixture = 20 },
+
+    // Sequence diagrams: declarations are optional; actor is a participant
+    // alias; activation markers do not affect terminal layout.
+    .{ .input = "sequenceDiagram\n Alice->>Bob: Hello\n Bob-->>Alice: Hi", .expected_fixture = 17 },
+    .{ .input = "sequenceDiagram\n actor A as Alice\n actor B as Bob\n A->>B: Hello\n B-->>A: Hi", .expected_fixture = 17 },
+    .{ .input = "sequenceDiagram\n participant A as Alice\n participant B as Bob\n %% request/reply\n A->>+B: Hello\n B-->>-A: Hi", .expected_fixture = 17 },
+    .{ .input = "\n sequenceDiagram\n\n participant A as Alice\n participant B as Bob\n A->>B: Hello\n\n B-->>A: Hi\n", .expected_fixture = 17 },
+
+    // State diagrams: v1/v2 headers, comments, indentation, and tail-statement
+    // order all describe the same graph.
+    .{ .input = "stateDiagram\n [*] --> A\n A --> B : go\n B --> C : yes\n B --> D : no\n D --> B : retry\n C --> [*]", .expected_fixture = 21 },
+    .{ .input = "stateDiagram-v2\n %% start\n [*] --> A\n A --> B : go\n B --> C : yes\n B --> D : no\n C --> [*]\n D --> B : retry", .expected_fixture = 21 },
+    .{ .input = "\n stateDiagram-v2\n\n\t[*] --> A\n\tA --> B : go\n\tB --> C : yes\n\tB --> D : no\n\tD --> B : retry\n\tC --> [*]\n", .expected_fixture = 21 },
+
+    // Class and ER diagrams: comments and declaration placement are layout
+    // neutral, as are Mermaid.js-only styling directives.
+    .{ .input = "classDiagram\n %% domain model\n class Base {\n +field\n +method()\n }\n Base <|-- One\n Base <|-- Two\n One : +run()", .expected_fixture = 18 },
+    .{ .input = "classDiagram\n class Base {\n +field\n +method()\n }\n Base <|-- One\n Base <|-- Two\n One : +run()\n classDef quiet fill:#fff\n style Base stroke:#000", .expected_fixture = 18 },
+    .{ .input = "erDiagram\n %% authoring model\n USER ||--o{ POST : writes\n POST ||--|{ COMMENT : has\n USER {\n string id\n }", .expected_fixture = 19 },
+    .{ .input = "erDiagram\n USER {\n string id\n }\n USER ||--o{ POST : writes\n POST ||--|{ COMMENT : has", .expected_fixture = 19 },
+
+    // Grouped flowcharts ignore comments and styling just like plain graphs.
+    .{ .input = "flowchart LR\n %% browser side\n subgraph Client\n UI[Browser UI] --> SW[Service worker]\n end\n %% server side\n subgraph Server\n API[API gateway] --> DB[Postgres]\n end\n SW -->|HTTPS| API", .expected_fixture = 23 },
+};
+
 fn parseFixtures(comptime source: []const u8) [countFixtures(source)]Fixture {
     @setEvalBranchQuota(1_000_000);
     comptime var result: [countFixtures(source)]Fixture = undefined;
@@ -66,11 +119,8 @@ fn countFixtures(comptime source: []const u8) usize {
 }
 
 const invalid = [_][]const u8{
-    "",
-    "   \n",
     "pie title Pets\n  \"Dogs\" : 386\n  \"Cats\" : 85",
     "journey\n  title Unsupported",
-    "graph TD\n  A -->",
     "sequenceDiagram\n  ->>B: orphan",
     "stateDiagram-v2\n  A --> B\n  some garbage line",
     "classDiagram\n  Animal <|--",
@@ -86,6 +136,27 @@ export fn comply() i32 {
             @intCast(fixture.input.len),
             @intCast(@intFromPtr(fixture.expected.ptr)),
             @intCast(fixture.expected.len),
+        );
+        ordinal += 1;
+    }
+    inline for (literal_fixtures) |fixture| {
+        _ = render_must_equal(
+            ordinal,
+            @intCast(@intFromPtr(fixture.input.ptr)),
+            @intCast(fixture.input.len),
+            @intCast(@intFromPtr(fixture.expected.ptr)),
+            @intCast(fixture.expected.len),
+        );
+        ordinal += 1;
+    }
+    inline for (variants) |variant| {
+        const expected = fixtures[variant.expected_fixture].expected;
+        _ = render_must_equal(
+            ordinal,
+            @intCast(@intFromPtr(variant.input.ptr)),
+            @intCast(variant.input.len),
+            @intCast(@intFromPtr(expected.ptr)),
+            @intCast(expected.len),
         );
         ordinal += 1;
     }

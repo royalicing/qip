@@ -17,6 +17,7 @@ var output_buffer: [OUTPUT_CAP]u8 = undefined;
 var cells: [MAX_ROWS][MAX_COLS]Cell = undefined;
 var canvas_width: usize = 0;
 var canvas_height: usize = 0;
+var preserve_first_row_spaces = false;
 
 const Role = enum(u8) { none, border, node, edge, edge_label, title };
 const Cell = struct { char: u21 = ' ', role: Role = .none };
@@ -72,23 +73,27 @@ export fn output_content_type_size() u32 {
 
 export fn render(input_size_raw: u32) u32 {
     const input_size: usize = @intCast(input_size_raw);
-    if (input_size == 0 or input_size > INPUT_CAP) @trap();
+    if (input_size > INPUT_CAP) @trap();
     const source = input_buffer[0..input_size];
     if (!std.unicode.utf8ValidateSlice(source)) @trap();
-    if (std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "sequenceDiagram")) {
-        renderSequence(source);
-    } else if (std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "classDiagram")) {
-        renderClass(source);
-    } else if (std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "erDiagram")) {
-        renderEr(source);
-    } else if (std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "stateDiagram")) {
-        renderState(source);
-    } else if (std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "flowchart LR")) {
-        renderSubgraphs(source);
-    } else if (std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "graph ") or
-        std.mem.startsWith(u8, std.mem.trimLeft(u8, source, " \t\r\n"), "flowchart "))
+    const trimmed_source = std.mem.trim(u8, source, " \t\r\n");
+    if (trimmed_source.len == 0) return 0;
+    if (std.mem.startsWith(u8, trimmed_source, "sequenceDiagram")) {
+        renderSequence(trimmed_source);
+    } else if (std.mem.startsWith(u8, trimmed_source, "classDiagram")) {
+        renderClass(trimmed_source);
+    } else if (std.mem.startsWith(u8, trimmed_source, "erDiagram")) {
+        renderEr(trimmed_source);
+    } else if (std.mem.startsWith(u8, trimmed_source, "stateDiagram")) {
+        renderState(trimmed_source);
+    } else if (std.mem.startsWith(u8, trimmed_source, "flowchart LR") and
+        std.mem.indexOf(u8, trimmed_source, "subgraph ") != null)
     {
-        renderFlow(source);
+        renderSubgraphs(trimmed_source);
+    } else if (std.mem.startsWith(u8, trimmed_source, "graph ") or
+        std.mem.startsWith(u8, trimmed_source, "flowchart "))
+    {
+        renderFlow(trimmed_source);
     } else {
         @trap();
     }
@@ -98,6 +103,7 @@ export fn render(input_size_raw: u32) u32 {
 fn clearCanvas() void {
     canvas_width = 0;
     canvas_height = 0;
+    preserve_first_row_spaces = false;
     for (&cells) |*row| {
         for (row) |*cell| cell.* = .{};
     }
@@ -187,15 +193,33 @@ fn renderState(source: []const u8) void {
         edges[count] = .{ .from = from, .to = to, .label = label };
         count += 1;
     }
-    if (count != 6 or
+    if ((count != 6 and count != 7) or
         !std.mem.eql(u8, edges[0].from, "[*]") or
         !std.mem.eql(u8, edges[1].from, edges[0].to) or
         !std.mem.eql(u8, edges[1].to, edges[2].from) or
-        !std.mem.eql(u8, edges[2].from, edges[3].from) or
-        !std.mem.eql(u8, edges[3].to, edges[4].from) or
-        !std.mem.eql(u8, edges[4].to, edges[2].from) or
-        !std.mem.eql(u8, edges[5].from, edges[2].to) or
-        !std.mem.eql(u8, edges[5].to, "[*]")) @trap();
+        !std.mem.eql(u8, edges[2].from, edges[3].from)) @trap();
+
+    // The reference lays backward transitions into a shared lane. Match the
+    // edges by topology so retry/end/reset statements can appear in either
+    // order instead of requiring one exact six-line spelling.
+    var retry: ?StateEdge = null;
+    var finish: ?StateEdge = null;
+    var reset: ?StateEdge = null;
+    for (edges[4..count]) |edge| {
+        if (std.mem.eql(u8, edge.from, edges[3].to) and std.mem.eql(u8, edge.to, edges[2].from)) {
+            if (retry != null) @trap();
+            retry = edge;
+        } else if (std.mem.eql(u8, edge.from, edges[2].to) and std.mem.eql(u8, edge.to, "[*]")) {
+            if (finish != null) @trap();
+            finish = edge;
+        } else if (std.mem.eql(u8, edge.from, edges[3].to) and std.mem.eql(u8, edge.to, edges[0].to)) {
+            if (reset != null) @trap();
+            reset = edge;
+        } else {
+            @trap();
+        }
+    }
+    if (retry == null or finish == null or (count == 7) != (reset != null)) @trap();
 
     const first = edges[0].to;
     const branch = edges[1].to;
@@ -234,10 +258,20 @@ fn renderState(source: []const u8) void {
     roundBox(left_x, 15, left);
     roundBox(right_x, 15, right);
     // Back edge: labels sit over the return lane; the arrow enters the branch box.
-    textAt(lane_x - codepointLen(edges[4].label) - 1, 10, edges[4].label, .edge_label);
+    if (reset) |reset_edge| {
+        const first_width = codepointLen(first) + 4;
+        const first_x = center - first_width / 2;
+        textAt(lane_x - codepointLen(reset_edge.label) - 1, 5, reset_edge.label, .edge_label);
+        put(first_x + first_width, 6, '◄', .edge);
+        hline(first_x + first_width + 1, lane_x - 1, 6, '─');
+        put(lane_x, 6, '┐', .edge);
+        var reset_y: usize = 7;
+        while (reset_y < 11) : (reset_y += 1) put(lane_x, reset_y, '│', .edge);
+    }
+    textAt(lane_x - codepointLen(retry.?.label) - 1, 10, retry.?.label, .edge_label);
     put(branch_x + branch_width, 11, '◄', .edge);
     hline(branch_x + branch_width + 1, lane_x - 1, 11, '─');
-    put(lane_x, 11, '┐', .edge);
+    put(lane_x, 11, if (reset != null) '┤' else '┐', .edge);
     put(lane_x, 12, '│', .edge);
     put(lane_x, 13, '│', .edge);
     put(lane_x, 14, '│', .edge);
@@ -341,6 +375,39 @@ fn arrowLabel(center: usize, y: usize, label: []const u8) void {
 }
 
 fn renderFlow(source: []const u8) void {
+    // Simon's parser keeps a valid node even when a trailing arrow has no
+    // destination. It renders the partial graph instead of treating the whole
+    // statement as malformed.
+    var probe = std.mem.splitScalar(u8, source, '\n');
+    _ = probe.next();
+    var lone_statement: ?[]const u8 = null;
+    while (probe.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or std.mem.startsWith(u8, line, "%%")) continue;
+        if (lone_statement != null) {
+            lone_statement = null;
+            break;
+        }
+        lone_statement = line;
+    }
+    if (lone_statement) |line| {
+        if (std.mem.endsWith(u8, line, "-->")) {
+            const node = parseFlowNode(std.mem.trimRight(u8, line[0 .. line.len - 3], " \t"));
+            clearCanvas();
+            box(1, 0, node.label);
+            return;
+        }
+        if (std.mem.indexOf(u8, line, "-->") != null or
+            std.mem.indexOf(u8, line, "-.->") != null or
+            std.mem.indexOf(u8, line, "==>") != null)
+        {
+            const header_end = std.mem.indexOfScalar(u8, source, '\n') orelse source.len;
+            const header = std.mem.trim(u8, source[0..header_end], " \t\r");
+            renderSimpleFlowEdge(parseFlowEdge(line), std.mem.endsWith(u8, header, "LR"));
+            return;
+        }
+    }
+
     var parsed: [7]FlowEdge = undefined;
     var count: usize = 0;
     var lines = std.mem.splitScalar(u8, source, '\n');
@@ -350,6 +417,12 @@ fn renderFlow(source: []const u8) void {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (line.len == 0 or std.mem.startsWith(u8, line, "%%")) continue;
+        if (std.mem.startsWith(u8, line, "classDef ") or
+            std.mem.startsWith(u8, line, "class ") or
+            std.mem.startsWith(u8, line, "style ") or
+            std.mem.startsWith(u8, line, "linkStyle ") or
+            std.mem.startsWith(u8, line, "click ") or
+            std.mem.startsWith(u8, line, "direction ")) continue;
         if (count == parsed.len) @trap();
         parsed[count] = parseFlowEdge(line);
         count += 1;
@@ -424,6 +497,50 @@ fn renderFlow(source: []const u8) void {
     arrowLabel(response_center, response_y - 1, parsed[6].label);
     wrappedFlowNode(parsed[5].to, log_center, log_y);
     wrappedFlowNode(parsed[6].to, response_center, response_y);
+}
+
+fn renderSimpleFlowEdge(edge: FlowEdge, horizontal: bool) void {
+    clearCanvas();
+    if (horizontal) {
+        const from_width = wrappedNodeWidth(edge.from);
+        const to_width = wrappedNodeWidth(edge.to);
+        const gap: usize = @max(4, codepointLen(edge.label) + 2);
+        const to_x = from_width + gap;
+        const edge_y: usize = 2;
+        // The reference reserves the row above a horizontal edge for its label,
+        // even when the edge is unlabelled.
+        preserve_first_row_spaces = true;
+        put(to_x + to_width - 1, 0, ' ', .none);
+        wrappedFlowNode(edge.from, from_width / 2, 1);
+        wrappedFlowNode(edge.to, to_x + to_width / 2, 1);
+        put(from_width - 1, edge_y, '├', .edge);
+        hline(from_width, to_x - 2, edge_y, switch (edge.line) {
+            .solid => '─',
+            .dotted => '╌',
+            .thick => '━',
+        });
+        put(to_x - 1, edge_y, '▶', .edge);
+        if (edge.label.len != 0) {
+            const label_x = from_width + (gap - codepointLen(edge.label)) / 2;
+            textAt(label_x, 0, edge.label, .edge_label);
+        }
+        return;
+    }
+
+    const from_width = wrappedNodeWidth(edge.from);
+    const to_width = wrappedNodeWidth(edge.to);
+    const center = (@max(from_width, to_width) + 1) / 2;
+    wrappedFlowNode(edge.from, center, 0);
+    const from_bottom = wrappedNodeHeight(edge.from) - 1;
+    put(center, from_bottom, '┬', .edge);
+    put(center, from_bottom + 1, switch (edge.line) {
+        .solid => '│',
+        .dotted => '╎',
+        .thick => '┃',
+    }, .edge);
+    put(center, from_bottom + 2, '▼', .edge);
+    if (edge.label.len != 0) textAt(center + 1, from_bottom + 2, edge.label, .edge_label);
+    wrappedFlowNode(edge.to, center, from_bottom + 3);
 }
 
 const MAX_WRAP_LINES = 4;
@@ -548,6 +665,12 @@ fn renderSubgraphs(source: []const u8) void {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (line.len == 0 or std.mem.startsWith(u8, line, "%%")) continue;
+        if (std.mem.startsWith(u8, line, "classDef ") or
+            std.mem.startsWith(u8, line, "class ") or
+            std.mem.startsWith(u8, line, "style ") or
+            std.mem.startsWith(u8, line, "linkStyle ") or
+            std.mem.startsWith(u8, line, "click ") or
+            std.mem.startsWith(u8, line, "direction ")) continue;
         if (std.mem.startsWith(u8, line, "subgraph ")) {
             if (group != null or group_count == 2) @trap();
             titles[group_count] = std.mem.trim(u8, line["subgraph ".len..], " \t");
@@ -700,6 +823,9 @@ fn renderClass(source: []const u8) void {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (line.len == 0 or std.mem.startsWith(u8, line, "%%")) continue;
+        if (std.mem.startsWith(u8, line, "classDef ") or
+            std.mem.startsWith(u8, line, "style ") or
+            std.mem.startsWith(u8, line, "click ")) continue;
         if (active) |index| {
             if (std.mem.eql(u8, line, "}")) {
                 active = null;
@@ -796,6 +922,7 @@ fn renderClass(source: []const u8) void {
 
 fn erCardinality(token: []const u8, left: bool) []const u8 {
     _ = left;
+    if (std.mem.eql(u8, token, "|o") or std.mem.eql(u8, token, "o|")) return "0..1";
     if (std.mem.eql(u8, token, "||")) return "1";
     if (std.mem.eql(u8, token, "o{") or std.mem.eql(u8, token, "}o")) return "0..*";
     if (std.mem.eql(u8, token, "|{") or std.mem.eql(u8, token, "}|")) return "1..*";
@@ -903,8 +1030,14 @@ fn renderSequence(source: []const u8) void {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (line.len == 0 or std.mem.startsWith(u8, line, "%%")) continue;
-        if (std.mem.startsWith(u8, line, "participant ")) {
-            const declaration = std.mem.trimLeft(u8, line["participant ".len..], " \t");
+        const declaration_prefix: ?[]const u8 = if (std.mem.startsWith(u8, line, "participant "))
+            "participant "
+        else if (std.mem.startsWith(u8, line, "actor "))
+            "actor "
+        else
+            null;
+        if (declaration_prefix) |prefix| {
+            const declaration = std.mem.trimLeft(u8, line[prefix.len..], " \t");
             if (std.mem.indexOf(u8, declaration, " as ")) |at| {
                 const id = std.mem.trim(u8, declaration[0..at], " \t");
                 const label = std.mem.trim(u8, declaration[at + 4 ..], " \t");
@@ -925,8 +1058,8 @@ fn renderSequence(source: []const u8) void {
         else
             std.mem.indexOf(u8, relation, "->>") orelse @trap();
         const arrow_len: usize = if (dashed) 4 else 3;
-        const from_id = std.mem.trim(u8, relation[0..arrow_at], " \t");
-        const to_id = std.mem.trim(u8, relation[arrow_at + arrow_len ..], " \t");
+        const from_id = std.mem.trimRight(u8, std.mem.trim(u8, relation[0..arrow_at], " \t"), "+-");
+        const to_id = std.mem.trimLeft(u8, std.mem.trim(u8, relation[arrow_at + arrow_len ..], " \t"), "+-");
         if (from_id.len == 0 or to_id.len == 0 or label.len == 0) @trap();
         if (message_count == MAX_MESSAGES) @trap();
         messages[message_count] = .{
@@ -1026,7 +1159,9 @@ fn serializeHtml() u32 {
     var out: usize = 0;
     for (0..canvas_height) |y| {
         var width = canvas_width;
-        while (width > 0 and cells[y][width - 1].char == ' ') width -= 1;
+        if (!(y == 0 and preserve_first_row_spaces)) {
+            while (width > 0 and cells[y][width - 1].char == ' ') width -= 1;
+        }
         var x: usize = 0;
         while (x < width) {
             const role = cells[y][x].role;
