@@ -499,7 +499,7 @@ site-checks:
 	$(QIP_BIN) router get site / | $(QIP_BIN) run modules/text/html/html-wcag-contrast-aa.wasm
 
 dev:
-	$(QIP_BIN) dev ./site -p 4114 --view-source
+	$(QIP_BIN) router dev ./site -p 4114 --view-source
 
 defluff:
 	find . -name '.DS_Store' -type f -delete
