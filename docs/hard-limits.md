@@ -14,7 +14,7 @@ QIP therefore separates three controls:
 
 | Control | What it limits | How QIP applies it |
 | --- | --- | --- |
-| Host access | What the component can observe or change | No WASI or other host imports |
+| Host access | What the component can observe or change | No WASI; only documented contract imports |
 | Linear memory | How much memory the component can declare | Fixed by default; optional `--max-memory` cap |
 | Execution time | How long a CLI stage may run | `--timeout-ms` |
 
@@ -76,8 +76,11 @@ a stricter subset of WebAssembly:
 - an acyclic direct call graph, which excludes recursion
 - a statically recognizable bound for every loop backedge
 
-Compliance modules are an exception to the import rule: they import the
-implementation being tested. Ordinary QIP components do not.
+Compliance components use a separate strict checker profile. They may import
+only the documented oracle functions from the `qip` host module. The
+implementation under test remains a separate instance and is not imported or
+memory-linked into the checker. Ordinary QIP components still use the
+import-free profile above.
 
 Run the artifact checkers as a two-stage pipeline:
 

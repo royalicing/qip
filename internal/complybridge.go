@@ -37,21 +37,6 @@ const (
 	bridgeMaxFailureNotes = 5
 )
 
-// isBridgeCompliance reports whether the module targets the bridge ABI,
-// which its comply() export declares.
-func isBridgeCompliance(wasm []byte) bool {
-	ctx := context.Background()
-	r := wasmruntime.NewRunToCompletion(ctx)
-	defer r.Close(ctx)
-	compiled, err := r.CompileModule(ctx, wasm)
-	if err != nil {
-		return false
-	}
-	defer compiled.Close(ctx)
-	_, ok := compiled.ExportedFunctions()[bridgeExportComply]
-	return ok
-}
-
 type bridgeFailure struct {
 	ordinal  uint64
 	kind     string
@@ -339,6 +324,14 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 	}
 
 	complyFn := checkerMod.ExportedFunction(bridgeExportComply)
+	if complyFn == nil {
+		out.err = errors.New("compliance component must export comply() -> i32")
+		return out
+	}
+	if err := requireSignature(complyFn.Definition(), nil, []api.ValueType{api.ValueTypeI32}, bridgeExportComply); err != nil {
+		out.err = err
+		return out
+	}
 	res, err := complyFn.Call(ctx)
 	if state.protocolErr != nil {
 		out.err = fmt.Errorf("bridge protocol violation: %w", state.protocolErr)

@@ -21,6 +21,7 @@ The CLI is the operational tool for local development, CI, benchmarking, and sta
 | Command | Use |
 | --- | --- |
 | `qip run` | Run a chain of QIP components on input bytes. |
+| `qip dry run` | Validate and describe a run pipeline without executing it. |
 | `qip bench` | Compare one or more components for output parity and performance. |
 | `qip image` | Run RGBA image filter pipelines. |
 | `qip comply` | Validate a component and run compliance modules. |
@@ -33,21 +34,29 @@ The CLI is the operational tool for local development, CI, benchmarking, and sta
 
 For the available execution models, see [QIP Component Contracts](/docs/component-contract). For the normal `qip run` ABI, see the [Content Component Contract](/docs/content-component). For route behavior, see [Router](/docs/router). For compliance testing, see [`qip comply`](/docs/comply).
 
+`qip dry run` uses the same resolution, module policy, uniform application, and
+pipeline planner as `qip run`. It reports each component kind, input/output
+encoding and MIME type, buffer capacities, composition warnings, and the total
+declared buffer capacity. It does not read `-i`, execute `render`, or write
+output. See [Recipes](/docs/recipes#planning-and-dry-runs) for the composition
+rules.
+
 ## Runtime Boundary
 
 The CLI is designed to run untrusted QIP components with a narrow host interface.
 
-Components execute inside `wazero` and interact with the CLI only through exported function calls and linear memory.
+Components execute inside `wazero` and interact with the CLI through their documented exports and linear memory. Compliance components additionally use the narrow host bridge described in [`qip comply`](/docs/comply).
 
 Current host behavior:
 
 - `qip` does not provide WASI to components.
-- `qip` does not register custom host functions for module imports.
-- Components that depend on unavailable imports fail instantiation.
+- Normal execution commands do not register custom host functions for module imports.
+- `qip comply` registers the `qip` oracle imports only for the Compliance component; the implementation under test remains separately instantiated without those imports.
+- Components that depend on imports outside their contract fail instantiation.
 
 Practical effect:
 
-- Module code has no direct API to read files, open sockets, or make HTTP requests.
+- Module code has no direct API to read files, open sockets, or make HTTP requests. The Compliance bridge can only submit inputs, expected results, trap expectations, examinations, and uniform values to the host.
 
 ## What The Host Process Can Do
 

@@ -21,7 +21,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]"
+const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [-v|--verbose]"
 
 const (
 	implModuleName              = "impl"
@@ -81,14 +81,12 @@ func RunComplyCommand(args []string) error {
 	fs.SetOutput(io.Discard)
 	var withCompliances stringListFlag
 	var verbose bool
-	var legacy bool
 	var profile string
 	var seedFlag int
 	var seedSet bool
 	fs.Var(&withCompliances, "with", "compliance component (repeatable)")
 	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
-	fs.BoolVar(&legacy, "legacy", false, "allow legacy positive()/impl-memory compliance modules (deprecated)")
 	fs.StringVar(&profile, "profile", "", "compliance checker profile (strict)")
 	fs.Func("seed", "fuzz seed passed to Content Compliance components via uniform_set_seed", func(v string) error {
 		n, err := strconv.Atoi(v)
@@ -105,10 +103,6 @@ func RunComplyCommand(args []string) error {
 	if profile != "" && profile != "strict" {
 		return fmt.Errorf("unknown comply profile %q; want strict", profile)
 	}
-	if profile == "strict" && legacy {
-		return errors.New("--profile strict cannot be combined with --legacy")
-	}
-
 	rest := fs.Args()
 	if len(rest) != 1 {
 		return errors.New(usageComply)
@@ -188,7 +182,7 @@ func RunComplyCommand(args []string) error {
 	}
 	for _, compliance := range compliances {
 		wg.Go(func() {
-			outcomes <- runComplianceModule(implWasm, compliance, legacy, seed)
+			outcomes <- runComplianceModule(implWasm, compliance, seed)
 		})
 	}
 	wg.Wait()
@@ -363,21 +357,8 @@ func getExportedI32(ctx context.Context, mod api.Module, name string) (int32, bo
 	return 0, false, nil
 }
 
-// runComplianceModule routes a --with module to the Content Compliance
-// bridge (exports comply()) or, under --legacy, to the legacy shared-memory
-// contract in complylegacy.go.
-func runComplianceModule(implWasm []byte, compliance complianceSpec, legacy bool, seed *int32) complianceOutcomes {
-	if isBridgeCompliance(compliance.wasm) {
-		return runBridgeComplianceModule(implWasm, compliance, seed)
-	}
-	if legacy {
-		return runLegacyComplianceModule(implWasm, compliance)
-	}
-	return complianceOutcomes{
-		index: compliance.index,
-		path:  compliance.path,
-		err:   errors.New("legacy compliance component (positive()/impl-memory style): rerun with --legacy; legacy support will be removed"),
-	}
+func runComplianceModule(implWasm []byte, compliance complianceSpec, seed *int32) complianceOutcomes {
+	return runBridgeComplianceModule(implWasm, compliance, seed)
 }
 
 func previewUTF8(in []byte) string {

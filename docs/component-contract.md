@@ -1,8 +1,8 @@
 # QIP Component Contracts
 
-QIP components are WebAssembly modules that expose one of several small host interfaces. Choose the contract from the work the component does: transform finite content, maintain an interactive framebuffer, filter image tiles, or collect a sequence of form values.
+QIP components are WebAssembly modules with one of several small host interfaces. Choose the contract from the work the component does: transform finite content, maintain an interactive framebuffer, filter image tiles, collect a sequence of form values, or declare conformance cases for another component.
 
-The contracts are at different stages of development. The Content and Interactive contracts are mostly stable. The Tile and Form contracts are useful today, but their interfaces may still change substantially.
+The contracts are at different stages of development. The Content and Interactive contracts are mostly stable. Compliance is usable across the repository, while its stricter authoring profile and corpus tooling are still evolving. Tile and Form are useful today, but their interfaces may still change substantially.
 
 ## Choose A Component Type
 
@@ -10,17 +10,19 @@ The contracts are at different stages of development. The Content and Interactiv
 | --- | --- | --- | --- |
 | [`Content`](/docs/content-component) | Text, binary data, documents, archives, validators, and finite renderers | The host writes one input, calls `render`, and reads one output | Mostly stable |
 | [`Interactive`](/docs/interactive-component) | Games, simulations, and persistent interfaces | The host delivers events, advances time with `tick`, and pulls framebuffer pixels | Mostly stable |
+| [`Compliance`](/docs/comply) | Reusable executable specifications for Content components | The checker declares ordered cases through the host bridge; the host runs them against an implementation | Evolving |
 | `Tile` | RGBA image filters | The host runs a filter over 64×64 pixel tiles, with optional halo pixels | Evolving |
 | `Form` | Prompt-driven, multi-step input | The host exchanges one field value at a time until the component reports completion | Evolving |
 
 Choose Content unless the component needs one of the other host lifecycles. A Content component can still produce an image, HTML interface, or other rich output; the distinction is that each `render` call is a finite input-to-output operation.
 
-Interactive is for state that remains live between events. Tile exists to let image hosts process bounded regions without giving every filter a full-image buffer. Form coordinates a sequence of prompts and validation results. The latter two contracts should not yet be treated as long-term compatibility boundaries.
+Interactive is for state that remains live between events. Compliance is for independently checking Content behavior, not for transforming end-user input directly. Tile exists to let image hosts process bounded regions without giving every filter a full-image buffer. Form coordinates a sequence of prompts and validation results. The latter two contracts should not yet be treated as long-term compatibility boundaries.
 
-## Stable Contract References
+## Contract References
 
 - [Content Component Contract](/docs/content-component) defines the memory buffers, `render` lifecycle, content-type metadata, composition rules, and failure behavior for finite transforms.
 - [Interactive Component Contract](/docs/interactive-component) defines framebuffer output, keyboard and pointer events, timing, sizing, and the host loop for persistent interactive modules.
+- [`qip comply`](/docs/comply) defines Compliance-component memory ownership, oracle imports, ordered case declarations, and checker authoring patterns.
 - [Uniforms](/docs/uniforms) defines the optional numeric configuration setters that hosts can apply to components.
 
 All component types also operate within [Hard Limits](/docs/hard-limits). [Formats and Encodings](/docs/formats) defines the byte-format and MIME conventions used when components exchange content.
@@ -56,6 +58,8 @@ Hosts classify a module from its exports and the command being run:
 3. During pipeline building, a module exporting `tile_rgba32float_64x64` is classified as Tile.
 4. Other pipeline modules are classified as Content.
 5. `qip form` uses the Form contract path.
+6. `qip comply --with` treats each checker as Compliance and requires its
+   exported `memory` and `comply() -> i32` entry point.
 
 For example, a module exporting `tile_rgba32float_64x64` is treated as Tile during pipeline composition even when it also exports `render`.
 
@@ -65,10 +69,20 @@ Pointer and size values may be exported as zero-argument functions returning `i3
 
 Components may expose optional `uniform_set_<key>` functions for numeric configuration. Uniforms are shared configuration machinery rather than a separate component type. See [Uniforms](/docs/uniforms) for setter signatures, host ordering, parsing, and CLI syntax.
 
+Compliance components are the exception to the normal no-import rule. They may
+import the documented oracle functions from the `qip` host module. They own
+their memory; they do not import or share the implementation's memory. The host
+copies each declared input into a separate implementation instance and records
+expected output, actual output, traps, and the case ordinal.
+
 ## Intersections
 
 Content and Interactive share `render` and some output exports, but have different host lifecycles. A single-component `qip run` invocation checks the Interactive shape before treating the module as a Content pipeline stage.
 
 Content and Tile can also share exports. The presence of `tile_rgba32float_64x64` wins during pipeline classification, so combine the two interfaces only when Tile behavior is intentional.
 
-The component interface is only the first compatibility boundary. Components must not assume unbounded memory, long-running execution, host imports, filesystem access, network access, or a larger runtime around them. See [Hard Limits](/docs/hard-limits) for the constraints that apply after choosing a contract.
+Compliance components target Content implementations because their bridge
+drives `render(i32) -> i32`. They are test artifacts rather than Content
+pipeline stages and should be passed with `qip comply --with`, not `qip run`.
+
+The component interface is only the first compatibility boundary. Components must not assume unbounded memory, long-running execution, imports outside their documented contract, filesystem access, network access, or a larger runtime around them. See [Hard Limits](/docs/hard-limits) for the constraints that apply after choosing a contract.

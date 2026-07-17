@@ -318,7 +318,7 @@ WebAssembly is not HTML and it is not JavaScript. A Wasm module gets linear memo
 +----------------------------------------------------------+
 ```
 
-QIP narrows this further. A QIP component is not given WASI by default. It is not given custom host imports by the current runtime. The normal interface is input bytes, optional uniforms/events, `render(input_size)`, and output bytes. Instead of assuming global context, QIP makes context an explicit input.
+QIP narrows this further. A normal execution component is not given WASI or custom host imports. Its interface is input bytes, optional uniforms/events, `render(input_size)`, and output bytes. Compliance components receive only the `qip` oracle bridge used to declare conformance cases; the implementation under test remains separately instantiated. Instead of assuming global context, QIP makes context an explicit input.
 
 That means QIP is a useful place to run code you want to review as a transform instead of trusting as application code. It is especially useful for AI-generated components, content transforms, validators, and renderers that should not inherit the app's filesystem, network, database, or secret access.
 
@@ -444,7 +444,7 @@ QIP separates three questions that are often blended together:
 - What bytes are passed into this component?
 - What can this component do without asking the host?
 
-In QIP, the answer to the third question should be boring: it can compute over its linear memory and exported functions. It cannot open a socket, read `~/.ssh`, inspect `process.env`, install a package, or call a database unless the host gives it a custom capability. The current `qip` runtime does not provide WASI or custom host imports to content components.
+In QIP, the answer to the third question should be boring: it can compute over its linear memory and documented interface. It cannot open a socket, read `~/.ssh`, inspect `process.env`, install a package, or call a database unless the host gives it a custom capability. The current `qip` runtime does not provide WASI or custom host imports to Content components; the Compliance bridge exposes only case-oracle operations.
 
 That boundary is useful for unreviewed or AI-generated code. The code may still be wrong. It may still produce unsafe HTML, invalid JSON, or a bad image. But it should not be able to escape the input/output contract and rummage through the host.
 

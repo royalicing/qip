@@ -29,6 +29,7 @@ If you want to send someone the current QIP spec, send them these pages:
 - [QIP Component Contracts](/docs/component-contract): the component types, their execution models, maturity, and how hosts distinguish them.
 - [Content Component Contract](/docs/content-component): the memory ABI, render lifecycle, content types, and composition rules for finite transforms.
 - [Interactive Component Contract](/docs/interactive-component): the framebuffer, event codes, timing, sizing, and host loop for interactive components.
+- [`qip comply`](/docs/comply): the Compliance-component bridge, ordered oracle calls, memory ownership, and executable conformance checks.
 - [Uniforms](/docs/uniforms): optional numeric component configuration and host application rules.
 - [Hard Limits](/docs/hard-limits): the constrained WebAssembly subset QIP components should stay inside.
 - [Formats and Encodings](/docs/formats): the MIME type and byte-format conventions that let components compose cleanly.
@@ -37,7 +38,6 @@ The current Tile and Form interfaces are evolving:
 
 - The repository's `IMAGE.md` for Tile components.
 - [Form ABI](/docs/form_abi) for Form components.
-- [`qip comply`](/docs/comply) when you need reusable conformance checks.
 
 [`qip` CLI](/docs/qip-cli), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Elements](/docs/qip-elements) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
 
@@ -45,7 +45,7 @@ The current Tile and Form interfaces are evolving:
 
 WebAssembly gives QIP a compact execution target with wide runtime support.
 
-A QIP component is a WebAssembly binary with explicit exports and no imports. By default, QIP gives it no filesystem, network, environment, clock, or secrets. The host writes input bytes into component memory, calls a known export such as `render(input_size)`, then reads output bytes back.
+A normal execution component is a WebAssembly binary with explicit exports and no imports. By default, QIP gives it no filesystem, network, environment, clock, or secrets. The host writes input bytes into component memory, calls a known export such as `render(input_size)`, then reads output bytes back. Compliance components use only the narrow `qip` oracle bridge documented in [`qip comply`](/docs/comply); that bridge does not expose general host capabilities.
 
 That shape gives the host a deterministic execution boundary: the same component bytes and input bytes are guaranteed produce the same output bytes. Components stay small enough to test, benchmark, and replace when better code appears.
 

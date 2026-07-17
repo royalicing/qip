@@ -2,7 +2,7 @@
 
 `qip comply` is for turning a QIP component contract into an executable conformance check.
 
-A comply module is a small conformance suite. It is not the implementation's own unit test suite, and it is not a wrapper around `qip run`. Current Compliance components drive the implementation through the host-owned `qip` bridge; legacy checkers import the implementation as `impl`. Both report whether the implementation obeys a reusable contract.
+A comply module is a small conformance suite. It is not the implementation's own unit test suite, and it is not a wrapper around `qip run`. Compliance components drive the implementation through the host-owned `qip` bridge and report whether it obeys a reusable contract.
 
 Use comply modules for behavior that more than one component may need to satisfy: "preserve empty input", "reject invalid UTF-8", "normalize phone numbers", or "accept exactly the Luhn-valid account numbers".
 
@@ -26,14 +26,14 @@ same mistaken code path, they can still agree on wrong behavior.
 ## Command
 
 ```bash
-qip comply <impl.wasm> [--with <check.wasm> ...] [--profile strict] [-v|--verbose]
+qip comply <impl.wasm> [--with <check.wasm> ...] [--profile strict] [--seed <n>] [-v|--verbose]
 ```
 
 ## Examples In This Repo
 
 ```bash
 # Expects that components/utf8/e164.wasm produces normalized phone numbers, and preserves empty input.
-qip comply components/utf8/e164.wasm --with compliance/e164.comply.wasm --with compliance/preserve-empty.wasm
+qip comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
 
 # Expects that components/utf8/utf8-must-be-valid.wasm traps when provided a range of invalid UTF-8, and also accepts whitespace or empty strings untouched.
 qip comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
@@ -78,9 +78,7 @@ qip comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
 
 ## Memory Model
 
-### Current bridge components
-
-Current Content Compliance components own their memory and export `comply() -> i32`. They declare cases through imports from the `qip` module rather than importing implementation memory directly:
+Content Compliance components own their memory and export `comply() -> i32`. They declare cases through imports from the `qip` module rather than importing implementation memory directly:
 
 - `render_must_equal(ordinal, input_ptr, input_size, expected_ptr, expected_size) -> i32`
 - `render_must_trap(ordinal, input_ptr, input_size) -> i32`
@@ -93,76 +91,14 @@ Current Content Compliance components own their memory and export `comply() -> i
 
 The compliance component remains responsible for changing its own oracle state after selecting an implementation uniform. A formatter checker can therefore select currency `392`, declare its JPY cases, select `840`, and declare its USD cases during one run without exporting a currency uniform itself.
 
-### Legacy shared-memory components
+Every oracle call has a sequential `u64` ordinal starting at zero. `comply()`
+returns the number of declared cases. Separate `--with` components run against
+independent implementation instances and may run in parallel, so a checker must
+carry its own fixtures and setup.
 
-A comply module shares the implementation's linear memory. It usually imports:
-
-- `impl.memory`
-- `impl.input_ptr`
-- `impl.input_utf8_cap` or `impl.input_bytes_cap`
-- `impl.output_ptr`, when it needs to compare output
-- `impl.render`
-
-The usual render checker loop is:
-
-1. Call `input_ptr()` and a capacity export.
-2. Reserve a scratch area inside the implementation input buffer.
-3. Write test input bytes at `input_ptr`.
-4. Call `render(input_size)`.
-5. Read actual output from `output_ptr()` using the returned size.
-6. Compare actual output with the expected bytes.
-7. On mismatch, export failure detail pointers so the CLI can print the case.
-
-Keep scratch memory simple. For example, `compliance/luhn.comply.wat` writes input
-at `input_ptr` and expected output at `input_ptr + 256`, after first requiring at
-least 512 bytes of input capacity. We prefer this style because the memory
-contract is visible in three lines and failures are easy to reproduce.
-
-## Check Component ABI
-
-A check component passed with `--with` must:
-
-- import `impl.memory`
-- export `positive() -> i32`
-
-Optional:
-
-- export `negative() -> i32`
-
-Status convention:
-
-- `> 0` means pass
-- `<= 0` means fail
-
-Returning the number of checks that passed is a useful convention. Returning a
-negative scenario code is useful on failure. The host only requires the sign, but
-humans reading a failure log benefit from stable codes.
-
-## Positive And Negative Phases
-
-`positive()`:
-
-- runs first
-- called against a fresh `impl` instance
-- any trap from `impl` causes failure
-
-`negative()`:
-
-- only runs if exported
-- runs against a separate fresh `impl` instance
-- host provides `qip.render_must_trap(i32) -> i32`
-- use `render_must_trap` when trap is expected
-- if `negative()` returns `<= 0`, `qip` reports `negative() expected trap`
-
-`positive()` and `negative()` run against separate fresh implementation
-instances. Separate `--with` modules also run independently and in parallel. A
-checker should therefore carry its own fixtures and setup, and should not depend
-on state left behind by another checker.
-
-Use `positive()` for inputs the implementation must accept. Use `negative()` for
-inputs the implementation must reject by trapping. If invalid input should return
-an empty output instead of trapping, keep that in `positive()` and compare the
-empty output explicitly.
+The bridge owns failure reporting. It retains the failing ordinal and copies the
+declared input, expected output, and actual output while the case is live. A
+Compliance component therefore needs no failure-detail exports.
 
 ## Keep Checkers Obvious
 
@@ -243,20 +179,16 @@ to hide the same mistake.
 
 ## Luhn As A Pattern
 
-The Luhn comply module shows the current pattern for an algorithmic checker:
+The Luhn comply module shows the bridge pattern for an algorithmic checker:
 
-- It makes the scratch contract explicit: require enough capacity, then split the
-  implementation input buffer into input and expected-output regions.
-- It exports `failure_input_*`, `failure_expected_output_*`, and
-  `failure_actual_output_*`, so failures show the exact bytes that reproduced the
-  mismatch.
+- It owns its scratch memory, split into input and expected-output regions, and
+  passes those ranges to the host bridge.
 - It has a small independent oracle, `$make_valid_case`, which computes a valid
   check digit from generated prefixes.
 - It varies length, seed, and formatting style, so a small loop covers many
   cases without a large fixture table.
-- It separates acceptance from rejection: `positive()` checks valid normalized
-  output, while `negative()` uses `qip.render_must_trap` for empty, too-short,
-  malformed, and checksum-invalid input.
+- It declares accepted cases with `qip.render_must_equal` and rejected cases
+  with `qip.render_must_trap`, using one sequential ordinal space.
 
 That pattern generalizes well. For a validator, generate known-good values,
 assert the normalized output, then perturb one property at a time and assert
@@ -264,43 +196,21 @@ rejection. For a formatter, generate representative inputs and assert stable
 canonical output. For a parser, carry a corpus and include failure messages that
 identify the source case.
 
-## Failure Detail Exports (Optional)
-
-If a check fails, `qip comply` tries to print reproducible failure context from optional exports on the check component.
-
-Input detail:
-
-- `failure_input_ptr` / `failure_input_size`
-
-Message detail:
-
-- `failure_message_ptr` / `failure_message_size`
-
-Expected vs actual output detail:
-
-- `failure_expected_output_ptr` / `failure_expected_output_size`
-- `failure_actual_output_ptr` / `failure_actual_output_size`
-
-Legacy output detail fallback:
-
-- `failure_output_ptr` / `failure_output_size`
-
-Aliases with a `fail_` prefix are also accepted. Prefer the `failure_` names for
-new modules.
-
 ## Minimal WAT Example
 
 ```wat
 (module
-  (import "impl" "memory" (memory 1))
-  (import "impl" "input_ptr" (func $input_ptr (result i32)))
-  (import "impl" "render" (func $render (param i32) (result i32)))
-  (import "impl" "output_ptr" (func $output_ptr (result i32)))
+  (import "qip" "render_must_equal"
+    (func $render_must_equal (param i64 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 0) "hello")
 
-  (func (export "positive") (result i32)
-    ;; Write input at (call $input_ptr), call $render, compare output from
-    ;; (call $output_ptr), and return >0 on pass.
-    (drop (call $render (i32.const 0)))
+  (func (export "comply") (result i32)
+    (drop
+      (call $render_must_equal
+        (i64.const 0)
+        (i32.const 0) (i32.const 5)
+        (i32.const 0) (i32.const 5)))
     (i32.const 1))
 )
 ```
@@ -309,15 +219,14 @@ new modules.
 
 ```wat
 (module
-  (import "impl" "memory" (memory 1))
-  (import "qip" "render_must_trap" (func $render_must_trap (param i32) (result i32)))
+  (import "qip" "render_must_trap"
+    (func $render_must_trap (param i64 i32 i32) (result i32)))
+  (memory (export "memory") 1)
 
-  (func (export "positive") (result i32)
-    (i32.const 1))
-
-  (func (export "negative") (result i32)
-    (if (i32.ne (call $render_must_trap (i32.const 0)) (i32.const 1))
-      (then (return (i32.const -1))))
+  (func (export "comply") (result i32)
+    (drop
+      (call $render_must_trap
+        (i64.const 0) (i32.const 0) (i32.const 0)))
     (i32.const 1))
 )
 ```
@@ -327,8 +236,8 @@ new modules.
 1. Start with the behavior sentence: "This component accepts X, normalizes to Y,
    and rejects Z."
 2. Pick the strategy: fixture, table, generated oracle, mutation, or corpus.
-3. Reserve scratch memory and check capacity before writing.
-4. Export failure detail before returning a failing status.
+3. Keep input, expected output, and examination buffers in checker-owned memory.
+4. Give each oracle call its next sequential ordinal.
 5. Build the implementation and compliance module.
 6. Run `qip comply impl.wasm --with compliance.wasm`.
 7. Add the command to `make -j test` coverage when the contract should protect

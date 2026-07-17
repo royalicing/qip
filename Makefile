@@ -325,7 +325,9 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --profile strict
 	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --profile strict
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --profile strict
-	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm --legacy
+	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm --with compliance/trap-empty-input.wasm
+	$(QIP_BIN) comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
+	$(QIP_BIN) comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
 	$(QIP_BIN) comply components/utf8/unicode-17-lowercase.wasm --with compliance/unicode-17-lowercase.comply.wasm
 	$(QIP_BIN) comply components/utf8/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
 	$(QIP_BIN) comply components/utf8/currency-format-usd-en-us.wasm --with compliance/currency-format-usd-en-us.comply.wasm
