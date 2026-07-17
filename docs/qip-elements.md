@@ -171,7 +171,7 @@ These checks run after the module bytes are fetched and before `WebAssembly.comp
 
 The distinction from `<qip-edit>` is not merely that both accept interaction. Editing changes declared source inputs and produces finite results; playing interacts with a running component whose state persists between events. A fallback, poster, or initial snapshot may be rendered ahead of time, but the experience requires client activation to become interactive.
 
-The component side of this element is the Interactive contract: `tick`, `key_event`, `pointer_event`, and frame output. See [Interactive ABI](/docs/interactive) and [Interactive Rendering Performance](/docs/interactive-rendering-performance).
+The component side of this element is the Interactive contract: `tick`, `key_event`, `pointer_event`, and frame output. See the [Interactive Component Contract](/docs/interactive-component) and [Interactive Rendering Performance](/docs/interactive-rendering-performance).
 
 ## Pre-Rendering
 
@@ -199,8 +199,9 @@ A custom element such as `<account-usage-report>` can own authenticated fetching
 
 ## Related Documentation
 
-- [Component Contract](/docs/component-contract) — the exports, inputs, outputs, and content-type composition all three elements build on.
+- [Component Contracts](/docs/component-contract) — the component types and their execution models.
+- [Content Component Contract](/docs/content-component) — the exports, inputs, outputs, and content-type composition used by finite renderers.
 - [Hard Limits](/docs/hard-limits) — the memory, time, and host-access budget components run within.
 - [Architecture And Boundaries](/docs/architecture-boundaries) — where trust boundaries sit between host, component, and page.
-- [Interactive ABI](/docs/interactive) — the component contract behind `<qip-play>`.
+- [Interactive Component Contract](/docs/interactive-component) — the contract behind `<qip-play>`.
 - [Form ABI](/docs/form_abi) — prompt-driven form components, a separate element family.

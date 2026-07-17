@@ -31,7 +31,7 @@ QIP does not use WASI or WIT, standards that have ballooned in complexity from s
 - `render(input_size)`: function to transform input and return output length in bytes.
 - Optional `uniform_set_<key>(value)`: primitive integer or float parameters applied explicitly before rendering.
 
-You can read more about the [component contract in our docs](./docs/component-contract.md#qip-component-contract).
+You can read more about the [Content component contract in our docs](./docs/content-component.md).
 
 ## CLI Usage
 
@@ -362,7 +362,10 @@ ls ./site
 
 ## Documentation
 
-- [QIP Component Contract](docs/component-contract.md)
+- [QIP Component Contracts](docs/component-contract.md)
+- [Content Component Contract](docs/content-component.md)
+- [Interactive Component Contract](docs/interactive-component.md)
+- [Uniforms](docs/uniforms.md)
 - [QIP Component Patterns](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
 - [Hard Limits](docs/hard-limits.md)

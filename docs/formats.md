@@ -49,7 +49,7 @@ Formats and encodings are at different layers:
 
 - `UTF-8` for text pipelines (`input_utf8_cap` / `output_utf8_cap`)
 - `RGBA32Float` for image filter tiles in `qip image` (`tile_rgba32float_64x64`)
-- `RGBA8 sRGB` for interactive frame output (`docs/interactive`)
+- `RGBA8 sRGB` for interactive frame output ([Interactive Component Contract](/docs/interactive-component))
 
 Why these defaults:
 

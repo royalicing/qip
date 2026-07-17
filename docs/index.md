@@ -26,14 +26,17 @@ QIP is the portable standard of component contracts, documented in these pages.
 
 If you want to send someone the current QIP spec, send them these pages:
 
-- [QIP Component Contract](/docs/component-contract): the component types, required exports, memory ABI, content types, uniforms, and host call flow.
+- [QIP Component Contracts](/docs/component-contract): the component types, their execution models, maturity, and how hosts distinguish them.
+- [Content Component Contract](/docs/content-component): the memory ABI, render lifecycle, content types, and composition rules for finite transforms.
+- [Interactive Component Contract](/docs/interactive-component): the framebuffer, event codes, timing, sizing, and host loop for interactive components.
+- [Uniforms](/docs/uniforms): optional numeric component configuration and host application rules.
 - [Hard Limits](/docs/hard-limits): the constrained WebAssembly subset QIP components should stay inside.
 - [Formats and Encodings](/docs/formats): the MIME type and byte-format conventions that let components compose cleanly.
 
-Then add the relevant extension specs for the component type:
+The current Tile and Form interfaces are evolving:
 
-- [Interactive ABI](/docs/interactive): the framebuffer, event codes, timing, sizing, and host loop for interactive components.
-- [Form ABI](/docs/form_abi) for form components.
+- The repository's `IMAGE.md` for Tile components.
+- [Form ABI](/docs/form_abi) for Form components.
 - [`qip comply`](/docs/comply) when you need reusable conformance checks.
 
 [`qip` CLI](/docs/qip-cli), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Elements](/docs/qip-elements) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
@@ -99,10 +102,12 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 </li>
 <li><span class="docs-section">QIP spec</span>
 <ol>
-<li><a href="/docs/component-contract">QIP Component Contract</a></li>
+<li><a href="/docs/component-contract">Component Contracts</a></li>
+<li><a href="/docs/content-component">Content Component</a></li>
+<li><a href="/docs/interactive-component">Interactive Component</a></li>
+<li><a href="/docs/uniforms">Uniforms</a></li>
 <li><a href="/docs/hard-limits">Hard Limits</a></li>
 <li><a href="/docs/formats">Formats and Encodings</a></li>
-<li><a href="/docs/interactive">Interactive ABI</a></li>
 <li><a hidden href="/docs/form_abi">Form ABI!</a></li>
 <li><a href="/docs/comply">Comply</a></li>
 </ol>

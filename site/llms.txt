@@ -9,7 +9,10 @@ qip favors explicit contracts and simple pipelines. QIP components are sandboxed
 - [Adopting QIP in existing apps](/docs/adopting-qip.md): Practical guidance for introducing QIP as narrow, portable components inside existing applications.
 - [How QIP works](/docs/how-it-works.md): End-to-end runtime model for QIP components, routing, and recipes.
 - [Hard limits](/docs/hard-limits.md): Memory, fixed-memory, and host capability policy for QIP components.
-- [Component contract](/docs/component-contract.md): Required exports, memory pointers, capacities, and host interaction rules.
+- [Component contracts](/docs/component-contract.md): Component types, maturity, execution models, and contract detection.
+- [Content component contract](/docs/content-component.md): Required exports, memory buffers, rendering, content types, and composition.
+- [Interactive component contract](/docs/interactive-component.md): Framebuffer, events, timing, sizing, and host-loop rules.
+- [Uniforms](/docs/uniforms.md): Optional numeric configuration exports and host behavior.
 - [Module patterns](/docs/module-patterns.md): Practical implementation patterns for QIP components.
 - [Comply](/docs/comply.md): Compliance checks and ABI verification guidance.
 - [WebAssembly ES module integration](/docs/esm-integration.md): Direct `.wasm` ES module import example for a UTF-8 Markdown-to-HTML QIP component.

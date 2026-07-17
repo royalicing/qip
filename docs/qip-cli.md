@@ -29,7 +29,7 @@ The CLI is the operational tool for local development, CI, benchmarking, and sta
 | `qip router` | Resolve routes and export route artifacts such as WARC. |
 | `qip form` | Run an interactive QIP form component in the terminal. |
 
-For the portable component ABI, see [QIP Component Contract](/docs/component-contract). For route behavior, see [Router](/docs/router). For compliance testing, see [`qip comply`](/docs/comply).
+For the available execution models, see [QIP Component Contracts](/docs/component-contract). For the normal `qip run` ABI, see the [Content Component Contract](/docs/content-component). For route behavior, see [Router](/docs/router). For compliance testing, see [`qip comply`](/docs/comply).
 
 ## Runtime Boundary
 
@@ -85,7 +85,7 @@ Current CLI guardrails:
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
 - `modules/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `modules/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier.
 
-The browser JavaScript hosts expose the same policy with `max-memory="<bytes>"` and `allow-memory-grow`; see [Browser Elements](/docs/qip-elements) and [Interactive ABI](/docs/interactive).
+The browser JavaScript hosts expose the same policy with `max-memory="<bytes>"` and `allow-memory-grow`; see [Browser Elements](/docs/qip-elements) and the [Interactive Component Contract](/docs/interactive-component).
 
 Current limitations:
 

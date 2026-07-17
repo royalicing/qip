@@ -1,8 +1,8 @@
-# Interactive ABI
+# Interactive Component Contract
 
-This ABI is for stateful, event-driven modules that render an output frame. We prefer a small host/module contract over protocol complexity: send key and pointer events directly, advance state with `tick`, then pull pixels with `render(input_size)`.
+Interactive components are stateful, event-driven modules that render an output frame. The host sends key and pointer events directly, advances state with `tick`, then pulls pixels with `render(input_size)`.
 
-The design goal is practical interoperability: browser and native hosts can adapt input to this ABI, and modules stay tiny.
+Use the [Content Component Contract](/docs/content-component) instead when each invocation is a finite input-to-output transformation without a persistent event loop.
 
 ## Core Contract
 
