@@ -31,6 +31,17 @@ Given MIME `type/subtype`, recipe directory is:
   - `30-warc-to-sitemap.wasm`
   - `40-warc-add-open-graph-image-meta.wasm`
 
+### Debugging broken links
+
+`warc-check-broken-links.wasm` traps when an internal HTML link does not resolve. To inspect the failures, run the same archive through `warc-extract-broken-links.wasm`:
+
+```sh
+qip router warc ./site --view-source \
+  | qip run modules/application/warc/warc-extract-broken-links.wasm
+```
+
+The result is another `application/warc` archive. It keeps only response pages containing broken links and reduces each HTML body to the exact opening tags with broken `href`, `src`, `action`, `data`, or `srcset` values. An archive with no broken links produces an empty WARC.
+
 ### Rendering referenced content sizes
 
 `recipes/application/warc/25-add-content-size.wasm` fills

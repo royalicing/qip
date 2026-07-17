@@ -198,6 +198,7 @@ modules/text/html/html-page-wrap.wasm: recipes/text/markdown/80-html-page-wrap.w
 	cp $< $@
 
 modules/application/warc/warc-check-broken-links.wasm: ZIG_WASM_MAX_MEMORY = 167772160
+modules/application/warc/warc-extract-broken-links.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 modules/application/warc/warc-check-broken-module-imports.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 modules/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640

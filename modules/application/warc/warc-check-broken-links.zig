@@ -605,7 +605,8 @@ fn parseHTMLLinks(source_path: []const u8, html: []const u8, internal_host: []co
             continue;
         }
         const tag = html[tag_start..j];
-        const is_raw_text = eqlIgnoreCase(tag, "script") or eqlIgnoreCase(tag, "style");
+        const is_text_container = eqlIgnoreCase(tag, "script") or eqlIgnoreCase(tag, "style") or
+            eqlIgnoreCase(tag, "textarea") or eqlIgnoreCase(tag, "title");
         var is_self_closing = false;
 
         while (j < html.len) {
@@ -652,7 +653,7 @@ fn parseHTMLLinks(source_path: []const u8, html: []const u8, internal_host: []co
         }
 
         i = j;
-        if (is_raw_text and !is_self_closing) {
+        if (is_text_container and !is_self_closing) {
             if (indexOfCloseTagIgnoreCase(html, i, tag)) |close_start| {
                 if (std.mem.indexOfPos(u8, html, close_start, ">")) |close_end| {
                     i = close_end + 1;
@@ -802,7 +803,7 @@ test "detects broken internal links" {
         &n,
         "response",
         "http://qip.local/",
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<a href=\"/missing\">Missing</a><a href=\"/docs/\">Docs</a><a href=\"?v=1\">Self</a><img src=\"img/logo.png\"><a href=\"mailto:test@example.com\">Mail</a>",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<a href=\"/missing\">Missing</a><a href=\"/docs/\">Docs</a><a href=\"?v=1\">Self</a><img src=\"img/logo.png\"><a href=\"mailto:test@example.com\">Mail</a><textarea><a href=\"/ignored\">Example</a></textarea><title><a href=\"/also-ignored\">Title text</a></title>",
     );
     try appendWARCRecord(
         build_buf[0..],
