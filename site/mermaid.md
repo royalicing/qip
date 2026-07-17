@@ -104,6 +104,8 @@ This component supports the demonstrated flowchart, subgraph, sequence, state, c
 
 ```bash
 go install github.com/royalicing/qip@latest
+curl -O https://qip.dev/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm
+
 printf '%s\n' \
   'graph TD' \
   '  Start[Request received] --> Auth{Authenticated?}' \
