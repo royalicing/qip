@@ -122,35 +122,5 @@ func injectInlineModuleScript(body []byte, script []byte) []byte {
 	return out
 }
 
-func injectQIPEditRuntime(body []byte) []byte {
-	if !qipEditTagPattern.Match(body) {
-		return body
-	}
-	var b strings.Builder
-	b.Grow(len(qipEditClientRuntimeModuleJS) + 64)
-	b.WriteString("<script type=\"module\">\n")
-	b.WriteString(qipEditClientRuntimeModuleJS)
-	b.WriteString("\n</script>")
-	return injectInlineModuleScript(body, []byte(b.String()))
-}
-
-func injectQIPPlayRuntime(body []byte) []byte {
-	if !qipPlayTagPattern.Match(body) {
-		return body
-	}
-	var b strings.Builder
-	b.Grow(len(qipPlayClientRuntimeModuleJS) + 64)
-	b.WriteString("<script type=\"module\">\n")
-	b.WriteString(qipPlayClientRuntimeModuleJS)
-	b.WriteString("\n</script>")
-	return injectInlineModuleScript(body, []byte(b.String()))
-}
-
 //go:embed embedded/qip-form-client-runtime.js
 var qipFormClientRuntimeModuleJS string
-
-//go:embed embedded/qip-edit-client-runtime.js
-var qipEditClientRuntimeModuleJS string
-
-//go:embed embedded/qip-play-client-runtime.js
-var qipPlayClientRuntimeModuleJS string

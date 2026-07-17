@@ -23,8 +23,8 @@ globalThis.customElements = {
 };
 
 vm.runInThisContext(
-  readFileSync("embedded/qip-edit-client-runtime.js", "utf8"),
-  { filename: "embedded/qip-edit-client-runtime.js" },
+  readFileSync("site/_elements/qip-edit.js", "utf8"),
+  { filename: "site/_elements/qip-edit.js" },
 );
 
 test("qip-edit formats pipeline stats like qip-play", () => {

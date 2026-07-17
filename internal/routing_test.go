@@ -48,6 +48,7 @@ func TestBuildContentRoutesSkipsReservedRouterDirectories(t *testing.T) {
 	mustWrite("_recipes/text/markdown/10-markdown.wasm")
 	mustWrite("_forms/contact.wasm")
 	mustWrite("_components/interactive/game.wasm")
+	mustWrite("_elements/qip-edit.js")
 	mustWrite("_og/card.png")
 
 	routes, err := BuildContentRoutes(root, DefaultRouteOptions())
@@ -58,6 +59,7 @@ func TestBuildContentRoutesSkipsReservedRouterDirectories(t *testing.T) {
 		"/_recipes/text/markdown/10-markdown.wasm",
 		"/_forms/contact.wasm",
 		"/_components/interactive/game.wasm",
+		"/_elements/qip-edit.js",
 	} {
 		if _, ok := routes[requestPath]; ok {
 			t.Fatalf("reserved path %s was routed", requestPath)
@@ -70,7 +72,7 @@ func TestBuildContentRoutesSkipsReservedRouterDirectories(t *testing.T) {
 
 func TestResolveRouterProjectConfigDiscoversAndAllowsOverrides(t *testing.T) {
 	root := t.TempDir()
-	for _, rel := range []string{ReservedRecipesDir, ReservedFormsDir, ReservedComponentsDir} {
+	for _, rel := range []string{ReservedRecipesDir, ReservedFormsDir, ReservedComponentsDir, ReservedElementsDir} {
 		if err := os.Mkdir(filepath.Join(root, rel), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", rel, err)
 		}
@@ -88,6 +90,9 @@ func TestResolveRouterProjectConfigDiscoversAndAllowsOverrides(t *testing.T) {
 	}
 	if config.ComponentsRoot != filepath.Join(root, ReservedComponentsDir) {
 		t.Fatalf("components root=%q", config.ComponentsRoot)
+	}
+	if config.ElementsRoot != filepath.Join(root, ReservedElementsDir) {
+		t.Fatalf("elements root=%q", config.ElementsRoot)
 	}
 
 	override, err := ResolveRouterProjectConfig(RouterProjectConfig{

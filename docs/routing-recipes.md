@@ -11,8 +11,9 @@ The router walks the site root and builds routes from regular content files. It 
 - `_recipes`
 - `_forms`
 - `_components`
+- `_elements`
 
-Those directories hold QIP components and host configuration. A file such as `site/_recipes/text/markdown/10-render.wasm` is not registered as a public content route, so `/_recipes/text/markdown/10-render.wasm` returns `404`.
+Those directories hold QIP components, custom-element modules, and host configuration. A file such as `site/_recipes/text/markdown/10-render.wasm` is not registered as a public content route, so `/_recipes/text/markdown/10-render.wasm` returns `404`.
 
 Relative content paths must be UTF-8, use `/` separators, and avoid `.` or `..` path segments. During local discovery, QIP tracks visited directories so symlink loops do not recurse forever.
 

@@ -208,6 +208,22 @@ func TestBuildRouteListEntriesIncludesComponentAssets(t *testing.T) {
 	}
 }
 
+func TestBuildRouteListEntriesIncludesElementAssets(t *testing.T) {
+	state := &RouterServerState{RouterFileState: &RouterFileState{
+		contentRoutes:       map[string]qinternal.ContentRoute{},
+		routeOptions:        qinternal.DefaultRouteOptions(),
+		elementRequestPaths: []string{"/elements/copy-code.js"},
+	}}
+
+	want := []routeListEntry{
+		{Method: "GET", Path: "/elements/copy-code.js", ContentType: "text/javascript"},
+		{Method: "HEAD", Path: "/elements/copy-code.js", ContentType: "text/javascript"},
+	}
+	if got := buildRouteListEntries(state); !reflect.DeepEqual(got, want) {
+		t.Fatalf("entries=%v, want %v", got, want)
+	}
+}
+
 func TestResolveRecipeSourceResponse(t *testing.T) {
 	state := &RouterServerState{
 		RouterFileState: &RouterFileState{

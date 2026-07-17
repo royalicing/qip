@@ -62,8 +62,39 @@ func resolveRouterBaseResponse(ctx context.Context, current *RouterServerState, 
 		if err != nil {
 			return qinternal.InProcessHTTPResponse{}, false, err
 		}
-		body = injectQIPEditRuntime(body)
-		body = injectQIPPlayRuntime(body)
+	}
+	return qinternal.InProcessHTTPResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       body,
+	}, true, nil
+}
+
+func resolveElementAssetResponse(ctx context.Context, current *RouterServerState, requestPath string, requestID uint64, timeouts RouterServerTimeouts) (qinternal.InProcessHTTPResponse, bool, error) {
+	if current == nil {
+		return qinternal.InProcessHTTPResponse{}, false, errors.New("runtime state is unavailable")
+	}
+	asset, ok := current.elementAssets[requestPath]
+	if !ok {
+		return qinternal.InProcessHTTPResponse{}, false, nil
+	}
+	body, err := os.ReadFile(asset.filePath)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, false, err
+	}
+	contentType := "text/javascript"
+	if pipeline := current.recipeChains[contentType]; pipeline != nil {
+		execCtx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
+		defer cancel()
+		result, err := pipeline.Process(execCtx, qinternal.NewRawBytesContentWithType(body, contentType), requestID)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, false, err
+		}
+		result, body, err = ensureRawContent(result)
+		if err != nil {
+			return qinternal.InProcessHTTPResponse{}, false, err
+		}
+		contentType = routerResponseContentType("text/javascript", true, result, body)
 	}
 	return qinternal.InProcessHTTPResponse{
 		StatusCode: http.StatusOK,
@@ -123,12 +154,14 @@ func transformRouteResponseWithKindredRoutes(
 	requestID uint64,
 	resolveParent qinternal.KindredRouteResolver,
 	resolveStatic qinternal.KindredRouteResolver,
+	elementEntryPaths []string,
+	resolveElement qinternal.KindredRouteResolver,
 ) (qinternal.InProcessHTTPResponse, error) {
 	if pipeline == nil {
 		return response, nil
 	}
 	requestURI := buildWARCRequestURI("qip.local", requestPath)
-	archive, err := buildKindredWARCArchive(requestPath, response, resolveParent, resolveStatic)
+	archive, err := buildKindredWARCArchive(requestPath, response, resolveParent, resolveStatic, elementEntryPaths, resolveElement)
 	if err != nil {
 		return qinternal.InProcessHTTPResponse{}, err
 	}
@@ -149,10 +182,36 @@ func buildKindredWARCArchive(
 	response qinternal.InProcessHTTPResponse,
 	resolveParent qinternal.KindredRouteResolver,
 	resolveStatic qinternal.KindredRouteResolver,
+	elementEntryPaths []string,
+	resolveElement qinternal.KindredRouteResolver,
 ) ([]byte, error) {
 	routes, err := qinternal.KindredRoutes(requestPath, response, resolveParent, resolveStatic)
 	if err != nil {
 		return nil, err
+	}
+	if len(routes) > 0 && resolveElement != nil {
+		target := routes[len(routes)-1]
+		routes = routes[:len(routes)-1]
+		seen := make(map[string]struct{}, len(routes)+1)
+		for _, route := range routes {
+			seen[route.RequestPath] = struct{}{}
+		}
+		seen[target.RequestPath] = struct{}{}
+		for _, elementPath := range elementEntryPaths {
+			if _, ok := seen[elementPath]; ok {
+				continue
+			}
+			elementResponse, ok, err := resolveElement(elementPath)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || elementResponse.StatusCode != http.StatusOK {
+				continue
+			}
+			routes = append(routes, qinternal.KindredRoute{RequestPath: elementPath, Response: elementResponse})
+			seen[elementPath] = struct{}{}
+		}
+		routes = append(routes, target)
 	}
 	var archive bytes.Buffer
 	for _, route := range routes {

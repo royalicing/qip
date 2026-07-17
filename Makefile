@@ -11,7 +11,7 @@ GO_FIX_PKGS := ./cmd/... ./internal/... ./tools/...
 GO_FMT_PKGS := . ./cmd/... ./internal/... ./tools/...
 GO_TEST_PKGS := . ./cmd/... ./internal/... ./tools/...
 QIP_BIN ?= ./qip
-QIP_GO_DEPS := main.go $(wildcard cmd/*.go) $(wildcard internal/*.go) $(wildcard internal/*/*.go) $(wildcard embedded/*.js)
+QIP_GO_DEPS := $(filter-out %_test.go,$(wildcard *.go)) $(wildcard cmd/*.go) $(wildcard internal/*.go) $(wildcard internal/*/*.go) $(wildcard embedded/*.js)
 
 qip: go.mod go.sum $(QIP_GO_DEPS)
 	go fix $(GO_FIX_PKGS)
@@ -202,6 +202,7 @@ modules/application/warc/warc-extract-broken-links.wasm: ZIG_WASM_MAX_MEMORY = 3
 modules/application/warc/warc-check-broken-module-imports.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 modules/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+modules/application/warc/warc-add-custom-element-scripts.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 modules/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
@@ -230,6 +231,9 @@ recipes/application/warc/10-add-open-graph-image-meta.wasm: modules/application/
 	@mkdir -p $(dir $@)
 	ln -sf ../../../modules/application/warc/warc-add-open-graph-image-meta.wasm $@
 
+recipes/application/warc/99-add-custom-element-scripts.wasm: modules/application/warc/warc-add-custom-element-scripts.wasm
+	ln -sf ../../../modules/application/warc/warc-add-custom-element-scripts.wasm $@
+
 modules-wat-wasm: $(MODULE_WAT_TARGETS)
 modules-c-wasm: $(MODULE_C_TARGETS)
 modules-zig-wasm: $(MODULE_ZIG_TARGETS)
@@ -241,6 +245,7 @@ modules-zig-wasm: recipes/text/markdown/80-html-page-wrap.wasm
 recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(wildcard recipes/text/markdown/*.zig))
 recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
+recipes: recipes/application/warc/99-add-custom-element-scripts.wasm
 recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 modules: modules-wat-wasm modules-c-wasm modules-zig-wasm

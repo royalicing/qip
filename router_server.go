@@ -51,6 +51,14 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 				stateSlot.mu.RUnlock()
 				return response, nil
 			}
+			if _, ok := current.elementAssets[r.URL.Path]; ok {
+				response, _, err := resolveElementAssetResponse(r.Context(), current, r.URL.Path, reqID, timeouts)
+				stateSlot.mu.RUnlock()
+				if err != nil {
+					return qinternal.RoutedResponse{}, err
+				}
+				return qinternal.RoutedResponse{StatusCode: response.StatusCode, Header: response.Header, Body: response.Body}, nil
+			}
 
 			route, ok := qinternal.ResolveContentRoute(current.contentRoutes, r.URL.Path, current.routeOptions)
 			if !ok {
@@ -123,8 +131,6 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 							InstantiationDurations: []time.Duration{},
 						}, err
 					}
-					body = injectQIPEditRuntime(body)
-					body = injectQIPPlayRuntime(body)
 				}
 
 				response = qinternal.InProcessHTTPResponse{
@@ -142,6 +148,8 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 					return resolveRouterBaseResponse(ctx, current, requestPath, reqID, timeouts)
 				}, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
 					return resolveKindredStaticRoute(ctx, current, requestPath)
+				}, current.elementEntryPaths, func(requestPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+					return resolveElementAssetResponse(ctx, current, requestPath, reqID, timeouts)
 				})
 				if err != nil {
 					stateSlot.mu.RUnlock()

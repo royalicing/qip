@@ -10,7 +10,6 @@ const COPY_CODE_SNIPPET =
     \\copy-code > pre { margin-block-end: 0.5rlh; }
     \\copy-code > button { display: block; font: inherit; }
     \\</style>
-    \\<script type="module" src="/copy-code.js"></script>
 ;
 
 var input_buf: [INPUT_CAP]u8 = undefined;

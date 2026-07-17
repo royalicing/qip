@@ -80,6 +80,7 @@ func devCmd(args []string) {
 		RecipesRoot:    recipesRoot,
 		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
+		ElementsRoot:   projectConfig.ElementsRoot,
 		ViewSource:     opts.viewSource,
 	}
 	qipRuntime := newQIPRuntime(opts)
@@ -124,7 +125,7 @@ func devCmd(args []string) {
 		}
 
 		swapRuntimeState(nextState)
-		log.Printf("dev: reloaded reason=%s paths=%d recipe_mimes=%d forms=%d components=%d duration_ms=%d", reason, len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), len(nextState.componentAssets), time.Since(reloadStart).Milliseconds())
+		log.Printf("dev: reloaded reason=%s paths=%d recipe_mimes=%d forms=%d components=%d elements=%d duration_ms=%d", reason, len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), len(nextState.componentAssets), len(nextState.elementAssets), time.Since(reloadStart).Milliseconds())
 	}
 	reloadRecipesIfChanged := func() {
 		if opts.mode != modeDev || recipesRoot == "" {

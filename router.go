@@ -101,6 +101,9 @@ func resolveRouteProjectConfig(contentRoot string, recipesRoot string, formsRoot
 	if err := validateRouteAssetRoots(projectConfig.RecipesRoot, projectConfig.FormsRoot, projectConfig.ComponentsRoot); err != nil {
 		return qinternal.RouterProjectConfig{}, err
 	}
+	if err := qinternal.ValidateOptionalDirectory("elements", projectConfig.ElementsRoot); err != nil {
+		return qinternal.RouterProjectConfig{}, err
+	}
 	return projectConfig, nil
 }
 
@@ -161,6 +164,7 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		RecipesRoot:    recipesRoot,
 		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
+		ElementsRoot:   projectConfig.ElementsRoot,
 	}, newQIPRuntime(opts), routeOptions)
 	if err != nil {
 		gameOver("%v", err)
@@ -273,6 +277,7 @@ func routeListCmd(args []string) {
 		RecipesRoot:    recipesRoot,
 		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
+		ElementsRoot:   projectConfig.ElementsRoot,
 	}, newQIPRuntime(opts), routeOptions)
 	if err != nil {
 		gameOver("%v", err)
@@ -347,6 +352,14 @@ func buildRouteListEntries(state *RouterServerState) []routeListEntry {
 			Path:        requestPath,
 			ContentType: contentType,
 		})
+	}
+	for _, requestPath := range state.elementRequestPaths {
+		contentType := "text/javascript"
+		if state.recipeChains[contentType] != nil && state.recipeOutput[contentType] != "" {
+			contentType = mediaTypeOnly(state.recipeOutput[contentType])
+		}
+		entries = append(entries, routeListEntry{Method: http.MethodGet, Path: requestPath, ContentType: contentType})
+		entries = append(entries, routeListEntry{Method: http.MethodHead, Path: requestPath, ContentType: contentType})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Path != entries[j].Path {
@@ -452,6 +465,7 @@ func routerCmd(args []string) {
 			RecipesRoot:    projectConfig.RecipesRoot,
 			FormsRoot:      projectConfig.FormsRoot,
 			ComponentsRoot: projectConfig.ComponentsRoot,
+			ElementsRoot:   projectConfig.ElementsRoot,
 			ViewSource:     request.ViewSource,
 		}, newQIPRuntime(opts), routeOptions)
 		if err != nil {
@@ -491,6 +505,9 @@ func routerCmd(args []string) {
 			for _, requestPath := range loaded.state.componentRequestPaths {
 				pathSet[requestPath] = struct{}{}
 			}
+			for _, requestPath := range loaded.state.elementRequestPaths {
+				pathSet[requestPath] = struct{}{}
+			}
 
 			paths := make([]string, 0, len(pathSet))
 			for requestPath := range pathSet {
@@ -510,6 +527,15 @@ func routerCmd(args []string) {
 					Header:     http.Header{"Content-Type": []string{asset.contentType}},
 					Body:       asset.body,
 				}, nil
+			}
+			if _, ok := loaded.state.elementAssets[request.RequestPath]; ok {
+				response, ok, err := resolveElementAssetResponse(ctx, loaded.state, request.RequestPath, 0, handlerTimeouts)
+				if err != nil {
+					return qinternal.InProcessHTTPResponse{}, err
+				}
+				if ok {
+					return response, nil
+				}
 			}
 			requestCtx := ctx
 			var traceRecorder *routeTraceRecorder

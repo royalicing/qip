@@ -31,7 +31,7 @@ The distinction is the overall user experience, not the presence of a particular
 
 ## `<qip-view>`
 
-`<qip-view>` is the finite, consumption-oriented element. It shares its implementation with `<qip-edit>` — the same wiring, rendering, and module policy — because the difference is the user's relationship, not the machinery.
+`<qip-view>` is the finite, consumption-oriented element. Its standalone module currently duplicates `<qip-edit>`'s wiring, rendering, and module policy. Keeping one entrypoint per element makes loading and replacement predictable; shared implementation can be introduced later without changing the public routes.
 
 The page or application owns the canonical input, and the user consumes the resulting representation rather than editing it. Inputs may be supplied with hidden or read-only controls:
 

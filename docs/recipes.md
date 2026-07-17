@@ -9,6 +9,7 @@ This document defines how recipe QIP components are discovered from disk.
 - Recipes are grouped by exact MIME type:
   - `_recipes/text/markdown/`
   - `_recipes/text/html/`
+  - `_recipes/text/javascript/`
   - `_recipes/image/png/`
   - `_recipes/application/warc/`
 
@@ -57,6 +58,18 @@ kilobytes with two fractional digits. The recipe updates the enclosing HTTP
 and WARC content lengths. During single-route development, the router adds
 direct static `src` dependencies to the subset WARC. An unresolved size path
 is an error instead of producing a plausible size.
+
+### Loading custom elements selectively
+
+`modules/application/warc/warc-add-custom-element-scripts.wasm` connects element routes to the pages that use them. It discovers top-level `/elements/<tag-name>.js` responses in the archive, detects matching custom-element tags in each HTML response, and inserts one external module script per used element:
+
+```html
+<script type="module" src="/elements/qip-edit.js"></script>
+```
+
+The recipe ignores tag-shaped text in comments, `script`, `style`, `textarea`, and `title` content. Existing scripts are not inserted again. Nested routes such as `/elements/lib/shared.js` remain available to imports but are not treated as entrypoints.
+
+Run this recipe late in the WARC chain so it sees elements introduced by earlier transforms. This repository links it as `99-add-custom-element-scripts.wasm`. During single-route development, the router includes transformed top-level element modules in the subset WARC so discovery has the same inputs as a whole-site export.
 
 ## Execution Context
 

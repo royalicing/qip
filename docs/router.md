@@ -21,17 +21,20 @@ site/
     contact.wasm
   _components/
     interactive/side-scroller-platformer.wasm
+  _elements/
+    qip-edit.js
 ```
 
 The site root may also be a GitHub locator such as `github:owner/repo/subdir`. GitHub content roots must resolve to one repository snapshot, and a single runtime load must read all content from that snapshot.
 
 ## Project Directories
 
-qip reserves three exact top-level directory names:
+qip reserves four exact top-level directory names:
 
 - `_recipes`: content and archive recipe components
 - `_forms`: form components
 - `_components`: browser-loadable QIP components
+- `_elements`: browser custom-element modules
 
 Reserved project directories must not be routed as content. Other underscore paths, such as `_og/card.png`, are ordinary content unless a future spec reserves them.
 
@@ -42,6 +45,7 @@ qip must auto-discover these project directories under the site root when the ma
 | Recipes | `<site>/_recipes` | `--recipes <dir>` |
 | Forms | `<site>/_forms` | `--forms <dir>` |
 | Components | `<site>/_components` | `--components <dir>` |
+| Elements | `<site>/_elements` | none |
 
 Explicit flags must override auto-discovery. This keeps the common command short while allowing unusual layouts and shared directories:
 
@@ -52,7 +56,7 @@ qip dev ./site --recipes ../shared-recipes
 
 Local project directories may be real directories or symlinks. Symlinks are the preferred way to share recipes across sites without introducing a config file. Remote object stores such as S3 do not have symlinks, so shared project directories must be copied or handled by future remote-root support.
 
-Nested `_recipes`, `_forms`, and `_components` directories are reserved for future path-scoped behavior. qip must not use nested project directories in this version.
+Nested `_recipes`, `_forms`, `_components`, and `_elements` directories are reserved for future path-scoped behavior. qip must not use nested project directories in this version.
 
 ## Request Paths
 
@@ -189,11 +193,7 @@ Nested recipe roots are not active in this version. A file at `site/docs/_recipe
 
 ## Runtime Injection
 
-If the final content response is HTML, qip must inject client runtime support needed by embedded qip tags:
-
-- `<qip-form>` uses form components from `--forms`
-- `<qip-edit>` uses the edit runtime
-- `<qip-play>` uses interactive QIP components through the play runtime
+If the final content response is HTML, qip injects the client runtime for `<qip-form>`. Other custom elements are ordinary site-owned JavaScript modules and are loaded through the application-WARC recipe layer described below.
 
 If a page contains `<qip-form>` tags and no form components are loaded, qip must fail the response instead of silently serving a broken form.
 
@@ -211,13 +211,26 @@ Component asset paths must be valid UTF-8, clean relative paths, and must not st
 
 Component assets must use `application/wasm`. They are not content pages and should not run content recipes.
 
+## Element Modules
+
+JavaScript files under `site/_elements` are served at matching paths under `/elements`:
+
+```txt
+site/_elements/qip-edit.js   -> /elements/qip-edit.js
+site/_elements/lib/dom.js   -> /elements/lib/dom.js
+```
+
+Each file runs the site's `text/javascript` recipe chain before it is served or archived. This is where a site can minify, check, or otherwise transform its custom-element code.
+
+A top-level filename containing a hyphen is an element entrypoint: `copy-code.js` corresponds to `<copy-code>`. Nested files remain importable dependencies but do not imply custom-element names. The router only provides the routes; selective script insertion is performed by an application-WARC recipe such as `warc-add-custom-element-scripts.wasm`.
+
 ## Application WARC Recipes
 
 `site/_recipes/application/warc/*.wasm` is the archive-level recipe layer. It works on WARC records, not raw page bodies. If `--recipes <dir>` is provided, qip must use `<dir>/application/warc/*.wasm` instead.
 
 In `qip router warc`, qip must:
 
-1. Enumerate routed content paths and component asset paths.
+1. Enumerate routed content, component asset, and element module paths.
 2. Resolve each path to an HTTP response.
 3. Build a WARC response record for each response.
 4. Run the `application/warc` recipe chain over the whole archive, if one exists.
@@ -232,6 +245,7 @@ For a single-response WARC transformation, qip adds the target's kindred routes 
 - `/`
 - each parent page path of the target, such as `/docs` for `/docs/router`
 - static assets referenced by any `src` attribute in the target HTML
+- transformed top-level element entrypoints, so WARC recipes can selectively load them
 
 Parent pages must be `200 OK` HTML. They let WARC recipes copy navigation and other shared structure into descendant pages, serving a role similar to layouts in other routers.
 

@@ -12,6 +12,10 @@ type componentAsset struct {
 	contentType string
 }
 
+type elementAsset struct {
+	filePath string
+}
+
 // RouterFileLayout names the source roots used by QIP Router's file-based
 // routing context. Empty optional roots disable that source category.
 type RouterFileLayout struct {
@@ -19,6 +23,7 @@ type RouterFileLayout struct {
 	RecipesRoot    string
 	FormsRoot      string
 	ComponentsRoot string
+	ElementsRoot   string
 	ViewSource     bool
 }
 
@@ -38,6 +43,9 @@ type RouterFileState struct {
 	formDigests           map[string][32]byte
 	componentAssets       map[string]componentAsset
 	componentRequestPaths []string
+	elementAssets         map[string]elementAsset
+	elementRequestPaths   []string
+	elementEntryPaths     []string
 }
 
 // RouterServerState is an immutable, ready-to-serve router generation.
@@ -92,6 +100,10 @@ func loadRouterFileState(ctx context.Context, layout RouterFileLayout, routeOpti
 	if err != nil {
 		return nil, err
 	}
+	elementAssets, elementRequestPaths, elementEntryPaths, err := loadElementAssets(layout.ElementsRoot)
+	if err != nil {
+		return nil, err
+	}
 
 	recipeSourceAssets := make([]qinternal.RecipeSourceAsset, 0)
 	componentSourceAssets := make([]qinternal.RecipeSourceAsset, 0)
@@ -131,6 +143,9 @@ func loadRouterFileState(ctx context.Context, layout RouterFileLayout, routeOpti
 		formDigests:           formDigests,
 		componentAssets:       componentAssets,
 		componentRequestPaths: componentRequestPaths,
+		elementAssets:         elementAssets,
+		elementRequestPaths:   elementRequestPaths,
+		elementEntryPaths:     elementEntryPaths,
 	}, nil
 }
 

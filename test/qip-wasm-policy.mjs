@@ -12,16 +12,16 @@ globalThis.customElements = {
 };
 
 vm.runInThisContext(
-  readFileSync("embedded/qip-edit-client-runtime.js", "utf8") +
+  readFileSync("site/_elements/qip-edit.js", "utf8") +
     "\nglobalThis.__qipEditReadModulePolicy = qipEditReadModulePolicy;" +
     "\nglobalThis.__qipEditValidateWasmModulePolicy = qipEditValidateWasmModulePolicy;",
-  { filename: "embedded/qip-edit-client-runtime.js" },
+  { filename: "site/_elements/qip-edit.js" },
 );
 vm.runInThisContext(
-  readFileSync("embedded/qip-play-client-runtime.js", "utf8") +
+  readFileSync("site/_elements/qip-play.js", "utf8") +
     "\nglobalThis.__qipPlayReadModulePolicy = qipPlayReadModulePolicy;" +
     "\nglobalThis.__qipPlayValidateWasmModulePolicy = qipPlayValidateWasmModulePolicy;",
-  { filename: "embedded/qip-play-client-runtime.js" },
+  { filename: "site/_elements/qip-play.js" },
 );
 
 const page = 65536;

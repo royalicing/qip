@@ -1326,10 +1326,6 @@ class QIPEditElement extends HTMLElement {
 // carry the rendered attribute with page-owned hidden inputs.
 class QIPViewElement extends QIPEditElement {}
 
-if (!customElements.get("qip-edit")) {
-  customElements.define("qip-edit", QIPEditElement);
-}
-
 if (!customElements.get("qip-view")) {
   customElements.define("qip-view", QIPViewElement);
 }
