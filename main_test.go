@@ -207,6 +207,18 @@ func TestNormalizeDevArgs(t *testing.T) {
 	})
 }
 
+func TestLegacyDevNoticePointsToRouterCommand(t *testing.T) {
+	var output bytes.Buffer
+	writeLegacyDevNotice(&output)
+	got := output.String()
+	if !strings.Contains(got, "qip router dev") {
+		t.Fatalf("legacy notice does not name replacement command: %q", got)
+	}
+	if !strings.Contains(got, "continue to work") {
+		t.Fatalf("legacy notice does not explain compatibility: %q", got)
+	}
+}
+
 func TestNormalizeRunArgs(t *testing.T) {
 	in := []string{
 		"modules/utf8/trim.wasm",

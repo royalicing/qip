@@ -140,7 +140,7 @@ Execution fails if:
 If module execution traps (or function call fails), the stage fails.
 
 - `qip run`: command exits with error
-- `qip dev`: request fails with error response (`500`)
+- `qip router dev`: request fails with error response (`500`)
 
 Use trap when invalid input should be a hard failure.
 

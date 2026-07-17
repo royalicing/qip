@@ -48,7 +48,7 @@ No hidden dependency graph.
 When you run:
 
 ```bash
-qip dev ./site
+qip router dev ./site
 ```
 
 `qip` builds in-memory state from the site tree:
@@ -71,7 +71,7 @@ Strictness today:
 
 ## 4. Request Handling
 
-For each request in `qip dev`:
+For each request in `qip router dev`:
 
 1. Resolve request path to a source file
 2. Detect source MIME from file extension
@@ -83,7 +83,7 @@ Selection is based on **source MIME** (for example `text/markdown`), which keeps
 
 ## 5. Reload Without Restart
 
-`qip dev` supports in-place reload with `SIGHUP`:
+`qip router dev` supports in-place reload with `SIGHUP`:
 
 ```bash
 kill -HUP <pid>

@@ -76,7 +76,7 @@ Run this recipe late in the WARC chain so it sees elements introduced by earlier
 WARC recipes can run in two useful scopes. Pick the scope based on the question you are answering.
 
 - Subset/path scope (faster iteration):
-  - `qip dev` applies WARC recipe behavior on the currently resolved response.
+  - `qip router dev` applies WARC recipe behavior on the currently resolved response.
   - `qip router get` / `qip router head` let you inspect one routed path.
 - Whole-site scope (final archive behavior):
   - `qip router warc <site> ...` enumerates the full routed site, builds one WARC, then applies `_recipes/application/warc/*`.

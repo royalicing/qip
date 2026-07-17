@@ -397,6 +397,9 @@ func routerCmd(args []string) {
 		gameOver(usageRoute)
 	}
 	switch args[0] {
+	case "dev":
+		devCmd(args[1:])
+		return
 	case "get":
 		routePathCmd(args[1:], http.MethodGet, usageRouteGet, "router get")
 		return

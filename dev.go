@@ -237,7 +237,7 @@ func devCmd(args []string) {
 	}
 }
 
-var errDevServerReloaded = errors.New("existing qip dev server reloaded")
+var errDevServerReloaded = errors.New("existing qip router dev server reloaded")
 
 type devServerIdentity struct {
 	PID   int    `json:"pid"`
@@ -314,9 +314,9 @@ func reloadExistingDevServer(addr string, port int) (bool, error) {
 		return false, nil
 	}
 	if err := process.Signal(syscall.SIGHUP); err != nil {
-		return false, fmt.Errorf("send SIGHUP to existing qip dev server pid %d: %w", live.PID, err)
+		return false, fmt.Errorf("send SIGHUP to existing qip router dev server pid %d: %w", live.PID, err)
 	}
-	log.Printf("dev: reloaded existing qip dev server on http://%s with SIGHUP pid=%d", addr, live.PID)
+	log.Printf("dev: reloaded existing qip router dev server on http://%s with SIGHUP pid=%d", addr, live.PID)
 	return true, nil
 }
 

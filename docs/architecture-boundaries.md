@@ -327,7 +327,7 @@ That means QIP is a useful place to run code you want to review as a transform i
 QIP makes the small transform a separate boundary.
 
 ```text
-[trusted] host app, qip run, qip dev, qip router, native app, CI
+[trusted] host app, qip run, qip router dev, qip router, native app, CI
   |
   | explicit input bytes
   v

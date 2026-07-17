@@ -204,7 +204,7 @@ qip router get ./site /about
 cp syntax-highlight-bash.wasm ./site/_recipes/text/markdown/20-syntax-highlight-bash.wasm
 
 # Run a dev server
-qip dev ./site
+qip router dev ./site
 
 # Generate an archive of the entire site with view source enabled
 qip router warc ./site --view-source

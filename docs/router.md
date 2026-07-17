@@ -2,11 +2,11 @@
 
 The qip router is a deterministic specification for turning a content tree into HTTP responses. We prefer a small set of explicit routing rules because site authors, recipe authors, and export tooling should all be able to predict the same response for the same input files.
 
-This document is normative for `qip dev` and `qip router`.
+This document is normative for `qip router`, including `qip router dev`.
 
 ## Site Root
 
-`qip dev` and `qip router` take one site root. The site root is the directory or remote snapshot qip routes from.
+`qip router dev` and the other `qip router` subcommands take one site root. The site root is the directory or remote snapshot qip routes from.
 
 The preferred local layout is:
 
@@ -47,8 +47,8 @@ qip auto-discovers these project directories under the site root:
 The recipe and component flags override auto-discovery. Element modules always belong to the site because they define site-owned browser behavior. This keeps the common command short while allowing shared recipe and component directories:
 
 ```sh
-qip dev ./site
-qip dev ./site --recipes ../shared-recipes
+qip router dev ./site
+qip router dev ./site --recipes ../shared-recipes
 ```
 
 Local project directories may be real directories or symlinks. Symlinks are the preferred way to share recipes across sites without introducing a config file. Remote object stores such as S3 do not have symlinks, so shared project directories must be copied or handled by future remote-root support.
@@ -237,7 +237,7 @@ In `qip router warc`, qip must:
 4. Run the `application/warc` recipe chain over the whole archive, if one exists.
 5. Emit the resulting WARC bytes.
 
-In `qip dev`, `qip router get`, and `qip router head`, qip should apply the same WARC recipe layer to the single requested response so local preview matches archive export.
+In `qip router dev`, `qip router get`, and `qip router head`, qip should apply the same WARC recipe layer to the single requested response so local preview matches archive export.
 
 ### Kindred Routes
 
@@ -270,7 +270,7 @@ Each listed route must include:
 
 ## Commands
 
-`qip dev <content_dir> ...` must serve the same route resolution pipeline used by router subcommands. In dev mode, it should reload recipe chains on recipe file changes, SIGHUP, or browser hard reload.
+`qip router dev <content_dir> ...` must serve the same route resolution pipeline used by other router subcommands. In dev mode, it should reload recipe chains on recipe file changes, SIGHUP, or browser hard reload.
 
 `qip router get <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write the response body.
 
@@ -283,7 +283,7 @@ Each listed route must include:
 The project directory flags are overrides, not requirements:
 
 ```sh
-qip dev ./site
+qip router dev ./site
 qip router get ./site /docs/router
 qip router warc ./site --view-source
 qip router warc ./site --recipes ../shared-recipes --components ../shared-components

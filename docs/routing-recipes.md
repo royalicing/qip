@@ -73,7 +73,7 @@ qip router warc ./site
 
 ## Dev Reload
 
-`qip dev` reloads route and recipe state on browser hard reload, recipe file changes, or `SIGHUP`. If a reload fails, the previous valid state keeps serving.
+`qip router dev` reloads route and recipe state on browser hard reload, recipe file changes, or `SIGHUP`. If a reload fails, the previous valid state keeps serving.
 
 This avoids background polling as the primary mental model: edit a file, reload the browser or send `SIGHUP`, and QIP rebuilds the relevant route state.
 

@@ -315,7 +315,7 @@ The `qip` cli comes with a file router for making static websites:
 
 1. Put website source content in a directory (Markdown, HTML, images, CSS, etc.).
 2. Add recipe QIP components to transform source files by MIME type. For example you could create a `_recipes/text/markdown/10-markdown-to-html.wasm` to render Markdown to HTML.
-3. Preview locally with `qip dev`.
+3. Preview locally with `qip router dev`.
 4. Export as static files with `qip router warc`.
 
 Example content:
@@ -333,7 +333,7 @@ docs/_recipes/
 Preview in dev mode:
 
 ```bash
-qip dev ./docs -p 4000
+qip router dev ./docs -p 4000
 open http://localhost:4000
 ```
 
@@ -495,7 +495,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
   - See https://developer.mozilla.org/en-US/docs/Web/MathML/Reference/Element/semantics
   - See https://asciimath.org/#syntax
   - Have `/math-to-html` demo like https://katex.org/#demo
-- [ ] Rename `qip dev` command to `qip router dev`
+- [x] Rename `qip dev` command to `qip router dev`
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
 - [x] Enforce fixed memory by default, with capped memory growth as an explicit opt-in.

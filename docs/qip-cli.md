@@ -25,9 +25,11 @@ The CLI is the operational tool for local development, CI, benchmarking, and sta
 | `qip image` | Run RGBA image filter pipelines. |
 | `qip comply` | Validate a component and run compliance modules. |
 | `qip score` | Statically score Wasm control-flow, call cost, recursion, and loop-bound evidence. |
-| `qip dev` | Serve a content directory with routing and recipes. |
+| `qip router dev` | Serve a content directory with routing and recipes. |
 | `qip router` | Resolve routes and export route artifacts such as WARC. |
 | `qip form` | Run an interactive QIP form component in the terminal. |
+
+`qip dev` remains available as a compatibility alias for `qip router dev`. It prints a migration notice so scripts can be updated without breaking immediately.
 
 For the available execution models, see [QIP Component Contracts](/docs/component-contract). For the normal `qip run` ABI, see the [Content Component Contract](/docs/content-component). For route behavior, see [Router](/docs/router). For compliance testing, see [`qip comply`](/docs/comply).
 
@@ -54,7 +56,7 @@ The CLI process itself can still perform host I/O:
 - Read input files via `-i` and module files from disk.
 - Fetch component bytes from `https://...` URLs.
 - Write output to stdout (`run`) or output files (`image`).
-- Serve localhost HTTP in `qip dev` (`127.0.0.1:<port>`).
+- Serve localhost HTTP in `qip router dev` (`127.0.0.1:<port>`).
 
 So trust in components is separate from trust in the CLI process and its environment.
 
