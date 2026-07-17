@@ -797,3 +797,37 @@ erDiagram
   <span class="e">│</span> <span class="n">PASSPORT</span> <span class="e">│</span>
   <span class="b">└</span><span class="e">──────────</span><span class="b">┘</span>
 === END ===
+=== INPUT ===
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Loading : fetch
+  Loading --> Ready : success
+  Loading --> Error : failure
+  Error --> Loading : retry
+  Ready --> Idle : reset
+  Ready --> [*]
+=== OUTPUT ===
+         <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+         <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+         <span class="b">╰</span><span class="e">─┬─</span><span class="b">╯</span>
+           <span class="e">│</span>
+           <span class="e">▼</span>
+       <span class="b">╭</span><span class="e">──────</span><span class="b">╮</span>        <span class="el">reset</span>
+       <span class="e">│</span> <span class="n">Idle</span> <span class="e">│◄─────────────┐</span>
+       <span class="b">╰</span><span class="e">───┬──</span><span class="b">╯</span>              <span class="e">│</span>
+           <span class="e">│</span>                 <span class="e">│</span>
+           <span class="e">▼</span><span class="el">fetch</span>            <span class="e">│</span>
+      <span class="b">╭</span><span class="e">─────────</span><span class="b">╮</span>       <span class="el">retry</span><span class="e">│</span>
+      <span class="e">│</span> <span class="n">Loading</span> <span class="e">│◄───────────┼┐</span>
+      <span class="b">╰</span><span class="e">────┬────</span><span class="b">╯</span>            <span class="e">││</span>
+     <span class="e">┌─────┴─────┐</span>           <span class="e">││</span>
+     <span class="e">▼</span><span class="el">success</span>    <span class="e">▼</span><span class="el">failure</span>    <span class="e">││</span>
+ <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>   <span class="b">╭</span><span class="e">───────</span><span class="b">╮</span>       <span class="e">││</span>
+ <span class="e">│</span> <span class="n">Ready</span> <span class="e">├───│</span> <span class="n">Error</span> <span class="e">├───────┴┘</span>
+ <span class="b">╰</span><span class="e">───┬───</span><span class="b">╯</span>   <span class="b">╰</span><span class="e">───────</span><span class="b">╯</span>
+     <span class="e">│</span>
+     <span class="e">▼</span>
+   <span class="b">╭</span><span class="e">───</span><span class="b">╮</span>
+   <span class="e">│</span> <span class="n">●</span> <span class="e">│</span>
+   <span class="b">╰</span><span class="e">───</span><span class="b">╯</span>
+=== END ===

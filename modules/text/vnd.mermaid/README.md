@@ -33,10 +33,10 @@ directives are ignored where applicable: they do not change terminal box art.
 
 ## Compatibility
 
-`compliance/mermaid-to-unicode-html.fixtures.txt` contains 37 canonical
+`compliance/mermaid-to-unicode-html.fixtures.txt` contains 38 canonical
 byte-for-byte HTML fixtures derived independently from the published reference
 renderer. The strict comply component adds one embedded trailing-space fixture,
-17 layout-equivalent syntax variations, and six rejection cases, for 61 cases
+17 layout-equivalent syntax variations, and six rejection cases, for 62 cases
 in total.
 
 To run the same cases against this module and Simon's reference WASM:

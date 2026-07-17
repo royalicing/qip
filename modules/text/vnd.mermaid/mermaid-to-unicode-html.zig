@@ -205,6 +205,7 @@ fn renderState(source: []const u8) void {
     var retry: ?StateEdge = null;
     var finish: ?StateEdge = null;
     var reset: ?StateEdge = null;
+    var reset_from_left = false;
     for (edges[4..count]) |edge| {
         if (std.mem.eql(u8, edge.from, edges[3].to) and std.mem.eql(u8, edge.to, edges[2].from)) {
             if (retry != null) @trap();
@@ -212,9 +213,12 @@ fn renderState(source: []const u8) void {
         } else if (std.mem.eql(u8, edge.from, edges[2].to) and std.mem.eql(u8, edge.to, "[*]")) {
             if (finish != null) @trap();
             finish = edge;
-        } else if (std.mem.eql(u8, edge.from, edges[3].to) and std.mem.eql(u8, edge.to, edges[0].to)) {
+        } else if ((std.mem.eql(u8, edge.from, edges[3].to) or std.mem.eql(u8, edge.from, edges[2].to)) and
+            std.mem.eql(u8, edge.to, edges[0].to))
+        {
             if (reset != null) @trap();
             reset = edge;
+            reset_from_left = std.mem.eql(u8, edge.from, edges[2].to);
         } else {
             @trap();
         }
@@ -268,17 +272,33 @@ fn renderState(source: []const u8) void {
         var reset_y: usize = 7;
         while (reset_y < 11) : (reset_y += 1) put(lane_x, reset_y, '│', .edge);
     }
-    textAt(lane_x - codepointLen(retry.?.label) - 1, 10, retry.?.label, .edge_label);
+    const retry_lane_x = lane_x + @as(usize, if (reset_from_left) 1 else 0);
+    textAt(retry_lane_x - codepointLen(retry.?.label) - 1, 10, retry.?.label, .edge_label);
     put(branch_x + branch_width, 11, '◄', .edge);
-    hline(branch_x + branch_width + 1, lane_x - 1, 11, '─');
-    put(lane_x, 11, if (reset != null) '┤' else '┐', .edge);
-    put(lane_x, 12, '│', .edge);
-    put(lane_x, 13, '│', .edge);
-    put(lane_x, 14, '│', .edge);
-    put(lane_x, 15, '│', .edge);
-    put(right_x + right_width - 1, 16, '├', .edge);
-    hline(right_x + right_width, lane_x - 1, 16, '─');
-    put(lane_x, 16, '┘', .edge);
+    hline(branch_x + branch_width + 1, retry_lane_x - 1, 11, '─');
+    if (reset_from_left) put(lane_x, 11, '┼', .edge);
+    put(retry_lane_x, 11, if (reset != null and !reset_from_left) '┤' else '┐', .edge);
+    put(retry_lane_x, 12, '│', .edge);
+    put(retry_lane_x, 13, '│', .edge);
+    put(retry_lane_x, 14, '│', .edge);
+    put(retry_lane_x, 15, '│', .edge);
+    if (reset_from_left) {
+        put(lane_x, 12, '│', .edge);
+        put(lane_x, 13, '│', .edge);
+        put(lane_x, 14, '│', .edge);
+        put(lane_x, 15, '│', .edge);
+        put(left_x + left_width - 1, 16, '├', .edge);
+        hline(left_x + left_width, right_x - 1, 16, '─');
+        put(right_x, 16, '│', .edge);
+        put(right_x + right_width - 1, 16, '├', .edge);
+        hline(right_x + right_width, lane_x - 1, 16, '─');
+        put(lane_x, 16, '┴', .edge);
+        put(retry_lane_x, 16, '┘', .edge);
+    } else {
+        put(right_x + right_width - 1, 16, '├', .edge);
+        hline(right_x + right_width, lane_x - 1, 16, '─');
+        put(lane_x, 16, '┘', .edge);
+    }
     put(left_center, 17, '┬', .edge);
     put(left_center, 18, '│', .edge);
     put(left_center, 19, '▼', .edge);
