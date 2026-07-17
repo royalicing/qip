@@ -1,17 +1,27 @@
 import { readFile } from "node:fs/promises";
 import {
   contentComponent,
-  contentContract,
   contentRecipe,
+  contentTypeBytes,
+  contentTypeUTF8,
 } from "../site/qip-runner.js";
 
-const text = contentContract({ encoding: "utf-8" });
-const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
-const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
-const bytes = contentContract({ encoding: "bytes" });
+const text = contentTypeUTF8();
+const markdown = contentTypeUTF8("text/markdown");
+const html = contentTypeUTF8("text/html");
+const bytes = contentTypeBytes();
+const bmp = contentTypeBytes("image/bmp");
 
-if (!Object.isFrozen(text)) {
-  throw new Error("contentContract must return a frozen object");
+if (!Object.isFrozen(text) || !Object.isFrozen(bmp)) {
+  throw new Error("content type constructors must return frozen objects");
+}
+if (
+  text.encoding !== "utf-8" ||
+  text.contentType !== undefined ||
+  bmp.encoding !== "bytes" ||
+  bmp.contentType !== "image/bmp"
+) {
+  throw new Error("content type constructors returned incorrect contracts");
 }
 
 const trim = contentComponent(text, (value) => value.trim(), text);
@@ -32,23 +42,38 @@ if (identity("ok") !== "ok") {
 
 let rejectedBadContract = false;
 try {
-  contentRecipe({ encoding: "utf8" }, [], text);
+  contentRecipe({ encoding: "utf-8" }, [], text);
 } catch {
   rejectedBadContract = true;
 }
 if (!rejectedBadContract) {
-  throw new Error("contentRecipe accepted an invalid content contract");
+  throw new Error("contentRecipe accepted a plain object as a content contract");
 }
 
-for (const contentType of ["Text/HTML", "text/html; charset=utf-8", " text/html"]) {
-  let rejectedBadContentType = false;
-  try {
-    contentContract({ encoding: "utf-8", contentType });
-  } catch {
-    rejectedBadContentType = true;
-  }
-  if (!rejectedBadContentType) {
-    throw new Error("contentContract accepted invalid content type " + contentType);
+const forgedComponent = (value) => value;
+forgedComponent.input = { encoding: "utf-8" };
+forgedComponent.output = { encoding: "utf-8" };
+let rejectedForgedComponent = false;
+try {
+  contentRecipe(text, [forgedComponent], text);
+} catch {
+  rejectedForgedComponent = true;
+}
+if (!rejectedForgedComponent) {
+  throw new Error("contentRecipe accepted plain-object component contracts");
+}
+
+for (const constructor of [contentTypeUTF8, contentTypeBytes]) {
+  for (const contentType of ["Text/HTML", "text/html; charset=utf-8", " text/html"]) {
+    let rejectedBadContentType = false;
+    try {
+      constructor(contentType);
+    } catch {
+      rejectedBadContentType = true;
+    }
+    if (!rejectedBadContentType) {
+      throw new Error(constructor.name + " accepted invalid content type " + contentType);
+    }
   }
 }
 

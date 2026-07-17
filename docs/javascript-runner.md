@@ -4,21 +4,22 @@ The JavaScript runner treats QIP work as checked content components: declare wha
 
 - Raw source: [`/qip-runner.js`](/qip-runner.js)
 - API:
-  - `contentContract({ encoding, contentType? })`
+  - `contentTypeUTF8(optionalMIMEType)`
+  - `contentTypeBytes(optionalMIMEType)`
   - `contentComponent(input, implementation, output)`
   - `contentRecipe(input, components, output)`
 
 ## Contracts
 
-Use `contentContract` to create a frozen content boundary. Encoding is required and content type is optional.
+Use `contentTypeUTF8` or `contentTypeBytes` to create a frozen content boundary. Pass a MIME type when the component requires a more specific contract.
 
 ```js
-import { contentContract } from "/qip-runner.js";
+import { contentTypeBytes, contentTypeUTF8 } from "/qip-runner.js";
 
-const text = contentContract({ encoding: "utf-8" });
-const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
-const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
-const bmp = contentContract({ encoding: "bytes", contentType: "image/bmp" });
+const text = contentTypeUTF8();
+const markdown = contentTypeUTF8("text/markdown");
+const html = contentTypeUTF8("text/html");
+const bmp = contentTypeBytes("image/bmp");
 ```
 
 Encoding is a hard requirement. Content type is a refinement: two contracts are compatible when the encodings match and either content type is unspecified or both specify the same type.
@@ -89,12 +90,12 @@ const identityText = contentRecipe(text, [], text);
 <script type="module">
   import {
     contentComponent,
-    contentContract,
     contentRecipe,
+    contentTypeUTF8,
   } from "/qip-runner.js";
 
-  const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
-  const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
+  const markdown = contentTypeUTF8("text/markdown");
+  const html = contentTypeUTF8("text/html");
 
   const markdownModule = await WebAssembly.compileStreaming(
     fetch("/components/text/markdown/commonmark.0.31.2.wasm"),
@@ -117,12 +118,12 @@ For Node, run from a package that treats `.js` files as ES modules, or import an
 import { readFile } from "node:fs/promises";
 import {
   contentComponent,
-  contentContract,
   contentRecipe,
+  contentTypeUTF8,
 } from "./site/qip-runner.js";
 
-const markdown = contentContract({ encoding: "utf-8", contentType: "text/markdown" });
-const html = contentContract({ encoding: "utf-8", contentType: "text/html" });
+const markdown = contentTypeUTF8("text/markdown");
+const html = contentTypeUTF8("text/html");
 
 const markdownModule = await WebAssembly.compile(
   await readFile("modules/text/markdown/commonmark.0.31.2.wasm"),

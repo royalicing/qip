@@ -30,9 +30,31 @@ function optionalContractContentType(value) {
   return value;
 }
 
+class ContentTypeUTF8 {
+  constructor(optionalMIMEType) {
+    this.encoding = "utf-8";
+    const contentType = optionalContractContentType(optionalMIMEType);
+    if (contentType !== undefined) {
+      this.contentType = contentType;
+    }
+    Object.freeze(this);
+  }
+}
+
+class ContentTypeBytes {
+  constructor(optionalMIMEType) {
+    this.encoding = "bytes";
+    const contentType = optionalContractContentType(optionalMIMEType);
+    if (contentType !== undefined) {
+      this.contentType = contentType;
+    }
+    Object.freeze(this);
+  }
+}
+
 function sameContract(left, right) {
   return (
-    left.encoding === right.encoding &&
+    left.constructor === right.constructor &&
     (left.contentType === undefined ||
       right.contentType === undefined ||
       left.contentType === right.contentType)
@@ -46,14 +68,7 @@ function describeContract(contract) {
 }
 
 function isContentContract(value) {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    (value.encoding === "utf-8" || value.encoding === "bytes") &&
-    (value.contentType === undefined ||
-      (typeof value.contentType === "string" &&
-        isValidContentType(value.contentType)))
-  );
+  return value instanceof ContentTypeUTF8 || value instanceof ContentTypeBytes;
 }
 
 function assertContractsMatch(actual, expected, label) {
@@ -139,14 +154,14 @@ function requireExportedFunction(moduleExports, name) {
 }
 
 function capName(contract, direction) {
-  if (contract.encoding === "utf-8") {
+  if (contract instanceof ContentTypeUTF8) {
     return direction + "_utf8_cap";
   }
   return direction + "_bytes_cap";
 }
 
 function bytesForInput(input, contract) {
-  if (contract.encoding === "utf-8") {
+  if (contract instanceof ContentTypeUTF8) {
     if (typeof input !== "string") {
       throw Error(
         "component input must be a string for " + describeContract(contract),
@@ -163,20 +178,21 @@ function bytesForInput(input, contract) {
 }
 
 function outputForBytes(bytes, contract) {
-  if (contract.encoding === "utf-8") {
+  if (contract instanceof ContentTypeUTF8) {
     return textDecoder.decode(bytes);
   }
   return bytes;
 }
 
 function assertJsOutput(value, contract) {
-  if (contract.encoding === "utf-8" && typeof value !== "string") {
-    throw Error(
-      "JavaScript component returned non-string output for " +
-        describeContract(contract),
-    );
-  }
-  if (contract.encoding === "bytes" && !(value instanceof Uint8Array)) {
+  if (contract instanceof ContentTypeUTF8) {
+    if (typeof value !== "string") {
+      throw Error(
+        "JavaScript component returned non-string output for " +
+          describeContract(contract),
+      );
+    }
+  } else if (!(value instanceof Uint8Array)) {
     throw Error(
       "JavaScript component returned non-Uint8Array output for " +
         describeContract(contract),
@@ -186,8 +202,8 @@ function assertJsOutput(value, contract) {
 
 function freezeComponent(fn, input, output) {
   Object.defineProperties(fn, {
-    input: { value: input, enumerable: true },
-    output: { value: output, enumerable: true },
+    input: { value: input, enumerable: false },
+    output: { value: output, enumerable: false },
   });
   return Object.freeze(fn);
 }
@@ -321,28 +337,17 @@ function jsComponent(input, fn, output) {
 function isContentComponent(value) {
   return (
     typeof value === "function" &&
-    value.input !== undefined &&
-    value.output !== undefined &&
-    typeof value.input.encoding === "string" &&
-    typeof value.output.encoding === "string"
+    isContentContract(value.input) &&
+    isContentContract(value.output)
   );
 }
 
-export function contentContract(contract) {
-  if (contract === null || typeof contract !== "object") {
-    throw Error("contentContract requires an object");
-  }
-  if (contract.encoding !== "utf-8" && contract.encoding !== "bytes") {
-    throw Error('contentContract encoding must be "utf-8" or "bytes"');
-  }
-  const result = {
-    encoding: contract.encoding,
-  };
-  const contentType = optionalContractContentType(contract.contentType);
-  if (contentType !== undefined) {
-    result.contentType = contentType;
-  }
-  return Object.freeze(result);
+export function contentTypeUTF8(optionalMIMEType) {
+  return new ContentTypeUTF8(optionalMIMEType);
+}
+
+export function contentTypeBytes(optionalMIMEType) {
+  return new ContentTypeBytes(optionalMIMEType);
 }
 
 export function contentComponent(input, implementation, output) {

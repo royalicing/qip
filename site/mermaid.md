@@ -162,7 +162,7 @@ The component returns an HTML fragment containing the box art and styling spans.
 Inspired by [Simon Willison’s Mermaid utility](https://tools.simonwillison.net/grok-mermaid).
 
 <script type="module">
-import { contentComponent, contentContract } from "/qip-runner.js";
+import { contentComponent, contentTypeUTF8 } from "/qip-runner.js";
 
 const examples = {
   flowchart: `graph TD
@@ -219,14 +219,8 @@ const copyButton = document.getElementById("mermaid-copy");
 const copyHtmlButton = document.getElementById("mermaid-copy-html");
 const status = document.getElementById("mermaid-status");
 const exampleButtons = [...document.querySelectorAll("[data-example]")];
-const mermaid = contentContract({
-  encoding: "utf-8",
-  contentType: "text/vnd.mermaid",
-});
-const html = contentContract({
-  encoding: "utf-8",
-  contentType: "text/html",
-});
+const mermaid = contentTypeUTF8("text/vnd.mermaid");
+const html = contentTypeUTF8("text/html");
 const componentModule = await WebAssembly.compileStreaming(
   fetch("/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"),
 );

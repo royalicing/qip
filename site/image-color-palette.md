@@ -45,13 +45,13 @@ Upload a BMP image and extract its dominant colors locally with a QIP component.
 </div>
 
 <script type="module">
-import { contentComponent, contentContract } from "/qip-runner.js";
+import { contentComponent, contentTypeBytes, contentTypeUTF8 } from "/qip-runner.js";
 
 const fileInput = document.getElementById("palette-input");
 const status = document.getElementById("palette-status");
 const output = document.getElementById("palette-output");
-const bytes = contentContract({ encoding: "bytes" });
-const text = contentContract({ encoding: "utf-8" });
+const bytes = contentTypeBytes();
+const text = contentTypeUTF8();
 const componentModule = await WebAssembly.compileStreaming(fetch("/components/image/bmp/bmp-color-palette.wasm"));
 const extractPaletteComponent = contentComponent(bytes, componentModule, text);
 

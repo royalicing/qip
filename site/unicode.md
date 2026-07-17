@@ -59,13 +59,13 @@ Type or paste text below. Conversion runs locally in your browser.
 </p>
 
 <script type="module">
-import { contentComponent, contentContract } from "/qip-runner.js";
+import { contentComponent, contentTypeUTF8 } from "/qip-runner.js";
 
 const input = document.getElementById("case-input");
 const lowerOutput = document.getElementById("case-lower");
 const upperOutput = document.getElementById("case-upper");
 const status = document.getElementById("case-status");
-const text = contentContract({ encoding: "utf-8" });
+const text = contentTypeUTF8();
 const [lowerModule, upperModule] = await Promise.all([
   WebAssembly.compileStreaming(fetch("/components/utf8/unicode-17-lowercase.wasm")),
   WebAssembly.compileStreaming(fetch("/components/utf8/unicode-17-uppercase.wasm")),
@@ -116,9 +116,9 @@ echo "straße" | qip run modules/utf8/unicode-17-uppercase.wasm
 In a browser, the helper used by this page wraps the component's small memory-and-render contract:
 
 ```js
-import { contentComponent, contentContract } from "/qip-runner.js";
+import { contentComponent, contentTypeUTF8 } from "/qip-runner.js";
 
-const text = contentContract({ encoding: "utf-8" });
+const text = contentTypeUTF8();
 const module = await WebAssembly.compileStreaming(
   fetch("/components/utf8/unicode-17-lowercase.wasm"),
 );

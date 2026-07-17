@@ -969,14 +969,14 @@ test "validates inline module named imports" {
         &n,
         "response",
         "http://qip.local/",
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<script type=\"module\">import { contentComponent, contentContract } from \"/qip-runner.js\";\nconst ok = true;</script>",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<script type=\"module\">import { contentComponent, contentTypeUTF8 } from \"/qip-runner.js\";\nconst ok = true;</script>",
     );
     try appendWARCRecord(
         build_buf[0..],
         &n,
         "response",
         "http://qip.local/qip-runner.js",
-        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript; charset=utf-8\r\n\r\nexport function contentContract() {}\nexport function contentComponent() {}\nexport function contentRecipe() {}\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript; charset=utf-8\r\n\r\nexport function contentTypeUTF8() {}\nexport function contentTypeBytes() {}\nexport function contentComponent() {}\nexport function contentRecipe() {}\n",
     );
 
     @memcpy(input_buf[0..n], build_buf[0..n]);
@@ -1006,7 +1006,7 @@ test "detects missing named import from existing module" {
         &n,
         "response",
         "http://qip.local/qip-runner.js",
-        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport function contentContract() {}\nexport function contentComponent() {}\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport function contentTypeUTF8() {}\nexport function contentComponent() {}\n",
     );
 
     const summary = validateModuleImports(build_buf[0..n]);
