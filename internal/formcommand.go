@@ -24,7 +24,7 @@ const (
 	exportMemory           = "memory"
 	exportInputPtr         = "input_ptr"
 	exportInputUTF8Cap     = "input_utf8_cap"
-	exportRun              = "render"
+	exportRender           = "render"
 	exportOutputPtr        = "output_ptr"
 	exportOutputUTF8Cap    = "output_utf8_cap"
 	exportInputKeyPtr      = "input_key_ptr"
@@ -36,11 +36,10 @@ const (
 )
 
 type formModule struct {
-	mod              api.Module
 	mem              api.Memory
 	fnInputPtr       api.Function
 	fnInputUTF8Cap   api.Function
-	fnRun            api.Function
+	fnRender         api.Function
 	fnOutputPtr      api.Function
 	fnOutputUTF8Cap  api.Function
 	fnInputKeyPtr    api.Function
@@ -137,7 +136,7 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 	}{
 		{name: exportInputPtr},
 		{name: exportInputUTF8Cap},
-		{name: exportRun},
+		{name: exportRender},
 		{name: exportOutputPtr},
 		{name: exportOutputUTF8Cap},
 		{name: exportInputKeyPtr},
@@ -148,7 +147,7 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 		{name: exportErrorMessageSize},
 	}
 
-	out := formModule{mod: mod, mem: mem}
+	out := formModule{mem: mem}
 	for i := range required {
 		fn := mod.ExportedFunction(required[i].name)
 		if fn == nil {
@@ -159,8 +158,8 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 			out.fnInputPtr = fn
 		case exportInputUTF8Cap:
 			out.fnInputUTF8Cap = fn
-		case exportRun:
-			out.fnRun = fn
+		case exportRender:
+			out.fnRender = fn
 		case exportOutputPtr:
 			out.fnOutputPtr = fn
 		case exportOutputUTF8Cap:
@@ -205,7 +204,7 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 		key = strings.TrimSpace(key)
 		if key == "" {
 			if !hasRun {
-				lastOutputSize, err = callRunSize(ctx, fm.fnRun, 0)
+				lastOutputSize, err = callRenderSize(ctx, fm.fnRender, 0)
 				if err != nil {
 					return err
 				}
@@ -268,7 +267,7 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 			return errors.New("failed to write form input to wasm memory")
 		}
 
-		lastOutputSize, err = callRunSize(ctx, fm.fnRun, int32(len(valueBytes)))
+		lastOutputSize, err = callRenderSize(ctx, fm.fnRender, int32(len(valueBytes)))
 		if err != nil {
 			return err
 		}
@@ -335,7 +334,7 @@ func readExportedString(ctx context.Context, mem api.Memory, ptrFn api.Function,
 	return string(b), nil
 }
 
-func callRunSize(ctx context.Context, fn api.Function, inputSize int32) (int32, error) {
+func callRenderSize(ctx context.Context, fn api.Function, inputSize int32) (int32, error) {
 	res, err := fn.Call(ctx, uint64(uint32(inputSize)))
 	if err != nil {
 		return 0, fmt.Errorf("render() failed: %w", err)
