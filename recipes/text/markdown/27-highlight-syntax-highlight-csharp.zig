@@ -123,6 +123,7 @@ const BuiltinSet = std.StaticStringMap(void).initComptime(.{
     .{ "Environment", {} },
     .{ "Math", {} },
     .{ "Path", {} },
+    .{ "System", {} },
     .{ "Wasmtime", {} },
 });
 

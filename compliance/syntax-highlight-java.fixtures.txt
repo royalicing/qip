@@ -1,0 +1,41 @@
+=== INPUT ===
+<section><pre><code class="language-java">public final class MarkdownRenderer {
+    private static final String MESSAGE = "public class return";
+    // private String ignored;
+    @Override
+    public String render(int size) {
+        return size &gt; 0 ? MESSAGE : null;
+    }
+}</code></pre></section>
+=== OUTPUT ===
+<section><pre><code class="language-java hljs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> MarkdownRenderer {
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">String</span> MESSAGE = <span class="hljs-string">"public class return"</span>;
+    <span class="hljs-comment">// private String ignored;</span>
+    <span class="hljs-meta">@Override</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">String</span> render(<span class="hljs-type">int</span> size) {
+        <span class="hljs-keyword">return</span> size &gt; <span class="hljs-number">0</span> ? MESSAGE : <span class="hljs-literal">null</span>;
+    }
+}</code></pre></section>
+=== END ===
+=== INPUT ===
+<code class="language-java">String template = """public class return null""";
+/* public int ignored = 42; */</code>
+=== OUTPUT ===
+<code class="language-java hljs"><span class="hljs-type">String</span> template = <span class="hljs-string">"""public class return null"""</span>;
+<span class="hljs-comment">/* public int ignored = 42; */</span></code>
+=== END ===
+=== INPUT ===
+<code class='language-java extra'>public record Point(int x, int y) {}</code>
+=== OUTPUT ===
+<code class='language-java extra hljs'><span class="hljs-keyword">public</span> <span class="hljs-keyword">record</span> Point(<span class="hljs-type">int</span> x, <span class="hljs-type">int</span> y) {}</code>
+=== END ===
+=== INPUT ===
+<code class="language-java hljs"><span class="hljs-keyword">class</span> App {}</code>
+=== OUTPUT ===
+<code class="language-java hljs"><span class="hljs-keyword">class</span> App {}</code>
+=== END ===
+=== INPUT ===
+<code class="language-python">class App: pass</code>
+=== OUTPUT ===
+<code class="language-python">class App: pass</code>
+=== END ===

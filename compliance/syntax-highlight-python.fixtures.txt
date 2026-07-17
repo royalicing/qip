@@ -1,0 +1,37 @@
+=== INPUT ===
+<pre data-kind="example"><code class="language-python">@app.get
+async def render(value: str) -&gt; str:
+    message = f"return class {value}"
+    return message if value else None  # fallback</code></pre>
+=== OUTPUT ===
+<pre data-kind="example"><code class="language-python hljs"><span class="hljs-meta">@app.get</span>
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">def</span> render(value: <span class="hljs-type">str</span>) -&gt; <span class="hljs-type">str</span>:
+    message = <span class="hljs-string">f"return class {value}"</span>
+    <span class="hljs-keyword">return</span> message <span class="hljs-keyword">if</span> value <span class="hljs-keyword">else</span> <span class="hljs-literal">None</span>  <span class="hljs-comment"># fallback</span></code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-python">message = """class return True # still a string"""
+# class return True
+print(message)</code>
+=== OUTPUT ===
+<code class="language-python hljs">message = <span class="hljs-string">"""class return True # still a string"""</span>
+<span class="hljs-comment"># class return True</span>
+<span class="hljs-built_in">print</span>(message)</code>
+=== END ===
+=== INPUT ===
+<code data-x="1" class="compact language-py">for number in range(0x10):
+    yield number</code>
+=== OUTPUT ===
+<code data-x="1" class="compact language-py hljs"><span class="hljs-keyword">for</span> number <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0x10</span>):
+    <span class="hljs-keyword">yield</span> number</code>
+=== END ===
+=== INPUT ===
+<code class="language-python hljs"><span class="hljs-keyword">def</span> ready(): ...</code>
+=== OUTPUT ===
+<code class="language-python hljs"><span class="hljs-keyword">def</span> ready(): ...</code>
+=== END ===
+=== INPUT ===
+<code class="language-java">public class App {}</code>
+=== OUTPUT ===
+<code class="language-java">public class App {}</code>
+=== END ===

@@ -90,6 +90,11 @@ compliance/data-uri-to-css-url.comply.wasm: compliance/data-uri-to-css-url.compl
 compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-html.comply.zig compliance/mermaid-to-unicode-html.fixtures.txt
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-python.comply.wasm compliance/syntax-highlight-java.comply.wasm compliance/syntax-highlight-csharp.comply.wasm
+
+compliance/syntax-highlight-%.comply.wasm: compliance/syntax-highlight-%.comply.zig compliance/syntax-highlight-%.fixtures.txt compliance/lib/syntax-highlight-comply.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 COMMONMARK_COMPLY_TARGETS := compliance/commonmark-spec-0.31.2.wasm compliance/commonmark-0.31.2-gfm.wasm
 
 compliance/commonmark-spec-0.31.2.wasm: compliance/commonmark-spec-0.31.2.zig compliance/commonmark-spec-0.31.2.txt
@@ -115,6 +120,7 @@ compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
 compliance: compliance/mermaid-to-unicode-html.comply.wasm
+compliance: $(SYNTAX_HIGHLIGHT_COMPLY_TARGETS)
 compliance: $(COMMONMARK_COMPLY_TARGETS)
 
 ZIG_CACHE_DIR ?= /tmp/zig-cache
@@ -296,6 +302,9 @@ test-deno: qip modules
 	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip modules compliance
+	$(QIP_BIN) comply recipes/text/markdown/25-highlight-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --profile strict
+	$(QIP_BIN) comply recipes/text/markdown/26-highlight-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --profile strict
+	$(QIP_BIN) comply recipes/text/markdown/27-highlight-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --profile strict
 	$(QIP_BIN) comply modules/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --profile strict
 	$(QIP_BIN) comply modules/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --profile strict
 	$(QIP_BIN) comply modules/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --profile strict

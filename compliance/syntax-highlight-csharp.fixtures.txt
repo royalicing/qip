@@ -1,0 +1,56 @@
+=== INPUT ===
+<pre><code class="language-csharp">using System.Text;
+
+public sealed class Renderer
+{
+    private string Format(int value)
+    {
+        string message = $"public class {value}";
+        // string return null
+        return value &gt; 0 ? message : null;
+    }
+}</code></pre>
+=== OUTPUT ===
+<pre><code class="language-csharp hljs"><span class="hljs-keyword">using</span> <span class="hljs-built_in">System</span>.Text;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">sealed</span> <span class="hljs-keyword">class</span> Renderer
+{
+    <span class="hljs-keyword">private</span> <span class="hljs-type">string</span> Format(<span class="hljs-type">int</span> value)
+    {
+        <span class="hljs-type">string</span> message = <span class="hljs-string">$"public class {value}"</span>;
+        <span class="hljs-comment">// string return null</span>
+        <span class="hljs-keyword">return</span> value &gt; <span class="hljs-number">0</span> ? message : <span class="hljs-literal">null</span>;
+    }
+}</code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-csharp">string text = """public class return true""";
+/* public int ignored = 42; */</code>
+=== OUTPUT ===
+<code class="language-csharp hljs"><span class="hljs-type">string</span> text = <span class="hljs-string">"""public class return true"""</span>;
+<span class="hljs-comment">/* public int ignored = 42; */</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-cs">[Obsolete] public record Point(int X, int Y);</code>
+=== OUTPUT ===
+<code class="language-cs hljs">[Obsolete] <span class="hljs-keyword">public</span> <span class="hljs-keyword">record</span> Point(<span class="hljs-type">int</span> X, <span class="hljs-type">int</span> Y);</code>
+=== END ===
+=== INPUT ===
+<code class="language-dotnet">#if DEBUG
+Console.WriteLine(42);
+#endif</code>
+=== OUTPUT ===
+<code class="language-dotnet hljs"><span class="hljs-meta">#if DEBUG</span>
+<span class="hljs-built_in">Console</span>.WriteLine(<span class="hljs-number">42</span>);
+<span class="hljs-meta">#endif</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-csharp hljs"><span class="hljs-keyword">class</span> App {}</code>
+=== OUTPUT ===
+<code class="language-csharp hljs"><span class="hljs-keyword">class</span> App {}</code>
+=== END ===
+=== INPUT ===
+<code class="language-java">public class App {}</code>
+=== OUTPUT ===
+<code class="language-java">public class App {}</code>
+=== END ===
