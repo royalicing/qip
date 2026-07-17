@@ -29,3 +29,22 @@
 === OUTPUT ===
 <code class="language-javascript">const node = "&lt;div&gt;";</code>
 === END ===
+=== INPUT ===
+<code class="language-html">&lt;style media=&quot;screen&quot;&gt;
+.card:hover { color: #fff; content: "display return"; }
+&lt;/style&gt;
+&lt;script type=&quot;module&quot;&gt;
+const message = "return class";
+// const return class
+console.log(message);
+&lt;/script&gt;</code>
+=== OUTPUT ===
+<code class="language-html hljs"><span class="hljs-tag">&lt;</span><span class="hljs-name">style</span> <span class="hljs-attr">media</span>=<span class="hljs-string">&quot;screen&quot;</span><span class="hljs-tag">&gt;</span>
+<span class="hljs-selector-class">.card</span><span class="hljs-selector-pseudo">:hover</span> { <span class="hljs-attribute">color</span>: <span class="hljs-number">#fff</span>; <span class="hljs-attribute">content</span>: <span class="hljs-string">"display return"</span>; }
+<span class="hljs-tag">&lt;</span><span class="hljs-tag">/</span><span class="hljs-name">style</span><span class="hljs-tag">&gt;</span>
+<span class="hljs-tag">&lt;</span><span class="hljs-name">script</span> <span class="hljs-attr">type</span>=<span class="hljs-string">&quot;module&quot;</span><span class="hljs-tag">&gt;</span>
+<span class="hljs-keyword">const</span> message = <span class="hljs-string">"return class"</span>;
+<span class="hljs-comment">// const return class</span>
+<span class="hljs-built_in">console</span>.log(message);
+<span class="hljs-tag">&lt;</span><span class="hljs-tag">/</span><span class="hljs-name">script</span><span class="hljs-tag">&gt;</span></code>
+=== END ===

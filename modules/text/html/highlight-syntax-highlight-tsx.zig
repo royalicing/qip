@@ -1,4 +1,5 @@
 const std = @import("std");
+const javascript = @import("lib/syntax-highlight-javascript.zig");
 
 const INPUT_CAP: usize = 1024 * 1024;
 const OUTPUT_CAP: usize = 4 * 1024 * 1024;
@@ -8,126 +9,6 @@ const OUTPUT_CONTENT_TYPE = "text/html";
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
-const KeywordSet = std.StaticStringMap(void).initComptime(.{
-    .{ "abstract", {} },
-    .{ "as", {} },
-    .{ "asserts", {} },
-    .{ "async", {} },
-    .{ "await", {} },
-    .{ "break", {} },
-    .{ "case", {} },
-    .{ "catch", {} },
-    .{ "class", {} },
-    .{ "const", {} },
-    .{ "continue", {} },
-    .{ "debugger", {} },
-    .{ "declare", {} },
-    .{ "default", {} },
-    .{ "delete", {} },
-    .{ "do", {} },
-    .{ "else", {} },
-    .{ "enum", {} },
-    .{ "export", {} },
-    .{ "extends", {} },
-    .{ "finally", {} },
-    .{ "for", {} },
-    .{ "from", {} },
-    .{ "function", {} },
-    .{ "get", {} },
-    .{ "if", {} },
-    .{ "implements", {} },
-    .{ "import", {} },
-    .{ "in", {} },
-    .{ "infer", {} },
-    .{ "instanceof", {} },
-    .{ "interface", {} },
-    .{ "is", {} },
-    .{ "keyof", {} },
-    .{ "let", {} },
-    .{ "module", {} },
-    .{ "namespace", {} },
-    .{ "new", {} },
-    .{ "of", {} },
-    .{ "override", {} },
-    .{ "package", {} },
-    .{ "private", {} },
-    .{ "protected", {} },
-    .{ "public", {} },
-    .{ "readonly", {} },
-    .{ "return", {} },
-    .{ "satisfies", {} },
-    .{ "set", {} },
-    .{ "static", {} },
-    .{ "super", {} },
-    .{ "switch", {} },
-    .{ "this", {} },
-    .{ "throw", {} },
-    .{ "try", {} },
-    .{ "type", {} },
-    .{ "typeof", {} },
-    .{ "using", {} },
-    .{ "var", {} },
-    .{ "void", {} },
-    .{ "while", {} },
-    .{ "with", {} },
-    .{ "yield", {} },
-});
-
-const TypeSet = std.StaticStringMap(void).initComptime(.{
-    .{ "any", {} },
-    .{ "Array", {} },
-    .{ "bigint", {} },
-    .{ "boolean", {} },
-    .{ "Date", {} },
-    .{ "Error", {} },
-    .{ "Map", {} },
-    .{ "never", {} },
-    .{ "number", {} },
-    .{ "object", {} },
-    .{ "Promise", {} },
-    .{ "ReadonlyArray", {} },
-    .{ "Record", {} },
-    .{ "RegExp", {} },
-    .{ "Set", {} },
-    .{ "string", {} },
-    .{ "symbol", {} },
-    .{ "Uint8Array", {} },
-    .{ "unknown", {} },
-});
-
-const LiteralSet = std.StaticStringMap(void).initComptime(.{
-    .{ "false", {} },
-    .{ "Infinity", {} },
-    .{ "NaN", {} },
-    .{ "null", {} },
-    .{ "true", {} },
-    .{ "undefined", {} },
-});
-
-const BuiltinSet = std.StaticStringMap(void).initComptime(.{
-    .{ "Array", {} },
-    .{ "Boolean", {} },
-    .{ "clearInterval", {} },
-    .{ "clearTimeout", {} },
-    .{ "console", {} },
-    .{ "Date", {} },
-    .{ "document", {} },
-    .{ "fetch", {} },
-    .{ "globalThis", {} },
-    .{ "JSON", {} },
-    .{ "Map", {} },
-    .{ "Math", {} },
-    .{ "Number", {} },
-    .{ "Object", {} },
-    .{ "Promise", {} },
-    .{ "RegExp", {} },
-    .{ "setInterval", {} },
-    .{ "setTimeout", {} },
-    .{ "String", {} },
-    .{ "Symbol", {} },
-    .{ "window", {} },
-});
-
 const Writer = struct {
     idx: usize = 0,
     overflow: bool = false,
@@ -136,7 +17,7 @@ const Writer = struct {
         return output_buf.len - self.idx;
     }
 
-    fn writeByte(self: *Writer, b: u8) void {
+    pub fn writeByte(self: *Writer, b: u8) void {
         if (self.overflow) return;
         if (self.remaining() < 1) {
             self.overflow = true;
@@ -146,7 +27,7 @@ const Writer = struct {
         self.idx += 1;
     }
 
-    fn writeSlice(self: *Writer, s: []const u8) void {
+    pub fn writeSlice(self: *Writer, s: []const u8) void {
         if (self.overflow or s.len == 0) return;
         if (self.remaining() < s.len) {
             self.overflow = true;
@@ -156,7 +37,7 @@ const Writer = struct {
         self.idx += s.len;
     }
 
-    fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+    pub fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
@@ -236,34 +117,6 @@ fn isTagNameBoundary(c: u8) bool {
 
 fn isAttrNameChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '-' or c == '_' or c == ':';
-}
-
-fn isDigit(c: u8) bool {
-    return c >= '0' and c <= '9';
-}
-
-fn isLetter(c: u8) bool {
-    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
-}
-
-fn isIdentStart(c: u8) bool {
-    return isLetter(c) or c == '_' or c == '$';
-}
-
-fn isIdentContinue(c: u8) bool {
-    return isIdentStart(c) or isDigit(c);
-}
-
-fn isHexDigit(c: u8) bool {
-    return isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
-}
-
-fn isBinaryDigit(c: u8) bool {
-    return c == '0' or c == '1';
-}
-
-fn isOctDigit(c: u8) bool {
-    return c >= '0' and c <= '7';
 }
 
 fn classContainsLanguageTSX(value: []const u8) bool {
@@ -463,183 +316,8 @@ fn findCodeCloseTag(input: []const u8, from: usize) ?CodeCloseTag {
     return null;
 }
 
-fn numberEnd(code: []const u8, start: usize) usize {
-    var i = start;
-    if (i < code.len and code[i] == '.' and i + 1 < code.len and isDigit(code[i + 1])) {
-        i += 1;
-        while (i < code.len and (isDigit(code[i]) or code[i] == '_')) : (i += 1) {}
-    } else if (i + 2 < code.len and code[i] == '0' and (code[i + 1] == 'x' or code[i + 1] == 'X')) {
-        i += 2;
-        while (i < code.len and (isHexDigit(code[i]) or code[i] == '_')) : (i += 1) {}
-        if (i < code.len and code[i] == 'n') i += 1;
-        return i;
-    } else if (i + 2 < code.len and code[i] == '0' and (code[i + 1] == 'b' or code[i + 1] == 'B')) {
-        i += 2;
-        while (i < code.len and (isBinaryDigit(code[i]) or code[i] == '_')) : (i += 1) {}
-        if (i < code.len and code[i] == 'n') i += 1;
-        return i;
-    } else if (i + 2 < code.len and code[i] == '0' and (code[i + 1] == 'o' or code[i + 1] == 'O')) {
-        i += 2;
-        while (i < code.len and (isOctDigit(code[i]) or code[i] == '_')) : (i += 1) {}
-        if (i < code.len and code[i] == 'n') i += 1;
-        return i;
-    } else {
-        while (i < code.len and (isDigit(code[i]) or code[i] == '_')) : (i += 1) {}
-    }
-
-    if (i < code.len and code[i] == '.') {
-        if (i + 1 < code.len and isDigit(code[i + 1])) {
-            i += 1;
-            while (i < code.len and (isDigit(code[i]) or code[i] == '_')) : (i += 1) {}
-        }
-    }
-
-    if (i < code.len and (code[i] == 'e' or code[i] == 'E')) {
-        var j = i + 1;
-        if (j < code.len and (code[j] == '+' or code[j] == '-')) j += 1;
-        var has_exp_digits = false;
-        while (j < code.len and (isDigit(code[j]) or code[j] == '_')) : (j += 1) {
-            has_exp_digits = true;
-        }
-        if (has_exp_digits) i = j;
-    }
-
-    if (i < code.len and code[i] == 'n') i += 1;
-    return i;
-}
-
-fn stringEnd(code: []const u8, start: usize) usize {
-    if (start >= code.len) return start;
-    const quote = code[start];
-    var i = start + 1;
-    var escaped = false;
-    while (i < code.len) : (i += 1) {
-        const c = code[i];
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
-        if (c == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (c == quote) return i + 1;
-    }
-    return code.len;
-}
-
-fn startsWithAt(code: []const u8, idx: usize, needle: []const u8) bool {
-    if (idx + needle.len > code.len) return false;
-    return std.mem.eql(u8, code[idx .. idx + needle.len], needle);
-}
-
-fn isJsxTagBoundary(c: u8) bool {
-    return isSpace(c) or c == '(' or c == '{' or c == '}' or c == '[' or c == '=' or c == ',' or c == ':' or c == ';';
-}
-
-fn isJsxNameStart(c: u8) bool {
-    return isLetter(c) or c == '_' or c == '$';
-}
-
-fn isJsxNameContinue(c: u8) bool {
-    return isJsxNameStart(c) or isDigit(c) or c == '-' or c == '.' or c == ':';
-}
-
-fn jsxTagEnd(code: []const u8, start: usize) ?usize {
-    if (!startsWithAt(code, start, "&lt;")) return null;
-    if (start > 0 and !isJsxTagBoundary(code[start - 1])) return null;
-
-    var i = start + 4;
-    if (i >= code.len) return null;
-    if (startsWithAt(code, i, "&gt;")) return i + 4; // fragment open
-    if (code[i] == '/') i += 1;
-    if (startsWithAt(code, i, "&gt;")) return i + 4; // fragment close
-    if (i >= code.len or !isJsxNameStart(code[i])) return null;
-
-    i += 1;
-    while (i < code.len and isJsxNameContinue(code[i])) : (i += 1) {}
-
-    while (i < code.len) : (i += 1) {
-        if (startsWithAt(code, i, "&gt;")) return i + 4;
-    }
-    return null;
-}
-
 fn writeHighlightedTSX(code: []const u8, w: *Writer) void {
-    var i: usize = 0;
-
-    while (i < code.len) {
-        if (i + 1 < code.len and code[i] == '/' and code[i + 1] == '*') {
-            var j = i + 2;
-            while (j + 1 < code.len and !(code[j] == '*' and code[j + 1] == '/')) : (j += 1) {}
-            if (j + 1 < code.len) {
-                j += 2;
-            } else {
-                j = code.len;
-            }
-            w.writeSpan("hljs-comment", code[i..j]);
-            i = j;
-            continue;
-        }
-
-        if (i + 1 < code.len and code[i] == '/' and code[i + 1] == '/') {
-            var j = i + 2;
-            while (j < code.len and code[j] != '\n') : (j += 1) {}
-            w.writeSpan("hljs-comment", code[i..j]);
-            i = j;
-            continue;
-        }
-
-        if (code[i] == '"' or code[i] == '\'' or code[i] == '`') {
-            const j = stringEnd(code, i);
-            w.writeSpan("hljs-string", code[i..j]);
-            i = j;
-            continue;
-        }
-
-        if (isDigit(code[i]) or (code[i] == '.' and i + 1 < code.len and isDigit(code[i + 1]))) {
-            const j = numberEnd(code, i);
-            w.writeSpan("hljs-number", code[i..j]);
-            i = j;
-            continue;
-        }
-
-        if (code[i] == '@' and i + 1 < code.len and isIdentStart(code[i + 1])) {
-            var j = i + 2;
-            while (j < code.len and isIdentContinue(code[j])) : (j += 1) {}
-            w.writeSpan("hljs-meta", code[i..j]);
-            i = j;
-            continue;
-        }
-
-        if (jsxTagEnd(code, i)) |j| {
-            w.writeSpan("hljs-tag", code[i..j]);
-            i = j;
-            continue;
-        }
-
-        if (isIdentStart(code[i])) {
-            var j = i + 1;
-            while (j < code.len and isIdentContinue(code[j])) : (j += 1) {}
-            const ident = code[i..j];
-            if (KeywordSet.get(ident) != null) {
-                w.writeSpan("hljs-keyword", ident);
-            } else if (TypeSet.get(ident) != null) {
-                w.writeSpan("hljs-type", ident);
-            } else if (LiteralSet.get(ident) != null) {
-                w.writeSpan("hljs-literal", ident);
-            } else if (BuiltinSet.get(ident) != null) {
-                w.writeSpan("hljs-built_in", ident);
-            } else {
-                w.writeSlice(ident);
-            }
-            i = j;
-            continue;
-        }
-
-        w.writeByte(code[i]);
-        i += 1;
-    }
+    javascript.write(code, w);
 }
 
 fn transformHTML(input: []const u8, w: *Writer) void {

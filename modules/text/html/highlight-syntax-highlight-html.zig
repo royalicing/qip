@@ -1,4 +1,6 @@
 const std = @import("std");
+const css = @import("lib/syntax-highlight-css.zig");
+const javascript = @import("lib/syntax-highlight-javascript.zig");
 
 const INPUT_CAP: usize = 1024 * 1024;
 const OUTPUT_CAP: usize = 4 * 1024 * 1024;
@@ -16,7 +18,7 @@ const Writer = struct {
         return output_buf.len - self.idx;
     }
 
-    fn writeByte(self: *Writer, b: u8) void {
+    pub fn writeByte(self: *Writer, b: u8) void {
         if (self.overflow) return;
         if (self.remaining() < 1) {
             self.overflow = true;
@@ -26,7 +28,7 @@ const Writer = struct {
         self.idx += 1;
     }
 
-    fn writeSlice(self: *Writer, s: []const u8) void {
+    pub fn writeSlice(self: *Writer, s: []const u8) void {
         if (self.overflow or s.len == 0) return;
         if (self.remaining() < s.len) {
             self.overflow = true;
@@ -36,7 +38,7 @@ const Writer = struct {
         self.idx += s.len;
     }
 
-    fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+    pub fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
@@ -458,11 +460,51 @@ fn writeHighlightedEscapedTag(code: []const u8, w: *Writer, start: usize) usize 
     return i;
 }
 
+const EmbeddedLanguage = enum { css, javascript };
+
+fn embeddedLanguageAt(code: []const u8, start: usize) ?EmbeddedLanguage {
+    if (!startsWithAt(code, start, "&lt;")) return null;
+    var i = skipSpaces(code, start + "&lt;".len);
+    if (i >= code.len or code[i] == '/') return null;
+    const name_start = i;
+    while (i < code.len and isHTMLNameContinue(code[i])) : (i += 1) {}
+    const name = code[name_start..i];
+    if (eqlIgnoreCase(name, "style")) return .css;
+    if (eqlIgnoreCase(name, "script")) return .javascript;
+    return null;
+}
+
+fn findEmbeddedClose(code: []const u8, start: usize, language: EmbeddedLanguage) ?usize {
+    const name = switch (language) {
+        .css => "style",
+        .javascript => "script",
+    };
+    var i = start;
+    while (i + "&lt;/".len + name.len <= code.len) : (i += 1) {
+        if (!startsWithAt(code, i, "&lt;/")) continue;
+        var cursor = skipSpaces(code, i + "&lt;/".len);
+        if (cursor + name.len > code.len or !eqlIgnoreCase(code[cursor .. cursor + name.len], name)) continue;
+        cursor += name.len;
+        cursor = skipSpaces(code, cursor);
+        if (isEscapedTagEnd(code, cursor)) return i;
+    }
+    return null;
+}
+
 fn writeHighlightedHTML(code: []const u8, w: *Writer) void {
     var i: usize = 0;
     while (i < code.len) {
         if (isEscapedTagStart(code, i)) {
+            const embedded = embeddedLanguageAt(code, i);
             i = writeHighlightedEscapedTag(code, w, i);
+            if (embedded) |language| {
+                const close = findEmbeddedClose(code, i, language) orelse code.len;
+                switch (language) {
+                    .css => css.write(code[i..close], w),
+                    .javascript => javascript.write(code[i..close], w),
+                }
+                i = close;
+            }
             continue;
         }
 
@@ -561,4 +603,10 @@ test "skips non-html code blocks" {
     const input = "<code class=\"language-js\">const x = 1;</code>";
     const got = runForTest(input);
     try std.testing.expectEqualStrings(input, got);
+}
+
+test "highlights CSS and JavaScript inside escaped style and script elements" {
+    const input = "<code class=\"language-html\">&lt;style&gt;.card { color: #fff; content: \"return\"; }&lt;/style&gt;\n&lt;script&gt;const message = \"return class\"; console.log(message);&lt;/script&gt;</code>";
+    const expected = "<code class=\"language-html hljs\"><span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">style</span><span class=\"hljs-tag\">&gt;</span><span class=\"hljs-selector-class\">.card</span> { <span class=\"hljs-attribute\">color</span>: <span class=\"hljs-number\">#fff</span>; <span class=\"hljs-attribute\">content</span>: <span class=\"hljs-string\">\"return\"</span>; }<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">style</span><span class=\"hljs-tag\">&gt;</span>\n<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">script</span><span class=\"hljs-tag\">&gt;</span><span class=\"hljs-keyword\">const</span> message = <span class=\"hljs-string\">\"return class\"</span>; <span class=\"hljs-built_in\">console</span>.log(message);<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">script</span><span class=\"hljs-tag\">&gt;</span></code>";
+    try std.testing.expectEqualStrings(expected, runForTest(input));
 }

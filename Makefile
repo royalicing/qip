@@ -78,6 +78,10 @@ modules/utf8/currency-format-zh-cn.wasm: modules/utf8/lib/currency-format-zh-cn-
 modules/image/svg+xml/svg-to-data-uri.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 modules/text/uri-list/data-uri-to-css-url.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 
+modules/text/html/highlight-syntax-highlight-css.wasm: modules/text/html/lib/syntax-highlight-css.zig
+modules/text/html/highlight-syntax-highlight-tsx.wasm: modules/text/html/lib/syntax-highlight-javascript.zig
+modules/text/html/highlight-syntax-highlight-html.wasm: modules/text/html/lib/syntax-highlight-css.zig modules/text/html/lib/syntax-highlight-javascript.zig
+
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
@@ -200,6 +204,9 @@ recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm: modules/text/h
 recipes/text/markdown/24-highlight-syntax-highlight-css.wasm: modules/text/html/highlight-syntax-highlight-css.wasm
 	cp $< $@
 
+recipes/text/markdown/23-highlight-syntax-highlight-tsx.wasm: modules/text/html/highlight-syntax-highlight-tsx.wasm
+	cp $< $@
+
 recipes/text/markdown/28-highlight-syntax-highlight-html.wasm: modules/text/html/highlight-syntax-highlight-html.wasm
 	cp $< $@
 
@@ -258,6 +265,7 @@ recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(w
 recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 recipes: recipes/application/warc/99-add-custom-element-scripts.wasm
+recipes: recipes/text/markdown/23-highlight-syntax-highlight-tsx.wasm
 recipes: recipes/text/markdown/24-highlight-syntax-highlight-css.wasm
 recipes: recipes/text/markdown/28-highlight-syntax-highlight-html.wasm
 recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
