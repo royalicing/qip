@@ -370,7 +370,7 @@ ls ./site
 - [Writing QIP Components in Zig](docs/zig-components.md)
 - [Hard Limits](docs/hard-limits.md)
 - [Provable Loops](docs/provable-loops.md)
-- [WebAssembly ES Module Integration](docs/esm-integration.md)
+- [Running In JavaScript](docs/esm-integration.md)
 - [qip CLI](docs/qip-cli.md)
 - [QIP Component Compliance](docs/comply.md)
 
@@ -475,12 +475,23 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 
 ## TODO
 
+- [ ] Update to latest Zig
+- [ ] Add custom elements to QIP Router recipes e.g. `_elements/copy-code.js`
+  - The alternative is for custom elements to be a WARC recipe where it finds all instances of `<copy-code>` and inserts the `<script>`.
+- [ ] Rename `./modules` to `./components` and retire `./examples`
+- [ ] Retire the web-shaped `Form` component contract.
+  - [ ] Add `submit(input_size)` export
+    - [ ] Input is either `application/x-www-form-urlencoded` or `multipart/form-data`
+    - [ ] Have demo with `FormData` that works in client and on server
+    - [ ] See how it could work with the Interactive component contract, and HTML-in-canvas
+  - [ ] In favor of a future cross-host `Prompt` contract: sequential prompts with recoverable failure, `submit(input_size, now_ms)` for state changes, and `render(0)` for the current semantic projection/output.
+- [ ] Add Command Palette example, combining `<input>` and `<canvas>`
 - [x] Add a custom element such as `<qip-content-size src="/components/example.wasm">` that resolves a WARC site path and renders its byte or kilobyte size, so download lists do not hard-code artifact sizes.
 - [ ] Add CSV to chart SVG example
+- [ ] Add TCP simulator example, showing segments and allowing you to test failure.
 - [ ] Add god rays, metaballs, dithering, grain gradient, mesh gradient, heatmap, liquid metal, halftone from https://github.com/paper-design/shaders/tree/main/packages/shaders/src/shaders
   - See https://shaders.paper.design
 - [ ] Add `application/edifact` example
-- [ ] Add Command Palette example, combining `<input>` and `<canvas>`
 - [ ] Add Wuffs example
   - See: https://github.com/google/wuffs/blob/main/doc/getting-started.md
   - See roadmap of examples: https://github.com/google/wuffs/blob/main/doc/roadmap.md
@@ -497,6 +508,7 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
   - Have `/math-to-html` demo like https://katex.org/#demo
 - [x] Rename `qip dev` command to `qip router dev`
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
+  - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
 - [x] Enforce fixed memory by default, with capped memory growth as an explicit opt-in.
 - [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
@@ -533,7 +545,6 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
   - [x] Interactive modules use `export fn output_rgba8_srgb_bytes() u32` as the primary output-byte export.
 - [ ] Have separate `pointermove` event handler so we can skip expensive `pointermove` listeners and rendering if not needed??
 - [ ] Refine the interactive tick result contract: events return accepted/ignored, but `tick()` currently returns only `next_wake_at_ms`; define how tick also communicates whether `render(0)` is necessary without losing scheduled wakeups. Specify pointer leave/cancel coordinates and button state consistently across hosts.
-- [ ] Retire the web-shaped `Form` framing in favor of a future cross-host `Prompt` contract: sequential prompts with recoverable failure, `submit(input_size, now_ms)` for state changes, and `render(0)` for the current semantic projection/output.
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Convert soft-failure validators to trap on invalid input, then add invalid-then-valid same-instance recovery tests:
