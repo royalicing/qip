@@ -59,14 +59,14 @@ Examples from this repository:
 
 ```bash
 # i32 uniform
-qip run modules/utf8/text-to-bmp.wasm '?cols=120'
+qip run components/utf8/text-to-bmp.wasm '?cols=120'
 
 # f32 uniforms
 qip image -i in.jpg -o out.png \
-  modules/rgba/color-halftone.wasm '?max_radius=2.0&angle_c=0.26'
+  components/rgba/color-halftone.wasm '?max_radius=2.0&angle_c=0.26'
 
 # 0xRRGGBBAA passed as the raw bits of an i32
-qip run modules/image/svg+xml/svg-recolor-current-color.wasm \
+qip run components/image/svg+xml/svg-recolor-current-color.wasm \
   '?color_rgba=0xff5511ff'
 ```
 

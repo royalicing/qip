@@ -106,10 +106,10 @@ Both implement Unicode Default Case Conversion for the root locale. Locale-speci
 ## Use the components
 
 ```bash
-echo "ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ" | qip run modules/utf8/unicode-17-lowercase.wasm
+echo "ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ" | qip run components/utf8/unicode-17-lowercase.wasm
 # θεσσαλονίκη σοφος
 
-echo "straße" | qip run modules/utf8/unicode-17-uppercase.wasm
+echo "straße" | qip run components/utf8/unicode-17-uppercase.wasm
 # STRASSE
 ```
 
@@ -133,6 +133,6 @@ The same component runs in Node or any other WebAssembly host. You can also [imp
 
 The uppercase component has an executable compliance component at `compliance/unicode-17-uppercase.comply.wasm`. Its 100 deterministic cases combine examples, seeded fuzzing, and properties such as idempotence. A failure can be reproduced from the component hash, seed, and case ordinal.
 
-The repository includes Node and Go examples. Node's `toUpperCase`, backed here by ICU 78 and Unicode 17, passes all 100 cases. Go's standard library fails 38 because it uses Unicode 15 tables and simple per-rune mappings rather than full mappings. See `examples/comply-uppercase-node/` and `examples/comply-uppercase-go/`.
+The repository includes Node and Go examples. Node's `toUpperCase`, backed here by ICU 78 and Unicode 17, passes all 100 cases. Go's standard library fails 38 because it uses Unicode 15 tables and simple per-rune mappings rather than full mappings. See `compliance/hosts/uppercase-node/` and `compliance/hosts/uppercase-go/`.
 
 Normalization and locale-aware date, number, and currency components can follow the same model: the Unicode or CLDR revision belongs in the artifact rather than being inherited silently from the environment.

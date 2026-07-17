@@ -59,7 +59,7 @@ test("duel: Intl.NumberFormat agrees for every supported ISO 4217 code", async (
 });
 
 test("duel: currency-format-pt-br.wasm is compliant for every supported currency", async () => {
-  const implBytes = await readFile(new URL("../modules/utf8/currency-format-pt-br.wasm", import.meta.url));
+  const implBytes = await readFile(new URL("../components/utf8/currency-format-pt-br.wasm", import.meta.url));
 
   const { instance } = await WebAssembly.instantiate(implBytes);
   const impl = instance.exports;
@@ -92,7 +92,7 @@ test("duel: currency-format-pt-br.wasm is compliant for every supported currency
 });
 
 test("currency formatter stays within its compact artifact and memory budgets", async () => {
-  const implBytes = await readFile(new URL("../modules/utf8/currency-format-pt-br.wasm", import.meta.url));
+  const implBytes = await readFile(new URL("../components/utf8/currency-format-pt-br.wasm", import.meta.url));
   assert.ok(implBytes.byteLength <= 2310, `expected at most 2310 bytes, got ${implBytes.byteLength}`);
 
   const { instance } = await WebAssembly.instantiate(implBytes);
@@ -100,7 +100,7 @@ test("currency formatter stays within its compact artifact and memory budgets", 
 });
 
 test("unsupported numeric currency codes trap at render", async () => {
-  const implBytes = await readFile(new URL("../modules/utf8/currency-format-pt-br.wasm", import.meta.url));
+  const implBytes = await readFile(new URL("../components/utf8/currency-format-pt-br.wasm", import.meta.url));
   const { instance } = await WebAssembly.instantiate(implBytes);
   instance.exports.uniform_set_currency(0);
   assert.throws(() => instance.exports.render(0));

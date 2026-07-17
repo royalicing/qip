@@ -38,7 +38,7 @@ Given MIME `type/subtype`, recipe directory is:
 
 ```sh
 qip router warc ./site --view-source \
-  | qip run modules/application/warc/warc-extract-broken-links.wasm
+  | qip run components/application/warc/warc-extract-broken-links.wasm
 ```
 
 The result is another `application/warc` archive. It keeps only response pages containing broken links and reduces each HTML body to the exact opening tags with broken `href`, `src`, `action`, `data`, or `srcset` values. An archive with no broken links produces an empty WARC.
@@ -61,7 +61,7 @@ is an error instead of producing a plausible size.
 
 ### Loading custom elements selectively
 
-`modules/application/warc/warc-add-custom-element-scripts.wasm` connects element routes to the pages that use them. It discovers top-level `/elements/<tag-name>.js` responses in the archive, detects matching custom-element tags in each HTML response, and inserts one external module script per used element:
+`components/application/warc/warc-add-custom-element-scripts.wasm` connects element routes to the pages that use them. It discovers top-level `/elements/<tag-name>.js` responses in the archive, detects matching custom-element tags in each HTML response, and inserts one external module script per used element:
 
 ```html
 <script type="module" src="/elements/qip-edit.js"></script>
@@ -106,7 +106,7 @@ qip router warc ./site --host https://qip.dev
 WARC recipes can synthesize or rewrite archive records, which means they can add output routes (for example `/sitemap.xml`) when they emit additional WARC records.
 
 - In this repo, route assets like `/favicon.ico` and `/robots.txt` are present in the content/static output.
-- WARC QIP components such as `modules/application/warc/warc-to-sitemap.wasm` show the pattern for deriving site-wide artifacts from the archive.
+- WARC QIP components such as `components/application/warc/warc-to-sitemap.wasm` show the pattern for deriving site-wide artifacts from the archive.
 
 ## Ordering
 

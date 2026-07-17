@@ -10,13 +10,13 @@ const execFileP = promisify(execFile);
 
 const qip = fileURLToPath(new URL("../qip", import.meta.url));
 const strictProfile = fileURLToPath(
-  new URL("../modules/application/wasm/wasm-strict-profile.wasm", import.meta.url),
+  new URL("../components/application/wasm/wasm-strict-profile.wasm", import.meta.url),
 );
 const boundedLoops = fileURLToPath(
-  new URL("../modules/application/wasm/wasm-bounded-loops.wasm", import.meta.url),
+  new URL("../components/application/wasm/wasm-bounded-loops.wasm", import.meta.url),
 );
-const luhn = fileURLToPath(new URL("../modules/utf8/luhn.wasm", import.meta.url));
-const infiniteLoop = fileURLToPath(new URL("../modules/utf8/infinite-loop.wasm", import.meta.url));
+const luhn = fileURLToPath(new URL("../components/utf8/luhn.wasm", import.meta.url));
+const infiniteLoop = fileURLToPath(new URL("../components/utf8/infinite-loop.wasm", import.meta.url));
 
 async function ensurePrerequisites(t) {
   try {
@@ -26,7 +26,7 @@ async function ensurePrerequisites(t) {
     await access(luhn, constants.R_OK);
     await access(infiniteLoop, constants.R_OK);
   } catch {
-    t.skip("build ./qip and modules first");
+    t.skip("build ./qip and components first");
   }
 }
 

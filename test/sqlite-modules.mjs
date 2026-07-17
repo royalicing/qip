@@ -10,15 +10,15 @@ const execFileP = promisify(execFile);
 
 const qip = fileURLToPath(new URL("../qip", import.meta.url));
 const tableNames = fileURLToPath(
-  new URL("../modules/application/vnd.sqlite3/sqlite-table-names.wasm", import.meta.url),
+  new URL("../components/application/vnd.sqlite3/sqlite-table-names.wasm", import.meta.url),
 );
 const firstTableDump = fileURLToPath(
-  new URL("../modules/application/vnd.sqlite3/sqlite-first-table-dump.wasm", import.meta.url),
+  new URL("../components/application/vnd.sqlite3/sqlite-first-table-dump.wasm", import.meta.url),
 );
 
 function module(name) {
   return fileURLToPath(
-    new URL(`../modules/application/vnd.sqlite3/${name}.wasm`, import.meta.url),
+    new URL(`../components/application/vnd.sqlite3/${name}.wasm`, import.meta.url),
   );
 }
 
@@ -32,7 +32,7 @@ async function ensurePrerequisites(t) {
     await access(tableNames, constants.R_OK);
     await access(firstTableDump, constants.R_OK);
   } catch {
-    t.skip("build ./qip and modules first");
+    t.skip("build ./qip and components first");
   }
 }
 

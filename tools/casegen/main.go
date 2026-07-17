@@ -1,4 +1,4 @@
-// casegen generates the Unicode lowercase tables for modules/utf8/unicode-17-lowercase.zig
+// casegen generates the Unicode lowercase tables for components/utf8/unicode-17-lowercase.zig
 // from the Unicode 17.0.0 UCD files in ucd-17.0.0/, then cross-checks every code
 // point (and Final_Sigma contexts) against golang.org/x/text cases.Lower and emits
 // duel fixtures for test/unicode-17-lowercase.mjs.
@@ -316,7 +316,7 @@ func checkTag(tagName string) {
 		}
 	}
 	if diffs == 0 {
-		fmt.Printf("%s lowercase is byte-identical to en: alias modules/utf8/unicode-17-lowercase.wasm, no new tables needed\n", tag)
+		fmt.Printf("%s lowercase is byte-identical to en: alias components/utf8/unicode-17-lowercase.wasm, no new tables needed\n", tag)
 		return
 	}
 	fmt.Printf("%s lowercase differs from en in %d cases: this tag needs its own component\n", tag, diffs)
@@ -336,7 +336,7 @@ func main() {
 	cased := loadProperty("Cased")
 	ignorable := loadProperty("Case_Ignorable")
 
-	emitZig(m, cased, ignorable, "../../modules/utf8/lib/unicode-17-lowercase-tables.zig")
+	emitZig(m, cased, ignorable, "../../components/utf8/lib/unicode-17-lowercase-tables.zig")
 	emitZig(m, cased, ignorable, "../../compliance/unicode-17-lowercase-tables.zig")
 
 	caser := cases.Lower(language.English)
@@ -605,7 +605,7 @@ func generateUppercase() int {
 	m := loadSimpleUpper()
 	applySpecialCasingUpper(m)
 	emitUpperTablesZig(m, "../../compliance/unicode-17-uppercase-tables.zig")
-	emitUpperTablesZig(m, "../../modules/utf8/lib/unicode-17-uppercase-tables.zig")
+	emitUpperTablesZig(m, "../../components/utf8/lib/unicode-17-uppercase-tables.zig")
 
 	caser := cases.Upper(language.English)
 	mismatches := 0

@@ -92,14 +92,14 @@ async function duel(complianceBytes, implementationUrl) {
 test("duel: svg-to-data-uri.wasm satisfies the contract", async () => {
   await duel(
     svgComplianceBytes,
-    new URL("../modules/image/svg+xml/svg-to-data-uri.wasm", import.meta.url),
+    new URL("../components/image/svg+xml/svg-to-data-uri.wasm", import.meta.url),
   );
 });
 
 test("duel: data-uri-to-css-url.wasm satisfies the contract", async () => {
   await duel(
     cssComplianceBytes,
-    new URL("../modules/text/uri-list/data-uri-to-css-url.wasm", import.meta.url),
+    new URL("../components/text/uri-list/data-uri-to-css-url.wasm", import.meta.url),
   );
 });
 
@@ -115,7 +115,7 @@ async function instantiateModule(url) {
 
 test("svg-to-data-uri expands its maximum input in one memory page", async () => {
   const { bytes, exports, readI32 } = await instantiateModule(
-    new URL("../modules/image/svg+xml/svg-to-data-uri.wasm", import.meta.url),
+    new URL("../components/image/svg+xml/svg-to-data-uri.wasm", import.meta.url),
   );
   const inputLength = readI32("input_utf8_cap");
   const input = Buffer.alloc(inputLength, 0x22);
@@ -131,7 +131,7 @@ test("svg-to-data-uri expands its maximum input in one memory page", async () =>
 
 test("data-uri-to-css-url expands its maximum input in one memory page", async () => {
   const { bytes, exports, readI32 } = await instantiateModule(
-    new URL("../modules/text/uri-list/data-uri-to-css-url.wasm", import.meta.url),
+    new URL("../components/text/uri-list/data-uri-to-css-url.wasm", import.meta.url),
   );
   const inputLength = readI32("input_utf8_cap");
   const input = Buffer.concat([Buffer.from("data:,"), Buffer.alloc(inputLength - 6, 0x22)]);
@@ -150,7 +150,7 @@ test("the two modules compose into a CSS url value", async () => {
   const expectedCss = wrapCssDataUri(expectedUri);
 
   const first = await instantiateModule(
-    new URL("../modules/image/svg+xml/svg-to-data-uri.wasm", import.meta.url),
+    new URL("../components/image/svg+xml/svg-to-data-uri.wasm", import.meta.url),
   );
   new Uint8Array(first.exports.memory.buffer, first.readI32("input_ptr"), svg.length).set(svg);
   const uriLength = first.exports.render(svg.length);
@@ -161,7 +161,7 @@ test("the two modules compose into a CSS url value", async () => {
   ));
 
   const second = await instantiateModule(
-    new URL("../modules/text/uri-list/data-uri-to-css-url.wasm", import.meta.url),
+    new URL("../components/text/uri-list/data-uri-to-css-url.wasm", import.meta.url),
   );
   new Uint8Array(second.exports.memory.buffer, second.readI32("input_ptr"), uri.length).set(uri);
   const cssLength = second.exports.render(uri.length);

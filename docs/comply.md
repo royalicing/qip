@@ -32,14 +32,14 @@ qip comply <impl.wasm> [--with <check.wasm> ...] [--profile strict] [-v|--verbos
 ## Examples In This Repo
 
 ```bash
-# Expects that modules/utf8/e164.wasm produces normalized phone numbers, and preserves empty input.
-qip comply modules/utf8/e164.wasm --with compliance/e164.comply.wasm --with compliance/preserve-empty.wasm
+# Expects that components/utf8/e164.wasm produces normalized phone numbers, and preserves empty input.
+qip comply components/utf8/e164.wasm --with compliance/e164.comply.wasm --with compliance/preserve-empty.wasm
 
-# Expects that modules/utf8/utf8-must-be-valid.wasm traps when provided a range of invalid UTF-8, and also accepts whitespace or empty strings untouched.
-qip comply modules/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+# Expects that components/utf8/utf8-must-be-valid.wasm traps when provided a range of invalid UTF-8, and also accepts whitespace or empty strings untouched.
+qip comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
 
-# Expects that modules/utf8/luhn.wasm accepts normalized Luhn-valid input and traps on invalid input.
-qip comply modules/utf8/luhn.wasm --with compliance/luhn.comply.wasm
+# Expects that components/utf8/luhn.wasm accepts normalized Luhn-valid input and traps on invalid input.
+qip comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
 ```
 
 ## What It Does

@@ -12,7 +12,7 @@ For qip's one-input/one-output component model, stable interchange formats make 
 
 ## Preferred formats
 
-Current formats directly supported by a qip command or supported by this repo’s modules in `modules/`:
+Current formats directly supported by a qip command or supported by this repo’s modules in `components/`:
 
 - `application/warc`: website snapshots
 - `application/x-tar`: directory archive as one input/output blob
@@ -30,8 +30,8 @@ Current formats directly supported by a qip command or supported by this repo’
 Examples:
 
 - `qip router warc ...` emits `application/warc`
-- `modules/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
-- `modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
+- `components/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
+- `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
 
 Tradeoffs:
 
@@ -65,7 +65,7 @@ If you need:
 - A snapshot of routed web output: use `application/warc`
 - Vector graphics interchange: use `image/svg+xml`
 - Simple raster interchange between components: use `image/bmp`
-- General text transforms: use `UTF-8` components in `modules/utf8/`
+- General text transforms: use `UTF-8` components in `components/utf8/`
 - Image filter pipelines: use `RGBA32Float` via `qip image`
 
 ## When not to use these defaults

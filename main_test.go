@@ -221,9 +221,9 @@ func TestLegacyDevNoticePointsToRouterCommand(t *testing.T) {
 
 func TestNormalizeRunArgs(t *testing.T) {
 	in := []string{
-		"modules/utf8/trim.wasm",
+		"components/utf8/trim.wasm",
 		"?x=1",
-		"modules/utf8/wc.wasm",
+		"components/utf8/wc.wasm",
 		"-o",
 		"out.txt",
 		"--timeout-ms",
@@ -241,9 +241,9 @@ func TestNormalizeRunArgs(t *testing.T) {
 		"--max-memory",
 		"1048576",
 		"--allow-memory-grow",
-		"modules/utf8/trim.wasm",
+		"components/utf8/trim.wasm",
 		"?x=1",
-		"modules/utf8/wc.wasm",
+		"components/utf8/wc.wasm",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("args=%v, want %v", got, want)
@@ -453,7 +453,7 @@ func TestParseUniformHexUint(t *testing.T) {
 }
 
 func TestRunDelayedStdinDoesNotFailExportResolution(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=TestHelperRunModuleCLI", "--", "examples/html-link-extractor.wasm")
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperRunModuleCLI", "--", "components/text/html/html-link-extractor.wasm")
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 
 	stdin, err := cmd.StdinPipe()
@@ -492,7 +492,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 		"--",
 		"--timeout-ms",
 		"1",
-		"examples/infinite-loop.wasm",
+		"components/utf8/infinite-loop.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -506,7 +506,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 	}
 
 	gotErr := stderr.String()
-	if !strings.Contains(gotErr, "examples/infinite-loop.wasm:") {
+	if !strings.Contains(gotErr, "components/utf8/infinite-loop.wasm:") {
 		t.Fatalf("stderr=%q, want component path prefix", gotErr)
 	}
 	if !strings.Contains(gotErr, "Wasm module exceeded the execution time limit") {
@@ -521,7 +521,7 @@ func TestRunAppliesUniformQueries(t *testing.T) {
 	}
 
 	runOnce := func(extraArgs ...string) []byte {
-		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "examples/text-to-bmp.wasm"}
+		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "components/utf8/text-to-bmp.wasm"}
 		args = append(args, extraArgs...)
 		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
@@ -562,7 +562,7 @@ func TestRunAppliesColsUniform(t *testing.T) {
 	}
 
 	runOnce := func(extraArgs ...string) []byte {
-		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "examples/text-to-bmp.wasm"}
+		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "components/utf8/text-to-bmp.wasm"}
 		args = append(args, extraArgs...)
 		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
@@ -614,7 +614,7 @@ func TestRunOutputFlagWritesToFile(t *testing.T) {
 		inputPath,
 		"-o",
 		outputPath,
-		"modules/utf8/trim.wasm",
+		"components/utf8/trim.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -651,7 +651,7 @@ func TestRunOutputFlagAtEndWritesToFile(t *testing.T) {
 		"--",
 		"-i",
 		inputPath,
-		"modules/utf8/trim.wasm",
+		"components/utf8/trim.wasm",
 		"-o",
 		outputPath,
 	)
@@ -730,7 +730,7 @@ func TestRunOutputFlagImageReencodeByExtension(t *testing.T) {
 				inputPath,
 				"-o",
 				outputPath,
-				"modules/utf8/text-to-bmp.wasm",
+				"components/utf8/text-to-bmp.wasm",
 			)
 			cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 			var stdout bytes.Buffer
@@ -768,7 +768,7 @@ func TestRunInteractiveModuleOutputsFirstFrameBMP(t *testing.T) {
 		os.Args[0],
 		"-test.run=TestHelperRunModuleCLI",
 		"--",
-		"modules/interactive/tile-world-12x12.wasm",
+		"components/interactive/tile-world-12x12.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -807,7 +807,7 @@ func TestRunOutputFlagImageReencodeRejectsNonImageOutput(t *testing.T) {
 		inputPath,
 		"-o",
 		outputPath,
-		"modules/utf8/trim.wasm",
+		"components/utf8/trim.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -915,7 +915,7 @@ func TestContentTypeCheckingModesForRunModule(t *testing.T) {
 	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
-	compiled := compileWasmModuleForTest(t, ctx, runtime, "examples/html-link-extractor.wasm")
+	compiled := compileWasmModuleForTest(t, ctx, runtime, "components/text/html/html-link-extractor.wasm")
 	defer compiled.Close(ctx)
 
 	input := []byte(`<a href="/x">X</a>`)
@@ -960,7 +960,7 @@ func TestTrustFirstStageContentTypePropagation(t *testing.T) {
 	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
-	compiled := compileWasmModuleForTest(t, ctx, runtime, "examples/html-link-extractor.wasm")
+	compiled := compileWasmModuleForTest(t, ctx, runtime, "components/text/html/html-link-extractor.wasm")
 	defer compiled.Close(ctx)
 
 	exec, err := executeModuleWithInput(
@@ -1110,7 +1110,7 @@ func TestLoadRecipeChainsIgnoresNonWasm(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
+	wasmBytes, err := os.ReadFile(filepath.Join("components", "utf8", "hello.wasm"))
 	if err != nil {
 		t.Fatalf("read wasm fixture: %v", err)
 	}
@@ -1142,7 +1142,7 @@ func TestLoadRecipeChainsSupportsSymlinkedRecipeComponents(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(external, "text", "markdown"), 0o755); err != nil {
 		t.Fatalf("mkdir external: %v", err)
 	}
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
+	wasmBytes, err := os.ReadFile(filepath.Join("components", "utf8", "hello.wasm"))
 	if err != nil {
 		t.Fatalf("read wasm fixture: %v", err)
 	}
@@ -1176,7 +1176,7 @@ func TestLoadRecipeChainsRejectsInvalidFilename(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
+	wasmBytes, err := os.ReadFile(filepath.Join("components", "utf8", "hello.wasm"))
 	if err != nil {
 		t.Fatalf("read wasm fixture: %v", err)
 	}
@@ -1196,7 +1196,7 @@ func TestLoadRecipeChainsRejectsDuplicatePrefix(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
+	wasmBytes, err := os.ReadFile(filepath.Join("components", "utf8", "hello.wasm"))
 	if err != nil {
 		t.Fatalf("read wasm fixture: %v", err)
 	}
@@ -1215,9 +1215,9 @@ func TestLoadRecipeChainsRejectsDuplicatePrefix(t *testing.T) {
 func TestParseImageComponentInvocations(t *testing.T) {
 	t.Run("module with query", func(t *testing.T) {
 		specs, err := parseComponentInvocations([]string{
-			"examples/rgba/color-halftone.wasm",
+			"components/rgba/color-halftone.wasm",
 			"?max_radius=2.0",
-			"examples/rgba/brightness.wasm",
+			"components/rgba/brightness.wasm",
 			"?brightness=0.2",
 		}, "image")
 		if err != nil {
@@ -1226,13 +1226,13 @@ func TestParseImageComponentInvocations(t *testing.T) {
 		if len(specs) != 2 {
 			t.Fatalf("spec count=%d, want 2", len(specs))
 		}
-		if specs[0].Source != "examples/rgba/color-halftone.wasm" {
+		if specs[0].Source != "components/rgba/color-halftone.wasm" {
 			t.Fatalf("spec[0].Source=%q", specs[0].Source)
 		}
 		if got := specs[0].UniformValues["max_radius"]; got != "2.0" {
 			t.Fatalf("spec[0] max_radius=%q, want 2.0", got)
 		}
-		if specs[1].Source != "examples/rgba/brightness.wasm" {
+		if specs[1].Source != "components/rgba/brightness.wasm" {
 			t.Fatalf("spec[1].Source=%q", specs[1].Source)
 		}
 		if got := specs[1].UniformValues["brightness"]; got != "0.2" {
@@ -1247,7 +1247,7 @@ func TestParseImageComponentInvocations(t *testing.T) {
 	})
 
 	t.Run("empty query is error", func(t *testing.T) {
-		if _, err := parseComponentInvocations([]string{"examples/rgba/brightness.wasm", "?"}, "image"); err == nil {
+		if _, err := parseComponentInvocations([]string{"components/rgba/brightness.wasm", "?"}, "image"); err == nil {
 			t.Fatal("expected error for empty query")
 		}
 	})
@@ -1259,7 +1259,7 @@ func TestLoadComponentAssets(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
+	wasmBytes, err := os.ReadFile(filepath.Join("components", "utf8", "hello.wasm"))
 	if err != nil {
 		t.Fatalf("read wasm fixture: %v", err)
 	}
@@ -1298,7 +1298,7 @@ func TestLoadComponentAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *tes
 	root := t.TempDir()
 	external := t.TempDir()
 
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
+	wasmBytes, err := os.ReadFile(filepath.Join("components", "utf8", "hello.wasm"))
 	if err != nil {
 		t.Fatalf("read wasm fixture: %v", err)
 	}
@@ -1335,7 +1335,7 @@ func TestLoadComponentAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *tes
 
 func TestTryRunInteractiveModuleFirstFrame(t *testing.T) {
 	handled, bmp, err := tryRunInteractiveModuleFirstFrame(context.Background(), ComponentInvocation{
-		Source:        "modules/interactive/tile-world-12x12.wasm",
+		Source:        "components/interactive/tile-world-12x12.wasm",
 		UniformValues: map[string]string{},
 	}, options{}, 2000)
 	if err != nil {

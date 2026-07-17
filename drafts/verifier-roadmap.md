@@ -1,7 +1,7 @@
 # Verifier Roadmap Notes
 
 Design answers for three questions about the wasm verifier stack (`qip score`,
-`internal/wasminspect`, `modules/application/wasm/wasm-safety-check.zig`).
+`internal/wasminspect`, `components/application/wasm/wasm-safety-check.zig`).
 Written before implementation; nothing here is built yet.
 
 ## Can score report maximum loop iterations?
@@ -82,7 +82,7 @@ What it costs:
 - Each stage re-decodes the module. CPU is trivial at these sizes; the real
   risk is decoder drift between copies, which is exactly the bug class fixed
   in the safety-check rewrite. The mitigation is a shared
-  `modules/application/wasm/lib/wasm-reader.zig` (the `vnd.sqlite3/lib/`
+  `components/application/wasm/lib/wasm-reader.zig` (the `vnd.sqlite3/lib/`
   pattern) holding the Reader and immediate decoding, imported by every
   wasm-inspecting component. That consolidation is worth doing regardless of
   the split: `wasm-score.zig` and `wasm-trace-instrument.zig` each carry

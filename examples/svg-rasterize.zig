@@ -1,1 +1,0 @@
-../modules/image/svg+xml/svg-rasterize.zig

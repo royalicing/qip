@@ -25,7 +25,7 @@ These run on every edit, unprompted, because they're wired into the one command 
 
 Design rules for this layer:
 
-- **One command.** `qip check modules/utf8/foo.wasm` (or a build step that implies it). Agents reliably discover and reuse a single entry point documented in CLAUDE.md; they unreliably compose four separate tools.
+- **One command.** `qip check components/utf8/foo.wasm` (or a build step that implies it). Agents reliably discover and reuse a single entry point documented in CLAUDE.md; they unreliably compose four separate tools.
 - **Deterministic pass/fail with precise diagnostics.** This is where QIP's trap-with-diagnostics philosophy pays off twice: `qip score`'s per-loop WARN diagnostics are exactly the feedback an agent self-corrects from. A bare `wasm-safety-check` trap says *no*; the score report says *why* — the agent needs the report. Rich diagnostics are not a nicety here; they are the difference between one iteration and ten.
 - **Checks-as-components is an agent superpower.** Because the checkers are themselves QIP components, an agent needs zero toolchain setup to run them — `qip run wasm-safety-check.wasm` works in any checkout. The portability thesis directly improves agent ergonomics.
 

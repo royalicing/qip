@@ -124,7 +124,7 @@ Good defaults:
 - Trap on output overflow.
 - Return `0` only when empty output is a meaningful success.
 
-For assertion pass-through validators, copy the input unchanged or use the same pointer for input and output when the host contract allows it. `modules/utf8/utf8-must-be-valid.zig` is the model: validate every byte, trap on failure, and preserve the original bytes on success.
+For assertion pass-through validators, copy the input unchanged or use the same pointer for input and output when the host contract allows it. `components/utf8/utf8-must-be-valid.zig` is the model: validate every byte, trap on failure, and preserve the original bytes on success.
 
 ## Export Content Types When Known
 
@@ -171,7 +171,7 @@ export fn uniform_set_color_rgba(value: u32) u32 {
 Callers pass uniforms next to the module path:
 
 ```bash
-qip run modules/image/svg+xml/svg-recolor-current-color.wasm '?color_rgba=0xff5511ff'
+qip run components/image/svg+xml/svg-recolor-current-color.wasm '?color_rgba=0xff5511ff'
 ```
 
 Use packed integer uniforms for compact settings like colors, flags, and modes. Use `f32` uniforms for image math where fractional values are natural.
@@ -223,10 +223,10 @@ For checked-in modules, prefer the project rule over a one-off command. The Make
 ```make
 ZIG_WASM_MAX_MEMORY ?= 67108864
 
-modules/%.wasm: modules/%.zig
+components/%.wasm: components/%.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-modules/bytes/example.wasm: ZIG_WASM_MAX_MEMORY = 1048576
+components/bytes/example.wasm: ZIG_WASM_MAX_MEMORY = 1048576
 ```
 
 Use the generic default for ordinary modules. Add target-specific overrides for modules with large static buffers, frame buffers, embedded tables, or intentionally tighter safety budgets.
@@ -234,7 +234,7 @@ Use the generic default for ordinary modules. Add target-specific overrides for 
 For C components compiled through `zig cc`, pass the linker spelling instead:
 
 ```make
-modules/utf8/example-c.wasm: modules/utf8/example-c.c
+components/utf8/example-c.wasm: components/utf8/example-c.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib \
 		-Wl,--no-entry -Wl,--max-memory=1048576 \
 		-Wl,--export=render -Wl,--export-memory \
@@ -250,21 +250,21 @@ Zig uses `--max-memory=...`; `zig cc` passes `-Wl,--max-memory=...` to the Wasm 
 Each component should have at least one direct smoke test through `qip`.
 
 ```bash
-printf 'hello' | qip run modules/utf8/your-module.wasm
+printf 'hello' | qip run components/utf8/your-module.wasm
 ```
 
 For binary modules, round-trip through files or compare bytes:
 
 ```bash
-qip run -i input.bin -- modules/bytes/your-module.wasm > /tmp/out.bin
+qip run -i input.bin -- components/bytes/your-module.wasm > /tmp/out.bin
 cmp expected.bin /tmp/out.bin
 ```
 
 For validators, test both success and failure:
 
 ```bash
-printf 'valid' | qip run modules/utf8/your-validator.wasm
-printf '\xff' | qip run modules/utf8/your-validator.wasm
+printf 'valid' | qip run components/utf8/your-validator.wasm
+printf '\xff' | qip run components/utf8/your-validator.wasm
 ```
 
 Also test recovery on a reused instance: feed a range of invalid inputs that trap, then feed valid input through the same instance and confirm the result is still correct. A WebAssembly trap stops the current call, but it does not reset memory or globals. This catches parsers that mutate persistent state before rejecting malformed input.
@@ -272,11 +272,11 @@ Also test recovery on a reused instance: feed a range of invalid inputs that tra
 Review the binary shape before trusting the source shape:
 
 ```bash
-wasm-objdump -x modules/bytes/your-module.wasm
-qip run -i modules/application/wasm/your-module.wasm -- modules/application/wasm/wasm-score.wasm
+wasm-objdump -x components/bytes/your-module.wasm
+qip run -i components/application/wasm/your-module.wasm -- components/application/wasm/wasm-score.wasm
 ```
 
-Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use the stricter validator modules `modules/application/wasm/wasm-strict-profile.wasm` (fixed memory, no imports, no banned instructions, no recursion) and `modules/application/wasm/wasm-bounded-loops.wasm` (fixed-bound loops) when the module should obey the strict profile.
+Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use the stricter validator modules `components/application/wasm/wasm-strict-profile.wasm` (fixed memory, no imports, no banned instructions, no recursion) and `components/application/wasm/wasm-bounded-loops.wasm` (fixed-bound loops) when the module should obey the strict profile.
 
 ## Checklist
 

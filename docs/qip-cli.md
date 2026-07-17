@@ -85,7 +85,7 @@ Current CLI guardrails:
 - `run`, `bench`, and `image` reject modules containing `memory.grow` by default.
 - `--allow-memory-grow` permits growth when paired with `--max-memory <bytes>`.
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
-- `modules/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `modules/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier.
+- `components/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `components/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier.
 
 The browser JavaScript hosts expose the same policy with `max-memory="<bytes>"` and `allow-memory-grow`; see [Browser Elements](/docs/qip-elements) and the [Interactive Component Contract](/docs/interactive-component).
 

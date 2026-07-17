@@ -15,7 +15,7 @@ const NEW_X = 592;
 const NEW_Y = 448;
 
 async function makeGame() {
-  const bytes = await readFile("modules/interactive/sudoku.wasm");
+  const bytes = await readFile("components/interactive/sudoku.wasm");
   return (await WebAssembly.instantiate(bytes, {})).instance.exports;
 }
 

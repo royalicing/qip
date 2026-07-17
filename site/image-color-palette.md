@@ -95,5 +95,5 @@ fileInput.addEventListener("change", async () => {
 ## CLI equivalent
 
 ```bash
-qip run modules/image/bmp/bmp-color-palette.wasm < image.bmp
+qip run components/image/bmp/bmp-color-palette.wasm < image.bmp
 ```

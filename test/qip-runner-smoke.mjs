@@ -76,10 +76,10 @@ for (const constructor of [contentTypeUTF8, contentTypeBytes]) {
 }
 
 const markdownModule = await WebAssembly.compile(
-  await readFile("modules/text/markdown/commonmark.0.31.2.wasm"),
+  await readFile("components/text/markdown/commonmark.0.31.2.wasm"),
 );
 const pageModule = await WebAssembly.compile(
-  await readFile("modules/text/html/html-page-wrap.wasm"),
+  await readFile("components/text/html/html-page-wrap.wasm"),
 );
 
 const markdownToHtml = contentComponent(markdown, markdownModule, html);

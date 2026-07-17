@@ -49,8 +49,8 @@ Use host code instead when the fast path needs platform APIs, shared mutable app
 7. Embed the same `.wasm` where the app needs that behavior.
 
 ```bash
-qip comply modules/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm
-qip bench -i page.md --benchtime=2s modules/text/markdown/commonmark.0.31.2.wasm
+qip comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm
+qip bench -i page.md --benchtime=2s components/text/markdown/commonmark.0.31.2.wasm
 ```
 
 ## Runtime Guides

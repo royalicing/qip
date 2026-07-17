@@ -28,7 +28,7 @@ function renderText(exports, text) {
 
 test("luhn traps on invalid input and recovers on the same instance", async () => {
   const { instance } = await WebAssembly.instantiate(
-    await readFile("modules/utf8/luhn.wasm"),
+    await readFile("components/utf8/luhn.wasm"),
     {},
   );
   const exports = instance.exports;

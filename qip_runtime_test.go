@@ -4,7 +4,7 @@ import "testing"
 
 func TestResolveComponentInvocationsOwnsUniformValues(t *testing.T) {
 	invocations := []ComponentInvocation{{
-		Source:        "examples/hello.wasm",
+		Source:        "components/utf8/hello.wasm",
 		UniformValues: map[string]string{"answer": "41"},
 	}}
 

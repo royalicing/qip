@@ -6,7 +6,7 @@ Status: draft research, 2026-07-08 (rev 2 — reconciled with the shipped `--tra
 
 The README TODO's tracing item is partially shipped, with an architecture worth preserving:
 
-- `qip run --trace-with modules/application/wasm/wasm-trace-instrument.wasm component.wasm` retries a *trapping* module through an instrumenter and reports recent memory events (`docs/tracing.md`).
+- `qip run --trace-with components/application/wasm/wasm-trace-instrument.wasm component.wasm` retries a *trapping* module through an instrumenter and reports recent memory events (`docs/tracing.md`).
 - **The instrumenter is itself a QIP Content component** (`application/wasm` in → `application/wasm` out, ~880 lines of Zig). This is the load-bearing design decision: the CLI never grew a Go rewriting engine, any host that runs Content components can instrument (a browser can do it client-side), and the transformer is reviewable, portable, and dogfoods the whole thesis. **Keep this.**
 - What it covers: every scalar load/store gets `qip_trace.before_load` / `before_store` / `after_store` import calls carrying `(func_id, op_id, mem_index, effective_addr, width)`. The host keeps the last 256 events and prints the last 16 on a failed retry — which already delivers the TODO's "trace unreachable via last input read" forensic.
 - What it rejects (deliberately): SIMD memory ops, atomics, memory64, multi-memory; bulk-memory ops pass through untraced.
@@ -115,7 +115,7 @@ Trade-offs: last-N semantics only (the import version lets the host see events *
 ## Correctness strategy (unchanged in spirit, sharpened by the above)
 
 1. **Identity check:** instrumenter with all levels disabled should pass modules through byte-identically (or, if re-encoding normalizes LEBs, semantically — byte-identical is worth the effort as a test oracle).
-2. **Behavioral duel:** instrumented-with-no-op-sink vs original over a corpus — byte-identical outputs and *trap parity* (same inputs trap). The photocopy duel harness (drafts/photocopy.md) is exactly this oracle; run it in CI over every module in `modules/` and `recipes/`.
+2. **Behavioral duel:** instrumented-with-no-op-sink vs original over a corpus — byte-identical outputs and *trap parity* (same inputs trap). The photocopy duel harness (drafts/photocopy.md) is exactly this oracle; run it in CI over every module in `components/` and `recipes/`.
 3. **`wasm-validate`** (wabt, already a dependency) on instrumented outputs in tests; wazero compilation always.
 4. **Refuse loudly:** keep the existing rejection list (SIMD memory, atomics, memory64, multi-memory) and extend it to anything the new passes can't re-encode. The existing `test/trace-with.mjs` WAT-fixture pattern extends naturally per level.
 

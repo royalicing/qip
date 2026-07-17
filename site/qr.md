@@ -24,7 +24,7 @@
 go install github.com/royalicing/qip@latest
 
 echo "https://example.com" \
-| qip run modules/text/uri-list/url-to-qr-svg.wasm \
+| qip run components/text/uri-list/url-to-qr-svg.wasm \
 > qr.svg
 ```
 

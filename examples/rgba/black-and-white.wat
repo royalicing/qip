@@ -1,1 +1,0 @@
-../../modules/rgba/black-and-white.wat

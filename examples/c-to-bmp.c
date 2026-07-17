@@ -1,1 +1,0 @@
-../modules/text/x-c/c-to-bmp.c

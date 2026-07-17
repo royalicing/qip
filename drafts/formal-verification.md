@@ -7,7 +7,7 @@ Status: draft research, 2026-07-12. Companion: [agentic-verification.md](agentic
 QIP already practices three distinct layers of verification, without calling them that:
 
 - **`drafts/cbmc/base64-encode-bounds.c`** — a CBMC bounded-proof harness that proves the base64 size arithmetic (`full_groups * 4 + tail padding`) never exceeds `QIP_OUTPUT_UTF8_CAP` for *all* inputs up to the cap, using nondeterministic inputs, loop invariants, and `__CPROVER_decreases` ranking functions. This is real deductive verification of a *model* of the component.
-- **`modules/application/wasm/wasm-safety-check.wasm`** — an eBPF-verifier-style *syntactic* checker that is itself a QIP Content component (`application/wasm` in → same bytes out, trap on violation). It proves loop bounds from monotonic-counter evidence, rejects recursion via call-graph acyclicity, and enforces the strict profile (no imports, no `memory.grow`, no atomics, no indirect calls).
+- **`components/application/wasm/wasm-safety-check.wasm`** — an eBPF-verifier-style *syntactic* checker that is itself a QIP Content component (`application/wasm` in → same bytes out, trap on violation). It proves loop bounds from monotonic-counter evidence, rejects recursion via call-graph acyclicity, and enforces the strict profile (no imports, no `memory.grow`, no atomics, no indirect calls).
 - **`internal/wasminspect` / `qip score`** — the Go mirror of the same analysis, reporting WARN instead of rejecting.
 
 So the two questions this document asks — "can existing tooling verify component wasm?" and "can a verifier be written in wasm?" — both already have embryonic *yes* answers in-tree. The question is how far each ladder goes up.
@@ -94,7 +94,7 @@ The wasm spec itself is formally specified, and as of March 2025 the standard's 
 ### Concrete integration sketch
 
 ```
-qip verify modules/utf8/base64-encode.wasm \
+qip verify components/utf8/base64-encode.wasm \
     --symbolic-input-cap 256 \
     --assert no-trap,output-cap,write-set
 ```

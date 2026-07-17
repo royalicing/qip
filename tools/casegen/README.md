@@ -1,6 +1,6 @@
 # casegen — Unicode case tables for QIP components
 
-Generates `modules/utf8/lib/unicode-17-lowercase-tables.zig` and the duel fixtures
+Generates `components/utf8/lib/unicode-17-lowercase-tables.zig` and the duel fixtures
 `test/fixtures/unicode-17-lowercase.json` from the pinned Unicode 17.0.0 UCD files in
 `ucd-17.0.0/` (committed; URLs and SHA-256 pins in `main.go`'s header), then
 cross-checks every code point against `golang.org/x/text` `cases.Lower` as an
@@ -11,7 +11,7 @@ property cases through the `qip` host bridge (see the README TODO for the
 bridge ABI; `test/lib/compliance-harness.mjs` is the reference host). The
 compliance components are the executable specs: any implementation in any
 language must pass the same cases, referenced as (component hash, seed,
-ordinal) — see `examples/comply-uppercase-node/` and `examples/comply-uppercase-go/`.
+ordinal) — see `compliance/hosts/uppercase-node/` and `compliance/hosts/uppercase-go/`.
 
 ## Regenerate
 
@@ -19,7 +19,7 @@ ordinal) — see `examples/comply-uppercase-node/` and `examples/comply-uppercas
 cd tools/casegen
 go run .                 # rewrites tables + fixtures, exits nonzero on oracle mismatch
 cd ../..
-make modules/utf8/unicode-17-lowercase.wasm
+make components/utf8/unicode-17-lowercase.wasm
 node --test test/unicode-17-lowercase.mjs
 ```
 
@@ -37,7 +37,7 @@ building anything:
 
 ```sh
 go run . -check-tag fr
-# fr lowercase is byte-identical to en: alias modules/utf8/unicode-17-lowercase.wasm …
+# fr lowercase is byte-identical to en: alias components/utf8/unicode-17-lowercase.wasm …
 ```
 
 Exit 0 ⇒ **alias, don't rebuild.** `fr`, `de`, `es`, and `und` are all
@@ -46,7 +46,7 @@ Ship the alias with two Makefile lines (same pattern the repo already uses for
 recipe symlinks):
 
 ```make
-modules/utf8/unicode-17-lowercase-fr.wasm: modules/utf8/unicode-17-lowercase.wasm
+components/utf8/unicode-17-lowercase-fr.wasm: components/utf8/unicode-17-lowercase.wasm
 	cp $< $@
 ```
 

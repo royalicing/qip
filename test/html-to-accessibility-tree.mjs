@@ -5,7 +5,7 @@ import test from "node:test";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const modulePath = new URL(
-  "../modules/text/html/html-to-accessibility-tree.wasm",
+  "../components/text/html/html-to-accessibility-tree.wasm",
   import.meta.url,
 );
 

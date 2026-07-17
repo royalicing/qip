@@ -58,7 +58,7 @@ const Decoded = struct {
 };
 
 // Strict UTF-8 decode with Go utf8.DecodeRune acceptance (compliance
-// components are self-contained: no imports from modules/).
+// components are self-contained: no imports from components/).
 fn decode(bytes: []const u8) Decoded {
     const b0 = bytes[0];
     if (b0 < 0x80) return .{ .cp = b0, .size = 1, .valid = true };

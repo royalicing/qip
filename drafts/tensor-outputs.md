@@ -74,7 +74,7 @@ Nothing fits a freestanding-wasm producer *and* consumer with sub-hundred-byte o
 | Match mask | `bits[n]` | 1 bit per input byte/record; 8× smaller than bool bytes |
 | Matrix | `f32[r, c]`, strided | row stride padded to 16 B for aligned v128 rows |
 
-Each becomes a small real module (`modules/bytes/crc32-batch.wasm`, `modules/bytes/byte-histogram.wasm`, …) plus consumers (`tensor-to-json.wasm`, `tensor-stats.wasm`, `tensor-to-bmp-heatmap.wasm` for the demo-friendly win). The producer/consumer pairs are the spec's test suite: pipeline round-trips in `qip run` assert header agreement.
+Each becomes a small real module (`components/bytes/crc32-batch.wasm`, `components/bytes/byte-histogram.wasm`, …) plus consumers (`tensor-to-json.wasm`, `tensor-stats.wasm`, `tensor-to-bmp-heatmap.wasm` for the demo-friendly win). The producer/consumer pairs are the spec's test suite: pipeline round-trips in `qip run` assert header agreement.
 
 ## SIMD-awareness, concretely
 

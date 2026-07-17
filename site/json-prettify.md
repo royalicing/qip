@@ -85,5 +85,5 @@ formatJSON();
 ## CLI equivalent
 
 ```bash
-qip run modules/text/json/json-prettify.wasm < input.json > formatted.json
+qip run components/text/json/json-prettify.wasm < input.json > formatted.json
 ```

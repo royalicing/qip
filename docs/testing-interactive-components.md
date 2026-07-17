@@ -7,12 +7,12 @@ Interactive components are easiest to test at three boundaries: the Wasm module,
 Build the component, instantiate it without imports, then call the same exports a host calls:
 
 ```sh
-make -j modules/interactive/sudoku.wasm
+make -j components/interactive/sudoku.wasm
 node --test test/sudoku-ui.mjs
 ```
 
 ```js
-const bytes = await readFile("modules/interactive/sudoku.wasm");
+const bytes = await readFile("components/interactive/sudoku.wasm");
 const { instance } = await WebAssembly.instantiate(bytes, {});
 const game = instance.exports;
 

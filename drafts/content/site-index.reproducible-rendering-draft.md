@@ -60,11 +60,11 @@ Use QIP to add portable pockets of purity to existing applications, then compose
 ## Content-first components
 
 ```bash
-du -h modules/text/markdown/commonmark.0.31.2.wasm
-# 48K    modules/text/markdown/commonmark.0.31.2.wasm
+du -h components/text/markdown/commonmark.0.31.2.wasm
+# 48K    components/text/markdown/commonmark.0.31.2.wasm
 
 echo "# A Markdown renderer that works identically cross-platform!" \
-| qip run modules/text/markdown/commonmark.0.31.2.wasm
+| qip run components/text/markdown/commonmark.0.31.2.wasm
 # <h1>A Markdown renderer that works identically cross-platform!<h1>
 ```
 

@@ -1,1 +1,0 @@
-../modules/text/html/html-tag-validator.wat

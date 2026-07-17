@@ -23,7 +23,7 @@ The name is apt: a photocopy is a faithful reproduction made by observing the su
 | Target language | Zig, compiled with the repo's existing `wasm32-freestanding` flags |
 | Equivalence | Byte-exact by default; opt-in relaxations (`--trim-trailing-newline`, future comparators) |
 | Corpus | User seeds + automatic mutation fuzzing + LLM-proposed edge-case inputs |
-| Artifacts | Dedicated workdir per run (`photocopy/<name>/`); user promotes to `modules/` manually |
+| Artifacts | Dedicated workdir per run (`photocopy/<name>/`); user promotes to `components/` manually |
 
 ## Constraints inherited from QIP
 
@@ -88,7 +88,7 @@ Deliverable: `manifest.json` — tool argv, hashes of the tool binary, seed list
 Build a prompt file containing:
 
 - The task: "write a QIP Content component in Zig matching this observed behavior."
-- The component contract essentials + a known-good example module from `modules/` as a style/ABI template (e.g. an existing text transform in the repo).
+- The component contract essentials + a known-good example module from `components/` as a style/ABI template (e.g. an existing text transform in the repo).
 - The tool's name/argv (a strong hint: the LLM likely *knows* what `base64` does — observation confirms rather than teaches), plus `tool --help`/man page text if available.
 - The sampled I/O pairs, hex-escaped where non-printable.
 - Buffer caps and the trap-on-overflow rule.
@@ -183,7 +183,7 @@ Milestones: (1)+(2) alone already deliver Approach B and are fully testable with
 
 - **Fidelity is probabilistic.** A clean fuzz run is evidence, not proof. The report must say so plainly, and the envelope (caps, input classes exercised) must be explicit. For tools with locale-sized state spaces this is fine; photocopy should refuse or loudly warn when Phase 0 smells hidden state.
 - **Compression/float tools:** byte-exact equivalence may be unachievable for tools whose exact output is an implementation detail (e.g. `gzip` bit-stream choices, float formatting). v1 stance: they simply fail the duel, honestly. Pluggable comparators (JSON-semantic, decompress-then-compare) are the future answer — the comparator interface in `duel.go` should anticipate this.
-- **Trojan-source risk:** generated Zig could in principle do something unwanted; mitigated by the existing safety-check/score gate (no imports, memory caps) and by the source being small and reviewable in the workdir. Never auto-promote into `modules/`.
+- **Trojan-source risk:** generated Zig could in principle do something unwanted; mitigated by the existing safety-check/score gate (no imports, memory caps) and by the source being small and reviewable in the workdir. Never auto-promote into `components/`.
 - **Frozen argv vs uniforms:** flags like `tr`'s operands or `fold -w N` map naturally onto QIP uniforms. v1 freezes them; a later `-uniform cols=<int>` flag could observe the tool at several parameter values and ask the LLM to generalize. Design the manifest to record frozen argv so this is a compatible extension.
 - **Non-UTF-8 stdout tools on Windows** and other platform text-mode quirks: observation happens where photocopy runs; the manifest records platform, and the report should note the copy reproduces *this platform's* behavior.
 - **Naming the module's content type:** if all observed outputs share a sniffable MIME type, propose the optional `output_content_type` exports; otherwise omit per the contract rules.

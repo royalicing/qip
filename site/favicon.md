@@ -126,13 +126,13 @@ square for best results.
 ## CLI equivalent
 
 ```bash
-qip run modules/image/png/png-to-bmp.wasm modules/image/bmp/bmp-to-ico.wasm \
+qip run components/image/png/png-to-bmp.wasm components/image/bmp/bmp-to-ico.wasm \
   < icon.png > favicon.ico
 ```
 
 An SVG works too, rasterized at its declared size (doubling is optional):
 
 ```bash
-qip run modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm \
-  modules/image/bmp/bmp-to-ico.wasm < icon.svg > favicon.ico
+qip run components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm \
+  components/image/bmp/bmp-to-ico.wasm < icon.svg > favicon.ico
 ```

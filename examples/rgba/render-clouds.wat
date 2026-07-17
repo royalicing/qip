@@ -1,1 +1,0 @@
-../../modules/rgba/render-clouds.wat

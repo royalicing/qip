@@ -113,17 +113,17 @@ def build_tools() -> tuple[list[Tool], list[str]]:
     qip = pathlib.Path("./qip")
     if qip.exists():
         for name, module in [
-            ("qip-zlib-stored", "examples/zlib-compress.wasm"),
-            ("qip-zlib-fixed", "examples/zlib-compress-fixed-huffman.wasm"),
-            ("qip-zlib-dynamic", "examples/zlib-compress-dynamic-huffman.wasm"),
-            ("qip-zlib-dynamic-opt", "examples/zlib-compress-dynamic-huffman-opt.wasm"),
+            ("qip-zlib-stored", "components/bytes/zlib-compress.wasm"),
+            ("qip-zlib-fixed", "components/bytes/zlib-compress-fixed-huffman.wasm"),
+            ("qip-zlib-dynamic", "components/bytes/zlib-compress-dynamic-huffman.wasm"),
+            ("qip-zlib-dynamic-opt", "components/bytes/zlib-compress-dynamic-huffman-opt.wasm"),
         ]:
             if pathlib.Path(module).exists():
                 tools.append(Tool(name=name, cmd=["./qip", "run", "-i", "-", module]))
             else:
                 skipped.append(f"{name} (missing {module})")
     else:
-        skipped.append("qip modules (missing ./qip)")
+        skipped.append("qip components (missing ./qip)")
 
     py = shutil.which("python3")
     if py:

@@ -63,9 +63,9 @@ test("duel: JavaScript toUpperCase vs the UCD 17 corpus and properties", async (
   );
 });
 
-test("duel: modules/utf8/unicode-17-uppercase.wasm is fully compliant", async () => {
+test("duel: components/utf8/unicode-17-uppercase.wasm is fully compliant", async () => {
   const implBytes = await readFile(
-    new URL("../modules/utf8/unicode-17-uppercase.wasm", import.meta.url),
+    new URL("../components/utf8/unicode-17-uppercase.wasm", import.meta.url),
   );
   const { instance } = await WebAssembly.instantiate(implBytes);
   const impl = instance.exports;

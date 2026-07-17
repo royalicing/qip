@@ -39,36 +39,36 @@ You can pipe the results of other CLI tools to stdin or pass files in via `-i`. 
 
 ```bash
 # Normalize phone number
-echo "+1 (212) 555-0100" | qip run modules/utf8/e164.wasm
+echo "+1 (212) 555-0100" | qip run components/utf8/e164.wasm
 # +12125550100
 
 # Convert purple from rgb to hex
-echo "rgb(101, 79, 240)" | qip run modules/utf8/rgb-to-hex.wasm
+echo "rgb(101, 79, 240)" | qip run components/utf8/rgb-to-hex.wasm
 # #654ff0
 
 # Expand emoji shortcodes
-echo "Run :rocket: WebAssembly components identically on any computer :sparkles:" | qip run modules/utf8/shortcode-to-emoji.wasm
+echo "Run :rocket: WebAssembly components identically on any computer :sparkles:" | qip run components/utf8/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly components identically on any computer ✨
 
 # Create zlib bytes (dynamic Huffman, shown as base64)
-echo "qip + wasm" | qip run modules/bytes/zlib-compress-dynamic-huffman.wasm modules/bytes/base64-encode.wasm
+echo "qip + wasm" | qip run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/base64-encode.wasm
 # eAEFwKENAAAMArBX8LtqcmIJBMH7VEcMsv4CEnkDbg==
 
 # Round-trip zlib back to original text
-echo "qip + wasm" | qip run modules/bytes/zlib-compress-dynamic-huffman.wasm modules/bytes/zlib-decompress.wasm
+echo "qip + wasm" | qip run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-decompress.wasm
 # qip + wasm
 
 #  Load Hacker News, extractor all links with text
-curl -s https://news.ycombinator.com | qip run modules/text/html/html-link-extractor.wasm | grep "^https:"
+curl -s https://news.ycombinator.com | qip run components/text/html/html-link-extractor.wasm | grep "^https:"
 
 # Render QIP logo to ICO
-qip run -i qip-logo.svg modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm > qip-logo.ico
+qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > qip-logo.ico
 
 # Render Switzerland flag SVG to ICO
-echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
 
 # Rendering cannot loop forever
-echo "x" | qip run modules/utf8/infinite-loop.wasm
+echo "x" | qip run components/utf8/infinite-loop.wasm
 # Error: Wasm module exceeded the execution time limit (100ms)
 ```
 
@@ -352,7 +352,7 @@ Build static tar from the site:
 
 ```bash
 qip router warc ./docs \
-  | qip run modules/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
+  | qip run components/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
   > site.tar
 
 tar -tf site.tar
@@ -373,7 +373,7 @@ ls ./site
 
 ## Required build and test tools
 
-If you are contributing modules or running the full `Makefile` in this repo, install these tools:
+If you are contributing components or running the full `Makefile` in this repo, install these tools:
 
 - `make` and standard POSIX command-line tools such as `find`, `diff`, `tar`, `perl`, and `xxd`
 - Go (required for `qip` CLI): https://go.dev/doc/install
@@ -396,7 +396,7 @@ sudo apt-get install -y build-essential golang-go wabt perl vim-common
 After installing dependencies, build in parallel:
 
 ```bash
-make -j modules recipes
+make -j components recipes
 ```
 
 Run the test targets through the Makefile:
@@ -411,7 +411,7 @@ make -j test
 `test/trace-with.mjs` is included in both `make -j test-node` and `make -j test-deno`. To run it directly with Node:
 
 ```bash
-make -j qip modules/application/wasm/wasm-trace-instrument.wasm
+make -j qip components/application/wasm/wasm-trace-instrument.wasm
 node --test test/trace-with.mjs
 ```
 
@@ -421,12 +421,12 @@ To run it directly with Deno, pass the same permissions used by `make test-deno`
 deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/trace-with.mjs
 ```
 
-You can clone this repo to use the modules that are provided in `./modules`.
+You can clone this repo to use the components provided in `./components`.
 
 Current module layout groups by content type (or by encoding such as utf-8):
 
 ```text
-modules/
+components/
   bytes/
   image/svg+xml/
   text/css/
@@ -456,15 +456,15 @@ Benchmark the performance of one or more QIP components. If you compare multiple
 
 ```bash
 # Benchmark one component for two seconds
-echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm
+echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm
 # bench: outputs match
 
 # Benchmark two components against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm
+echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf8/hello-c.wasm
 # bench: outputs match
 
 # Benchmark three components against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf8/hello-c.wasm modules/utf8/hello-zig.wasm
+echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf8/hello-c.wasm components/utf8/hello-zig.wasm
 # bench: outputs match
 ```
 
@@ -477,8 +477,8 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Box shadow renderer that compares how Chrome, Safari, Firefox, and Figma all render box shadows. Lets you see all of them together at once and change widths and colors.
 - [ ] Rename `<qip-preview>` to `<qip-run>` or `<qip-render>` or something more clear.
 - [ ] Add TypeScript-to-JavaScript type stripper.
-- [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
-- [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png modules/rgba/color-halftone.wasm '?max_radius=2.0' modules/rgba/brightness.wasm '?brightness=0.2'`
+- [ ] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
+- [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add DOOM example.
 - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
 - [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
@@ -506,12 +506,12 @@ echo "World" | qip bench -i - --benchtime=2s modules/utf8/hello.wasm modules/utf
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [ ] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Convert soft-failure validators to trap on invalid input, then add invalid-then-valid same-instance recovery tests:
-  - [ ] `modules/text/css/css-class-validator.wasm`
-  - [x] `modules/text/html/html-id-validator.wasm`
-  - [ ] `modules/text/html/html-input-name-validator.wasm`
-  - [ ] `modules/text/html/html-tag-validator.wasm`
-  - [ ] `modules/utf8/tld-validator.wasm`
-  - [ ] `modules/utf8/luhn.wasm`
+  - [ ] `components/text/css/css-class-validator.wasm`
+  - [x] `components/text/html/html-id-validator.wasm`
+  - [ ] `components/text/html/html-input-name-validator.wasm`
+  - [ ] `components/text/html/html-tag-validator.wasm`
+  - [ ] `components/utf8/tld-validator.wasm`
+  - [ ] `components/utf8/luhn.wasm`
 - [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
 - [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
 - [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).

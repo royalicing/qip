@@ -137,10 +137,10 @@ components handle up to 64 KiB.
 ## CLI equivalent
 
 ```bash
-qip run modules/bytes/base64-encode.wasm < image.png > image.png.b64
-qip run modules/utf8/base64-decode.wasm < image.png.b64 > image.png
+qip run components/bytes/base64-encode.wasm < image.png > image.png.b64
+qip run components/utf8/base64-decode.wasm < image.png.b64 > image.png
 ```
 
 The decoder treats every input byte as Base64 data, so strip newlines first
 when a file wraps its lines: `tr -d '\n' < wrapped.b64 | qip run
-modules/utf8/base64-decode.wasm`.
+components/utf8/base64-decode.wasm`.

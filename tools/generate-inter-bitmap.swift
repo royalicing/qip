@@ -3,7 +3,7 @@ import CoreText
 import Foundation
 
 let fontPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/inter-4.1/InterVariable.ttf"
-let outputPath = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "modules/interactive/inter_18_ascii_bitmap.zig"
+let outputPath = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "components/interactive/inter_18_ascii_bitmap.zig"
 let fontURL = URL(fileURLWithPath: fontPath)
 
 guard let provider = CGDataProvider(url: fontURL as CFURL),

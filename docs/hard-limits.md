@@ -26,9 +26,9 @@ A host may permit memory growth explicitly, but it must also set a byte cap.
 The same policy controls work with text, binary, and image components:
 
 ```bash
-qip run --timeout-ms 1000 --max-memory 67108864 modules/utf8/trim.wasm
-qip bench -i input.txt --timeout-ms 1000 --max-memory 67108864 modules/utf8/trim.wasm
-qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 modules/rgba/invert.wasm
+qip run --timeout-ms 1000 --max-memory 67108864 components/utf8/trim.wasm
+qip bench -i input.txt --timeout-ms 1000 --max-memory 67108864 components/utf8/trim.wasm
+qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 components/rgba/invert.wasm
 ```
 
 - `--max-memory <bytes>` rejects a module when its declared memory minimum or
@@ -83,8 +83,8 @@ Run the artifact checkers as a two-stage pipeline:
 
 ```bash
 qip run -i component.wasm -- \
-  modules/application/wasm/wasm-strict-profile.wasm \
-  modules/application/wasm/wasm-bounded-loops.wasm
+  components/application/wasm/wasm-strict-profile.wasm \
+  components/application/wasm/wasm-bounded-loops.wasm
 ```
 
 `wasm-strict-profile` checks imports, memory shape, banned instructions, indirect

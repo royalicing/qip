@@ -1,1 +1,0 @@
-../modules/text/javascript/js-to-bmp.c

@@ -69,7 +69,7 @@ Your components can render Markdown into HTML, URLs into QR codes, SVG into bitm
 
 ```bash
 echo "# A Markdown renderer that works _identically_ on any platform" \
-| qip run modules/text/markdown/commonmark.0.31.2.wasm
+| qip run components/text/markdown/commonmark.0.31.2.wasm
 # <h1>A Markdown renderer that works <em>identically</em> on any platform<h1>
 ```
 
@@ -93,8 +93,8 @@ printf '%s\n' \
   'const pi: number = 3.14;' \
   '```' \
 | qip run \
-  modules/text/markdown/commonmark.0.31.2.wasm \
-  modules/text/html/highlight-syntax-highlight-tsx.wasm
+  components/text/markdown/commonmark.0.31.2.wasm \
+  components/text/html/highlight-syntax-highlight-tsx.wasm
 
 # <h1>Markdown with code snippet</h1>
 # <pre><code class="language-tsx hljs"><span class="hljs-keyword">const</span> pi: <span class="hljs-type">number</span> = <span class="hljs-number">3.14</span>;

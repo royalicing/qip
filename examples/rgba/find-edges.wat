@@ -1,1 +1,0 @@
-../../modules/rgba/find-edges.wat

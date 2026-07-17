@@ -30,7 +30,7 @@ function source(attributes) {
 }
 
 test("qip-form loads one explicit Wasm source", async () => {
-  const wasm = readFileSync("modules/form/form-email-message.wasm");
+  const wasm = readFileSync("components/form/form-email-message.wasm");
   const element = new QIPFormElement();
   element.querySelectorAll = (selector) => {
     assert.equal(selector, ":scope > source");

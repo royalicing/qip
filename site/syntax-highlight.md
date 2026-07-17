@@ -195,9 +195,9 @@ The highlighters transform whole HTML documents: each rewrites
 everything else untouched, so they chain safely.
 
 ```bash
-qip run modules/text/html/highlight-syntax-highlight-zig.wasm \
-  modules/text/html/highlight-syntax-highlight-css.wasm \
-  modules/text/html/highlight-syntax-highlight-bash.wasm \
-  modules/text/html/html-add-highlight-stylesheet-night-owl.wasm \
+qip run components/text/html/highlight-syntax-highlight-zig.wasm \
+  components/text/html/highlight-syntax-highlight-css.wasm \
+  components/text/html/highlight-syntax-highlight-bash.wasm \
+  components/text/html/html-add-highlight-stylesheet-night-owl.wasm \
   < page.html > highlighted.html
 ```

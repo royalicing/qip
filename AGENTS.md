@@ -18,7 +18,7 @@ The project uses a `Makefile` for common tasks. Use that and remember to pass `-
 ## Image
 
 - `image.html` is a browser demo for RGBA filters.
-- RGBA filters live in `examples/rgba/*.wat` with compiled `*.wasm`.
+- RGBA filters live in `components/rgba/*.wat` with compiled `*.wasm`.
 
 ### Tiling + Halo
 

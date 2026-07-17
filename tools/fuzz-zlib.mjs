@@ -26,7 +26,7 @@ import zlib from "node:zlib";
 const iterations = Number(process.argv[2] ?? 2000);
 const seed = Number(process.argv[3] ?? Math.floor(Math.random() * 0xffffffff));
 
-const modulesDir = fileURLToPath(new URL("../modules/bytes/", import.meta.url));
+const componentsDir = fileURLToPath(new URL("../components/bytes/", import.meta.url));
 const failureDir = fileURLToPath(new URL("./fuzz-failures/", import.meta.url));
 
 // mulberry32: small deterministic PRNG so every run is reproducible.
@@ -43,7 +43,7 @@ const rand = mulberry32(seed);
 const randInt = (n) => Math.floor(rand() * n);
 
 async function loadComponent(name) {
-  const bytes = readFileSync(`${modulesDir}${name}.wasm`);
+  const bytes = readFileSync(`${componentsDir}${name}.wasm`);
   const instance = await WebAssembly.instantiate(await WebAssembly.compile(bytes), {});
   const ex = instance.exports;
   return {

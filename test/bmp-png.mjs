@@ -12,8 +12,8 @@ import zlib from "node:zlib";
 const execFileP = promisify(execFile);
 
 const qip = fileURLToPath(new URL("../qip", import.meta.url));
-const bmpToPng = fileURLToPath(new URL("../modules/image/bmp/bmp-to-png.wasm", import.meta.url));
-const pngToBmp = fileURLToPath(new URL("../modules/image/png/png-to-bmp.wasm", import.meta.url));
+const bmpToPng = fileURLToPath(new URL("../components/image/bmp/bmp-to-png.wasm", import.meta.url));
+const pngToBmp = fileURLToPath(new URL("../components/image/png/png-to-bmp.wasm", import.meta.url));
 
 async function ensurePrerequisites(t) {
   try {
@@ -21,7 +21,7 @@ async function ensurePrerequisites(t) {
     await access(bmpToPng, constants.R_OK);
     await access(pngToBmp, constants.R_OK);
   } catch {
-    t.skip("build ./qip and modules first");
+    t.skip("build ./qip and components first");
   }
 }
 

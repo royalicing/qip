@@ -10,7 +10,7 @@ Every example below was compiled with the repo's production flags (`-O ReleaseSm
 qip score component.wasm
 # look for: fixed_bound_loops: PASS
 
-qip run -i component.wasm -- modules/application/wasm/wasm-strict-profile.wasm modules/application/wasm/wasm-bounded-loops.wasm
+qip run -i component.wasm -- components/application/wasm/wasm-strict-profile.wasm components/application/wasm/wasm-bounded-loops.wasm
 # passes bytes through on success, traps on any strict-tier violation
 ```
 
