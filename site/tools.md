@@ -26,4 +26,8 @@ entirely in the browser. You can run the same `.wasm` files in your shell via th
   comments.
 - [CSS expression calculator](/css-expression-calculator) resolves viewport units,
   safe-area insets, and keyboard insets for editable mobile scenarios.
+- [IEEE 754 floating-point inspector](/ieee-754-floats) exposes the sign,
+  exponent, and fraction bits of editable `f32` and `f64` values.
+- [Shadow rendering comparison](/shadow-rendering) compares adjustable shadows
+  across browsers, mobile platforms, Figma, and Photoshop.
 - [SVG data URI](/svg-data-uri) percent-encodes SVG bytes for HTML or CSS.

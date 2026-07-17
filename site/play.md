@@ -23,8 +23,6 @@ More interactive pages:
 - [Graph Calculator](/play-graph-calculator)
 - [Shutterstock Earnings Overlay](/play-shutterstock-earnings)
 - [OpenAI vs Anthropic ARR](/chart-openai-anthropic-arr)
-- [Shadow Rendering Comparison](/play-shadow-rendering)
-- [IEEE 754 Floating Point](/play-ieee-754-floats)
 - [Windows 95 Desktop](/play-windows95-desktop)
 - [Mac OS 9 Desktop](/play-macos9-desktop)
 - [Mac OS X Leopard Desktop](/play-macosx-leopard-desktop)
