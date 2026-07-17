@@ -476,9 +476,9 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 ## TODO
 
 - [ ] Update to latest Zig
-- [x] Add custom elements to QIP Router recipes e.g. `_elements/copy-code.js`
-  - The alternative is for custom elements to be a WARC recipe where it finds all instances of `<copy-code>` and inserts the `<script>`.
-- [x] Rename `./modules` to `./components` and retire `./examples`
+- [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
+- [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
+- [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
 - [ ] Retire the web-shaped `Form` component contract.
   - [ ] Add `submit(input_size)` export
     - [ ] Input is either `application/x-www-form-urlencoded` or `multipart/form-data`
@@ -486,7 +486,6 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
     - [ ] See how it could work with the Interactive component contract, and HTML-in-canvas
   - [ ] In favor of a future cross-host `Prompt` contract: sequential prompts with recoverable failure, `submit(input_size, now_ms)` for state changes, and `render(0)` for the current semantic projection/output.
 - [ ] Add Command Palette example, combining `<input>` and `<canvas>`
-- [x] Add a custom element such as `<qip-content-size src="/components/example.wasm">` that resolves a WARC site path and renders its byte or kilobyte size, so download lists do not hard-code artifact sizes.
 - [ ] Add CSV to chart SVG example
 - [ ] Add TCP simulator example, showing segments and allowing you to test failure.
 - [ ] Add more shader examples from https://github.com/paper-design/shaders/tree/main/packages/shaders/src/shaders:
@@ -508,24 +507,16 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - See https://developer.mozilla.org/en-US/docs/Web/MathML/Reference/Element/semantics
   - See https://asciimath.org/#syntax
   - Have `/math-to-html` demo like https://katex.org/#demo
-- [x] Rename `qip dev` command to `qip router dev`
-- [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
   - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
-- [x] Enforce fixed memory by default, with capped memory growth as an explicit opt-in.
 - [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
 - [ ] Add optional field telemetry for deployed QIP components: user-experience metrics such as component hash, host/runtime/device class, time to first QIP paint p75/p95/p99, render-to-paint delay p75/p95/p99, interactive event-to-painted-frame p75/p95/p99, sampled pipeline render p95/p99, frame-budget miss rate, trap/timeout rate, and slowest device classes so production performance can be compared without changing the component contract.
-- [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
-- [x] Box shadow renderer that compares how Chrome, Safari, Firefox, and Figma all render box shadows. Lets you see all of them together at once and change widths and colors.
-- [x] Rename `<qip-preview>`: it is now `<qip-edit>`, alongside `<qip-play>` and `<qip-view>`. See [Browser Elements](/docs/qip-elements).
-- [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
 - [ ] Add TypeScript-to-JavaScript type stripper.
 - [x] Document uniforms properly `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add CDN example to allow this to run server-side: `qip image -i fixtures/SAAM-2015.54.2_1.jpg -o tmp/halftone.png components/rgba/color-halftone.wasm '?max_radius=2.0' components/rgba/brightness.wasm '?brightness=0.2'`
 - [ ] Add DOOM example.
   - See https://github.com/Daivuk/PureDOOM
 - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
-- [x] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
 - [x] Add application/wasm verifier for fixed memory, fixed-bound loop evidence, and no recursion. This is a conservative subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code: loops must compile to a visible counter, monotonic update, and exit bound.
 - [ ] Add a `wasm-fuel-instrument` component that injects deterministic fuel metering as a wasm-to-wasm transform: a decrementing fuel global checked at each loop backedge and call, trapping at zero. Prior art: wasmtime fuel/epochs and Parity's wasm-metering gas injection. Fuel is deterministic (same input, same fuel spend on every host), unlike wall-clock `--timeout-ms`, and browsers cannot preempt a wasm call on the main thread. This gives modules whose loops the static checker cannot prove (for example `commonmark`) a metered tier, while statically proven modules keep the strict tier.
 - [ ] Add tracing by modifying modules:
@@ -544,9 +535,6 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 - [ ] Add Figma vector networks example.
 - [x] Add localized example in multiple languages.
 - [ ] Add a split interactive pipeline mode with two collaborative modules: state/tick module writes an internal scene buffer, renderer module consumes it via `render(input_size)` with a simple `memcpy` handoff between module instances, enabling presentation variants like language/locale, dark or light mode, font size, DPI scaling, and accessibility-focused rendering.
-- [x] Change render contract to extend existing contract:
-  - [x] Interactive modules use `export fn render(input_size: i32) i32`
-  - [x] Interactive modules use `export fn output_rgba8_srgb_bytes() u32` as the primary output-byte export.
 - [ ] Have separate `pointermove` event handler so we can skip expensive `pointermove` listeners and rendering if not needed??
 - [ ] Refine the interactive tick result contract: events return accepted/ignored, but `tick()` currently returns only `next_wake_at_ms`; define how tick also communicates whether `render(0)` is necessary without losing scheduled wakeups. Specify pointer leave/cancel coordinates and button state consistently across hosts.
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
@@ -558,8 +546,6 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - [x] `components/text/html/html-tag-validator.wasm`
   - [ ] `components/utf8/tld-validator.wasm`
   - [x] `components/utf8/luhn.wasm`
-- [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
-- [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
 - [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).
 - [ ] Add `qip serve` command that runs the server in `prod` mode by default, and includes a module upload endpoint.
 - [ ] Add `random_ptr` and `random_size` to modules that the host can detect and fill in with random data. It can choose to seed with determinism or use a cryptographic source of randomness — it’s up to the host.
@@ -567,14 +553,10 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 - [ ] Add first-stage content-type guards: either lightweight ingress sniffing (check initial bytes against expected type) or validator modules (for example `validate-html.wasm`) that accept untrusted input and re-emit it with asserted MIME type on success.
 - [ ] Add `qip photocopy` command that observes an existing tool’s input/output behavior and generates a behaviorally similar QIP module implementation in wasm, then validates it with duel/fuzz tests and reports divergences.
 - [ ] Rework `qip comply` check modules into **Compliance components** — a first-class component type alongside `Content`, `Interactive`, `Tile`, and `Form` in docs/component-contract.md — moving away from shared linear memory and the `failure_*` export ABI. Today a checker imports `impl.memory` and must be linked at a hand-chosen `--global-base` so its data and stack miss the impl's tables and buffers (see `compliance/unicode-17-lowercase.comply.zig` build note) — it works, but the layout coupling is fragile and the `env`→`impl` wat rename is a hack. Chosen direction: a host bridge with declared expectations, because it streams (Raspberry-Pi-friendly memory: one case live at a time, unlike emit-the-whole-corpus designs), it can fuzz procedurally (luhn-style generated oracles, mutation loops, PRNG corpora), and existing checkers migrate mechanically (same loop shape, minus the memory gymnastics and failure exports).
-  - [x] Bridge ABI (piloted in `compliance/unicode-17-uppercase.comply.zig` + `test/unicode-17-uppercase-comply.mjs`): the Compliance component keeps its own memory, exports `comply() -> i32` (declared-case count) and optional `uniform_set_seed`, and imports from module `qip`: `render_must_equal(ordinal: u64, in_ptr, in_len, expected_ptr, expected_len) -> i32` (exact-bytes case), `render_must_trap(ordinal: u64, in_ptr, in_len) -> i32` (negative phase, for validator contracts), `render_examine(ordinal: u64, in_ptr, in_len, out_ptr, out_cap) -> i32` (runs the impl and copies output into the component's memory for inspection; the first call at a new ordinal opens an examination case, same-ordinal calls continue it for multi-render properties), and `render_examine_pass(ordinal: u64)` / `render_examine_fail(ordinal: u64) -> i32` (close the examination with its verdict — one prefix-grouped `render_examine*` family). Every call carries the case ordinal from the component's own counter, so host and component continuously verify they agree on "which case is this?" — the host errors on any mismatch, unclosed examination, or mid-case ordinal change. Ordinals are u64 because deterministic fuzz campaigns can exceed 2^32 cases; JS hosts receive them as BigInt. The uppercase pilot uses `must` for idempotence (upper∘upper = upper) and ASCII-in→ASCII-out properties. No case names in the ABI — identity is (component hash, seed, ordinal). The *host* drives the impl, compares declared expectations, and owns all reporting. Adoption story: developers in any language can consume our compliance specs against their own implementations — the harness dueling JS `toUpperCase` is the first example — and reference bugs as (hash, seed, ordinal) without ever authoring a QIP component.
   - [ ] Case identity = bridge-call ordinal. Checkers are deterministic, so "case 987 of the CommonMark suite" is reproducible by re-running the checker and skipping the first 986 interactions (host returns pass without executing the impl until the target ordinal). `qip comply --case 987` prints that case's name/input/expected without needing any failure ABI; `--continue` counts all divergences instead of stopping.
   - [ ] Corpus extraction for non-QIP implementations: run the checker against a null impl (host records every declared case instead of executing anything) and export the ordered corpus as a tar archive (simple, streaming, ordered, arbitrary binary entries; the repo already speaks tar). Any external harness — a Go test dueling x/text, a Node script dueling `toLocaleLowerCase`, a CLI duel over stdin/stdout — consumes the tar. This makes the emit-a-corpus design a *host feature* of the bridge design rather than a separate module shape.
   - [ ] Migrate the remaining legacy checkers (Luhn and E.164) to the bridge; delete their `failure_*` exports and `--global-base` build notes.
-  - [x] Migrate the CommonMark checkers to the bridge.
-  - [x] Migrate unicode-17-lowercase to the bridge: its compliance component now owns its memory, embeds a Final_Sigma-aware oracle, fuzzes with a sigma-biased alphabet, and checks idempotence/ASCII properties — the legacy shared-memory module and its wat-rename build pipeline are gone.
   - [ ] Move the Compliance-component meta-contract checks into `qip comply` base validation (the way static contract checks already run for render components): deterministic declarations across a double null-impl run, sequential u64 ordinals, examination open/continue/close discipline, and seed-varies-fuzz-only. Per-component harnesses must not each re-verify these; `test/lib/compliance-harness.mjs` is the interim JS reference implementation of both the bridge and the generic checks.
-  - [ ] Longer term: wasm multi-memory (impl memory imported as a second memory) removes the collision class entirely and is shipped in engines, but producer toolchains (Zig/LLVM) can't comfortably address a second memory yet; revisit when they can.
 - [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/component-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
 - [ ] Revisit numeric outputs as SIMD-aware tensors instead of restoring the old `output_i32_cap` directly. Useful proof cases are batched CRC, histograms, offset arrays, masks, and matrices. Keep element type, logical shape, and physical layout separate; Mojo's scalar-as-one-lane-SIMD and explicit layout model is pertinent prior art.
 - [ ] Finish migrating QIP contract exports to zero-arg functions only. Convert remaining WAT modules that export pointer/cap globals, then remove "global or function" support and wording from the Go runtime, comply checks, and docs.
