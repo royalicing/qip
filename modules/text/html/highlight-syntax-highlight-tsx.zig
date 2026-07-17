@@ -534,7 +534,7 @@ fn startsWithAt(code: []const u8, idx: usize, needle: []const u8) bool {
 }
 
 fn isJsxTagBoundary(c: u8) bool {
-    return isSpace(c) or c == '(' or c == '{' or c == '[' or c == '=' or c == ',' or c == ':' or c == ';';
+    return isSpace(c) or c == '(' or c == '{' or c == '}' or c == '[' or c == '=' or c == ',' or c == ':' or c == ';';
 }
 
 fn isJsxNameStart(c: u8) bool {

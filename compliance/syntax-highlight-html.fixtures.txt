@@ -1,0 +1,31 @@
+=== INPUT ===
+<pre><code class="language-html">&lt;article class=&quot;card&quot; data-state=&quot;ready&quot;&gt;
+  &lt;h2&gt;Hello&lt;/h2&gt;
+&lt;/article&gt;</code></pre>
+=== OUTPUT ===
+<pre><code class="language-html hljs"><span class="hljs-tag">&lt;</span><span class="hljs-name">article</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;card&quot;</span> <span class="hljs-attr">data-state</span>=<span class="hljs-string">&quot;ready&quot;</span><span class="hljs-tag">&gt;</span>
+  <span class="hljs-tag">&lt;</span><span class="hljs-name">h2</span><span class="hljs-tag">&gt;</span>Hello<span class="hljs-tag">&lt;</span><span class="hljs-tag">/</span><span class="hljs-name">h2</span><span class="hljs-tag">&gt;</span>
+<span class="hljs-tag">&lt;</span><span class="hljs-tag">/</span><span class="hljs-name">article</span><span class="hljs-tag">&gt;</span></code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-markup">&lt;!-- class and href are text here --&gt;
+&lt;input disabled aria-label='return class' /&gt;</code>
+=== OUTPUT ===
+<code class="language-markup hljs"><span class="hljs-comment">&lt;!-- class and href are text here --&gt;</span>
+<span class="hljs-tag">&lt;</span><span class="hljs-name">input</span> <span class="hljs-attr">disabled</span> <span class="hljs-attr">aria-label</span>=<span class="hljs-string">'return class'</span> <span class="hljs-tag">/</span><span class="hljs-tag">&gt;</span></code>
+=== END ===
+=== INPUT ===
+<code data-kind="demo" class="compact language-xml">&lt;feed xmlns=&quot;urn:example&quot;&gt;&lt;entry /&gt;&lt;/feed&gt;</code>
+=== OUTPUT ===
+<code data-kind="demo" class="compact language-xml hljs"><span class="hljs-tag">&lt;</span><span class="hljs-name">feed</span> <span class="hljs-attr">xmlns</span>=<span class="hljs-string">&quot;urn:example&quot;</span><span class="hljs-tag">&gt;</span><span class="hljs-tag">&lt;</span><span class="hljs-name">entry</span> <span class="hljs-tag">/</span><span class="hljs-tag">&gt;</span><span class="hljs-tag">&lt;</span><span class="hljs-tag">/</span><span class="hljs-name">feed</span><span class="hljs-tag">&gt;</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-html hljs"><span class="hljs-name">div</span></code>
+=== OUTPUT ===
+<code class="language-html hljs"><span class="hljs-name">div</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-javascript">const node = "&lt;div&gt;";</code>
+=== OUTPUT ===
+<code class="language-javascript">const node = "&lt;div&gt;";</code>
+=== END ===

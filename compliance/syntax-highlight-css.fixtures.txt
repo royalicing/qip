@@ -1,0 +1,45 @@
+=== INPUT ===
+<pre><code class="language-css">@media (min-width: 48rem) {
+  .card:hover &gt; [data-state=&quot;open&quot;] {
+    color: var(--accent);
+    content: "display: grid; @media";
+    /* color and display are text here */
+  }
+}</code></pre>
+=== OUTPUT ===
+<pre><code class="language-css hljs"><span class="hljs-keyword">@media</span> (min-width: <span class="hljs-number">48rem</span>) {
+  <span class="hljs-selector-class">.card</span><span class="hljs-selector-pseudo">:hover</span> &gt; <span class="hljs-selector-attr">[data-state=&quot;open&quot;]</span> {
+    <span class="hljs-attribute">color</span>: <span class="hljs-built_in">var</span>(--accent);
+    <span class="hljs-attribute">content</span>: <span class="hljs-string">"display: grid; @media"</span>;
+    <span class="hljs-comment">/* color and display are text here */</span>
+  }
+}</code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-css">:root { --accent: #7c3aed; }
+#app .button::before { width: 1.5rem; opacity: 0.75; }</code>
+=== OUTPUT ===
+<code class="language-css hljs"><span class="hljs-selector-pseudo">:root</span> { <span class="hljs-attribute">--accent</span>: <span class="hljs-number">#7c3aed</span>; }
+<span class="hljs-selector-id">#app</span> <span class="hljs-selector-class">.button</span><span class="hljs-selector-pseudo">::before</span> { <span class="hljs-attribute">width</span>: <span class="hljs-number">1.5rem</span>; <span class="hljs-attribute">opacity</span>: <span class="hljs-number">0.75</span>; }</code>
+=== END ===
+=== INPUT ===
+<code class="language-css">@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}</code>
+=== OUTPUT ===
+<code class="language-css hljs"><span class="hljs-keyword">@keyframes</span> fade {
+  <span class="hljs-selector-tag">from</span> { <span class="hljs-attribute">opacity</span>: <span class="hljs-number">0</span>; }
+  <span class="hljs-selector-tag">to</span> { <span class="hljs-attribute">opacity</span>: <span class="hljs-number">1</span>; }
+}</code>
+=== END ===
+=== INPUT ===
+<code class="language-css hljs"><span class="hljs-selector-class">.card</span> { color: red; }</code>
+=== OUTPUT ===
+<code class="language-css hljs"><span class="hljs-selector-class">.card</span> { color: red; }</code>
+=== END ===
+=== INPUT ===
+<code class="language-javascript">const css = ".card { display: block; }";</code>
+=== OUTPUT ===
+<code class="language-javascript">const css = ".card { display: block; }";</code>
+=== END ===

@@ -1,0 +1,37 @@
+=== INPUT ===
+<pre><code class="language-javascript">async function render(value) {
+  const message = "return await class";
+  // return await class
+  return await Promise.resolve(`${message}: ${value}`);
+}</code></pre>
+=== OUTPUT ===
+<pre><code class="language-javascript hljs"><span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> render(value) {
+  <span class="hljs-keyword">const</span> message = <span class="hljs-string">"return await class"</span>;
+  <span class="hljs-comment">// return await class</span>
+  <span class="hljs-keyword">return</span> <span class="hljs-keyword">await</span> <span class="hljs-type">Promise</span>.resolve(<span class="hljs-string">`${message}: ${value}`</span>);
+}</code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-js">const config = { enabled: true, count: 0x10 };
+console.log(JSON.stringify(config));</code>
+=== OUTPUT ===
+<code class="language-js hljs"><span class="hljs-keyword">const</span> config = { enabled: <span class="hljs-literal">true</span>, count: <span class="hljs-number">0x10</span> };
+<span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(config));</code>
+=== END ===
+=== INPUT ===
+<code class="language-tsx">interface Props { label: string }
+const Button = ({ label }: Props) =&gt; &lt;button&gt;{label}&lt;/button&gt;;</code>
+=== OUTPUT ===
+<code class="language-tsx hljs"><span class="hljs-keyword">interface</span> Props { label: <span class="hljs-type">string</span> }
+<span class="hljs-keyword">const</span> Button = ({ label }: Props) =&gt; <span class="hljs-tag">&lt;button&gt;</span>{label}<span class="hljs-tag">&lt;/button&gt;</span>;</code>
+=== END ===
+=== INPUT ===
+<code class="language-js hljs"><span class="hljs-keyword">const</span> ready = true;</code>
+=== OUTPUT ===
+<code class="language-js hljs"><span class="hljs-keyword">const</span> ready = true;</code>
+=== END ===
+=== INPUT ===
+<code class="language-css">.card { display: block; }</code>
+=== OUTPUT ===
+<code class="language-css">.card { display: block; }</code>
+=== END ===

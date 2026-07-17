@@ -48,6 +48,12 @@ const Writer = struct {
 const CodeOpenTag = struct {
     end: usize,
     has_language_html: bool,
+    has_hljs: bool,
+};
+
+const CodeClassInfo = struct {
+    has_language: bool,
+    has_hljs: bool,
 };
 
 const CodeCloseTag = struct {
@@ -131,6 +137,17 @@ fn classContainsLanguageHTML(value: []const u8) bool {
     return false;
 }
 
+fn classContainsHljs(value: []const u8) bool {
+    var i: usize = 0;
+    while (i < value.len) {
+        while (i < value.len and isSpace(value[i])) : (i += 1) {}
+        const start = i;
+        while (i < value.len and !isSpace(value[i])) : (i += 1) {}
+        if (i > start and eqlIgnoreCase(value[start..i], "hljs")) return true;
+    }
+    return false;
+}
+
 fn findTagEnd(input: []const u8, start: usize) ?usize {
     var i = start;
     var quote: u8 = 0;
@@ -149,8 +166,9 @@ fn findTagEnd(input: []const u8, start: usize) ?usize {
     return null;
 }
 
-fn codeTagHasLanguageHTML(tag: []const u8) bool {
-    if (tag.len < 6) return false;
+fn codeTagClassInfoHTML(tag: []const u8) CodeClassInfo {
+    var out: CodeClassInfo = .{ .has_language = false, .has_hljs = false };
+    if (tag.len < 6) return out;
     var i: usize = 5; // after "<code"
     while (i < tag.len) {
         while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
@@ -188,9 +206,70 @@ fn codeTagHasLanguageHTML(tag: []const u8) bool {
             }
         }
 
-        if (eqlIgnoreCase(name, "class") and classContainsLanguageHTML(value)) return true;
+        if (eqlIgnoreCase(name, "class")) {
+            if (classContainsLanguageHTML(value)) out.has_language = true;
+            if (classContainsHljs(value)) out.has_hljs = true;
+        }
     }
-    return false;
+    return out;
+}
+
+fn findClassValueRange(tag: []const u8) ?struct { value_start: usize, value_end: usize } {
+    if (tag.len < 6) return null;
+    var i: usize = 5;
+    while (i < tag.len) {
+        while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
+        if (i >= tag.len or tag[i] == '>') break;
+        if (tag[i] == '/') {
+            i += 1;
+            continue;
+        }
+
+        const name_start = i;
+        while (i < tag.len and isAttrNameChar(tag[i])) : (i += 1) {}
+        if (name_start == i) {
+            i += 1;
+            continue;
+        }
+        const name = tag[name_start..i];
+        while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
+        if (i >= tag.len or tag[i] != '=') continue;
+        i += 1;
+        while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
+        if (i >= tag.len) break;
+
+        var value_start = i;
+        var value_end = i;
+        if (tag[i] == '"' or tag[i] == '\'') {
+            const quote = tag[i];
+            value_start = i + 1;
+            i += 1;
+            while (i < tag.len and tag[i] != quote) : (i += 1) {}
+            value_end = @min(i, tag.len);
+            if (i < tag.len) i += 1;
+        } else {
+            value_start = i;
+            while (i < tag.len and !isSpace(tag[i]) and tag[i] != '>' and tag[i] != '/') : (i += 1) {}
+            value_end = i;
+        }
+        if (eqlIgnoreCase(name, "class")) return .{ .value_start = value_start, .value_end = value_end };
+    }
+    return null;
+}
+
+fn writeCodeOpenTagWithHljs(tag: []const u8, w: *Writer) void {
+    const range = findClassValueRange(tag) orelse {
+        w.writeSlice(tag);
+        return;
+    };
+    if (classContainsHljs(tag[range.value_start..range.value_end])) {
+        w.writeSlice(tag);
+        return;
+    }
+    w.writeSlice(tag[0..range.value_end]);
+    if (range.value_end > range.value_start) w.writeByte(' ');
+    w.writeSlice("hljs");
+    w.writeSlice(tag[range.value_end..]);
 }
 
 fn parseCodeOpenTag(input: []const u8, start: usize) ?CodeOpenTag {
@@ -200,9 +279,11 @@ fn parseCodeOpenTag(input: []const u8, start: usize) ?CodeOpenTag {
     if (start + 5 < input.len and !isTagNameBoundary(input[start + 5])) return null;
 
     const end = findTagEnd(input, start + 5) orelse return null;
+    const info = codeTagClassInfoHTML(input[start .. end + 1]);
     return .{
         .end = end,
-        .has_language_html = codeTagHasLanguageHTML(input[start .. end + 1]),
+        .has_language_html = info.has_language,
+        .has_hljs = info.has_hljs,
     };
 }
 
@@ -420,14 +501,14 @@ fn transformHTML(input: []const u8, w: *Writer) void {
         };
 
         const inner = input[open.end + 1 .. close.start];
-        if (!open.has_language_html or std.mem.indexOf(u8, inner, "<span class=\"hljs-") != null) {
+        if (!open.has_language_html or open.has_hljs or std.mem.indexOf(u8, inner, "<span class=\"hljs-") != null) {
             w.writeSlice(input[i .. close.end + 1]);
             cursor = close.end + 1;
             i = cursor;
             continue;
         }
 
-        w.writeSlice(input[i .. open.end + 1]);
+        writeCodeOpenTagWithHljs(input[i .. open.end + 1], w);
         writeHighlightedHTML(inner, w);
         w.writeSlice(input[close.start .. close.end + 1]);
         cursor = close.end + 1;
@@ -459,14 +540,14 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights escaped html code blocks" {
     const input = "<pre><code class=\"language-html\">&lt;div class=&quot;card&quot;&gt;Hello&lt;/div&gt;</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-html\"><span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">div</span> <span class=\"hljs-attr\">class</span>=<span class=\"hljs-string\">&quot;card&quot;</span><span class=\"hljs-tag\">&gt;</span>Hello<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">div</span><span class=\"hljs-tag\">&gt;</span></code></pre>";
+    const expected = "<pre><code class=\"language-html hljs\"><span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">div</span> <span class=\"hljs-attr\">class</span>=<span class=\"hljs-string\">&quot;card&quot;</span><span class=\"hljs-tag\">&gt;</span>Hello<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">div</span><span class=\"hljs-tag\">&gt;</span></code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
 test "highlights escaped html comments" {
     const input = "<code class=\"language-html\">&lt;!-- note --&gt;</code>";
     const got = runForTest(input);
-    const expected = "<code class=\"language-html\"><span class=\"hljs-comment\">&lt;!-- note --&gt;</span></code>";
+    const expected = "<code class=\"language-html hljs\"><span class=\"hljs-comment\">&lt;!-- note --&gt;</span></code>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
