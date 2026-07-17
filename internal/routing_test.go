@@ -57,7 +57,6 @@ func TestBuildContentRoutesSkipsReservedRouterDirectories(t *testing.T) {
 	}
 	for _, requestPath := range []string{
 		"/_recipes/text/markdown/10-markdown.wasm",
-		"/_forms/contact.wasm",
 		"/_components/interactive/game.wasm",
 		"/_elements/qip-edit.js",
 	} {
@@ -68,11 +67,14 @@ func TestBuildContentRoutesSkipsReservedRouterDirectories(t *testing.T) {
 	if _, ok := routes["/_og/card.png"]; !ok {
 		t.Fatalf("non-reserved underscore path was not routed")
 	}
+	if _, ok := routes["/_forms/contact.wasm"]; !ok {
+		t.Fatalf("ordinary _forms path was not routed")
+	}
 }
 
 func TestResolveRouterProjectConfigDiscoversAndAllowsOverrides(t *testing.T) {
 	root := t.TempDir()
-	for _, rel := range []string{ReservedRecipesDir, ReservedFormsDir, ReservedComponentsDir, ReservedElementsDir} {
+	for _, rel := range []string{ReservedRecipesDir, ReservedComponentsDir, ReservedElementsDir} {
 		if err := os.Mkdir(filepath.Join(root, rel), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", rel, err)
 		}
@@ -84,9 +86,6 @@ func TestResolveRouterProjectConfigDiscoversAndAllowsOverrides(t *testing.T) {
 	}
 	if config.RecipesRoot != filepath.Join(root, ReservedRecipesDir) {
 		t.Fatalf("recipes root=%q", config.RecipesRoot)
-	}
-	if config.FormsRoot != filepath.Join(root, ReservedFormsDir) {
-		t.Fatalf("forms root=%q", config.FormsRoot)
 	}
 	if config.ComponentsRoot != filepath.Join(root, ReservedComponentsDir) {
 		t.Fatalf("components root=%q", config.ComponentsRoot)

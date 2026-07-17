@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"os"
@@ -200,57 +199,4 @@ func isValidCustomElementName(name string) bool {
 		return false
 	}
 	return true
-}
-
-func loadFormModules(formsRoot string) (map[string][]byte, map[string][32]byte, error) {
-	modules := make(map[string][]byte)
-	digests := make(map[string][32]byte)
-	if formsRoot == "" {
-		return modules, digests, nil
-	}
-
-	modulePaths := make(map[string]string)
-	err := walkFilesFollowingSymlinks(formsRoot, "form", func(fullPath string, _ fs.FileInfo) error {
-		relPath, err := filepath.Rel(formsRoot, fullPath)
-		if err != nil {
-			return err
-		}
-		relPath = filepath.ToSlash(relPath)
-		if !utf8.ValidString(relPath) {
-			return fmt.Errorf("form path %q must be valid UTF-8", relPath)
-		}
-		if strings.HasPrefix(relPath, "/") {
-			return fmt.Errorf("form path %q must not start with /", relPath)
-		}
-		cleanRel := path.Clean(relPath)
-		if cleanRel != relPath || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
-			return fmt.Errorf("form path %q is not canonical", relPath)
-		}
-		if strings.ToLower(path.Ext(relPath)) != ".wasm" {
-			return nil
-		}
-
-		formName := strings.TrimSuffix(relPath, path.Ext(relPath))
-		if formName == "" {
-			return fmt.Errorf("form path %q must include a name before .wasm", relPath)
-		}
-
-		if prev, exists := modulePaths[formName]; exists {
-			return fmt.Errorf("duplicate form component name %q in %q and %q", formName, prev, fullPath)
-		}
-
-		body, err := os.ReadFile(fullPath)
-		if err != nil {
-			return err
-		}
-		modules[formName] = body
-		digests[formName] = sha256.Sum256(body)
-		modulePaths[formName] = fullPath
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return modules, digests, nil
 }

@@ -119,13 +119,12 @@ func kindredParentRoutePaths(requestPath string) []string {
 }
 
 const ReservedRecipesDir = "_recipes"
-const ReservedFormsDir = "_forms"
 const ReservedComponentsDir = "_components"
 const ReservedElementsDir = "_elements"
 
 func IsReservedRouterDirectoryName(name string) bool {
 	switch name {
-	case ReservedRecipesDir, ReservedFormsDir, ReservedComponentsDir, ReservedElementsDir:
+	case ReservedRecipesDir, ReservedComponentsDir, ReservedElementsDir:
 		return true
 	default:
 		return false
@@ -142,7 +141,6 @@ type RouterProjectConfig struct {
 	ContentRoot string
 
 	RecipesRoot    string
-	FormsRoot      string
 	ComponentsRoot string
 	ElementsRoot   string
 }
@@ -151,12 +149,6 @@ func ResolveRouterProjectConfig(config RouterProjectConfig) (RouterProjectConfig
 	var err error
 	if config.RecipesRoot == "" {
 		config.RecipesRoot, err = discoverOptionalProjectDir(config.ContentRoot, ReservedRecipesDir, "recipes")
-		if err != nil {
-			return RouterProjectConfig{}, err
-		}
-	}
-	if config.FormsRoot == "" {
-		config.FormsRoot, err = discoverOptionalProjectDir(config.ContentRoot, ReservedFormsDir, "forms")
 		if err != nil {
 			return RouterProjectConfig{}, err
 		}

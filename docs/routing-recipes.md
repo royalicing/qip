@@ -9,7 +9,6 @@ Use this page as the operational summary. The normative route rules live in [Rou
 The router walks the site root and builds routes from regular content files. It skips project directories that are not ordinary pages:
 
 - `_recipes`
-- `_forms`
 - `_components`
 - `_elements`
 
@@ -87,7 +86,7 @@ This avoids background polling as the primary mental model: edit a file, reload 
 - Duplicate prefix error:
   Two active recipe files in one MIME directory start with the same `NN`. Rename one or disable it with a leading `-`.
 - Form component is missing:
-  Check that `<qip-form name="contact">` has a matching `_forms/contact.wasm`.
+  Check that `<qip-form>` has one direct `<source>` and that its `src` resolves to an `application/wasm` component route.
 
 ## When Not To Use This Model
 

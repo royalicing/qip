@@ -27,7 +27,6 @@ func devCmd(args []string) {
 		contentTypeChecking: ContentTypeCheckingStrong,
 	}
 	var recipesRoot string
-	var formsRoot string
 	var componentsRoot string
 	var modeRaw string
 	port := 4000
@@ -37,7 +36,6 @@ func devCmd(args []string) {
 	fs.BoolVar(&devVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&devVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&recipesRoot, "recipes", "", "recipe QIP components root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form QIP components root directory")
 	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
 	fs.BoolVar(&opts.viewSource, "view-source", false, "serve /view-source plus recipe source files from --recipes")
@@ -65,12 +63,11 @@ func devCmd(args []string) {
 	if err := validateContentRootArg(contentRoot); err != nil {
 		gameOver("%v", err)
 	}
-	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, formsRoot, componentsRoot)
+	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, componentsRoot)
 	if err != nil {
 		gameOver("%v", err)
 	}
 	recipesRoot = projectConfig.RecipesRoot
-	formsRoot = projectConfig.FormsRoot
 	componentsRoot = projectConfig.ComponentsRoot
 	if opts.viewSource && recipesRoot == "" {
 		gameOver("--view-source requires --recipes <recipes_dir>")
@@ -78,7 +75,6 @@ func devCmd(args []string) {
 	layout := RouterFileLayout{
 		ContentRoot:    contentRoot,
 		RecipesRoot:    recipesRoot,
-		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
 		ElementsRoot:   projectConfig.ElementsRoot,
 		ViewSource:     opts.viewSource,
@@ -125,7 +121,7 @@ func devCmd(args []string) {
 		}
 
 		swapRuntimeState(nextState)
-		log.Printf("dev: reloaded reason=%s paths=%d recipe_mimes=%d forms=%d components=%d elements=%d duration_ms=%d", reason, len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), len(nextState.componentAssets), len(nextState.elementAssets), time.Since(reloadStart).Milliseconds())
+		log.Printf("dev: reloaded reason=%s paths=%d recipe_mimes=%d components=%d elements=%d duration_ms=%d", reason, len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.componentAssets), len(nextState.elementAssets), time.Since(reloadStart).Milliseconds())
 	}
 	reloadRecipesIfChanged := func() {
 		if opts.mode != modeDev || recipesRoot == "" {
@@ -157,7 +153,7 @@ func devCmd(args []string) {
 		}
 
 		swapRuntimeState(nextState)
-		log.Printf("dev: reloaded reason=recipe_change paths=%d recipe_mimes=%d forms=%d components=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.formModules), len(nextState.componentAssets), time.Since(reloadStart).Milliseconds())
+		log.Printf("dev: reloaded reason=recipe_change paths=%d recipe_mimes=%d components=%d elements=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.componentAssets), len(nextState.elementAssets), time.Since(reloadStart).Milliseconds())
 	}
 
 	defer func() {
@@ -170,9 +166,6 @@ func devCmd(args []string) {
 	log.Printf("dev: indexed %d request paths from %s", len(state.contentRoutes), contentRoot)
 	if recipesRoot != "" {
 		log.Printf("dev: loaded %d recipe mime chains from %s", len(state.recipeChains), recipesRoot)
-	}
-	if formsRoot != "" {
-		log.Printf("dev: loaded %d form components from %s", len(state.formModules), formsRoot)
 	}
 	if componentsRoot != "" {
 		log.Printf("dev: loaded %d browser components from %s", len(state.componentAssets), componentsRoot)
@@ -236,7 +229,7 @@ func devCmd(args []string) {
 	}()
 
 	log.Printf("dev: listening on http://%s", addr)
-	log.Printf("dev: send SIGHUP to reload routes, recipes, forms, and components: `kill -HUP %d`", os.Getpid())
+	log.Printf("dev: send SIGHUP to reload routes, recipes, components, and elements: `kill -HUP %d`", os.Getpid())
 	log.Printf("dev: browser hard reload (Cache-Control: no-cache/max-age=0) triggers full runtime reload")
 
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {

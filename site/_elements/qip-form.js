@@ -4,7 +4,7 @@ const qipFormRequiredExports = [
   "memory",
   "input_ptr",
   "input_utf8_cap",
-  "run",
+  "render",
   "output_ptr",
   "output_utf8_cap",
   "input_key_ptr",
@@ -14,15 +14,6 @@ const qipFormRequiredExports = [
   "error_message_ptr",
   "error_message_size",
 ];
-
-function qipFormDecodeBase64(input) {
-  const binary = atob(input);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    out[i] = binary.charCodeAt(i);
-  }
-  return out;
-}
 
 function qipFormCallI32(exportsObj, fnName, args) {
   const fn = exportsObj[fnName];
@@ -59,7 +50,7 @@ function qipFormReadExportedString(exportsObj, ptrExport, lenExport) {
 
 function qipFormReadOutput(exportsObj, outLen) {
   if (outLen < 0) {
-    throw new Error("run returned negative output size: " + String(outLen));
+    throw new Error("render returned negative output size: " + String(outLen));
   }
   if (outLen === 0) {
     return "";
@@ -70,7 +61,7 @@ function qipFormReadOutput(exportsObj, outLen) {
     throw new Error("module returned invalid output pointer/capacity");
   }
   if (outLen > outCap) {
-    throw new Error("run output size exceeds output_utf8_cap");
+    throw new Error("render output size exceeds output_utf8_cap");
   }
   const bytes = qipFormReadSlice(exportsObj, outPtr, outLen, "output_ptr/output_utf8_cap");
   return qipFormTextDecoder.decode(bytes);
@@ -120,15 +111,24 @@ class QIPFormElement extends HTMLElement {
   }
 
   async _init() {
-    const formName = (this.getAttribute("name") || "").trim();
-    if (formName === "") {
-      throw new Error("qip-form requires a non-empty name attribute");
+    const sources = Array.from(this.querySelectorAll(":scope > source"));
+    if (sources.length !== 1) {
+      throw new Error("qip-form requires exactly one direct source element");
     }
-    const encodedModule = qipFormModules.get(formName);
-    if (typeof encodedModule !== "string") {
-      throw new Error("qip-form module not found for name " + formName);
+    const source = sources[0];
+    const sourceURL = (source.getAttribute("src") || "").trim();
+    if (sourceURL === "") {
+      throw new Error("qip-form source requires a non-empty src attribute");
     }
-    const moduleBytes = qipFormDecodeBase64(encodedModule);
+    const sourceType = (source.getAttribute("type") || "").trim().toLowerCase();
+    if (sourceType !== "application/wasm") {
+      throw new Error("qip-form source type must be application/wasm");
+    }
+    const response = await fetch(sourceURL);
+    if (!response.ok) {
+      throw new Error("failed to fetch form module: HTTP " + String(response.status));
+    }
+    const moduleBytes = await response.arrayBuffer();
     const instantiated = await WebAssembly.instantiate(moduleBytes, {});
     const exportsObj = instantiated.instance.exports;
     for (const exportName of qipFormRequiredExports) {
@@ -151,7 +151,7 @@ class QIPFormElement extends HTMLElement {
     const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_size").trim();
     if (inputKey === "") {
       if (!this._hasRun) {
-        this._lastOutputLen = qipFormCallI32(exportsObj, "run", [0]);
+        this._lastOutputLen = qipFormCallI32(exportsObj, "render", [0]);
         this._hasRun = true;
       }
       const outputText = qipFormReadOutput(exportsObj, this._lastOutputLen);
@@ -195,7 +195,7 @@ class QIPFormElement extends HTMLElement {
       event.preventDefault();
       try {
         const inputLen = qipFormWriteInput(exportsObj, inputNode.value);
-        this._lastOutputLen = qipFormCallI32(exportsObj, "run", [inputLen]);
+        this._lastOutputLen = qipFormCallI32(exportsObj, "render", [inputLen]);
         this._hasRun = true;
         this._render();
       } catch (err) {

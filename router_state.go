@@ -21,7 +21,6 @@ type elementAsset struct {
 type RouterFileLayout struct {
 	ContentRoot    string
 	RecipesRoot    string
-	FormsRoot      string
 	ComponentsRoot string
 	ElementsRoot   string
 	ViewSource     bool
@@ -39,8 +38,6 @@ type RouterFileState struct {
 	recipeSourceAssets    []qinternal.RecipeSourceAsset
 	recipeSourceByPath    map[string]qinternal.RecipeSourceAsset
 	recipeSourceIndex     []byte
-	formModules           map[string][]byte
-	formDigests           map[string][32]byte
 	componentAssets       map[string]componentAsset
 	componentRequestPaths []string
 	elementAssets         map[string]elementAsset
@@ -92,10 +89,6 @@ func loadRouterFileState(ctx context.Context, layout RouterFileLayout, routeOpti
 	if err != nil {
 		return nil, err
 	}
-	formModules, formDigests, err := loadFormModules(layout.FormsRoot)
-	if err != nil {
-		return nil, err
-	}
 	componentAssets, componentRequestPaths, err := loadComponentAssets(layout.ComponentsRoot)
 	if err != nil {
 		return nil, err
@@ -139,8 +132,6 @@ func loadRouterFileState(ctx context.Context, layout RouterFileLayout, routeOpti
 		recipeSourceAssets:    recipeSourceAssets,
 		recipeSourceByPath:    recipeSourceByPath,
 		recipeSourceIndex:     recipeSourceIndex,
-		formModules:           formModules,
-		formDigests:           formDigests,
 		componentAssets:       componentAssets,
 		componentRequestPaths: componentRequestPaths,
 		elementAssets:         elementAssets,

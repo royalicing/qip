@@ -75,11 +75,8 @@ func logRouteTrace(logPrefix string, recorder *routeTraceRecorder) {
 	}
 }
 
-func validateRouteAssetRoots(recipesRoot string, formsRoot string, componentsRoot string) error {
+func validateRouteAssetRoots(recipesRoot string, componentsRoot string) error {
 	if err := qinternal.ValidateOptionalDirectory("recipes", recipesRoot); err != nil {
-		return err
-	}
-	if err := qinternal.ValidateOptionalDirectory("forms", formsRoot); err != nil {
 		return err
 	}
 	if err := qinternal.ValidateOptionalDirectory("components", componentsRoot); err != nil {
@@ -88,17 +85,16 @@ func validateRouteAssetRoots(recipesRoot string, formsRoot string, componentsRoo
 	return nil
 }
 
-func resolveRouteProjectConfig(contentRoot string, recipesRoot string, formsRoot string, componentsRoot string) (qinternal.RouterProjectConfig, error) {
+func resolveRouteProjectConfig(contentRoot string, recipesRoot string, componentsRoot string) (qinternal.RouterProjectConfig, error) {
 	projectConfig, err := qinternal.ResolveRouterProjectConfig(qinternal.RouterProjectConfig{
 		ContentRoot:    contentRoot,
 		RecipesRoot:    recipesRoot,
-		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
 	})
 	if err != nil {
 		return qinternal.RouterProjectConfig{}, err
 	}
-	if err := validateRouteAssetRoots(projectConfig.RecipesRoot, projectConfig.FormsRoot, projectConfig.ComponentsRoot); err != nil {
+	if err := validateRouteAssetRoots(projectConfig.RecipesRoot, projectConfig.ComponentsRoot); err != nil {
 		return qinternal.RouterProjectConfig{}, err
 	}
 	if err := qinternal.ValidateOptionalDirectory("elements", projectConfig.ElementsRoot); err != nil {
@@ -112,7 +108,6 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 		contentTypeChecking: ContentTypeCheckingStrong,
 	}
 	var recipesRoot string
-	var formsRoot string
 	var componentsRoot string
 	var modeRaw string
 
@@ -122,7 +117,6 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&routeVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&recipesRoot, "recipes", "", "recipe QIP components root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form QIP components root directory")
 	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
 	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
@@ -150,19 +144,17 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	if err := validateContentRootArg(contentRoot); err != nil {
 		gameOver("%v", err)
 	}
-	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, formsRoot, componentsRoot)
+	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, componentsRoot)
 	if err != nil {
 		gameOver("%v", err)
 	}
 	recipesRoot = projectConfig.RecipesRoot
-	formsRoot = projectConfig.FormsRoot
 	componentsRoot = projectConfig.ComponentsRoot
 
 	routeOptions := qinternal.DefaultRouteOptions()
 	state, err := loadRouterServerState(context.Background(), RouterFileLayout{
 		ContentRoot:    contentRoot,
 		RecipesRoot:    recipesRoot,
-		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
 		ElementsRoot:   projectConfig.ElementsRoot,
 	}, newQIPRuntime(opts), routeOptions)
@@ -229,7 +221,6 @@ func routeListCmd(args []string) {
 		contentTypeChecking: ContentTypeCheckingStrong,
 	}
 	var recipesRoot string
-	var formsRoot string
 	var componentsRoot string
 	var modeRaw string
 
@@ -239,7 +230,6 @@ func routeListCmd(args []string) {
 	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&routeVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&recipesRoot, "recipes", "", "recipe QIP components root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form QIP components root directory")
 	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
 	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
@@ -263,19 +253,17 @@ func routeListCmd(args []string) {
 	if err := validateContentRootArg(contentRoot); err != nil {
 		gameOver("%v", err)
 	}
-	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, formsRoot, componentsRoot)
+	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, componentsRoot)
 	if err != nil {
 		gameOver("%v", err)
 	}
 	recipesRoot = projectConfig.RecipesRoot
-	formsRoot = projectConfig.FormsRoot
 	componentsRoot = projectConfig.ComponentsRoot
 
 	routeOptions := qinternal.DefaultRouteOptions()
 	state, err := loadRouterServerState(context.Background(), RouterFileLayout{
 		ContentRoot:    contentRoot,
 		RecipesRoot:    recipesRoot,
-		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
 		ElementsRoot:   projectConfig.ElementsRoot,
 	}, newQIPRuntime(opts), routeOptions)
@@ -454,7 +442,7 @@ func routerCmd(args []string) {
 		if err := validateContentRootArg(request.ContentRoot); err != nil {
 			return nil, err
 		}
-		projectConfig, err := resolveRouteProjectConfig(request.ContentRoot, request.RecipesRoot, request.FormsRoot, request.ComponentsRoot)
+		projectConfig, err := resolveRouteProjectConfig(request.ContentRoot, request.RecipesRoot, request.ComponentsRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -463,7 +451,6 @@ func routerCmd(args []string) {
 		state, err := loadRouterServerState(ctx, RouterFileLayout{
 			ContentRoot:    request.ContentRoot,
 			RecipesRoot:    projectConfig.RecipesRoot,
-			FormsRoot:      projectConfig.FormsRoot,
 			ComponentsRoot: projectConfig.ComponentsRoot,
 			ElementsRoot:   projectConfig.ElementsRoot,
 			ViewSource:     request.ViewSource,

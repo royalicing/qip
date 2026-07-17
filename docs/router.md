@@ -17,9 +17,8 @@ site/
   _recipes/
     text/markdown/10-markdown-basic.wasm
     application/warc/20-check-links.wasm
-  _forms/
-    contact.wasm
   _components/
+    form/contact.wasm
     interactive/side-scroller-platformer.wasm
   _elements/
     qip-edit.js
@@ -29,25 +28,23 @@ The site root may also be a GitHub locator such as `github:owner/repo/subdir`. G
 
 ## Project Directories
 
-qip reserves four exact top-level directory names:
+qip reserves three exact top-level directory names:
 
 - `_recipes`: content and archive recipe components
-- `_forms`: form components
 - `_components`: browser-loadable QIP components
 - `_elements`: browser custom-element modules
 
 Reserved project directories must not be routed as content. Other underscore paths, such as `_og/card.png`, are ordinary content unless a future spec reserves them.
 
-qip must auto-discover these project directories under the site root when the matching CLI flag is omitted:
+qip auto-discovers these project directories under the site root:
 
 | Role | Default directory | Override flag |
 | --- | --- | --- |
 | Recipes | `<site>/_recipes` | `--recipes <dir>` |
-| Forms | `<site>/_forms` | `--forms <dir>` |
 | Components | `<site>/_components` | `--components <dir>` |
 | Elements | `<site>/_elements` | none |
 
-Explicit flags must override auto-discovery. This keeps the common command short while allowing unusual layouts and shared directories:
+The recipe and component flags override auto-discovery. Element modules always belong to the site because they define site-owned browser behavior. This keeps the common command short while allowing shared recipe and component directories:
 
 ```sh
 qip dev ./site
@@ -56,7 +53,7 @@ qip dev ./site --recipes ../shared-recipes
 
 Local project directories may be real directories or symlinks. Symlinks are the preferred way to share recipes across sites without introducing a config file. Remote object stores such as S3 do not have symlinks, so shared project directories must be copied or handled by future remote-root support.
 
-Nested `_recipes`, `_forms`, `_components`, and `_elements` directories are reserved for future path-scoped behavior. qip must not use nested project directories in this version.
+Nested `_recipes`, `_components`, and `_elements` directories are reserved for future path-scoped behavior. qip must not use nested project directories in this version.
 
 ## Request Paths
 
@@ -191,13 +188,17 @@ When a recipe chain runs for `text/markdown`, qip currently treats the response 
 
 Nested recipe roots are not active in this version. A file at `site/docs/_recipes/text/markdown/40-docs-sidebar.wasm` must not affect `/docs/router`. If path-scoped recipes are added later, they should merge by numeric prefix and should keep duplicate-prefix failures.
 
-## Runtime Injection
+## Form Elements
 
-If the final content response is HTML, qip injects the client runtime for `<qip-form>`. Other custom elements are ordinary site-owned JavaScript modules and are loaded through the application-WARC recipe layer described below.
+`<qip-form>` is an ordinary site-owned custom element. It declares its Wasm dependency with exactly one direct `<source>`:
 
-If a page contains `<qip-form>` tags and no form components are loaded, qip must fail the response instead of silently serving a broken form.
+```html
+<qip-form>
+  <source src="/components/form/contact.wasm" type="application/wasm">
+</qip-form>
+```
 
-Form components are discovered from `site/_forms` unless `--forms <dir>` is provided. They are not ordinary routes. They are addressed by form name inside HTML and are included in response identity through their digests.
+The element module at `/elements/qip-form.js` fetches and instantiates that component. The Router does not interpret the form markup, embed module bytes, or maintain a separate form namespace. Missing sources and incompatible modules fail in the element at activation time.
 
 ## Component Assets
 

@@ -54,7 +54,7 @@ qip dev ./site
 `qip` builds in-memory state from the site tree:
 
 - content files (source documents/assets)
-- reserved project directories such as `_recipes`, `_forms`, `_components`, and `_elements`
+- reserved project directories such as `_recipes`, `_components`, and `_elements`
 
 Recipe discovery uses:
 

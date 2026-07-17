@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"image"
 	"os"
 	"os/exec"
@@ -1240,87 +1239,6 @@ func TestParseImageComponentInvocations(t *testing.T) {
 			t.Fatal("expected error for empty query")
 		}
 	})
-}
-
-func TestLoadFormModules(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
-	if err != nil {
-		t.Fatalf("read wasm fixture: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "contact.wasm"), wasmBytes, 0o644); err != nil {
-		t.Fatalf("write contact wasm: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "nested", "signup.wasm"), wasmBytes, 0o644); err != nil {
-		t.Fatalf("write nested wasm: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "README.txt"), []byte("ignore"), 0o644); err != nil {
-		t.Fatalf("write non-wasm: %v", err)
-	}
-
-	modules, digests, err := loadFormModules(root)
-	if err != nil {
-		t.Fatalf("loadFormModules error: %v", err)
-	}
-	if len(modules) != 2 {
-		t.Fatalf("module count=%d, want 2", len(modules))
-	}
-	if len(digests) != 2 {
-		t.Fatalf("digest count=%d, want 2", len(digests))
-	}
-	if !bytes.Equal(modules["contact"], wasmBytes) {
-		t.Fatalf("contact module bytes mismatch")
-	}
-	if !bytes.Equal(modules["nested/signup"], wasmBytes) {
-		t.Fatalf("nested/signup module bytes mismatch")
-	}
-	wantDigest := sha256.Sum256(wasmBytes)
-	if got := digests["contact"]; got != wantDigest {
-		t.Fatalf("contact digest mismatch")
-	}
-}
-
-func TestLoadFormModulesSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *testing.T) {
-	root := t.TempDir()
-	external := t.TempDir()
-
-	wasmBytes, err := os.ReadFile(filepath.Join("examples", "hello.wasm"))
-	if err != nil {
-		t.Fatalf("read wasm fixture: %v", err)
-	}
-	externalWasm := filepath.Join(external, "contact.wasm")
-	if err := os.WriteFile(externalWasm, wasmBytes, 0o644); err != nil {
-		t.Fatalf("write external wasm: %v", err)
-	}
-	externalText := filepath.Join(external, "commonmark-spec-0.31.2.txt")
-	if err := os.WriteFile(externalText, []byte("spec"), 0o644); err != nil {
-		t.Fatalf("write external text: %v", err)
-	}
-
-	if err := os.Symlink(externalWasm, filepath.Join(root, "contact.wasm")); err != nil {
-		t.Skipf("symlink unsupported: %v", err)
-	}
-	if err := os.Symlink(externalText, filepath.Join(root, "commonmark-spec-0.31.2.txt")); err != nil {
-		t.Skipf("symlink unsupported: %v", err)
-	}
-
-	modules, digests, err := loadFormModules(root)
-	if err != nil {
-		t.Fatalf("loadFormModules error: %v", err)
-	}
-	if len(modules) != 1 {
-		t.Fatalf("module count=%d, want 1", len(modules))
-	}
-	if len(digests) != 1 {
-		t.Fatalf("digest count=%d, want 1", len(digests))
-	}
-	if !bytes.Equal(modules["contact"], wasmBytes) {
-		t.Fatalf("contact module bytes mismatch")
-	}
 }
 
 func TestLoadComponentAssets(t *testing.T) {

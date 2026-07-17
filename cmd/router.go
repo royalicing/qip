@@ -24,7 +24,6 @@ type RouteWARCRequest struct {
 	RequestPath    string
 	RouteCount     int
 	RecipesRoot    string
-	FormsRoot      string
 	ComponentsRoot string
 	ModeRaw        string
 	Host           string
@@ -74,7 +73,6 @@ func RunRoute(args []string, config RouteConfig) error {
 
 func runRouteWARC(args []string, config RouteConfig) error {
 	var recipesRoot string
-	var formsRoot string
 	var componentsRoot string
 	var modeRaw string
 	hostRaw := "qip.local"
@@ -87,7 +85,6 @@ func runRouteWARC(args []string, config RouteConfig) error {
 	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&recipesRoot, "recipes", "", "recipe QIP components root directory")
-	fs.StringVar(&formsRoot, "forms", "", "form QIP components root directory")
 	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", config.DefaultMode, "runtime mode")
 	fs.StringVar(&hostRaw, "host", hostRaw, "WARC-Target-URI host")
@@ -112,14 +109,12 @@ func runRouteWARC(args []string, config RouteConfig) error {
 	projectConfig, err := qinternal.ResolveRouterProjectConfig(qinternal.RouterProjectConfig{
 		ContentRoot:    contentRoot,
 		RecipesRoot:    recipesRoot,
-		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
 	})
 	if err != nil {
 		return err
 	}
 	recipesRoot = projectConfig.RecipesRoot
-	formsRoot = projectConfig.FormsRoot
 	componentsRoot = projectConfig.ComponentsRoot
 	if viewSource && strings.TrimSpace(recipesRoot) == "" {
 		return errors.New("--view-source requires --recipes <recipes_dir>")
@@ -127,7 +122,6 @@ func runRouteWARC(args []string, config RouteConfig) error {
 	baseRequest := RouteWARCRequest{
 		ContentRoot:    contentRoot,
 		RecipesRoot:    recipesRoot,
-		FormsRoot:      formsRoot,
 		ComponentsRoot: componentsRoot,
 		ModeRaw:        modeRaw,
 		Host:           host,
@@ -217,7 +211,6 @@ func parseRouteWARCHost(raw string) (string, error) {
 func normalizeRouteWarcArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
 		"--recipes":    {},
-		"--forms":      {},
 		"--components": {},
 		"--mode":       {},
 		"--host":       {},

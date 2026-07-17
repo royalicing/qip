@@ -57,12 +57,6 @@ func resolveRouterBaseResponse(ctx context.Context, current *RouterServerState, 
 		return qinternal.InProcessHTTPResponse{}, false, err
 	}
 	contentType := routerResponseContentType(route.SourceMIME, hasRecipes, result, body)
-	if strings.HasPrefix(contentType, "text/html") {
-		body, _, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
-		if err != nil {
-			return qinternal.InProcessHTTPResponse{}, false, err
-		}
-	}
 	return qinternal.InProcessHTTPResponse{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{contentType}},

@@ -11,7 +11,7 @@ GO_FIX_PKGS := ./cmd/... ./internal/... ./tools/...
 GO_FMT_PKGS := . ./cmd/... ./internal/... ./tools/...
 GO_TEST_PKGS := . ./cmd/... ./internal/... ./tools/...
 QIP_BIN ?= ./qip
-QIP_GO_DEPS := $(filter-out %_test.go,$(wildcard *.go)) $(wildcard cmd/*.go) $(wildcard internal/*.go) $(wildcard internal/*/*.go) $(wildcard embedded/*.js)
+QIP_GO_DEPS := $(filter-out %_test.go,$(wildcard *.go)) $(wildcard cmd/*.go) $(wildcard internal/*.go) $(wildcard internal/*/*.go)
 
 qip: go.mod go.sum $(QIP_GO_DEPS)
 	go fix $(GO_FIX_PKGS)
@@ -257,6 +257,7 @@ test-node: qip modules recipes/application/warc/25-add-content-size.wasm
 	node test/qip-runner-smoke.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/qip-edit-stats.mjs
+	node --test test/qip-form-element.mjs
 	node --test test/sudoku-ui.mjs
 	node --test test/html-id-validator.mjs
 	node --test test/html-adjacent.mjs

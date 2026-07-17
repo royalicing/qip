@@ -22,7 +22,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -110,17 +109,14 @@ const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchti
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]"
-const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
+const usageDev = "Usage: qip dev <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
 const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site and write a minimal WARC file"
-const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteHead = "Usage: qip router head <content_dir> <path> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteList = "Usage: qip router list <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
-const usageRouteWarc = "Usage: qip router warc <content_dir> [--recipes <recipes_dir>] [--forms <forms_dir>] [--components <components_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]"
+const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteHead = "Usage: qip router head <content_dir> <path> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteList = "Usage: qip router list <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
+const usageRouteWarc = "Usage: qip router warc <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]"
 const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or file>"
 const usageHelp = "Usage: qip help [command]"
-
-var qipFormTagPattern = regexp.MustCompile(`(?is)<qip-form\b[^>]*>`)
-var qipFormNamePattern = regexp.MustCompile("(?is)\\bname\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+))")
 
 const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: modules/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: modules/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico modules/image/svg+xml/svg-rasterize.wasm modules/image/bmp/bmp-double.wasm modules/image/bmp/bmp-to-ico.wasm"
 const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]
@@ -1806,7 +1802,6 @@ func normalizeImageArgs(args []string) []string {
 func normalizeDevArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
 		"--recipes":    {},
-		"--forms":      {},
 		"--components": {},
 		"--mode":       {},
 		"-p":           {},
@@ -1817,7 +1812,6 @@ func normalizeDevArgs(args []string) []string {
 func normalizeRouteArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
 		"--recipes":    {},
-		"--forms":      {},
 		"--components": {},
 		"--mode":       {},
 	}
@@ -1834,16 +1828,13 @@ func parseRuntimeMode(raw string) (runtimeMode, error) {
 	}
 }
 
-func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte, formDigests [][32]byte) string {
-	if len(recipeDigests) == 0 && len(formDigests) == 0 {
+func buildDevETag(sourceDigest [32]byte, recipeDigests [][32]byte) string {
+	if len(recipeDigests) == 0 {
 		return fmt.Sprintf("\"%x\"", sourceDigest)
 	}
 	h := sha256.New()
 	_, _ = h.Write(sourceDigest[:])
 	for _, digest := range recipeDigests {
-		_, _ = h.Write(digest[:])
-	}
-	for _, digest := range formDigests {
 		_, _ = h.Write(digest[:])
 	}
 	return fmt.Sprintf("\"%x\"", h.Sum(nil))

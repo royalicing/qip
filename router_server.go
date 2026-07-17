@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"slices"
-	"strings"
 	"time"
 
 	qinternal "github.com/royalicing/qip/internal"
@@ -87,7 +86,6 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 			var (
 				response    qinternal.InProcessHTTPResponse
 				contentType string
-				formDigests = make([][32]byte, 0)
 			)
 			hasRecipes := shouldApplyRecipesForRequestPath(r.URL.Path, route, current.recipeChains)
 			if isRedirectRoute {
@@ -122,17 +120,6 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 				}
 
 				contentType = routerResponseContentType(route.SourceMIME, hasRecipes, result, body)
-				if strings.HasPrefix(contentType, "text/html") {
-					body, formDigests, err = injectQIPFormRuntime(body, current.formModules, current.formDigests)
-					if err != nil {
-						stateSlot.mu.RUnlock()
-						return qinternal.RoutedResponse{
-							ModuleDurations:        []time.Duration{},
-							InstantiationDurations: []time.Duration{},
-						}, err
-					}
-				}
-
 				response = qinternal.InProcessHTTPResponse{
 					StatusCode: http.StatusOK,
 					Header:     http.Header{"Content-Type": []string{contentType}},
@@ -173,7 +160,7 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 				recipeDigests = append(recipeDigests, applicationRecipeDigests...)
 			}
 			if !isRedirectRoute {
-				etag := buildDevETag(sourceDigest, recipeDigests, formDigests)
+				etag := buildDevETag(sourceDigest, recipeDigests)
 				if etag != "" {
 					headers.Set("ETag", etag)
 					if r.Header.Get("If-None-Match") == etag {

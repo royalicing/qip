@@ -1,1 +1,3 @@
-<qip-form name="form-email-message"></qip-form>
+<qip-form>
+  <source src="/components/form/form-email-message.wasm" type="application/wasm">
+</qip-form>

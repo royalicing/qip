@@ -9,6 +9,18 @@ Scope:
 - No JSON metadata export
 - Shared labels/keys between interfaces
 
+## Browser Element
+
+The site-owned `<qip-form>` element loads the same component used by `qip form` through an explicit source:
+
+```html
+<qip-form>
+  <source src="/components/form/form-email-message.wasm" type="application/wasm">
+</qip-form>
+```
+
+The element requires exactly one direct source. The source is an ordinary browser-loadable component route, so it can be cached, inspected by WARC tooling, or replaced without Router-specific form configuration.
+
 ## Required Exports
 
 - `memory`
