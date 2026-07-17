@@ -16,9 +16,7 @@ if (!Object.isFrozen(text) || !Object.isFrozen(bmp)) {
   throw new Error("content type constructors must return frozen objects");
 }
 if (
-  text.encoding !== "utf-8" ||
   text.contentType !== undefined ||
-  bmp.encoding !== "bytes" ||
   bmp.contentType !== "image/bmp"
 ) {
   throw new Error("content type constructors returned incorrect contracts");
@@ -42,7 +40,7 @@ if (identity("ok") !== "ok") {
 
 let rejectedBadContract = false;
 try {
-  contentRecipe({ encoding: "utf-8" }, [], text);
+  contentRecipe({}, [], text);
 } catch {
   rejectedBadContract = true;
 }
@@ -51,8 +49,8 @@ if (!rejectedBadContract) {
 }
 
 const forgedComponent = (value) => value;
-forgedComponent.input = { encoding: "utf-8" };
-forgedComponent.output = { encoding: "utf-8" };
+forgedComponent.input = {};
+forgedComponent.output = {};
 let rejectedForgedComponent = false;
 try {
   contentRecipe(text, [forgedComponent], text);

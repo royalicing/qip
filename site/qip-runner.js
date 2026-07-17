@@ -11,10 +11,6 @@ function toI32(value, label) {
   return n | 0;
 }
 
-function isValidContentType(value) {
-  return mimeTypePattern.test(value);
-}
-
 function optionalContractContentType(value) {
   if (value === undefined) {
     return undefined;
@@ -22,7 +18,7 @@ function optionalContractContentType(value) {
   if (typeof value !== "string") {
     throw Error("contentType must be a string");
   }
-  if (!isValidContentType(value)) {
+  if (!mimeTypePattern.test(value)) {
     throw Error(
       "contentType must be a lowercase MIME type without parameters e.g. 'text/html'",
     );
@@ -32,22 +28,14 @@ function optionalContractContentType(value) {
 
 class ContentTypeUTF8 {
   constructor(optionalMIMEType) {
-    this.encoding = "utf-8";
-    const contentType = optionalContractContentType(optionalMIMEType);
-    if (contentType !== undefined) {
-      this.contentType = contentType;
-    }
+    this.contentType = optionalContractContentType(optionalMIMEType);
     Object.freeze(this);
   }
 }
 
 class ContentTypeBytes {
   constructor(optionalMIMEType) {
-    this.encoding = "bytes";
-    const contentType = optionalContractContentType(optionalMIMEType);
-    if (contentType !== undefined) {
-      this.contentType = contentType;
-    }
+    this.contentType = optionalContractContentType(optionalMIMEType);
     Object.freeze(this);
   }
 }
@@ -63,7 +51,8 @@ function sameContract(left, right) {
 
 function describeContract(contract) {
   return (
-    contract.encoding + (contract.contentType ? " " + contract.contentType : "")
+    (contract instanceof ContentTypeUTF8 ? "utf-8" : "bytes") +
+    (contract.contentType ? " " + contract.contentType : "")
   );
 }
 
@@ -84,40 +73,30 @@ function assertContractsMatch(actual, expected, label) {
 }
 
 function readI32Export(exportsObj, name) {
-  const value = exportsObj[name];
-  if (typeof value !== "function") {
-    throw Error("component export " + name + " must be a function");
-  }
-  return toI32(value(), name);
+  return toI32(exportsObj[name](), name);
 }
 
 function readSlice(memory, ptr, len, label) {
-  if (!(memory instanceof WebAssembly.Memory)) {
-    throw Error("component export memory must be WebAssembly.Memory");
-  }
   if (ptr < 0 || len < 0) {
     throw Error(label + " returned negative pointer/size");
   }
   const start = ptr >>> 0;
   const end = start + (len >>> 0);
   const mem = new Uint8Array(memory.buffer);
-  if (end < start || end > mem.length) {
+  if (end > mem.length) {
     throw Error(label + " exceeds wasm memory bounds");
   }
   return mem.slice(start, end);
 }
 
 function writeSlice(memory, ptr, bytes, label) {
-  if (!(memory instanceof WebAssembly.Memory)) {
-    throw Error("component export memory must be WebAssembly.Memory");
-  }
   if (ptr < 0) {
     throw Error(label + " returned negative pointer");
   }
   const start = ptr >>> 0;
   const end = start + bytes.length;
   const mem = new Uint8Array(memory.buffer);
-  if (end < start || end > mem.length) {
+  if (end > mem.length) {
     throw Error(label + " exceeds wasm memory bounds");
   }
   mem.set(bytes, start);
@@ -154,10 +133,10 @@ function requireExportedFunction(moduleExports, name) {
 }
 
 function capName(contract, direction) {
-  if (contract instanceof ContentTypeUTF8) {
-    return direction + "_utf8_cap";
-  }
-  return direction + "_bytes_cap";
+  return (
+    direction +
+    (contract instanceof ContentTypeUTF8 ? "_utf8_cap" : "_bytes_cap")
+  );
 }
 
 function bytesForInput(input, contract) {
@@ -178,10 +157,7 @@ function bytesForInput(input, contract) {
 }
 
 function outputForBytes(bytes, contract) {
-  if (contract instanceof ContentTypeUTF8) {
-    return textDecoder.decode(bytes);
-  }
-  return bytes;
+  return contract instanceof ContentTypeUTF8 ? textDecoder.decode(bytes) : bytes;
 }
 
 function assertJsOutput(value, contract) {
@@ -202,23 +178,13 @@ function assertJsOutput(value, contract) {
 
 function freezeComponent(fn, input, output) {
   Object.defineProperties(fn, {
-    input: { value: input, enumerable: false },
-    output: { value: output, enumerable: false },
+    input: { value: input },
+    output: { value: output },
   });
   return Object.freeze(fn);
 }
 
-function instantiate(module) {
-  return new WebAssembly.Instance(module, {});
-}
-
 function validateWasmComponent(input, module, output) {
-  if (!(module instanceof WebAssembly.Module)) {
-    throw Error(
-      "content component implementation must be a WebAssembly.Module or function",
-    );
-  }
-
   const moduleExports = WebAssembly.Module.exports(module);
 
   if (!moduleExports.find((exp) => exp.name === "memory" && exp.kind === "memory")) {
@@ -230,7 +196,7 @@ function validateWasmComponent(input, module, output) {
   requireExportedFunction(moduleExports, "output_ptr");
   requireExportedFunction(moduleExports, capName(output, "output"));
 
-  const exportsObj = instantiate(module).exports;
+  const exportsObj = new WebAssembly.Instance(module, {}).exports;
   const declaredInput = optionalContentType(
     exportsObj,
     exportsObj.memory,
@@ -275,11 +241,8 @@ function wasmComponent(input, module, output) {
 
   return freezeComponent(
     (value) => {
-      const exportsObj = instantiate(module).exports;
+      const exportsObj = new WebAssembly.Instance(module, {}).exports;
       const render = exportsObj.render;
-      if (typeof render !== "function") {
-        throw Error("component export render must be a function");
-      }
 
       const inputBytes = bytesForInput(value, input);
       const inputPtr = readI32Export(exportsObj, "input_ptr");
