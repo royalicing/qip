@@ -63,6 +63,7 @@ output {
     font-size: inherit;
     line-height: inherit;
 }
+[hidden] { display: none !important }
 body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -176,6 +177,7 @@ main:has(> .docs-sidebar) {
 .docs-sidebar {
     position: sticky;
     top: 1lh;
+    font-size: 0.875rem;
 
     ol {
         list-style: none;
@@ -333,10 +335,36 @@ button[type="button"] {
         background-color: color-mix(in srgb, var(--bg) 90%, var(--text) 10%);
     }
 }
+click-notify.succeeded button[type="button"] {
+    animation: button-succeeded 1.5s ease-out;
+}
+click-notify.failed button[type="button"] {
+    animation: button-failed 1.5s ease-out;
+}
+@keyframes button-failed {
+    from {
+        background-color: color-mix(in srgb, var(--bg) 40%, #ef4444 60%);
+    }
+    to {
+        background-color: color-mix(in srgb, var(--bg) 90%, var(--text) 10%);
+    }
+}
 @media (prefers-reduced-motion: reduce) {
-    button[type="button"].succeeded {
+    button[type="button"].succeeded,
+    click-notify.succeeded button[type="button"],
+    click-notify.failed button[type="button"] {
         animation-duration: 1ms;
     }
+}
+/* Visually hidden but announced by screen readers. */
+aria-notify {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 output {
     display: inline-block;

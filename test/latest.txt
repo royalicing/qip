@@ -100,6 +100,7 @@ module: markdown-basic.wasm | html-page-wrap.wasm
             </li>
             <li role="none" style="margin: auto"></li>
             <li><a href="/docs">Docs</a></li>
+            <li><a href="/tools">Tools</a></li>
             <li><a href="https://github.com/royalicing/qip">GitHub</a></li>
         </ul>
     </nav>
@@ -109,6 +110,7 @@ module: markdown-basic.wasm | html-page-wrap.wasm
     <nav aria-label="Footer links">
         <ul>
             <li><a href="/">QIP</a></li>
+            <li><a href="/tools">Tools</a></li>
             <li><a href="/docs">Docs</a></li>
             <li><a href="/view-source">View Source</a></li>
             <li><a href="https://github.com/royalicing/qip">GitHub</a></li>

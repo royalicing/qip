@@ -15,6 +15,13 @@ entirely in the browser. You can run the same `.wasm` files in your shell via th
 - [Unicode transforms](/unicode) applies Unicode 17 uppercase and lowercase
   mappings to pasted text.
 - [JSON prettifier](/json-prettify) validates and indents JSON.
+- [Base64 encoder and decoder](/base64) converts text or bytes to and from
+  Base64.
+- [Favicon generator](/favicon) converts a PNG or BMP into a `favicon.ico`.
+- [Syntax highlighter](/syntax-highlight) turns pasted code into
+  self-contained highlighted HTML.
+- [HTML accessibility tree](/accessibility-tree) shows the roles and
+  accessible names screen readers compute from your HTML.
 - [CSS minifier](/css-minifier) removes unnecessary CSS whitespace and
   comments.
 - [CSS expression calculator](/css-expression-calculator) resolves viewport units,
