@@ -73,8 +73,8 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
         'i', 'I' => presetInf(),
         'q', 'Q' => presetNaN(),
         'm', 'M' => presetMinNorm(),
-        XK_LEFT => selectAdjacentBit(-1),
-        XK_RIGHT => selectAdjacentBit(1),
+        XK_LEFT => selectHorizontalBit(-1),
+        XK_RIGHT => selectHorizontalBit(1),
         XK_UP => selectAdjacentBit(32),
         XK_DOWN => selectAdjacentBit(-32),
         XK_SPACE, XK_RETURN => toggleSelectedBit(),
@@ -190,6 +190,17 @@ fn selectAdjacentBit(delta: i32) bool {
     const cast_next: u6 = @intCast(next);
     if (selected_bit == cast_next) return false;
     selected_bit = cast_next;
+    return true;
+}
+
+fn selectHorizontalBit(column_delta: i32) bool {
+    const total = @as(i32, totalBits());
+    const index_from_left = total - 1 - @as(i32, selected_bit);
+    const row_start = @divTrunc(index_from_left, 32) * 32;
+    const next_index = std.math.clamp(index_from_left + column_delta, row_start, row_start + 31);
+    const next_bit: u6 = @intCast(total - 1 - next_index);
+    if (selected_bit == next_bit) return false;
+    selected_bit = next_bit;
     return true;
 }
 
@@ -558,4 +569,32 @@ test "f64 infinity is special" {
     bits = 0x7FF0_0000_0000_0000;
     const d = decode();
     try std.testing.expectEqualStrings("INFINITY", d.category);
+}
+
+test "horizontal selection follows visual bit order in f32" {
+    is_f64 = false;
+    selected_bit = 31;
+
+    try std.testing.expect(!selectHorizontalBit(-1));
+    try std.testing.expect(selectHorizontalBit(1));
+    try std.testing.expectEqual(@as(u6, 30), selected_bit);
+    try std.testing.expect(selectHorizontalBit(-1));
+    try std.testing.expectEqual(@as(u6, 31), selected_bit);
+
+    selected_bit = 0;
+    try std.testing.expect(!selectHorizontalBit(1));
+}
+
+test "horizontal selection stays within each f64 row" {
+    is_f64 = true;
+
+    selected_bit = 32;
+    try std.testing.expect(!selectHorizontalBit(1));
+    try std.testing.expect(selectHorizontalBit(-1));
+    try std.testing.expectEqual(@as(u6, 33), selected_bit);
+
+    selected_bit = 31;
+    try std.testing.expect(!selectHorizontalBit(-1));
+    try std.testing.expect(selectHorizontalBit(1));
+    try std.testing.expectEqual(@as(u6, 30), selected_bit);
 }
