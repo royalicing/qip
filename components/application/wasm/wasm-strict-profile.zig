@@ -3,11 +3,34 @@
 //!
 //! - no imports of any kind
 //! - at most one linear memory, wasm32, not shared, with a declared maximum
+//! - no start function
 //! - no `memory.grow`
 //! - no atomic instructions
 //! - no indirect calls (`call_indirect`, `return_call_indirect`, `call_ref`)
-//! - no unknown instructions
 //! - no recursion (the direct call graph must be acyclic)
+//!
+//! This component enforces artifact policy, not the WebAssembly specification's
+//! complete module-validation algorithm. It assumes a valid Wasm module. The
+//! instruction reader still fails closed when it cannot safely decode a body,
+//! but section order, indices, types, and constant expressions belong in a
+//! separate wasm-validation component.
+//!
+//! Complexity for a valid module, where B is its byte length, I its instruction
+//! count, V its defined-function count, and E its direct-call edges:
+//!
+//! | Rule                                      | Time     | Extra space |
+//! |-------------------------------------------|----------|-------------|
+//! | Reject imports                            | O(B)     | O(1)        |
+//! | Check memory count/kind/sharing/maximum   | O(B)     | O(1)        |
+//! | Reject a start function                   | O(B)     | O(1)        |
+//! | Reject memory.grow                        | O(I)     | O(1)        |
+//! | Reject atomic instructions                | O(I)     | O(1)        |
+//! | Reject indirect and reference calls       | O(I)     | O(1)        |
+//! | Detect recursive direct-call cycles       | O(V + E) | O(V + E)    |
+//!
+//! The module bytes are read sequentially once. Direct-call edges are collected
+//! during that pass, then an iterative depth-first search traverses the graph.
+//! Since every edge comes from an instruction, the complete policy check is O(B).
 //!
 //! The recursion rule lives here rather than with the loop analysis because
 //! it is one binary fact: edge collection rides the same decode pass the
@@ -22,8 +45,8 @@
 //!
 //!   qip run -i m.wasm -- wasm-strict-profile.wasm wasm-bounded-loops.wasm
 //!
-//! The Go CLI's `internal/wasminspect` mirrors these checks with per-module
-//! diagnostics; keep the two in sync.
+//! A future Go strict-policy entry point should mirror this table and use the
+//! same accept/reject fixtures. Full Wasm validation remains a separate layer.
 
 const std = @import("std");
 const wasm_reader = @import("lib/wasm-reader.zig");
@@ -55,6 +78,7 @@ const CheckError = wasm_reader.Error || error{
     SharedMemoryNotAllowed,
     MemoryMaxRequired,
     TooManyMemories,
+    StartFunctionNotAllowed,
     MemoryGrowNotAllowed,
     AtomicsNotAllowed,
     IndirectCallNotAllowed,
@@ -226,7 +250,7 @@ fn parseFunctionSection(payload: []const u8) CheckError!u32 {
     return n;
 }
 
-fn parseMemorySection(payload: []const u8) CheckError!void {
+fn parseMemorySection(payload: []const u8) CheckError!bool {
     var r = Reader.init(payload);
     const n = try r.readVarU32();
     if (n > 1) return CheckError.TooManyMemories;
@@ -238,6 +262,7 @@ fn parseMemorySection(payload: []const u8) CheckError!void {
         if (!limits.has_max) return CheckError.MemoryMaxRequired;
     }
     if (r.remaining() != 0) return CheckError.TrailingBytes;
+    return n == 1;
 }
 
 fn parseCodeSection(payload: []const u8, defined_func_count: u32) CheckError!void {
@@ -265,6 +290,7 @@ fn checkModule(wasm: []const u8) CheckError!void {
     var defined_func_count: u32 = 0;
     var have_function_section = false;
     var have_code_section = false;
+    var have_memory = false;
 
     while (r.remaining() > 0) {
         const section_id = try r.readByte();
@@ -279,7 +305,12 @@ fn checkModule(wasm: []const u8) CheckError!void {
                 defined_func_count = try parseFunctionSection(payload);
                 have_function_section = true;
             },
-            5 => try parseMemorySection(payload),
+            5 => {
+                const declares_memory = try parseMemorySection(payload);
+                if (declares_memory and have_memory) return CheckError.TooManyMemories;
+                have_memory = have_memory or declares_memory;
+            },
+            8 => return CheckError.StartFunctionNotAllowed,
             10 => {
                 try parseCodeSection(payload, defined_func_count);
                 have_code_section = true;
@@ -321,6 +352,36 @@ const unbounded_loop_module = moduleWithBody(&[_]u8{
 const no_memory_max_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
     0x05, 0x03, 0x01, 0x00, 0x01,
+};
+
+const two_memory_sections_module = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+};
+
+const two_memories_module = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x05, 0x07, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+};
+
+const shared_memory_module = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x05, 0x04, 0x01, 0x03, 0x01, 0x01,
+};
+
+const memory64_module = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x05, 0x04, 0x01, 0x05, 0x01, 0x01,
+};
+
+const start_function_module = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+    0x03, 0x02, 0x01, 0x00,
+    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+    0x08, 0x01, 0x00,
+    0x0a, 0x04, 0x01, 0x02, 0x00, 0x0b,
 };
 
 const recursion_module = [_]u8{
@@ -376,6 +437,10 @@ const call_indirect_module = hexBytes(
         "0907010041000b01000a0c0202000b070041001100000b",
 );
 
+const return_call_indirect_module = moduleWithBody(&[_]u8{ 0x13, 0x00, 0x00, 0x0b });
+const call_ref_module = moduleWithBody(&[_]u8{ 0x14, 0x00, 0x0b });
+const recursive_return_call_module = moduleWithBody(&[_]u8{ 0x12, 0x00, 0x0b });
+
 // (import "env" "log" (func (param i32)))
 const import_module = hexBytes(
     "0061736d0100000001080260017f00600000020b0103656e76036c6f67000003" ++
@@ -410,6 +475,14 @@ test "rejects call_indirect" {
     try std.testing.expectError(CheckError.IndirectCallNotAllowed, checkModule(&call_indirect_module));
 }
 
+test "rejects return_call_indirect" {
+    try std.testing.expectError(CheckError.IndirectCallNotAllowed, checkModule(&return_call_indirect_module));
+}
+
+test "rejects call_ref" {
+    try std.testing.expectError(CheckError.IndirectCallNotAllowed, checkModule(&call_ref_module));
+}
+
 test "rejects imports" {
     try std.testing.expectError(CheckError.ImportNotAllowed, checkModule(&import_module));
 }
@@ -422,8 +495,32 @@ test "requires memory max when memory is declared" {
     try std.testing.expectError(CheckError.MemoryMaxRequired, checkModule(&no_memory_max_module));
 }
 
+test "rejects more than one memory across memory sections" {
+    try std.testing.expectError(CheckError.TooManyMemories, checkModule(&two_memory_sections_module));
+}
+
+test "rejects more than one memory in one memory section" {
+    try std.testing.expectError(CheckError.TooManyMemories, checkModule(&two_memories_module));
+}
+
+test "rejects shared memory" {
+    try std.testing.expectError(CheckError.SharedMemoryNotAllowed, checkModule(&shared_memory_module));
+}
+
+test "rejects memory64" {
+    try std.testing.expectError(CheckError.Memory64NotAllowed, checkModule(&memory64_module));
+}
+
+test "rejects a start function" {
+    try std.testing.expectError(CheckError.StartFunctionNotAllowed, checkModule(&start_function_module));
+}
+
 test "rejects direct recursion" {
     try std.testing.expectError(CheckError.RecursionNotAllowed, checkModule(&recursion_module));
+}
+
+test "rejects recursion through return_call" {
+    try std.testing.expectError(CheckError.RecursionNotAllowed, checkModule(&recursive_return_call_module));
 }
 
 test "rejects memory.grow" {

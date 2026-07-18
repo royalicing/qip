@@ -21,6 +21,25 @@ QIP therefore separates three controls:
 The host-access boundary and fixed-memory policy are the normal component model.
 A host may permit memory growth explicitly, but it must also set a byte cap.
 
+## Where The CLI Enforces Each Rule
+
+This page is the canonical map of Wasm validation in the CLI:
+
+| Rule | `qip run` | `qip dry run` | `qip comply` |
+| --- | --- | --- | --- |
+| Component ABI and pipeline compatibility | Before execution | Yes, using the same pipeline planner | Base ABI and static contract checks for the implementation |
+| Reject `memory.grow` | Every pipeline component, by default | Every pipeline component, by default | Not applied to the implementation |
+| Enforce declared memory bounds | With `--max-memory` | With `--max-memory` | Not applied to the implementation |
+| Strict Wasm artifact structure | Only when `wasm-strict-profile.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
+| Recognizable bounded loops | Only when `wasm-bounded-loops.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
+| Declarative Compliance checker | Not applicable | Not applicable | With `--declarative-checkers`, applied to every `--with` checker |
+
+`qip run` and `qip dry run` share the Go module-policy validator. The strict
+artifact and bounded-loop checks are currently executable QIP components, not
+implicit modes of that validator. Dry run never reads or executes the input
+being checked, so it cannot certify an artifact merely by planning the checker
+pipeline.
+
 ## Apply A Runtime Policy
 
 The same policy controls work with text, binary, and image components:
@@ -72,15 +91,55 @@ a stricter subset of WebAssembly:
 - no imports, including WASI and custom host callbacks
 - a declared memory maximum and no `memory.grow`
 - no shared memory or atomic instructions
+- no start function
 - no indirect calls
 - an acyclic direct call graph, which excludes recursion
-- a statically recognizable bound for every loop backedge
 
-Compliance components use a separate strict checker profile. They may import
-only the documented oracle functions from the `qip` host module. The
-implementation under test remains a separate instance and is not imported or
-memory-linked into the checker. Ordinary QIP components still use the
-import-free profile above.
+Recognizable loop bounds are a separate check. They depend on conservative
+proof patterns in compiler output rather than only on structural facts in the
+artifact.
+
+### Cost Of Structural Validation
+
+Let `B` be the module size in bytes, `I` the decoded instruction count, `V` the
+number of defined functions, and `E` the number of direct calls between defined
+functions.
+
+| Rule | Time | Additional space |
+| --- | --- | --- |
+| Reject imports | `O(B)` overall | `O(1)` |
+| Validate the memory count, kind, sharing, and declared maximum | `O(B)` overall | `O(1)` |
+| Reject a start function | `O(B)` overall | `O(1)` |
+| Reject `memory.grow` | `O(I)` | `O(1)` |
+| Reject atomic instructions | `O(I)` | `O(1)` |
+| Reject indirect and reference-based calls | `O(I)` | `O(1)` |
+| Detect recursive direct-call cycles | `O(V + E)` | `O(V + E)` |
+
+Every call-graph edge comes from a decoded call instruction, so `V + E` is
+bounded by the module size. The complete structural check is therefore `O(B)`
+time. The call graph accounts for its linear additional memory.
+
+The policy checker can read the module bytes once, checking every local rule
+while it decodes and collecting direct-call edges. Once decoding finishes, it
+runs a depth-first search over that graph. This is one pass over the module
+bytes plus one graph traversal, not two passes over the Wasm file. A strictly
+streaming constant-memory implementation is not sufficient for recursion:
+functions may call functions defined later, so the graph cannot generally be
+finalized while each function body is being read.
+
+This policy checker assumes its input is already a valid WebAssembly module.
+Full specification validation—section order and uniqueness, types, indices,
+limits, constant expressions, and instruction typing—is a separate concern.
+The policy reader still fails closed if it cannot safely decode an instruction
+body, but that is not a substitute for the specification's validation
+algorithm.
+
+Compliance components use a separate declarative checker rule, enabled with
+`qip comply --declarative-checkers`. They may import only the
+documented oracle functions from the `qip` host module. The implementation
+under test remains a separate instance and is not imported or memory-linked
+into the checker. Ordinary QIP components still use the import-free artifact
+profile above.
 
 Run the artifact checkers as a two-stage pipeline:
 
