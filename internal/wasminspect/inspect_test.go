@@ -181,7 +181,7 @@ func TestValidateModulePolicyRejectsMemoryGrow(t *testing.T) {
 	}
 }
 
-func TestValidateStrictComplyProfileAcceptsLinearOracleCalls(t *testing.T) {
+func TestValidateDeclarativeComplyCheckerAcceptsOracleCalls(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
@@ -202,12 +202,12 @@ func TestValidateStrictComplyProfileAcceptsLinearOracleCalls(t *testing.T) {
 		},
 	})
 
-	if err := ValidateStrictComplyProfile(module); err != nil {
-		t.Fatalf("ValidateStrictComplyProfile: %v", err)
+	if err := ValidateDeclarativeComplyChecker(module); err != nil {
+		t.Fatalf("ValidateDeclarativeComplyChecker: %v", err)
 	}
 }
 
-func TestValidateStrictComplyProfileRejectsConditionalInstructions(t *testing.T) {
+func TestValidateDeclarativeComplyCheckerRejectsConditionalInstructions(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
@@ -224,7 +224,7 @@ func TestValidateStrictComplyProfileRejectsConditionalInstructions(t *testing.T)
 		},
 	})
 
-	err := ValidateStrictComplyProfile(module)
+	err := ValidateDeclarativeComplyChecker(module)
 	if err == nil {
 		t.Fatal("expected strict profile rejection")
 	}
@@ -233,7 +233,7 @@ func TestValidateStrictComplyProfileRejectsConditionalInstructions(t *testing.T)
 	}
 }
 
-func TestValidateStrictComplyProfileRejectsHelperFunctions(t *testing.T) {
+func TestValidateDeclarativeComplyCheckerRejectsHelperFunctions(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
@@ -247,7 +247,7 @@ func TestValidateStrictComplyProfileRejectsHelperFunctions(t *testing.T) {
 		},
 	})
 
-	err := ValidateStrictComplyProfile(module)
+	err := ValidateDeclarativeComplyChecker(module)
 	if err == nil {
 		t.Fatal("expected strict profile rejection")
 	}

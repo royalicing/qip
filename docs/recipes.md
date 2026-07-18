@@ -91,6 +91,132 @@ qip router get ./site /docs/router
 qip router warc ./site
 ```
 
+## Planning And Dry Runs
+
+`qip dry run` resolves and validates the same ordered component pipeline as
+`qip run`, but does not read input, call `render`, or write output:
+
+```sh
+qip dry run \
+  components/text/markdown/commonmark.0.31.2.wasm \
+  components/text/html/html-page-wrap.wasm
+```
+
+The report is intended to be useful in CI logs without another formatting
+step:
+
+```text
+Pipeline compatible: 2 step(s)
+1. components/text/markdown/commonmark.0.31.2.wasm — Content
+   Input:  encoding=UTF-8, type=text/markdown, capacity=2.0 MiB (2097152 bytes)
+   Output: encoding=UTF-8, type=text/html, capacity=2.0 MiB (2097152 bytes)
+   Buffers: 4.0 MiB (4194304 bytes)
+2. components/text/html/html-page-wrap.wasm — Content
+   Input:  encoding=UTF-8, type=text/html, capacity=256.0 KiB (262144 bytes)
+   Output: encoding=UTF-8, type=text/html, capacity=512.0 KiB (524288 bytes)
+   Buffers: 768.0 KiB (786432 bytes)
+   Note: step 2 (components/text/html/html-page-wrap.wasm): previous output capacity 2.0 MiB (2097152 bytes) exceeds this input capacity 256.0 KiB (262144 bytes); qip run remains valid when the actual intermediate output fits
+Total declared buffer capacity: 4.8 MiB (4980736 bytes)
+Warnings: 1
+```
+
+A compatible plan exits successfully. Invalid component contracts, uniforms,
+encoding or MIME composition, and module-policy violations return a non-zero
+exit status.
+
+Use `--capacities-must-fit` to turn capacity warnings into errors:
+
+```sh
+qip dry run --capacities-must-fit \
+  components/text/markdown/commonmark.0.31.2.wasm \
+  components/text/html/html-page-wrap.wasm
+```
+
+The check requires each Content component's declared maximum output capacity
+to fit the next Content component's input capacity. This is useful in CI and
+when refining component contracts: without the flag, the pipeline remains
+valid when its actual intermediate values fit. Tile capacities are per-tile
+working buffers rather than whole-image Content capacities, so the Tile
+contract validates those separately.
+
+The host first extracts a plain description for each recipe step: component
+kind, input and output encoding, optional MIME types, declared buffer
+capacities, and Tile halo or Interactive frame dimensions. A pure planner then
+validates those values and returns the ordered plan used by both commands. The
+dry-run output prints every step and the sum of its declared input/output
+buffer capacities. An in-place Tile buffer appears as both input and output but
+is counted once.
+
+Composition is directional and based only on the ordered step descriptions.
+The planner does not inspect example input bytes or use browser/runtime
+heuristics, so the same component artifacts and uniforms produce the same plan
+or the same error:
+
+- UTF-8 may flow into a raw-bytes input. This is safe widening: UTF-8 is already
+  bytes, and browser hosts encode the string before calling a bytes component.
+  Raw bytes never flow implicitly into a UTF-8 input.
+- A step with a declared input MIME type requires the current type to match
+  exactly. An unspecified current type does not satisfy a declared type.
+- A step with no input MIME type is generic and accepts the current type when
+  the encoding matches.
+- A declared output MIME type replaces the current type. Generic same-encoding
+  transforms preserve it. Raw bytes converted to UTF-8 produce an unspecified
+  MIME type.
+- Direct `qip run` input has no MIME channel, so the first step's declared input
+  type expresses the user's intent. This exception applies only at the pipeline
+  boundary, not between steps.
+- A Tile group is an explicit image bridge: it accepts `image/bmp` raw bytes,
+  processes RGBA32Float tiles internally, and returns `image/bmp` raw bytes.
+
+There is no generic bytes-to-pixels rule. Image tiling is available only
+through that explicit bridge, which keeps text, opaque binary data, and pixel
+buffers from being guessed into one another.
+
+The encoding relationship is small:
+
+```text
+Content encodings
+
+raw bytes
+└── valid UTF-8
+
+Allowed widening:  UTF-8 ──> raw bytes
+Rejected narrowing: raw bytes -X-> UTF-8
+
+Explicit Tile bridge (not subtyping)
+
+image/bmp raw bytes
+        │ host decodes
+        v
+RGBA32Float tiles (width × height × 4 channels, in-place)
+        │ host encodes
+        v
+image/bmp raw bytes
+```
+
+RGBA32Float pixels are physically held in linear memory, but they are not an
+opaque Content `bytes` value. Their dimensions, channels, coordinates, tile
+size, and halo are part of the Tile contract. Only the host's explicit image
+bridge may cross that boundary.
+
+For example, this plan decodes SVG Content to BMP, applies an in-place Tile
+filter, then passes BMP Content to the ICO encoder:
+
+```sh
+qip dry run \
+  components/image/svg+xml/svg-rasterize.wasm \
+  components/rgba/brightness.wasm '?brightness=0.1' \
+  components/image/bmp/bmp-to-ico.wasm
+```
+
+The middle step reports `RGBA32Float tile` for its input and output encoding;
+the adjacent Content steps report `image/bmp` raw bytes at the bridge.
+
+Capacity maxima do not make two steps incompatible by themselves: an upstream
+component may declare a larger output buffer while producing an actual value
+that fits the next input buffer. Dry run reports this as a warning because only
+execution can determine the intermediate byte count.
+
 ## Host And URLs
 
 `qip router warc` controls canonical route host via `--host <host>`. We prefer setting this explicitly for production builds so recipe logic that reads target URLs sees stable, deploy-intended origins.

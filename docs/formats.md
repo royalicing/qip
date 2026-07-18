@@ -49,6 +49,16 @@ Formats and encodings are at different layers:
 
 - `UTF-8` for text pipelines (`input_utf8_cap` / `output_utf8_cap`)
 - `RGBA32Float` for image filter tiles in `qip image` (`tile_rgba32float_64x64`)
+
+UTF-8 is a valid subset of raw bytes, so a UTF-8 Content output may feed a
+raw-bytes Content input. The reverse is rejected because arbitrary bytes are
+not guaranteed to be valid UTF-8.
+
+RGBA32Float tiles are not a subtype of Content bytes even though their storage
+lives in Wasm linear memory. A mixed run pipeline crosses that boundary only
+through the host's explicit image bridge: `image/bmp` raw bytes are decoded to
+RGBA32Float tiles for a contiguous Tile group, then encoded back to
+`image/bmp` raw bytes for the next Content step.
 - `RGBA8 sRGB` for interactive frame output ([Interactive Component Contract](/docs/interactive-component))
 
 Why these defaults:

@@ -394,9 +394,9 @@ func AnalyzeModule(wasm []byte) (Analysis, error) {
 	return analyzeWASMModule(wasm)
 }
 
-// ValidateStrictComplyProfile accepts only a single, linear comply function
-// made from constants, direct imported calls, drops, and its final end.
-func ValidateStrictComplyProfile(wasm []byte) error {
+// ValidateDeclarativeComplyChecker accepts only a single comply function made
+// from constants, direct imported oracle calls, drops, and its final end.
+func ValidateDeclarativeComplyChecker(wasm []byte) error {
 	analysis, err := AnalyzeModule(wasm)
 	if err != nil {
 		return err
@@ -452,7 +452,7 @@ func ValidateStrictComplyProfile(wasm []byte) error {
 	}
 
 	if len(failures) > 0 {
-		return errors.New("strict comply profile: " + strings.Join(failures, "; "))
+		return errors.New("declarative comply checker: " + strings.Join(failures, "; "))
 	}
 	return nil
 }

@@ -22,7 +22,18 @@ const html = contentTypeUTF8("text/html");
 const bmp = contentTypeBytes("image/bmp");
 ```
 
-Encoding is a hard requirement. Content type is a refinement: two contracts are compatible when the encodings match and either content type is unspecified or both specify the same type.
+Encoding follows one subtype rule: UTF-8 may safely widen to raw bytes, with the
+runner encoding the JavaScript string before calling the bytes component. Raw
+bytes never implicitly narrow to UTF-8. Content-type matching is directional:
+a component with a declared input MIME type requires an exact match, while an
+unspecified component input is generic and accepts the current type. An
+unspecified current type never satisfies a declared input type.
+
+Generic output preserves the current MIME type except when raw bytes are
+converted to UTF-8, which produces text with an unspecified MIME type. These
+are the same planning rules used by `qip run` and `qip dry run`. Planning uses
+only the declared contracts, not sample values or browser-specific coercion, so
+the result is deterministic for the same recipe description.
 
 Content types are not normalized. When present, they must already be lowercase media types without parameters or whitespace, such as `text/html` or `image/bmp`. Hosts compare them exactly.
 

@@ -41,6 +41,22 @@ declared buffer capacity. It does not read `-i`, execute `render`, or write
 output. See [Recipes](/docs/recipes#planning-and-dry-runs) for the composition
 rules.
 
+`--max-memory <bytes>` applies independently to each component. Dry run rejects
+a component when that component's declared memory minimum or maximum exceeds
+the cap, or when its memory has no declared maximum. It does not compare the cap
+to the sum printed at the end of the report. That total is declared buffer
+capacity, not resident Wasm memory.
+
+`--capacities-must-fit` rejects a connection between adjacent Content
+components when the producer's declared maximum output capacity exceeds the
+consumer's input capacity. Without the flag, this is a warning: the pipeline
+can still run when the actual intermediate value is smaller than the
+producer's maximum. The flag is useful in CI when component authors want every
+declared Content-to-Content connection to be safe for the full producer output
+range. Tile capacities describe fixed-size per-tile working buffers and are
+validated separately; they are not whole-image Content capacities. This flag
+is unrelated to `--max-memory`.
+
 ## Runtime Boundary
 
 The CLI is designed to run untrusted QIP components with a narrow host interface.
@@ -90,11 +106,11 @@ Current CLI guardrails:
 - Each `dev` request executes under a `100ms` context timeout.
 - Input size is checked against module-advertised input capacity.
 - Output size is checked against module-advertised output capacity when output buffers are exported.
-- `run`, `bench`, and `image` can reject modules whose declared memory exceeds a byte cap with `--max-memory <bytes>`.
-- `run`, `bench`, and `image` reject modules containing `memory.grow` by default.
+- `run`, `dry run`, `bench`, and `image` can reject modules whose declared memory exceeds a byte cap with `--max-memory <bytes>`.
+- `run`, `dry run`, `bench`, and `image` reject modules containing `memory.grow` by default.
 - `--allow-memory-grow` permits growth when paired with `--max-memory <bytes>`.
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
-- `components/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `components/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier.
+- `components/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules (imports, memory shape, banned instructions, recursion) as a QIP component; `components/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier. [Hard Limits](/docs/hard-limits) is the canonical map of which commands enforce each rule.
 
 The browser JavaScript hosts expose the same policy with `max-memory="<bytes>"` and `allow-memory-grow`; see [Browser Elements](/docs/qip-elements) and the [Interactive Component Contract](/docs/interactive-component).
 

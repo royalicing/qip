@@ -26,7 +26,7 @@ same mistaken code path, they can still agree on wrong behavior.
 ## Command
 
 ```bash
-qip comply <impl.wasm> [--with <check.wasm> ...] [--profile strict] [--seed <n>] [-v|--verbose]
+qip comply <impl.wasm> [--with <check.wasm> ...] [--declarative-checkers] [--seed <n>] [-v|--verbose]
 ```
 
 ## Examples In This Repo
@@ -116,31 +116,37 @@ source fixture beside the checker. Do not remove repetition merely to make the
 checker DRY: duplicated specification code is often easier to audit than a
 general abstraction that can skip or reinterpret cases.
 
-### Strict Profile
+### Declarative Checkers
 
-Use `--profile strict` for checkers that should contain no executable decisions:
+Use `--declarative-checkers` when a checker should declare cases without making
+runtime decisions. It requires one `comply` function containing only constants,
+direct oracle calls, drops, and its final `end`:
 
 ```bash
-qip comply impl.wasm --with check.wasm --profile strict
+qip comply impl.wasm --with check.wasm --declarative-checkers
 ```
 
-The profile inspects the final Wasm, not the source language. It permits one
+The validation inspects the final Wasm, not the source language. It permits one
 defined `comply` function containing only integer constants, direct calls to
 host imports, dropped call results, and the final function end. It rejects
 branches, conditionals, selects, loops, local helper calls, indirect calls,
 memory instructions, and other executable operations. The checker may export
 only `memory` and `comply`.
 
-This is intentionally narrower than ordinary Content Compliance. Generated
-or property-based checkers need control flow and should not use the profile. A
-strict fixture checker instead declares every case as an unconditional oracle
-call. The host records failures and verifies that the constant returned by
-`comply()` matches the number of cases it observed.
+This is intentionally narrower than ordinary Content Compliance. Generated or
+property-based checkers need control flow and should not use this option. A
+declarative fixture checker instead declares every case as an unconditional
+oracle call. The host records failures and verifies that the constant returned
+by `comply()` matches the number of cases it observed.
 
 The CommonMark checkers parse their checked-in text fixtures at Zig comptime.
 That parser can branch because it does not become part of the Wasm. An
 `inline for` emits the resulting cases as a flat sequence of calls, and the
-strict profile verifies that the compiler preserved that shape.
+declarative-checker validation verifies that the compiler preserved that shape.
+
+This rule applies to the checker supplied with `--with`, not to the
+implementation being tested. See [Hard Limits](/docs/hard-limits) for the
+central map of artifact, runtime, and checker validation.
 
 ## Authoring Strategies
 

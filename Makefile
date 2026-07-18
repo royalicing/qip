@@ -316,15 +316,15 @@ test-deno: qip components
 	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip components compliance
-	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-tsx.wasm --with compliance/syntax-highlight-javascript.comply.wasm --profile strict
-	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-html.wasm --with compliance/syntax-highlight-html.comply.wasm --profile strict
-	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-css.wasm --with compliance/syntax-highlight-css.comply.wasm --profile strict
-	$(QIP_BIN) comply recipes/text/markdown/25-highlight-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --profile strict
-	$(QIP_BIN) comply recipes/text/markdown/26-highlight-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --profile strict
-	$(QIP_BIN) comply recipes/text/markdown/27-highlight-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --profile strict
-	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --profile strict
-	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --profile strict
-	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --profile strict
+	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-tsx.wasm --with compliance/syntax-highlight-javascript.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-html.wasm --with compliance/syntax-highlight-html.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-css.wasm --with compliance/syntax-highlight-css.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply recipes/text/markdown/25-highlight-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply recipes/text/markdown/26-highlight-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply recipes/text/markdown/27-highlight-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --declarative-checkers
 	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm --with compliance/trap-empty-input.wasm
 	$(QIP_BIN) comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
 	$(QIP_BIN) comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm

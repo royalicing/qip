@@ -476,6 +476,7 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 ## TODO
 
 - [ ] Update to latest Zig
+- [ ] Consider making `qip comply --declarative-checkers` the default after all supported Compliance components satisfy it; keep the explicit flag available for reproducible older workflows.
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
 - [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
 - [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
@@ -546,7 +547,7 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - [x] `components/text/html/html-tag-validator.wasm`
   - [ ] `components/utf8/tld-validator.wasm`
   - [x] `components/utf8/luhn.wasm`
-- [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).
+- [x] Add `qip dry run ...pipeline.wasm` that validates pipeline compatibility and outputs memory usage (summing all input/output buffers).
 - [ ] Add `qip serve` command that runs the server in `prod` mode by default, and includes a module upload endpoint.
 - [ ] Add `random_ptr` and `random_size` to modules that the host can detect and fill in with random data. It can choose to seed with determinism or use a cryptographic source of randomness — it’s up to the host.
 - [ ] Add `--postcondition` or `--outmust` flag to `qip run` that verifies the final output conforms to a particular module e.g. `--postcondition valid-xml-1.0.wasm`.

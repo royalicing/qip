@@ -21,7 +21,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [-v|--verbose]"
+const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [-v|--verbose]"
 
 const (
 	implModuleName              = "impl"
@@ -81,13 +81,13 @@ func RunComplyCommand(args []string) error {
 	fs.SetOutput(io.Discard)
 	var withCompliances stringListFlag
 	var verbose bool
-	var profile string
+	var declarativeCheckers bool
 	var seedFlag int
 	var seedSet bool
 	fs.Var(&withCompliances, "with", "compliance component (repeatable)")
 	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&profile, "profile", "", "compliance checker profile (strict)")
+	fs.BoolVar(&declarativeCheckers, "declarative-checkers", false, "require each --with checker to be an unconditional list of oracle calls")
 	fs.Func("seed", "fuzz seed passed to Content Compliance components via uniform_set_seed", func(v string) error {
 		n, err := strconv.Atoi(v)
 		if err != nil {
@@ -99,9 +99,6 @@ func RunComplyCommand(args []string) error {
 	})
 	if err := fs.Parse(normalizeComplyArgs(args)); err != nil {
 		return fmt.Errorf("%s %w", usageComply, err)
-	}
-	if profile != "" && profile != "strict" {
-		return fmt.Errorf("unknown comply profile %q; want strict", profile)
 	}
 	rest := fs.Args()
 	if len(rest) != 1 {
@@ -164,11 +161,11 @@ func RunComplyCommand(args []string) error {
 			sum := sha256.Sum256(body)
 			fmt.Fprintf(os.Stderr, "compliance[%d] %s sha256: %x\n", i+1, path, sum)
 		}
-		if profile == "strict" {
-			if err := wasminspect.ValidateStrictComplyProfile(body); err != nil {
+		if declarativeCheckers {
+			if err := wasminspect.ValidateDeclarativeComplyChecker(body); err != nil {
 				return fmt.Errorf("compliance component %q: %w", path, err)
 			}
-			fmt.Fprintf(os.Stderr, "comply: strict checker profile PASS --with %s\n", path)
+			fmt.Fprintf(os.Stderr, "comply: declarative checker PASS --with %s\n", path)
 		}
 		compliances = append(compliances, complianceSpec{index: i, path: path, wasm: body})
 	}
@@ -219,9 +216,8 @@ func RunComplyCommand(args []string) error {
 
 func normalizeComplyArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
-		"--with":    {},
-		"--profile": {},
-		"--seed":    {},
+		"--with": {},
+		"--seed": {},
 	}
 	return NormalizeFlagArgs(args, flagsWithValue)
 }

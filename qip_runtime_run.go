@@ -37,6 +37,10 @@ func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64,
 	return 0, false, nil
 }
 
+func hasExportedValue(mod api.Module, name string) bool {
+	return mod.ExportedGlobal(name) != nil || mod.ExportedFunction(name) != nil
+}
+
 func normalizeIncomingContentType(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -52,10 +56,15 @@ func normalizeIncomingContentType(value string) string {
 	return strings.ToLower(value)
 }
 
-func normalizeDeclaredContentType(value string) (string, error) {
-	value = strings.TrimSpace(value)
+func validateDeclaredContentType(value string) (string, error) {
 	if value == "" {
 		return "", errors.New("content type is empty")
+	}
+	if strings.TrimSpace(value) != value {
+		return "", fmt.Errorf("content type %q must not include whitespace", value)
+	}
+	if strings.ToLower(value) != value {
+		return "", fmt.Errorf("content type %q must be lowercase", value)
 	}
 	if strings.Contains(value, ",") {
 		return "", errors.New("content type must contain exactly one MIME type")
@@ -73,7 +82,10 @@ func normalizeDeclaredContentType(value string) (string, error) {
 	if strings.Contains(mediaType, "*") {
 		return "", fmt.Errorf("content type %q must not include media ranges", value)
 	}
-	return strings.ToLower(mediaType), nil
+	if mediaType != value {
+		return "", fmt.Errorf("content type %q must be one canonical MIME type", value)
+	}
+	return value, nil
 }
 
 func readOptionalModuleContentType(ctx context.Context, mod api.Module, prefix string) (string, bool, error) {
@@ -103,11 +115,121 @@ func readOptionalModuleContentType(ctx context.Context, mod api.Module, prefix s
 	if !ok {
 		return "", false, fmt.Errorf("failed to read %s bytes from module memory", prefix)
 	}
-	mediaType, err := normalizeDeclaredContentType(string(raw))
+	mediaType, err := validateDeclaredContentType(string(raw))
 	if err != nil {
 		return "", false, fmt.Errorf("invalid %s content type metadata: %w", prefix, err)
 	}
 	return mediaType, true, nil
+}
+
+type runModuleContract struct {
+	inputPtr                     uint64
+	inputCapBytes                uint64
+	inputEncoding                dataEncoding
+	hasOutput                    bool
+	outputCapBytes               uint64
+	outputEncoding               dataEncoding
+	declaredInputContentType     string
+	hasDeclaredInputContentType  bool
+	declaredOutputContentType    string
+	hasDeclaredOutputContentType bool
+}
+
+func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleContract, error) {
+	var contract runModuleContract
+	if mod.Memory() == nil {
+		return contract, errors.New("Wasm module must export memory")
+	}
+
+	renderFunc := mod.ExportedFunction("render")
+	if renderFunc == nil {
+		return contract, errors.New("Wasm module must export render(i32) -> i32")
+	}
+	params := renderFunc.Definition().ParamTypes()
+	results := renderFunc.Definition().ResultTypes()
+	if len(params) != 1 || params[0] != api.ValueTypeI32 || len(results) != 1 || results[0] != api.ValueTypeI32 {
+		return contract, errors.New("Wasm module must export render(i32) -> i32")
+	}
+
+	inputPtr, ok, err := getExportedValue(ctx, mod, "input_ptr")
+	if err != nil {
+		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
+	}
+	if !ok {
+		return contract, errors.New("Wasm module must export input_ptr as global or function")
+	}
+	contract.inputPtr = inputPtr
+
+	inputCap, ok, err := getExportedValue(ctx, mod, "input_utf8_cap")
+	if err != nil {
+		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
+	}
+	if ok {
+		contract.inputEncoding = dataEncodingUTF8
+	} else if inputCap, ok, err = getExportedValue(ctx, mod, "input_bytes_cap"); err != nil {
+		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
+	} else if ok {
+		contract.inputEncoding = dataEncodingRaw
+	} else {
+		return contract, errors.New("Wasm module must export input_utf8_cap or input_bytes_cap as global or function")
+	}
+	contract.inputCapBytes = inputCap
+
+	hasOutputPtr := hasExportedValue(mod, "output_ptr")
+	if hasOutputPtr {
+		contract.hasOutput = true
+		outputCap, ok, err := getExportedValue(ctx, mod, "output_utf8_cap")
+		if err != nil {
+			return contract, wasmruntime.HumanizeExecutionError(ctx, err)
+		}
+		if ok {
+			contract.outputEncoding = dataEncodingUTF8
+		} else if outputCap, ok, err = getExportedValue(ctx, mod, "output_bytes_cap"); err != nil {
+			return contract, wasmruntime.HumanizeExecutionError(ctx, err)
+		} else if ok {
+			contract.outputEncoding = dataEncodingRaw
+		} else {
+			return contract, errors.New("Wasm module must export output_utf8_cap or output_bytes_cap as global or function")
+		}
+		contract.outputCapBytes = outputCap
+	}
+
+	contract.declaredInputContentType, contract.hasDeclaredInputContentType, err = readOptionalModuleContentType(ctx, mod, "input")
+	if err != nil {
+		return contract, err
+	}
+	contract.declaredOutputContentType, contract.hasDeclaredOutputContentType, err = readOptionalModuleContentType(ctx, mod, "output")
+	if err != nil {
+		return contract, err
+	}
+	return contract, nil
+}
+
+func resolveRunModuleContentType(contract runModuleContract, incomingContentType string, allowMissingInputContentType bool, checking contentTypeCheckingMode, moduleName string) (effectiveInputType string, outputType string, err error) {
+	incomingContentType = normalizeIncomingContentType(incomingContentType)
+	effectiveInputType = incomingContentType
+	if effectiveInputType == "" && contract.hasDeclaredInputContentType && allowMissingInputContentType {
+		effectiveInputType = contract.declaredInputContentType
+	}
+
+	if checking == ContentTypeCheckingStrong && contract.hasDeclaredInputContentType {
+		if effectiveInputType == "" {
+			return "", "", fmt.Errorf("content type check failed for %s: module expects %q but pipeline content type is unspecified", moduleName, contract.declaredInputContentType)
+		}
+		if effectiveInputType != contract.declaredInputContentType {
+			return "", "", fmt.Errorf("content type check failed for %s: module expects %q, got %q", moduleName, contract.declaredInputContentType, effectiveInputType)
+		}
+	}
+
+	switch {
+	case contract.hasDeclaredOutputContentType:
+		outputType = contract.declaredOutputContentType
+	case contract.hasOutput && contract.outputEncoding == dataEncodingUTF8 && contract.inputEncoding != dataEncodingUTF8:
+		outputType = ""
+	case contract.hasOutput:
+		outputType = effectiveInputType
+	}
+	return effectiveInputType, outputType, nil
 }
 
 type moduleExecutionResult struct {
@@ -282,107 +404,25 @@ func executeModuleWithInput(
 		return
 	}
 
-	var input contentData
-	// Get input_ptr and input_cap (required)
-	inputPtr, ok, err := getExportedValue(ctx, mod, "input_ptr")
-	if err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	}
-	if !ok {
-		returnErr = errors.New("Wasm module must export input_ptr as global or function")
-		return
-	}
-
-	inputCap, ok, err := getExportedValue(ctx, mod, "input_utf8_cap")
-	if err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	}
-	if ok {
-		input.encoding = dataEncodingUTF8
-	} else if cap, ok, err := getExportedValue(ctx, mod, "input_bytes_cap"); err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	} else if ok {
-		inputCap = cap
-		input.encoding = dataEncodingRaw
-	} else {
-		returnErr = errors.New("Wasm module must export input_utf8_cap or input_bytes_cap as global or function")
-		return
-	}
-	exec.inputCapBytes = inputCap
-
-	var outputPtr, outputCap uint32
-	if _, ok, err := getExportedValue(ctx, mod, "output_ptr"); err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	} else if ok {
-		if cap, ok, err := getExportedValue(ctx, mod, "output_utf8_cap"); err != nil {
-			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-			return
-		} else if ok {
-			outputCap = uint32(cap)
-			exec.output.encoding = dataEncodingUTF8
-		} else if cap, ok, err := getExportedValue(ctx, mod, "output_bytes_cap"); err != nil {
-			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-			return
-		} else if ok {
-			outputCap = uint32(cap)
-			exec.output.encoding = dataEncodingRaw
-		} else {
-			returnErr = errors.New("Wasm module must export output_utf8_cap or output_bytes_cap as global or function")
-			return
-		}
-	}
-	exec.outputCapBytes = uint64(outputCap)
-
-	declaredInputContentType, hasDeclaredInputContentType, err := readOptionalModuleContentType(ctx, mod, "input")
+	contract, err := inspectRunModuleContract(ctx, mod)
 	if err != nil {
 		returnErr = err
 		return
 	}
-	declaredOutputContentType, hasDeclaredOutputContentType, err := readOptionalModuleContentType(ctx, mod, "output")
+	exec.inputCapBytes = contract.inputCapBytes
+	exec.outputCapBytes = contract.outputCapBytes
+	exec.output.encoding = contract.outputEncoding
+	_, exec.outputContentType, err = resolveRunModuleContentType(contract, incomingContentType, allowMissingInputContentType, opts.contentTypeChecking, moduleName)
 	if err != nil {
 		returnErr = err
 		return
 	}
-	incomingContentType = normalizeIncomingContentType(incomingContentType)
-	effectiveIncomingContentType := incomingContentType
-	if effectiveIncomingContentType == "" && hasDeclaredInputContentType && allowMissingInputContentType {
-		effectiveIncomingContentType = declaredInputContentType
-	}
 
-	if opts.contentTypeChecking == ContentTypeCheckingStrong && hasDeclaredInputContentType {
-		if effectiveIncomingContentType == "" {
-			if !allowMissingInputContentType {
-				returnErr = fmt.Errorf("content type check failed for %s: module expects %q but pipeline content type is unspecified", moduleName, declaredInputContentType)
-				return
-			}
-		} else if effectiveIncomingContentType != declaredInputContentType {
-			returnErr = fmt.Errorf("content type check failed for %s: module expects %q, got %q", moduleName, declaredInputContentType, effectiveIncomingContentType)
-			return
-		}
-	}
-
-	switch {
-	case hasDeclaredOutputContentType:
-		exec.outputContentType = declaredOutputContentType
-	case exec.output.encoding == dataEncodingUTF8 && input.encoding != dataEncodingUTF8:
-		// A bytes-in, UTF-8-out component produces new text; the incoming
-		// (binary) pipeline content type does not describe its output.
-		exec.outputContentType = ""
-	case exec.output.encoding == dataEncodingUTF8 || exec.output.encoding == dataEncodingRaw:
-		exec.outputContentType = effectiveIncomingContentType
-	default:
-		exec.outputContentType = ""
-	}
-
+	inputPtr := contract.inputPtr
+	inputCap := contract.inputCapBytes
+	outputCap := uint32(contract.outputCapBytes)
+	var outputPtr uint32
 	runFunc := mod.ExportedFunction("render")
-	if runFunc == nil {
-		returnErr = errors.New("Wasm module must export render(i32) -> i32")
-		return
-	}
 
 	var inputSize = uint64(len(inputBytes))
 	if inputSize > inputCap {

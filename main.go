@@ -87,6 +87,7 @@ type options struct {
 	mode                   runtimeMode
 	contentTypeChecking    contentTypeCheckingMode
 	trustFirstStageContent bool
+	capacitiesMustFit      bool
 	viewSource             bool
 	traceWith              string
 	modulePolicy           wasminspect.ModulePolicy
@@ -103,12 +104,13 @@ func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGro
 	return nil
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
-const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
+const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageDry = "Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
-const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]"
+const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [--legacy] [-v|--verbose]"
 const usageDev = "Usage: qip router dev <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]"
 const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  dev      Start a dev server for a content directory with optional recipes\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site and write a minimal WARC file"
 const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]"
@@ -119,8 +121,43 @@ const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or fil
 const usageHelp = "Usage: qip help [command]"
 const legacyDevNotice = "qip: `qip dev` has moved to `qip router dev`; please update your command. `qip dev` will continue to work for now."
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: components/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
-const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--profile strict] [--seed <n>] [--legacy] [-v|--verbose]
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: components/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
+const helpDryRun = `Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...
+
+Validates and describes the same prepared pipeline as qip run without reading
+input, calling render, or writing output. A compatible plan exits 0. Invalid
+component contracts, encoding or MIME composition, uniforms, or module policy
+exit non-zero.
+
+Memory:
+  --max-memory is checked independently against every component's declared
+  Wasm memory minimum and maximum. It is not a cap on the pipeline total.
+  The reported total is the sum of declared input/output buffer capacities,
+  not resident memory. In-place Tile buffers are counted once.
+
+Capacity compatibility:
+  --capacities-must-fit rejects a connection between Content components when
+  the producer's maximum output capacity exceeds the consumer's input
+  capacity. Without this flag, the mismatch is a warning because a smaller
+  runtime value may fit.
+
+Example:
+  qip dry run components/text/markdown/commonmark.0.31.2.wasm components/text/html/html-page-wrap.wasm
+
+Output:
+  Pipeline compatible: 2 step(s)
+  1. components/text/markdown/commonmark.0.31.2.wasm — Content
+     Input:  encoding=UTF-8, type=text/markdown, capacity=2.0 MiB (2097152 bytes)
+     Output: encoding=UTF-8, type=text/html, capacity=2.0 MiB (2097152 bytes)
+     Buffers: 4.0 MiB (4194304 bytes)
+  2. components/text/html/html-page-wrap.wasm — Content
+     Input:  encoding=UTF-8, type=text/html, capacity=256.0 KiB (262144 bytes)
+     Output: encoding=UTF-8, type=text/html, capacity=512.0 KiB (524288 bytes)
+     Buffers: 768.0 KiB (786432 bytes)
+     Note: step 2 (components/text/html/html-page-wrap.wasm): previous output capacity 2.0 MiB (2097152 bytes) exceeds this input capacity 256.0 KiB (262144 bytes); qip run remains valid when the actual intermediate output fits
+  Total declared buffer capacity: 4.8 MiB (4980736 bytes)
+  Warnings: 1`
+const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [--legacy] [-v|--verbose]
 
 What qip comply does:
   1) Base ABI validation on impl.wasm (always):
@@ -144,6 +181,11 @@ What qip comply does:
      - qip instantiates impl as WebAssembly module name "impl"
      - all compliance components run in parallel
      - all must pass
+
+Checker structure:
+  --declarative-checkers requires every --with component to define one comply
+  function containing only constants, direct oracle calls, drops, and its final
+  end. These checkers declare cases without runtime control flow.
 
 Compliance component contract (what to implement):
   Required imports/exports:
@@ -215,6 +257,8 @@ func main() {
 		helpCmd(args[1:])
 	} else if args[0] == "run" {
 		runCmd(args[1:])
+	} else if args[0] == "dry" {
+		dryCmd(args[1:])
 	} else if args[0] == "bench" {
 		benchCmd(args[1:])
 	} else if args[0] == "score" {
@@ -253,6 +297,8 @@ func helpCmd(args []string) {
 	switch args[0] {
 	case "run":
 		fmt.Println(helpRun)
+	case "dry":
+		fmt.Println(helpDryRun)
 	case "bench":
 		fmt.Println(usageBench)
 	case "score":
@@ -305,45 +351,15 @@ func scoreCmd(args []string) {
 }
 
 func runCmd(args []string) {
-	opts := options{
-		contentTypeChecking:    ContentTypeCheckingStrong,
-		trustFirstStageContent: true,
+	config, err := parseRunCommandArgs(args, "run")
+	if err != nil {
+		gameOver("%v", err)
 	}
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var runVerbose bool
-	var inputPath string
-	outputPath := "-"
-	timeoutMS := 5000
-	var maxMemoryBytes uint64
-	var allowMemoryGrow bool
-	fs.BoolVar(&runVerbose, "v", false, "enable verbose logging")
-	fs.BoolVar(&runVerbose, "verbose", false, "enable verbose logging")
-	fs.StringVar(&inputPath, "i", "", "input file path")
-	fs.StringVar(&outputPath, "o", "-", "output file path ('-' for stdout)")
-	fs.StringVar(&outputPath, "output", "-", "output file path ('-' for stdout)")
-	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "per-run timeout in milliseconds")
-	fs.StringVar(&opts.traceWith, "trace-with", "", "application/wasm component used to instrument a module after a trap")
-	fs.Uint64Var(&maxMemoryBytes, "max-memory", 0, "reject modules whose declared memory exceeds this byte cap")
-	fs.BoolVar(&allowMemoryGrow, "allow-memory-grow", false, "allow memory.grow; requires --max-memory")
-	if err := fs.Parse(normalizeRunArgs(args)); err != nil {
-		gameOver("%s %v", usageRun, err)
-	}
-	opts.verbose = opts.verbose || runVerbose
-	if err := applyModulePolicyFlags(&opts, maxMemoryBytes, allowMemoryGrow); err != nil {
-		gameOver("Invalid module policy: %v", err)
-	}
-
-	componentInvocations, parseErr := parseComponentInvocations(fs.Args(), "run")
-	if parseErr != nil {
-		gameOver("Invalid render module args: %v", parseErr)
-	}
-	if len(componentInvocations) == 0 {
-		gameOver(usageRun)
-	}
-	if timeoutMS <= 0 {
-		gameOver("Invalid timeout-ms: %d", timeoutMS)
-	}
+	opts := config.opts
+	inputPath := config.inputPath
+	outputPath := config.outputPath
+	timeoutMS := config.timeoutMS
+	componentInvocations := config.componentInvocations
 
 	var input []byte
 	if inputPath == "-" {
@@ -399,15 +415,16 @@ func runCmd(args []string) {
 		}
 	}()
 
-	pipeline, err := buildPipelineFromInvocations(context.Background(), componentInvocations, opts)
-	if err != nil {
-		gameOver("%v", err)
-	}
-	defer pipeline.Close(context.Background())
-
 	execCtx := context.Background()
 	execCtx, cancel := wasmruntime.WithExecutionTimeout(execCtx, time.Duration(timeoutMS)*time.Millisecond)
 	defer cancel()
+
+	prepared, err := prepareRunPipelineFromInvocations(execCtx, componentInvocations, opts)
+	if err != nil {
+		gameOver("%v", err)
+	}
+	pipeline := prepared.pipeline
+	defer pipeline.Close(context.Background())
 
 	initialContent := qinternal.NewRawBytesContentWithType(input, "")
 	result, err := pipeline.Process(execCtx, initialContent, 0)
@@ -423,6 +440,74 @@ func runCmd(args []string) {
 	if err := writeRunOutput(result, outputBytes, outputPath, opts); err != nil {
 		gameOver("%v", err)
 	}
+}
+
+type runCommandConfig struct {
+	opts                 options
+	inputPath            string
+	outputPath           string
+	timeoutMS            int
+	componentInvocations []ComponentInvocation
+}
+
+func parseRunCommandArgs(args []string, commandName string) (runCommandConfig, error) {
+	config := runCommandConfig{
+		opts: options{
+			contentTypeChecking:    ContentTypeCheckingStrong,
+			trustFirstStageContent: true,
+		},
+		outputPath: "-",
+		timeoutMS:  5000,
+	}
+	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var verbose bool
+	var maxMemoryBytes uint64
+	var allowMemoryGrow bool
+	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&config.inputPath, "i", "", "input file path")
+	fs.StringVar(&config.outputPath, "o", "-", "output file path ('-' for stdout)")
+	fs.StringVar(&config.outputPath, "output", "-", "output file path ('-' for stdout)")
+	fs.IntVar(&config.timeoutMS, "timeout-ms", config.timeoutMS, "per-run timeout in milliseconds")
+	fs.StringVar(&config.opts.traceWith, "trace-with", "", "application/wasm component used to instrument a module after a trap")
+	fs.Uint64Var(&maxMemoryBytes, "max-memory", 0, "reject modules whose declared memory exceeds this byte cap")
+	fs.BoolVar(&allowMemoryGrow, "allow-memory-grow", false, "allow memory.grow; requires --max-memory")
+	fs.BoolVar(&config.opts.capacitiesMustFit, "capacities-must-fit", false, "require each Content output capacity to fit the next Content input capacity")
+	if err := fs.Parse(normalizeRunArgs(args)); err != nil {
+		usage := usageRun
+		if commandName == "dry run" {
+			usage = usageDry
+		}
+		return runCommandConfig{}, fmt.Errorf("%s %v", usage, err)
+	}
+	config.opts.verbose = verbose
+	if err := applyModulePolicyFlags(&config.opts, maxMemoryBytes, allowMemoryGrow); err != nil {
+		return runCommandConfig{}, fmt.Errorf("Invalid module policy: %w", err)
+	}
+
+	invocations, err := parseComponentInvocations(fs.Args(), commandName)
+	if err != nil {
+		return runCommandConfig{}, fmt.Errorf("Invalid render module args: %w", err)
+	}
+	if len(invocations) == 0 {
+		if commandName == "dry run" {
+			return runCommandConfig{}, errors.New(usageDry)
+		}
+		return runCommandConfig{}, errors.New(usageRun)
+	}
+	if config.timeoutMS <= 0 {
+		return runCommandConfig{}, fmt.Errorf("Invalid timeout-ms: %d", config.timeoutMS)
+	}
+	config.componentInvocations = invocations
+	return config, nil
+}
+
+func dryCmd(args []string) {
+	if len(args) == 0 || args[0] != "run" {
+		gameOver(usageDry)
+	}
+	dryRunCmd(args[1:])
 }
 
 // run is retained for test helper compatibility.

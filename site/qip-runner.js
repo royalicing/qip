@@ -40,12 +40,18 @@ class ContentTypeBytes {
   }
 }
 
-function sameContract(left, right) {
+function contractAccepted(actual, expected) {
   return (
-    left.constructor === right.constructor &&
-    (left.contentType === undefined ||
-      right.contentType === undefined ||
-      left.contentType === right.contentType)
+    encodingAccepted(actual, expected) &&
+    (expected.contentType === undefined ||
+      actual.contentType === expected.contentType)
+  );
+}
+
+function encodingAccepted(actual, expected) {
+  return (
+    actual.constructor === expected.constructor ||
+    (actual instanceof ContentTypeUTF8 && expected instanceof ContentTypeBytes)
   );
 }
 
@@ -61,7 +67,7 @@ function isContentContract(value) {
 }
 
 function assertContractsMatch(actual, expected, label) {
-  if (!sameContract(actual, expected)) {
+  if (!contractAccepted(actual, expected)) {
     throw Error(
       label +
         " contract mismatch: expected " +
@@ -70,6 +76,31 @@ function assertContractsMatch(actual, expected, label) {
         describeContract(actual),
     );
   }
+}
+
+function resolveComponentOutput(input, component) {
+  assertContractsMatch(input, component.input, "component input");
+  if (component.output.contentType !== undefined) {
+    return component.output;
+  }
+
+  // Raw bytes converted to UTF-8 are newly interpreted text, so the binary
+  // MIME type cannot follow. Other generic transforms preserve a known type.
+  const contentType =
+    component.input instanceof ContentTypeBytes &&
+    component.output instanceof ContentTypeUTF8
+      ? undefined
+      : input.contentType;
+  return component.output instanceof ContentTypeUTF8
+    ? new ContentTypeUTF8(contentType)
+    : new ContentTypeBytes(contentType);
+}
+
+function valueForInput(value, actual, expected) {
+  if (actual instanceof ContentTypeUTF8 && expected instanceof ContentTypeBytes) {
+    return textEncoder.encode(value);
+  }
+  return value;
 }
 
 function readI32Export(exportsObj, name) {
@@ -116,7 +147,7 @@ function optionalContentType(exportsObj, memory, ptrName, sizeName) {
   }
   const size = readI32Export(exportsObj, sizeName);
   if (size <= 0) {
-    return undefined;
+    throw Error("content type export " + sizeName + " must be positive");
   }
   const ptr = readI32Export(exportsObj, ptrName);
   return optionalContractContentType(
@@ -212,7 +243,6 @@ function validateWasmComponent(input, module, output) {
 
   if (
     declaredInput !== undefined &&
-    input.contentType !== undefined &&
     declaredInput !== input.contentType
   ) {
     throw Error(
@@ -224,7 +254,6 @@ function validateWasmComponent(input, module, output) {
   }
   if (
     declaredOutput !== undefined &&
-    output.contentType !== undefined &&
     declaredOutput !== output.contentType
   ) {
     throw Error(
@@ -351,31 +380,36 @@ export function contentRecipe(input, components, output) {
     }
   }
 
+  const plannedInputs = [];
+  let plannedOutput = input;
   if (steps.length === 0) {
     assertContractsMatch(input, output, "empty recipe");
   } else {
-    assertContractsMatch(input, steps[0].input, "recipe input");
-    for (let i = 0; i < steps.length - 1; i += 1) {
-      assertContractsMatch(
-        steps[i].output,
-        steps[i + 1].input,
-        "recipe step " + String(i + 1),
-      );
+    let current = input;
+    for (let i = 0; i < steps.length; i += 1) {
+      try {
+        plannedInputs.push(current);
+        current = resolveComponentOutput(current, steps[i]);
+      } catch (error) {
+        throw Error(
+          "recipe step " + String(i + 1) + " " + error.message,
+        );
+      }
     }
-    assertContractsMatch(
-      steps[steps.length - 1].output,
-      output,
-      "recipe output",
-    );
+    assertContractsMatch(current, output, "recipe output");
+    plannedOutput = current;
   }
 
   return freezeComponent(
     (value) => {
       bytesForInput(value, input);
       let current = value;
-      for (const step of steps) {
-        current = step(current);
+      for (let i = 0; i < steps.length; i += 1) {
+        current = steps[i](
+          valueForInput(current, plannedInputs[i], steps[i].input),
+        );
       }
+      current = valueForInput(current, plannedOutput, output);
       assertJsOutput(current, output);
       return current;
     },

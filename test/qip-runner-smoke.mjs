@@ -33,6 +33,34 @@ if (!(echoed instanceof Uint8Array) || echoed[1] !== 2) {
   throw new Error("JavaScript byte component failed");
 }
 
+const textAsBytes = contentRecipe(text, [trim, byteEcho], bytes);
+const encodedText = textAsBytes(" hi ");
+if (!(encodedText instanceof Uint8Array) || new TextDecoder().decode(encodedText) !== "hi") {
+  throw new Error("contentRecipe did not safely widen UTF-8 to raw bytes");
+}
+
+const bytesToGenericText = contentComponent(bytes, () => "", text);
+const htmlIdentity = contentComponent(html, (value) => value, html);
+let rejectedMissingMIMEType = false;
+try {
+  contentRecipe(bytes, [bytesToGenericText, htmlIdentity], html);
+} catch {
+  rejectedMissingMIMEType = true;
+}
+if (!rejectedMissingMIMEType) {
+  throw new Error("contentRecipe implicitly coerced an unspecified MIME type to text/html");
+}
+
+let rejectedBytesToUTF8 = false;
+try {
+  contentRecipe(bytes, [byteEcho, trim], text);
+} catch {
+  rejectedBytesToUTF8 = true;
+}
+if (!rejectedBytesToUTF8) {
+  throw new Error("contentRecipe implicitly coerced raw bytes to UTF-8");
+}
+
 const identity = contentRecipe(text, [], text);
 if (identity("ok") !== "ok") {
   throw new Error("empty contentRecipe should act as identity");
