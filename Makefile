@@ -94,6 +94,9 @@ compliance/data-uri-to-css-url.comply.wasm: compliance/data-uri-to-css-url.compl
 compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-html.comply.zig compliance/mermaid-to-unicode-html.fixtures.txt
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/jpeg-to-bmp-bgra32.comply.wasm: compliance/jpeg-to-bmp-bgra32.comply.zig $(wildcard compliance/jpeg-to-bmp-bgra32-fixtures/*)
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-javascript.comply.wasm compliance/syntax-highlight-html.comply.wasm compliance/syntax-highlight-css.comply.wasm compliance/syntax-highlight-python.comply.wasm compliance/syntax-highlight-java.comply.wasm compliance/syntax-highlight-csharp.comply.wasm
 
 compliance/syntax-highlight-%.comply.wasm: compliance/syntax-highlight-%.comply.zig compliance/syntax-highlight-%.fixtures.txt compliance/lib/syntax-highlight-comply.zig
@@ -124,6 +127,7 @@ compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
 compliance: compliance/mermaid-to-unicode-html.comply.wasm
+compliance: compliance/jpeg-to-bmp-bgra32.comply.wasm
 compliance: $(SYNTAX_HIGHLIGHT_COMPLY_TARGETS)
 compliance: $(COMMONMARK_COMPLY_TARGETS)
 
@@ -223,7 +227,8 @@ recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 67108
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
-components/image/png/png-to-bmp.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 
 components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
 components/utf8/unicode-17-uppercase.wasm: components/utf8/lib/unicode-17-uppercase-tables.zig components/utf8/lib/utf8.zig
@@ -232,7 +237,7 @@ components/utf8/iso-4217-alpha-to-numeric.wasm: components/utf8/lib/iso-4217-alp
 components/bytes/zlib-compress-dynamic-huffman-opt.wasm: components/bytes/lib/deflate.zig
 components/image/bmp/bmp-to-png.wasm: components/image/bmp/lib/deflate.zig
 components/bytes/zlib-decompress.wasm: components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
-components/image/png/png-to-bmp.wasm: components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig
+components/image/png/png-to-bmp-bgra32.wasm: components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig
 
 components/%.wasm: components/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
@@ -342,6 +347,7 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/utf8/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
 	$(QIP_BIN) comply components/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 	$(QIP_BIN) comply components/image/svg+xml/svg-to-data-uri.wasm --with compliance/svg-to-data-uri.comply.wasm
+	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-bgra32.wasm --with compliance/jpeg-to-bmp-bgra32.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/uri-list/data-uri-to-css-url.wasm --with compliance/data-uri-to-css-url.comply.wasm
 
 test-snapshot: qip components

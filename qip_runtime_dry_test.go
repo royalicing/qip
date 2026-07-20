@@ -134,7 +134,7 @@ func TestDocumentedRunPipelinesRemainCompatible(t *testing.T) {
 		{"zlib round trip", []string{"components/bytes/zlib-compress-dynamic-huffman.wasm", "components/bytes/zlib-decompress.wasm"}},
 		{"SVG to doubled ICO", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/image/bmp/bmp-double.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
 		{"SVG directly to ICO", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
-		{"PNG to ICO", []string{"components/image/png/png-to-bmp.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
+		{"PNG to ICO", []string{"components/image/png/png-to-bmp-bgra32.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
 		{"strict Wasm checks", []string{"components/application/wasm/wasm-strict-profile.wasm", "components/application/wasm/wasm-bounded-loops.wasm"}},
 		{"Markdown highlighting", []string{"components/text/markdown/commonmark.0.31.2.wasm", "components/text/html/highlight-syntax-highlight-tsx.wasm"}},
 		{"HTML highlighter chain", []string{"components/text/html/highlight-syntax-highlight-zig.wasm", "components/text/html/highlight-syntax-highlight-css.wasm", "components/text/html/highlight-syntax-highlight-bash.wasm", "components/text/html/html-add-highlight-stylesheet-night-owl.wasm"}},

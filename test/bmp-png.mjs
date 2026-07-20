@@ -13,7 +13,7 @@ const execFileP = promisify(execFile);
 
 const qip = fileURLToPath(new URL("../qip", import.meta.url));
 const bmpToPng = fileURLToPath(new URL("../components/image/bmp/bmp-to-png.wasm", import.meta.url));
-const pngToBmp = fileURLToPath(new URL("../components/image/png/png-to-bmp.wasm", import.meta.url));
+const pngToBmp = fileURLToPath(new URL("../components/image/png/png-to-bmp-bgra32.wasm", import.meta.url));
 
 async function ensurePrerequisites(t) {
   try {
