@@ -276,7 +276,16 @@ wasm-objdump -x components/bytes/your-module.wasm
 qip run -i components/application/wasm/your-module.wasm -- components/application/wasm/wasm-score.wasm
 ```
 
-Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use the stricter validator modules `components/application/wasm/wasm-strict-profile.wasm` (fixed memory, no imports, no banned instructions, no recursion) and `components/application/wasm/wasm-bounded-loops.wasm` (fixed-bound loops) when the module should obey the strict profile.
+Use `wasm-score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use `components/application/wasm/wasm-validate-core-1.0.wasm` for WebAssembly Core 1.0 specification validation. Use the policy checkers `components/application/wasm/wasm-strict-profile.wasm` (fixed memory, no imports, no banned instructions, no recursion) and `components/application/wasm/wasm-bounded-loops.wasm` (fixed-bound loops) when the valid module should also obey the strict profile.
+
+The QIP ABI can be expressed in WebAssembly Core 1.0, while the standard
+component build targets Core 2.0 features such as bulk memory. Current Chrome,
+Firefox, and Safari releases implement the Core 2.0 feature set, but there is no
+single browser switch named “Core 2.0”: support arrived feature by feature and
+older browsers remain in use. Check the WebAssembly project's
+[Feature Status](https://webassembly.org/features/) table for the first browser
+version supporting each feature, and use `WebAssembly.validate()` when selecting
+an optional optimized component such as a SIMD variant.
 
 ## Checklist
 
