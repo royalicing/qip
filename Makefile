@@ -231,9 +231,55 @@ components/application/warc/warc-add-custom-element-scripts.wasm: ZIG_WASM_MAX_M
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
+components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+# The module has no memory.grow instruction, so its maximum matches the
+# linker's 6,393-page initial memory exactly.
+components/image/bmp/bmp-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 418971648
 components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+
+LIBWEBP_ROOT := third_party/libwebp-1.6.0
+LIBWEBP_ENC_NAMES := alpha_enc analysis_enc backward_references_cost_enc backward_references_enc config_enc cost_enc filter_enc frame_enc histogram_enc iterator_enc near_lossless_enc picture_enc picture_csp_enc picture_psnr_enc picture_rescale_enc picture_tools_enc predictor_enc quant_enc syntax_enc token_enc tree_enc vp8l_enc webp_enc
+LIBWEBP_DSP_NAMES := alpha_processing cpu dec dec_clip_tables filters lossless rescaler upsampling yuv cost enc lossless_enc ssim
+LIBWEBP_DSP_SIMD_NAMES := alpha_processing_sse2 alpha_processing_sse41 cost_sse2 dec_sse2 dec_sse41 enc_sse2 enc_sse41 filters_sse2 lossless_sse2 lossless_sse41 lossless_enc_sse2 lossless_enc_sse41 rescaler_sse2 ssim_sse2 upsampling_sse2 upsampling_sse41 yuv_sse2 yuv_sse41
+LIBWEBP_UTILS_NAMES := bit_reader_utils color_cache_utils filters_utils huffman_utils palette quant_levels_dec_utils rescaler_utils random_utils thread_utils utils bit_writer_utils huffman_encode_utils quant_levels_utils
+LIBWEBP_SHARPYUV_NAMES := sharpyuv_cpu sharpyuv_csp sharpyuv_dsp sharpyuv_gamma sharpyuv
+LIBWEBP_C_SOURCES := $(addprefix $(LIBWEBP_ROOT)/src/enc/,$(addsuffix .c,$(LIBWEBP_ENC_NAMES)))
+LIBWEBP_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/dsp/,$(addsuffix .c,$(LIBWEBP_DSP_NAMES)))
+LIBWEBP_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/utils/,$(addsuffix .c,$(LIBWEBP_UTILS_NAMES)))
+LIBWEBP_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/sharpyuv/,$(addsuffix .c,$(LIBWEBP_SHARPYUV_NAMES)))
+LIBWEBP_SIMD_C_SOURCES := $(LIBWEBP_C_SOURCES)
+# Equivalent to libwebp's WEBP_ENABLE_SIMD=1 CMake build: Emscripten maps the
+# upstream SSE2/SSE4.1 implementations to WebAssembly SIMD instructions.
+LIBWEBP_SIMD_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/dsp/,$(addsuffix .c,$(LIBWEBP_DSP_SIMD_NAMES)))
+LIBWEBP_SIMD_C_SOURCES += $(LIBWEBP_ROOT)/sharpyuv/sharpyuv_sse2.c
+
+EMSDK_VERSION ?= 2.0.34
+EMCC_CACHE ?= $(if $(filter Darwin,$(HOST_OS)),/private/tmp/qip-emcc-2.0.34-cache,/tmp/qip-emcc-2.0.34-cache)
+EMSDK_ROOT ?= $(shell mise where emsdk@$(EMSDK_VERSION) 2>/dev/null)
+EMSDK_UPSTREAM := $(EMSDK_ROOT)/upstream
+EMSDK_SYSROOT := $(EMCC_CACHE)/sysroot
+EMSDK_LTO_LIBDIR := $(EMSDK_SYSROOT)/lib/wasm32-emscripten/lto
+EMSDK_LTO_STAMP := $(EMCC_CACHE)/qip-lto-system-libs.stamp
+EMSDK_CLANG := $(EMSDK_UPSTREAM)/bin/clang
+EMSDK_WASM_OPT := $(EMSDK_UPSTREAM)/bin/wasm-opt
+EMSDK_EMBUILDER := env EM_CACHE=$(EMCC_CACHE) $(EMSDK_UPSTREAM)/emscripten/embuilder.py
+LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy.raw.wasm
+LIBWEBP_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_method uniform_set_sharp_yuv uniform_set_low_memory arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_allocation_size arena_allocation_event arena_allocation_free_event
+LIBWEBP_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_CLANG_EXPORTS),-Xlinker --export=$(name))
+LIBWEBP_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DEMSCRIPTEN=1 -D__SSE__=1 -D__SSE2__=1 -D__SSE3__=1 -D__SSSE3__=1 -D__SSE4_1__=1
+
+$(EMSDK_LTO_STAMP):
+	mkdir -p $(EMCC_CACHE)
+	$(EMSDK_EMBUILDER) --lto build libc libcompiler_rt libc_rt_wasm libstandalonewasm
+	touch $@
+
+$(LIBWEBP_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossy.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/bmp/bmp-to-webp-lossy.wasm: $(LIBWEBP_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
 components/utf8/unicode-17-uppercase.wasm: components/utf8/lib/unicode-17-uppercase-tables.zig components/utf8/lib/utf8.zig
@@ -315,6 +361,8 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
 	node --test test/bmp-png.mjs
+	node --test test/bmp-webp.mjs
+	node --test test/bmp-rgb-metrics.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
 fuzz-zlib: components/bytes/zlib-compress.wasm components/bytes/zlib-compress-fixed-huffman.wasm components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-compress-dynamic-huffman-opt.wasm components/bytes/zlib-decompress.wasm

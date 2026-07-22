@@ -368,6 +368,7 @@ ls ./site
 - [Uniforms](docs/uniforms.md)
 - [QIP Component Patterns](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
+- [Building C Libraries as QIP Components](docs/c-wasm-toolchains.md)
 - [Hard Limits](docs/hard-limits.md)
 - [Provable Loops](docs/provable-loops.md)
 - [Running In JavaScript](docs/esm-integration.md)
