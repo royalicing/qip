@@ -1,4 +1,8 @@
-![qip logo](qip-logo.svg)
+```
+┏━━━┓ ━┳━ ┏━━━┓
+┗━┳━┛  ┃  ┣━━━┛
+  ╹   ━┻━ ╹
+```
 
 QIP Components are Quick to run/make/maintain, Isolated from network/disk/dependencies, and Portable across browser/server/native.
 
@@ -479,12 +483,14 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 - [ ] Update to latest Zig
 - [ ] Consider making `qip comply --declarative-checkers` the default after all supported Compliance components satisfy it; keep the explicit flag available for reproducible older workflows.
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
+  - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
 - [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
 - [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
 - [ ] Retire the web-shaped `Form` component contract.
   - [ ] Add `submit(input_size)` export
     - [ ] Input is either `application/x-www-form-urlencoded` or `multipart/form-data`
     - [ ] Have demo with `FormData` that works in client and on server
+    - [ ] Will be like an uncontrolled form in React, where every keypress does NOT need a re-render. Only do this on submit.
     - [ ] See how it could work with the Interactive component contract, and HTML-in-canvas
   - [ ] In favor of a future cross-host `Prompt` contract: sequential prompts with recoverable failure, `submit(input_size, now_ms)` for state changes, and `render(0)` for the current semantic projection/output.
 - [ ] Add Command Palette example, combining `<input>` and `<canvas>`
@@ -509,7 +515,6 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - See https://developer.mozilla.org/en-US/docs/Web/MathML/Reference/Element/semantics
   - See https://asciimath.org/#syntax
   - Have `/math-to-html` demo like https://katex.org/#demo
-  - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
 - [ ] Increase recipe order prefix from `nn` to `nnn`.
 - [ ] Add dev/CI QIP Vitals for pipelines: harness metrics that zoom in on time to first render bytes (read/fetch, compile, instantiate, first `render`), per-stage render time, full pipeline render time, interactive event-to-frame-bytes latency, frame-budget miss rate, output hash, wasm/compressed size, input/output byte sizes, memory pages/max memory, trap/timeout rate, and host/runtime/device metadata. Report p50/p95/p99 so timings stay measurable and comparable when output bytes still match.
 - [ ] Add optional field telemetry for deployed QIP components: user-experience metrics such as component hash, host/runtime/device class, time to first QIP paint p75/p95/p99, render-to-paint delay p75/p95/p99, interactive event-to-painted-frame p75/p95/p99, sampled pipeline render p95/p99, frame-budget miss rate, trap/timeout rate, and slowest device classes so production performance can be compared without changing the component contract.
@@ -561,6 +566,5 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - [ ] Move the Compliance-component meta-contract checks into `qip comply` base validation (the way static contract checks already run for render components): deterministic declarations across a double null-impl run, sequential u64 ordinals, examination open/continue/close discipline, and seed-varies-fuzz-only. Per-component harnesses must not each re-verify these; `test/lib/compliance-harness.mjs` is the interim JS reference implementation of both the bridge and the generic checks.
 - [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/component-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
 - [ ] Revisit numeric outputs as SIMD-aware tensors instead of restoring the old `output_i32_cap` directly. Useful proof cases are batched CRC, histograms, offset arrays, masks, and matrices. Keep element type, logical shape, and physical layout separate; Mojo's scalar-as-one-lane-SIMD and explicit layout model is pertinent prior art.
-- [ ] Finish migrating QIP contract exports to zero-arg functions only. Convert remaining WAT modules that export pointer/cap globals, then remove "global or function" support and wording from the Go runtime, comply checks, and docs.
 
 ![qip logo](qip-logo.svg)
