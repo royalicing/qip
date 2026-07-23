@@ -233,9 +233,15 @@ recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 6710886
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
-# The module has no memory.grow instruction, so its maximum matches the
-# linker's 6,393-page initial memory exactly.
-components/image/bmp/bmp-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 418971648
+# Full 25 MP level-9 VP8L encoding needs a 1.25 GiB reclaiming arena in
+# addition to its input and worst-case output buffers.
+components/image/bmp/bmp-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
+# The module has no memory.grow instruction, so its maximum matches its initial
+# memory. Transparent images exercise libwebp's VP8L alpha compressor.
+components/image/bmp/bmp-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
+# The opaque build has no VP8L alpha path and needs only the measured lossy VP8
+# arena plus input, output, row scratch, stack, and code.
+components/image/bmp/bmp-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762048
 components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 
@@ -254,6 +260,8 @@ LIBWEBP_SIMD_C_SOURCES := $(LIBWEBP_C_SOURCES)
 # upstream SSE2/SSE4.1 implementations to WebAssembly SIMD instructions.
 LIBWEBP_SIMD_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/dsp/,$(addsuffix .c,$(LIBWEBP_DSP_SIMD_NAMES)))
 LIBWEBP_SIMD_C_SOURCES += $(LIBWEBP_ROOT)/sharpyuv/sharpyuv_sse2.c
+LIBWEBP_OPAQUE_C_SOURCES := $(filter-out $(LIBWEBP_ROOT)/src/enc/alpha_enc.c,$(LIBWEBP_SIMD_C_SOURCES))
+LIBWEBP_OPAQUE_C_SOURCES += $(LIBWEBP_ROOT)/qip-opaque-alpha-stub.c
 
 EMSDK_VERSION ?= 2.0.34
 EMCC_CACHE ?= $(if $(filter Darwin,$(HOST_OS)),/private/tmp/qip-emcc-2.0.34-cache,/tmp/qip-emcc-2.0.34-cache)
@@ -266,8 +274,14 @@ EMSDK_CLANG := $(EMSDK_UPSTREAM)/bin/clang
 EMSDK_WASM_OPT := $(EMSDK_UPSTREAM)/bin/wasm-opt
 EMSDK_EMBUILDER := env EM_CACHE=$(EMCC_CACHE) $(EMSDK_UPSTREAM)/emscripten/embuilder.py
 LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy.raw.wasm
+LIBWEBP_OPAQUE_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy-opaque.raw.wasm
+LIBWEBP_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossless.raw.wasm
 LIBWEBP_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_method uniform_set_sharp_yuv uniform_set_low_memory arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_allocation_size arena_allocation_event arena_allocation_free_event
 LIBWEBP_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_CLANG_EXPORTS),-Xlinker --export=$(name))
+LIBWEBP_OPAQUE_CLANG_EXPORTS := $(LIBWEBP_CLANG_EXPORTS) uniform_set_background_color
+LIBWEBP_OPAQUE_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_OPAQUE_CLANG_EXPORTS),-Xlinker --export=$(name))
+LIBWEBP_LOSSLESS_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_level arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_search_steps arena_max_search_steps arena_allocation_size arena_allocation_offset arena_allocation_event arena_allocation_free_event
+LIBWEBP_LOSSLESS_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_LOSSLESS_CLANG_EXPORTS),-Xlinker --export=$(name))
 LIBWEBP_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DEMSCRIPTEN=1 -D__SSE__=1 -D__SSE2__=1 -D__SSE3__=1 -D__SSSE3__=1 -D__SSE4_1__=1
 
 $(EMSDK_LTO_STAMP):
@@ -276,9 +290,21 @@ $(EMSDK_LTO_STAMP):
 	touch $@
 
 $(LIBWEBP_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossy.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
-	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
 components/image/bmp/bmp-to-webp-lossy.wasm: $(LIBWEBP_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(LIBWEBP_OPAQUE_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossy-opaque.c $(LIBWEBP_OPAQUE_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DWEBP_OPAQUE_ONLY=1 -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_OPAQUE_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/bmp/bmp-to-webp-lossy-opaque.wasm: $(LIBWEBP_OPAQUE_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(LIBWEBP_LOSSLESS_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossless.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_LOSSLESS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/bmp/bmp-to-webp-lossless.wasm: $(LIBWEBP_LOSSLESS_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
@@ -362,6 +388,8 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/sqlite-modules.mjs
 	node --test test/bmp-png.mjs
 	node --test test/bmp-webp.mjs
+	node --test test/bmp-webp-lossy-opaque.mjs
+	node --test test/bmp-webp-lossless.mjs
 	node --test test/bmp-rgb-metrics.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 

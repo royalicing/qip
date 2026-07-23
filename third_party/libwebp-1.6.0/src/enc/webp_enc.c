@@ -349,7 +349,14 @@ int WebPEncode(const WebPConfig* config, WebPPicture* pic) {
 
   if (pic->stats != NULL) memset(pic->stats, 0, sizeof(*pic->stats));
 
+#if defined(WEBP_OPAQUE_ONLY)
+  if (config->lossless) {
+    return WebPEncodingSetError(pic, VP8_ENC_ERROR_INVALID_CONFIGURATION);
+  }
+  {
+#else
   if (!config->lossless) {
+#endif
     VP8Encoder* enc = NULL;
 
     if (pic->use_argb || pic->y == NULL || pic->u == NULL || pic->v == NULL) {
@@ -397,6 +404,9 @@ int WebPEncode(const WebPConfig* config, WebPPicture* pic) {
       VP8EncFreeBitWriters(enc);
     }
     ok &= DeleteVP8Encoder(enc);  // must always be called, even if !ok
+#if defined(WEBP_OPAQUE_ONLY)
+  }
+#else
   } else {
     // Make sure we have ARGB samples.
     if (pic->argb == NULL && !WebPPictureYUVAToARGB(pic)) {
@@ -409,6 +419,7 @@ int WebPEncode(const WebPConfig* config, WebPPicture* pic) {
 
     ok = VP8LEncodeImage(config, pic);  // Sets pic->error in case of problem.
   }
+#endif
 
   return ok;
 }

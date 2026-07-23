@@ -30,6 +30,23 @@ function buildBMP(width, height) {
   return bmp;
 }
 
+function withV5AlphaHeader(bmp) {
+  const pixelOffset = bmp.readUInt32LE(10);
+  const v5 = Buffer.alloc(bmp.length + 84);
+  bmp.copy(v5, 0, 0, 54);
+  bmp.copy(v5, 138, pixelOffset);
+  v5.writeUInt32LE(v5.length, 2);
+  v5.writeUInt32LE(138, 10);
+  v5.writeUInt32LE(124, 14);
+  v5.writeUInt32LE(3, 30);
+  v5.writeUInt32LE(0x00ff0000, 54);
+  v5.writeUInt32LE(0x0000ff00, 58);
+  v5.writeUInt32LE(0x000000ff, 62);
+  v5.writeUInt32LE(0xff000000, 66);
+  v5.writeUInt32LE(0x73524742, 70);
+  return v5;
+}
+
 function exportedString(exports, ptrName, sizeName) {
   return Buffer.from(exports.memory.buffer, exports[ptrName](), exports[sizeName]()).toString("utf8");
 }
@@ -47,7 +64,8 @@ test("bmp-to-webp-lossy emits deterministic VP8 with bounded arena telemetry", a
   exports._initialize?.();
 
   assert.equal(exports.input_bytes_cap(), 25_000_000 * 4 + 64 * 1024);
-  assert.equal(exports.output_bytes_cap(), 32 * 1024 * 1024);
+  assert.equal(exports.output_bytes_cap(), 64 * 1024 * 1024);
+  assert.equal(exports.memory.buffer.byteLength, 1216 * 1024 * 1024);
   assert.equal(exportedString(exports, "input_content_type_ptr", "input_content_type_size"), "image/bmp");
   assert.equal(exportedString(exports, "output_content_type_ptr", "output_content_type_size"), "image/webp");
   assert.equal(exports.uniform_set_quality(95), 95);
@@ -83,4 +101,23 @@ test("bmp-to-webp-lossy emits deterministic VP8 with bounded arena telemetry", a
   const secondSize = exports.render(input.length);
   const second = Buffer.from(exports.memory.buffer, exports.output_ptr(), secondSize);
   assert.deepEqual(second, first, "reused instance must encode deterministically");
+
+  const transparent = buildBMP(64, 48);
+  transparent[54 + 3] = 0;
+  memory.set(transparent, inputPtr);
+  const transparentSize = exports.render(transparent.length);
+  const transparentOutput = Buffer.from(
+    exports.memory.buffer,
+    exports.output_ptr(),
+    transparentSize,
+  );
+  assert.ok(transparentOutput.includes(Buffer.from("ALPH")),
+    "lossy WebP must preserve a non-opaque alpha plane");
+
+  const v5 = withV5AlphaHeader(transparent);
+  memory.set(v5, inputPtr);
+  const v5Size = exports.render(v5.length);
+  const v5Output = Buffer.from(exports.memory.buffer, exports.output_ptr(), v5Size);
+  assert.ok(v5Output.includes(Buffer.from("ALPH")),
+    "lossy WebP must accept explicitly masked V5 alpha");
 });

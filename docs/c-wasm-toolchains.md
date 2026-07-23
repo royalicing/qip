@@ -80,6 +80,30 @@ There is no direct-Clang equivalent of `-sFILESYSTEM=0`: that option controls
 Emscripten's generated runtime. The direct build never links that runtime. A
 zero-entry import section is the stronger artifact-level check.
 
+## What LTO can remove
+
+The lossy component fixes `config.lossless` to zero, but libwebp's public
+`WebPEncode` dispatcher receives a pointer and is large enough that ordinary
+LTO does not specialize the call. Against the current build, replacing that
+branch with a compile-time lossy path reduced the optimized artifact from
+324,820 to 316,614 bytes (2.5%). Opaque and transparent outputs remained
+byte-identical, with no consistent speed difference. An earlier experiment
+that raised LLVM's inline threshold to encourage constant propagation made its
+build about 32% larger instead.
+
+Most VP8L code in the alpha-preserving lossy module is not dead. Lossy WebP
+stores transparency in a separately lossless-compressed alpha plane. That
+component keeps the public dispatcher because carrying a specialization for a
+9 KB saving would add maintenance without changing its contract.
+
+The separate opaque component makes a different tradeoff. It composites
+declared BMP alpha before encoding, defines `WEBP_OPAQUE_ONLY` around the
+lossless dispatcher branch, and replaces `alpha_enc.c` with four fixed opaque
+entry points. LTO can then remove VP8L and its lossless DSP, producing a
+179,625-byte module instead of the current 324,920 bytes. The guarded libwebp source change
+does not affect ordinary builds; its larger size and memory saving justify the
+small vendored patch for this deliberately narrower contract.
+
 ## Reproducing the build
 
 The compiler is pinned because Emscripten 2.0.34/Clang 14 generated materially
@@ -89,6 +113,7 @@ work.
 ```sh
 mise install emsdk@2.0.34
 make -j components/image/bmp/bmp-to-webp-lossy.wasm
+make -j components/image/bmp/bmp-to-webp-lossy-opaque.wasm
 ```
 
 The Makefile locates the SDK through `mise`, prepares the LTO sysroot libraries,

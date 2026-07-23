@@ -3,13 +3,14 @@
 #include <string.h>
 
 #include "src/webp/encode.h"
+#include "src/enc/vp8li_enc.h"
 
 #define MAX_PIXELS 25000000u
 #define MAX_DIMENSION 8192u
 #define BMP_HEADER_CAP (64u * 1024u)
 #define INPUT_CAP (MAX_PIXELS * 4u + BMP_HEADER_CAP)
-#define OUTPUT_CAP (64u * 1024u * 1024u)
-#define ARENA_CAP (960u * 1024u * 1024u)
+#define OUTPUT_CAP (128u * 1024u * 1024u)
+#define ARENA_CAP (1280u * 1024u * 1024u)
 #define ROW_CAP (4u * MAX_DIMENSION)
 
 static uint8_t input_buf[INPUT_CAP] __attribute__((aligned(16)));
@@ -27,15 +28,14 @@ static size_t arena_free_null_count_value;
 static size_t arena_free_matched_count_value;
 static size_t arena_free_unmatched_count_value;
 static size_t arena_freed_bytes_value;
+static size_t arena_search_steps_value;
+static size_t arena_max_search_steps_value;
 static uint32_t arena_event_serial;
-static uint32_t arena_sizes[256];
-static uint32_t arena_offsets[256];
-static uint32_t arena_allocation_events[256];
-static uint32_t arena_free_events[256];
-static uint32_t quality = 95;
-static uint32_t method = 4;
-static uint32_t sharp_yuv = 1;
-static uint32_t low_memory = 1;
+static uint32_t arena_sizes[2048];
+static uint32_t arena_offsets[2048];
+static uint32_t arena_allocation_events[2048];
+static uint32_t arena_free_events[2048];
+static uint32_t level = 6;
 
 typedef struct ArenaBlock {
   uint32_t size;
@@ -48,6 +48,7 @@ typedef struct ArenaBlock {
 
 void* malloc(size_t size) {
   size_t aligned;
+  size_t search_steps = 0;
   uint32_t offset = 0;
   ArenaBlock* block;
   void* result;
@@ -55,20 +56,27 @@ void* malloc(size_t size) {
   if (size > UINT32_MAX - 15u) return NULL;
   aligned = (size + 15u) & ~(size_t)15u;
   while (offset != NO_BLOCK) {
+    ++search_steps;
     block = (ArenaBlock*)(void*)(arena + offset);
     if (block->is_free && block->size >= aligned) break;
     offset = block->next;
   }
   if (offset == NO_BLOCK) {
+    arena_search_steps_value += search_steps;
+    if (search_steps > arena_max_search_steps_value) {
+      arena_max_search_steps_value = search_steps;
+    }
     arena_failed_size = size;
     return NULL;
   }
+  arena_search_steps_value += search_steps;
+  if (search_steps > arena_max_search_steps_value) {
+    arena_max_search_steps_value = search_steps;
+  }
   if (block->size >= aligned + sizeof(ArenaBlock) + 16u) {
-    const uint32_t new_offset = offset + (uint32_t)sizeof(ArenaBlock) +
-                                (uint32_t)aligned;
+    const uint32_t new_offset = offset + (uint32_t)sizeof(ArenaBlock) + (uint32_t)aligned;
     ArenaBlock* const split = (ArenaBlock*)(void*)(arena + new_offset);
-    split->size = block->size - (uint32_t)aligned -
-                  (uint32_t)sizeof(ArenaBlock);
+    split->size = block->size - (uint32_t)aligned - (uint32_t)sizeof(ArenaBlock);
     split->next = block->next;
     split->prev = offset;
     split->is_free = 1;
@@ -86,7 +94,8 @@ void* malloc(size_t size) {
   ++arena_event_serial;
   if (arena_alloc_count < sizeof(arena_sizes) / sizeof(arena_sizes[0])) {
     arena_sizes[arena_alloc_count] = (uint32_t)size;
-    arena_offsets[arena_alloc_count] = (uint32_t)((uint8_t*)result - arena);
+    arena_offsets[arena_alloc_count] =
+        (uint32_t)((uint8_t*)result - arena);
     arena_allocation_events[arena_alloc_count] = arena_event_serial;
     arena_free_events[arena_alloc_count] = 0;
   }
@@ -119,7 +128,7 @@ void free(void* ptr) {
   if (address >= arena_address + sizeof(ArenaBlock) &&
       address - arena_address < ARENA_CAP) {
     const uint32_t offset = (uint32_t)(address - arena_address);
-    const size_t recorded = arena_alloc_count < 256 ? arena_alloc_count : 256;
+    const size_t recorded = arena_alloc_count < 2048 ? arena_alloc_count : 2048;
     ArenaBlock* block = (ArenaBlock*)(void*)((uint8_t*)ptr - sizeof(ArenaBlock));
     const uint32_t freed_size = block->size;
     if (!block->is_free) {
@@ -170,6 +179,8 @@ static void arena_reset(void) {
   arena_free_matched_count_value = 0;
   arena_free_unmatched_count_value = 0;
   arena_freed_bytes_value = 0;
+  arena_search_steps_value = 0;
+  arena_max_search_steps_value = 0;
   arena_event_serial = 0;
   {
     ArenaBlock* const first = (ArenaBlock*)(void*)arena;
@@ -222,21 +233,9 @@ uint32_t output_content_type_ptr(void) {
 }
 uint32_t output_content_type_size(void) { return sizeof(output_content_type) - 1; }
 
-uint32_t uniform_set_quality(uint32_t value) {
-  quality = value > 100 ? 100 : value;
-  return quality;
-}
-uint32_t uniform_set_method(uint32_t value) {
-  method = value > 6 ? 6 : value;
-  return method;
-}
-uint32_t uniform_set_sharp_yuv(uint32_t value) {
-  sharp_yuv = value != 0;
-  return sharp_yuv;
-}
-uint32_t uniform_set_low_memory(uint32_t value) {
-  low_memory = value != 0;
-  return low_memory;
+uint32_t uniform_set_level(uint32_t value) {
+  level = value > 9 ? 9 : value;
+  return level;
 }
 
 uint32_t arena_peak_bytes(void) { return (uint32_t)arena_peak; }
@@ -254,16 +253,26 @@ uint32_t arena_free_unmatched_count(void) {
   return (uint32_t)arena_free_unmatched_count_value;
 }
 uint32_t arena_freed_bytes(void) { return (uint32_t)arena_freed_bytes_value; }
+uint32_t arena_search_steps(void) {
+  return (uint32_t)arena_search_steps_value;
+}
+uint32_t arena_max_search_steps(void) {
+  return (uint32_t)arena_max_search_steps_value;
+}
 uint32_t arena_allocation_size(uint32_t index) {
-  if (index >= arena_alloc_count || index >= 256) return 0;
+  if (index >= arena_alloc_count || index >= 2048) return 0;
   return arena_sizes[index];
 }
+uint32_t arena_allocation_offset(uint32_t index) {
+  if (index >= arena_alloc_count || index >= 2048) return 0;
+  return arena_offsets[index];
+}
 uint32_t arena_allocation_event(uint32_t index) {
-  if (index >= arena_alloc_count || index >= 256) return 0;
+  if (index >= arena_alloc_count || index >= 2048) return 0;
   return arena_allocation_events[index];
 }
 uint32_t arena_allocation_free_event(uint32_t index) {
-  if (index >= arena_alloc_count || index >= 256) return 0;
+  if (index >= arena_alloc_count || index >= 2048) return 0;
   return arena_free_events[index];
 }
 
@@ -327,14 +336,11 @@ uint32_t render(uint32_t input_size_value) {
     }
   }
   if (!WebPConfigInit(&config) || !WebPPictureInit(&picture)) return 0;
-  config.lossless = 0;
-  config.quality = (float)quality;
-  config.method = (int)method;
-  config.alpha_quality = 100;
-  config.alpha_compression = 1;
+  if (!WebPConfigLosslessPreset(&config, (int)level)) return 0;
+  // Preserve RGB values beneath fully transparent pixels as well as alpha.
+  config.exact = 1;
   config.thread_level = 0;
-  config.use_sharp_yuv = (int)sharp_yuv;
-  config.low_memory = (int)low_memory;
+  if (!WebPValidateConfig(&config)) return 0;
 
   picture.use_argb = 1;
   picture.width = width;
@@ -344,13 +350,8 @@ uint32_t render(uint32_t input_size_value) {
   picture.writer = write_output;
   picture.custom_ptr = &writer;
 
-  // At alpha quality 100, libwebp method 6 enables a much more exhaustive
-  // VP8L search for the alpha plane. Method 5 keeps alpha exact while avoiding
-  // that memory/time cliff. Opaque images still receive the requested method.
-  if (method == 6 && WebPPictureHasTransparency(&picture)) config.method = 5;
-  if (!WebPValidateConfig(&config)) return 0;
-
-  ok = WebPEncode(&config, &picture);
+  picture.error_code = VP8_ENC_OK;
+  ok = VP8LEncodeImage(&config, &picture);
   WebPPictureFree(&picture);
   if (!ok || writer.overflow || writer.size > UINT32_MAX) return 0;
   return (uint32_t)writer.size;

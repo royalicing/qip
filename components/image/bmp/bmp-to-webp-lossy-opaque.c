@@ -9,7 +9,7 @@
 #define BMP_HEADER_CAP (64u * 1024u)
 #define INPUT_CAP (MAX_PIXELS * 4u + BMP_HEADER_CAP)
 #define OUTPUT_CAP (64u * 1024u * 1024u)
-#define ARENA_CAP (960u * 1024u * 1024u)
+#define ARENA_CAP (256u * 1024u * 1024u)
 #define ROW_CAP (4u * MAX_DIMENSION)
 
 static uint8_t input_buf[INPUT_CAP] __attribute__((aligned(16)));
@@ -36,6 +36,7 @@ static uint32_t quality = 95;
 static uint32_t method = 4;
 static uint32_t sharp_yuv = 1;
 static uint32_t low_memory = 1;
+static uint32_t background_color = 0xffffffu;
 
 typedef struct ArenaBlock {
   uint32_t size;
@@ -239,6 +240,11 @@ uint32_t uniform_set_low_memory(uint32_t value) {
   return low_memory;
 }
 
+uint32_t uniform_set_background_color(uint32_t value) {
+  background_color = value & 0xffffffu;
+  return background_color;
+}
+
 uint32_t arena_peak_bytes(void) { return (uint32_t)arena_peak; }
 uint32_t arena_allocation_count(void) { return (uint32_t)arena_alloc_count; }
 uint32_t arena_largest_allocation(void) { return (uint32_t)arena_largest; }
@@ -269,11 +275,13 @@ uint32_t arena_allocation_free_event(uint32_t index) {
 
 uint32_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
-  uint32_t pixel_offset, dib_size, width_u, height_bits, compression;
+  uint32_t pixel_offset, dib_size, width_u, height_bits;
+  uint32_t compression, bpp;
   int32_t width, height_signed;
-  uint32_t height;
-  size_t pixel_bytes;
+  uint32_t height, src_stride;
+  size_t source_bytes, pixel_bytes;
   uint32_t y;
+  int has_explicit_alpha = 0;
   WebPConfig config;
   WebPPicture picture;
   FixedWriter writer = {0, 0};
@@ -286,38 +294,108 @@ uint32_t render(uint32_t input_size_value) {
   dib_size = read_u32_le(input_buf + 14);
   width_u = read_u32_le(input_buf + 18);
   height_bits = read_u32_le(input_buf + 22);
-  compression = read_u32_le(input_buf + 30);
   width = (int32_t)width_u;
   height_signed = (int32_t)height_bits;
+  bpp = read_u16_le(input_buf + 28);
+  compression = read_u32_le(input_buf + 30);
+
   if (dib_size < 40 || pixel_offset < 14u + dib_size ||
       read_u16_le(input_buf + 26) != 1 ||
-      read_u16_le(input_buf + 28) != 32 ||
       width <= 0 || (uint32_t)width > MAX_DIMENSION || height_signed == 0 ||
       height_signed == INT32_MIN) {
     return 0;
   }
-  if (compression != 0 &&
-      (compression != 3 || dib_size < 124 || pixel_offset < 138 ||
-       read_u32_le(input_buf + 54) != 0x00ff0000u ||
-       read_u32_le(input_buf + 58) != 0x0000ff00u ||
-       read_u32_le(input_buf + 62) != 0x000000ffu ||
-       read_u32_le(input_buf + 66) != 0xff000000u)) {
+  if (bpp == 24) {
+    if (compression != 0) return 0;
+  } else if (bpp == 32) {
+    if (compression == 3) {
+      if (dib_size < 124 || pixel_offset < 138 ||
+          read_u32_le(input_buf + 54) != 0x00ff0000u ||
+          read_u32_le(input_buf + 58) != 0x0000ff00u ||
+          read_u32_le(input_buf + 62) != 0x000000ffu ||
+          read_u32_le(input_buf + 66) != 0xff000000u) {
+        return 0;
+      }
+      has_explicit_alpha = 1;
+    } else if (compression == 0) {
+      if (dib_size >= 124 && pixel_offset >= 138 &&
+          read_u32_le(input_buf + 66) != 0) {
+        const uint32_t red = read_u32_le(input_buf + 54);
+        const uint32_t green = read_u32_le(input_buf + 58);
+        const uint32_t blue = read_u32_le(input_buf + 62);
+        if (read_u32_le(input_buf + 66) != 0xff000000u ||
+            !((red == 0 && green == 0 && blue == 0) ||
+              (red == 0x00ff0000u && green == 0x0000ff00u &&
+               blue == 0x000000ffu))) {
+          return 0;
+        }
+        has_explicit_alpha = 1;
+      }
+    } else {
+      return 0;
+    }
+  } else {
     return 0;
   }
+
   height = (uint32_t)(height_signed < 0 ? -height_signed : height_signed);
   if (height > MAX_DIMENSION ||
-      (uint64_t)(uint32_t)width * height > MAX_PIXELS ||
-      (size_t)width > SIZE_MAX / 4u / height) {
+      (uint64_t)(uint32_t)width * height > MAX_PIXELS) {
     return 0;
   }
-  pixel_bytes = (size_t)width * 4u * height;
-  if (pixel_offset > input_size || pixel_bytes > input_size - pixel_offset) return 0;
+  src_stride =
+      (uint32_t)((((uint64_t)(uint32_t)width * bpp + 31u) / 32u) * 4u);
+  source_bytes = (size_t)src_stride * height;
+  pixel_bytes = (size_t)(uint32_t)width * 4u * height;
+  if (pixel_offset > input_size || source_bytes > input_size - pixel_offset ||
+      pixel_bytes > INPUT_CAP) {
+    return 0;
+  }
 
-  // The input is disposable. Move the pixels to an aligned base and normalize
-  // bottom-up BMP storage in place so libwebp can consume it as ARGB words.
-  memmove(input_buf, input_buf + pixel_offset, pixel_bytes);
+  memmove(input_buf, input_buf + pixel_offset, source_bytes);
+  if (bpp == 24) {
+    // Expand backwards so the disposable input buffer is also the 32-bit
+    // staging buffer. This preserves unread BGR rows while removing padding.
+    for (y = height; y > 0; --y) {
+      const uint32_t row = y - 1u;
+      uint8_t* const src = input_buf + (size_t)row * src_stride;
+      uint8_t* const dst =
+          input_buf + (size_t)row * (uint32_t)width * 4u;
+      uint32_t x;
+      for (x = (uint32_t)width; x > 0; --x) {
+        const uint32_t column = x - 1u;
+        const uint8_t blue = src[(size_t)column * 3u + 0u];
+        const uint8_t green = src[(size_t)column * 3u + 1u];
+        const uint8_t red = src[(size_t)column * 3u + 2u];
+        dst[(size_t)column * 4u + 0u] = blue;
+        dst[(size_t)column * 4u + 1u] = green;
+        dst[(size_t)column * 4u + 2u] = red;
+        dst[(size_t)column * 4u + 3u] = 255;
+      }
+    }
+  } else {
+    const uint8_t bg_r = (uint8_t)(background_color >> 16);
+    const uint8_t bg_g = (uint8_t)(background_color >> 8);
+    const uint8_t bg_b = (uint8_t)background_color;
+    size_t offset;
+    for (offset = 0; offset < pixel_bytes; offset += 4u) {
+      uint8_t* const pixel = input_buf + offset;
+      if (has_explicit_alpha) {
+        const uint32_t alpha = pixel[3];
+        const uint32_t inverse = 255u - alpha;
+        pixel[0] =
+            (uint8_t)((pixel[0] * alpha + bg_b * inverse + 127u) / 255u);
+        pixel[1] =
+            (uint8_t)((pixel[1] * alpha + bg_g * inverse + 127u) / 255u);
+        pixel[2] =
+            (uint8_t)((pixel[2] * alpha + bg_r * inverse + 127u) / 255u);
+      }
+      pixel[3] = 255;
+    }
+  }
+
   if (height_signed > 0) {
-    const size_t row_bytes = (size_t)width * 4u;
+    const size_t row_bytes = (size_t)(uint32_t)width * 4u;
     for (y = 0; y < height / 2u; ++y) {
       uint8_t* const top = input_buf + (size_t)y * row_bytes;
       uint8_t* const bottom = input_buf + (size_t)(height - 1u - y) * row_bytes;
@@ -326,12 +404,11 @@ uint32_t render(uint32_t input_size_value) {
       memcpy(bottom, row_scratch, row_bytes);
     }
   }
+
   if (!WebPConfigInit(&config) || !WebPPictureInit(&picture)) return 0;
   config.lossless = 0;
   config.quality = (float)quality;
   config.method = (int)method;
-  config.alpha_quality = 100;
-  config.alpha_compression = 1;
   config.thread_level = 0;
   config.use_sharp_yuv = (int)sharp_yuv;
   config.low_memory = (int)low_memory;
@@ -344,12 +421,7 @@ uint32_t render(uint32_t input_size_value) {
   picture.writer = write_output;
   picture.custom_ptr = &writer;
 
-  // At alpha quality 100, libwebp method 6 enables a much more exhaustive
-  // VP8L search for the alpha plane. Method 5 keeps alpha exact while avoiding
-  // that memory/time cliff. Opaque images still receive the requested method.
-  if (method == 6 && WebPPictureHasTransparency(&picture)) config.method = 5;
   if (!WebPValidateConfig(&config)) return 0;
-
   ok = WebPEncode(&config, &picture);
   WebPPictureFree(&picture);
   if (!ok || writer.overflow || writer.size > UINT32_MAX) return 0;

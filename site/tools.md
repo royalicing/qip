@@ -18,6 +18,7 @@ entirely in the browser. You can run the same `.wasm` files in your shell via th
 - [Base64 encoder and decoder](/base64) converts text or bytes to and from
   Base64.
 - [Favicon generator](/favicon) converts a PNG or BMP into a `favicon.ico`.
+- [BMP to WebP encoder](/webp) produces lossy or exact lossless WebP locally.
 - [Syntax highlighter](/syntax-highlight) turns pasted code into
   self-contained highlighted HTML.
 - [HTML accessibility tree](/accessibility-tree) shows the roles and
