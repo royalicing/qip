@@ -93,7 +93,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/qip-cli">qip cli</a></li>
 <li><a href="/docs/qip-elements">Browser Elements</a></li>
 <li><a hidden href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
-<li><a href="/docs/esm-integration">Running In JavaScript</a></li>
+<li><a href="/docs/running-in-javascript">Running In JavaScript</a></li>
 <li><a href="/docs/running-in-react">Running In React</a></li>
 <li><a href="/docs/running-in-python">Running In Python</a></li>
 <li><a href="/docs/running-in-java">Running In Java</a></li>

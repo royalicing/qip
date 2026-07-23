@@ -143,7 +143,7 @@ export fn render(input_size_in: u32) u32 {
     // If just '+' then return empty string.
     if (output_size == 1) return 0;
 
-    return @as(u32, @intCast(out));
+    return @as(u32, @intCast(output_size));
 }
 ```
 
@@ -170,9 +170,56 @@ echo "+1 (212) 555-0100" | qip run e164.wasm
 
 echo "  1212-555-0100  " | qip run e164.wasm
 # +12125550100
-
-# TODO: show how to run with Node.js
 ```
+
+#### 4. Import it from JavaScript
+
+When your JavaScript runtime or bundler supports direct WebAssembly ES module
+imports, import the QIP exports and wrap the memory exchange in a normal
+JavaScript function:
+
+```js
+import {
+  memory,
+  input_ptr,
+  input_utf8_cap,
+  output_ptr,
+  render,
+} from "./e164.wasm";
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+export function normalizeE164(phoneNumber) {
+  const input = new Uint8Array(
+    memory.buffer,
+    input_ptr(),
+    input_utf8_cap(),
+  );
+  const { read, written } = encoder.encodeInto(phoneNumber, input);
+  if (read !== phoneNumber.length) {
+    throw new RangeError("phone number exceeds input capacity");
+  }
+
+  const outputSize = render(written);
+  return decoder.decode(
+    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+  );
+}
+
+console.log(normalizeE164("+1 (212) 555-0100"));
+// +12125550100
+```
+
+This uses the component directly: encode the input, write it at `input_ptr()`,
+call `render()`, then decode the bytes at `output_ptr()`. There is no QIP
+JavaScript runtime or reusable wrapper involved. It assumes `e164.wasm` is the
+known-valid component built above; hosts accepting arbitrary Wasm need a
+separate validation boundary described by the [Content Component
+Contract](docs/content-component.md#known-and-untrusted-components). Direct
+`.wasm` imports depend on runtime or bundler support; [Running In
+JavaScript](docs/running-in-javascript.md) covers the equivalent
+explicit-instantiation fallback.
 
 ### C
 
@@ -375,7 +422,7 @@ ls ./site
 - [Building C Libraries as QIP Components](docs/c-wasm-toolchains.md)
 - [Hard Limits](docs/hard-limits.md)
 - [Provable Loops](docs/provable-loops.md)
-- [Running In JavaScript](docs/esm-integration.md)
+- [Running In JavaScript](docs/running-in-javascript.md)
 - [qip CLI](docs/qip-cli.md)
 - [QIP Component Compliance](docs/comply.md)
 

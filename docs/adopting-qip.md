@@ -62,7 +62,7 @@ The QIP memory contract stays the same across hosts. These guides show the loadi
 - [Running QIP In .NET](/docs/running-in-dotnet) uses Wasmtime from C# and covers ASP.NET instance ownership.
 - [Running QIP In React](/docs/running-in-react) covers browser Client Components and Next.js Server Components.
 
-For lower-level JavaScript integration, including direct `.wasm` imports where the runtime supports them, see [Running In JavaScript](/docs/esm-integration).
+For lower-level JavaScript integration, including direct `.wasm` imports where the runtime supports them, see [Running In JavaScript](/docs/running-in-javascript).
 
 ## When Not To Use QIP
 

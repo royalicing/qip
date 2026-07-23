@@ -19,7 +19,7 @@ Use a Client Component when the user is editing Markdown. Use a Server Component
 
 ## Client Component
 
-This example uses the direct import described in [Running In JavaScript](/docs/esm-integration), so loading happens in the JavaScript module graph before React calls the component. The React render itself is synchronous and needs no state, Effect, or loading lifecycle.
+This example uses the direct import described in [Running In JavaScript](/docs/running-in-javascript), so loading happens in the JavaScript module graph before React calls the component. The React render itself is synchronous and needs no state, Effect, or loading lifecycle.
 
 ```jsx
 "use client";

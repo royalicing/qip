@@ -127,7 +127,7 @@ const lowercase = contentComponent(text, module, text);
 lowercase("ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ"); // "θεσσαλονίκη σοφος"
 ```
 
-The same component runs in Node or any other WebAssembly host. You can also [import it directly as a WebAssembly ES module](/docs/esm-integration).
+The same component runs in Node or any other WebAssembly host. You can also [import it directly as a WebAssembly ES module](/docs/running-in-javascript).
 
 ## Check another implementation
 
