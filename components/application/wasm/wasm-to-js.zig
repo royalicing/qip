@@ -332,10 +332,6 @@ fn findExport(info: *const ModuleInfo, name: []const u8) ?ExportRef {
 
 fn evalConstGetter(info: *const ModuleInfo, name: []const u8) ?u32 {
     const exp = findExport(info, name) orelse return null;
-    if (exp.kind == @intFromEnum(ExportKind.global)) {
-        if (exp.index >= MAX_GLOBALS) return null;
-        return info.globals[@intCast(exp.index)];
-    }
     if (exp.kind != @intFromEnum(ExportKind.func)) return null;
     if (exp.index < info.imported_funcs) return null;
     const def_index = exp.index - info.imported_funcs;
@@ -384,7 +380,9 @@ fn analyzeContract(info: *const ModuleInfo) ParseError!Contract {
     if (findExport(info, "render") == null) return ParseError.MissingRender;
 
     const input_ptr_exp = findExport(info, "input_ptr") orelse return ParseError.MissingInput;
+    if (input_ptr_exp.kind != @intFromEnum(ExportKind.func)) return ParseError.MissingInput;
     const output_ptr_exp = findExport(info, "output_ptr") orelse return ParseError.MissingOutput;
+    if (output_ptr_exp.kind != @intFromEnum(ExportKind.func)) return ParseError.MissingOutput;
 
     const input_utf8 = findExport(info, "input_utf8_cap");
     const input_bytes = findExport(info, "input_bytes_cap");
@@ -393,6 +391,10 @@ fn analyzeContract(info: *const ModuleInfo) ParseError!Contract {
 
     const input_encoding: Encoding = if (input_utf8 != null) .utf8 else if (input_bytes != null) .bytes else return ParseError.MissingInput;
     const output_encoding: Encoding = if (output_utf8 != null) .utf8 else if (output_bytes != null) .bytes else return ParseError.MissingOutput;
+    const input_cap_exp = if (input_encoding == .utf8) input_utf8.? else input_bytes.?;
+    const output_cap_exp = if (output_encoding == .utf8) output_utf8.? else output_bytes.?;
+    if (input_cap_exp.kind != @intFromEnum(ExportKind.func)) return ParseError.MissingInput;
+    if (output_cap_exp.kind != @intFromEnum(ExportKind.func)) return ParseError.MissingOutput;
 
     return .{
         .input_encoding = input_encoding,
@@ -402,9 +404,9 @@ fn analyzeContract(info: *const ModuleInfo) ParseError!Contract {
         .input_type = try detectContentType(info, "input_content_type_ptr", "input_content_type_size"),
         .output_type = try detectContentType(info, "output_content_type_ptr", "output_content_type_size"),
         .input_ptr = input_ptr_exp,
-        .input_cap = if (input_encoding == .utf8) input_utf8.? else input_bytes.?,
+        .input_cap = input_cap_exp,
         .output_ptr = output_ptr_exp,
-        .output_cap = if (output_encoding == .utf8) output_utf8.? else output_bytes.?,
+        .output_cap = output_cap_exp,
     };
 }
 

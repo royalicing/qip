@@ -114,6 +114,7 @@ functions.
 | Reject atomic instructions | `O(I)` | `O(1)` |
 | Reject indirect and reference-based calls | `O(I)` | `O(1)` |
 | Detect recursive direct-call cycles | `O(V + E)` | `O(V + E)` |
+| Resolve content-type getters and verify their initial data | `O(B)` | `O(S)` for active data segments |
 
 Every call-graph edge comes from a decoded call instruction, so `V + E` is
 bounded by the module size. The complete structural check is therefore `O(B)`
@@ -150,8 +151,9 @@ qip run -i component.wasm -- \
 ```
 
 `wasm-strict-profile` checks imports, memory shape, banned instructions, indirect
-calls, and recursion. `wasm-bounded-loops` checks loop bounds. Keeping these
-checks separate allows a host to enforce the structural profile while using a
+calls, recursion, and statically readable content-type metadata.
+`wasm-bounded-loops` checks loop bounds. Keeping these checks separate allows a
+host to enforce the structural profile while using a
 runtime mechanism for execution, such as a timeout or fuel meter.
 
 For a readable inspection report, use:

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -12,6 +14,10 @@ const qip = fileURLToPath(new URL("../qip", import.meta.url));
 const strictProfile = fileURLToPath(
   new URL("../components/application/wasm/wasm-strict-profile.wasm", import.meta.url),
 );
+const readInputContentType = fileURLToPath(
+  new URL("../components/application/wasm/wasm-read-input-content-type.wasm", import.meta.url),
+);
+const componentsDir = fileURLToPath(new URL("../components", import.meta.url));
 const boundedLoops = fileURLToPath(
   new URL("../components/application/wasm/wasm-bounded-loops.wasm", import.meta.url),
 );
@@ -26,6 +32,7 @@ async function ensurePrerequisites(t) {
   try {
     await access(qip, constants.X_OK);
     await access(strictProfile, constants.R_OK);
+    await access(readInputContentType, constants.R_OK);
     await access(boundedLoops, constants.R_OK);
     await access(core10Validator, constants.R_OK);
     await access(luhn, constants.R_OK);

@@ -272,7 +272,7 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
 			return baseValidationResult{}, err
 		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm render module must export input_ptr as global or function")
+			return baseValidationResult{}, errors.New("Wasm render module must export input_ptr() -> i32")
 		}
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputUTF8Cap); err != nil {
 			return baseValidationResult{}, err
@@ -283,7 +283,7 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 		} else if ok {
 			hasRun = true
 		} else {
-			return baseValidationResult{}, errors.New("Wasm render module must export input_utf8_cap or input_bytes_cap as global or function")
+			return baseValidationResult{}, errors.New("Wasm render module must export input_utf8_cap() -> i32 or input_bytes_cap() -> i32")
 		}
 	}
 
@@ -295,12 +295,12 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
 			return baseValidationResult{}, err
 		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm tile module must export input_ptr as global or function")
+			return baseValidationResult{}, errors.New("Wasm tile module must export input_ptr() -> i32")
 		}
 		if _, ok, err := getExportedI32(ctx, mod, complyExportInputBytesCap); err != nil {
 			return baseValidationResult{}, err
 		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm tile module must export input_bytes_cap as global or function")
+			return baseValidationResult{}, errors.New("Wasm tile module must export input_bytes_cap() -> i32")
 		}
 		hasTile = true
 	}
@@ -337,10 +337,10 @@ func sameTypes(a []api.ValueType, b []api.ValueType) bool {
 }
 
 func getExportedI32(ctx context.Context, mod api.Module, name string) (int32, bool, error) {
-	if g := mod.ExportedGlobal(name); g != nil {
-		return int32(uint32(g.Get())), true, nil
-	}
 	if fn := mod.ExportedFunction(name); fn != nil {
+		if err := requireSignature(fn.Definition(), nil, []api.ValueType{api.ValueTypeI32}, name); err != nil {
+			return 0, true, err
+		}
 		res, err := fn.Call(ctx)
 		if err != nil {
 			return 0, true, wasmruntime.HumanizeExecutionError(ctx, err)
@@ -349,6 +349,9 @@ func getExportedI32(ctx context.Context, mod api.Module, name string) (int32, bo
 			return 0, true, fmt.Errorf("%s() returned %d values, want 1", name, len(res))
 		}
 		return api.DecodeI32(res[0]), true, nil
+	}
+	if mod.ExportedGlobal(name) != nil {
+		return 0, true, fmt.Errorf("Wasm module must export %s() -> i32", name)
 	}
 	return 0, false, nil
 }

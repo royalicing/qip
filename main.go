@@ -165,17 +165,16 @@ What qip comply does:
      - detects component kind: render, tile, or render+tile
      - render kind requires:
          render(i32) -> i32
-         input_ptr (global i32 or function () -> i32)
-         input_utf8_cap or input_bytes_cap (global i32 or function () -> i32)
+         input_ptr() -> i32
+         input_utf8_cap() -> i32 or input_bytes_cap() -> i32
      - tile kind requires:
          tile_rgba32float_64x64(f32, f32) -> ()
-         input_ptr (global i32 or function () -> i32)
-         input_bytes_cap (global i32 or function () -> i32)
+         input_ptr() -> i32
+         input_bytes_cap() -> i32
 
   2) Static qip contract checks (always, when qip exports are present):
      - qip contract functions (for example input_ptr/output_ptr/caps) must be
        vanilla instruction sequences with no calls, loops, or dynamic control flow
-     - qip contract globals must be constant init expressions (no global.get dependency)
 
   3) Executes each --with compliance component:
      - qip instantiates impl as WebAssembly module name "impl"
@@ -1250,14 +1249,14 @@ func loadTileStage(ctx context.Context, mod api.Module) (tileStage, error) {
 		return tileStage{}, wasmruntime.HumanizeExecutionError(ctx, err)
 	}
 	if !ok {
-		return tileStage{}, errors.New("Wasm module must export input_ptr as global or function")
+		return tileStage{}, errors.New("Wasm module must export input_ptr() -> i32")
 	}
 	inputCap, ok, err := getExportedValue(ctx, mod, "input_bytes_cap")
 	if err != nil {
 		return tileStage{}, wasmruntime.HumanizeExecutionError(ctx, err)
 	}
 	if !ok {
-		return tileStage{}, errors.New("Wasm module must export input_bytes_cap as global or function")
+		return tileStage{}, errors.New("Wasm module must export input_bytes_cap() -> i32")
 	}
 	return tileStage{
 		mod:         mod,
@@ -1848,8 +1847,6 @@ func imageCmd(args []string) {
 	}
 }
 
-// getExportedValue tries to get a value from either a global or a function.
-// The bool return indicates whether the export exists.
 func gameOver(format string, args ...any) {
 	log.SetFlags(0)
 	log.Fatalf(format, args...)

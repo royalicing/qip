@@ -14,8 +14,8 @@ This document describes the RGBA tiling protocol used by `qip image` (Go) and `i
 Every RGBA32Float filter module must export:
 
 - `memory` (linear memory)
-- `input_ptr` (global or function) -> byte offset into `memory`
-- `input_bytes_cap` (global or function) -> capacity in bytes of the input buffer
+- `input_ptr() -> i32` (function) -> byte offset into `memory`
+- `input_bytes_cap() -> i32` -> capacity in bytes of the input buffer
 - `tile_rgba32float_64x64(x: f32, y: f32)` (function)
 
 ### Optional Exports

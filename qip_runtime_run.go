@@ -17,28 +17,27 @@ import (
 )
 
 func getExportedValue(ctx context.Context, mod api.Module, name string) (uint64, bool, error) {
-	// Try global first
-	if global := mod.ExportedGlobal(name); global != nil {
-		return global.Get(), true, nil
-	}
-
-	// Try function if global doesn't exist
-	if fn := mod.ExportedFunction(name); fn != nil {
-		result, err := fn.Call(ctx)
-		if err != nil {
-			return 0, true, fmt.Errorf("%s() call failed: %w", name, err)
+	fn := mod.ExportedFunction(name)
+	if fn == nil {
+		if mod.ExportedGlobal(name) != nil {
+			return 0, true, fmt.Errorf("Wasm module must export %s() -> i32", name)
 		}
-		if len(result) != 1 {
-			return 0, true, fmt.Errorf("%s() returned %d values, want 1", name, len(result))
-		}
-		return result[0], true, nil
+		return 0, false, nil
 	}
-
-	return 0, false, nil
+	params := fn.Definition().ParamTypes()
+	results := fn.Definition().ResultTypes()
+	if len(params) != 0 || len(results) != 1 || results[0] != api.ValueTypeI32 {
+		return 0, true, fmt.Errorf("Wasm module must export %s() -> i32", name)
+	}
+	result, err := fn.Call(ctx)
+	if err != nil {
+		return 0, true, fmt.Errorf("%s() call failed: %w", name, err)
+	}
+	return result[0], true, nil
 }
 
 func hasExportedValue(mod api.Module, name string) bool {
-	return mod.ExportedGlobal(name) != nil || mod.ExportedFunction(name) != nil
+	return mod.ExportedFunction(name) != nil || mod.ExportedGlobal(name) != nil
 }
 
 func normalizeIncomingContentType(value string) string {
@@ -156,7 +155,7 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
 	}
 	if !ok {
-		return contract, errors.New("Wasm module must export input_ptr as global or function")
+		return contract, errors.New("Wasm module must export input_ptr() -> i32")
 	}
 	contract.inputPtr = inputPtr
 
@@ -171,7 +170,7 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 	} else if ok {
 		contract.inputEncoding = dataEncodingRaw
 	} else {
-		return contract, errors.New("Wasm module must export input_utf8_cap or input_bytes_cap as global or function")
+		return contract, errors.New("Wasm module must export input_utf8_cap() -> i32 or input_bytes_cap() -> i32")
 	}
 	contract.inputCapBytes = inputCap
 
@@ -189,7 +188,7 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 		} else if ok {
 			contract.outputEncoding = dataEncodingRaw
 		} else {
-			return contract, errors.New("Wasm module must export output_utf8_cap or output_bytes_cap as global or function")
+			return contract, errors.New("Wasm module must export output_utf8_cap() -> i32 or output_bytes_cap() -> i32")
 		}
 		contract.outputCapBytes = outputCap
 	}
@@ -453,7 +452,7 @@ func executeModuleWithInput(
 			return
 		}
 		if !ok {
-			returnErr = errors.New("Wasm module must export output_ptr as global or function")
+			returnErr = errors.New("Wasm module must export output_ptr() -> i32")
 			return
 		}
 		outputPtr = uint32(ptr)

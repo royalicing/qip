@@ -128,7 +128,7 @@ func TestEvaluateQIPContractChecksPassGlobalGetFunction(t *testing.T) {
 	}
 }
 
-func TestEvaluateQIPContractChecksPassConstantGlobal(t *testing.T) {
+func TestEvaluateQIPContractChecksRejectConstantGlobal(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		Globals: []testGlobal{
 			{ValueType: 0x7f, InitExpr: []byte{0x41, 0x80, 0x80, 0x40}}, // i32.const 1048576
@@ -140,13 +140,13 @@ func TestEvaluateQIPContractChecksPassConstantGlobal(t *testing.T) {
 		t.Fatalf("AnalyzeModule: %v", err)
 	}
 	checks, fail := EvaluateQIPContractChecks(analysis)
-	if fail {
-		t.Fatalf("unexpected contract failure: %+v", checks)
+	if !fail {
+		t.Fatalf("expected contract failure: %+v", checks)
 	}
 	if len(checks) != 1 {
 		t.Fatalf("checks=%d, want 1", len(checks))
 	}
-	if !checks[0].Pass || checks[0].Kind != "global" {
+	if checks[0].Pass || checks[0].Kind != "global" || checks[0].Reason != "must be function" {
 		t.Fatalf("unexpected check result: %+v", checks[0])
 	}
 }

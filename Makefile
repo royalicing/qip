@@ -181,6 +181,10 @@ components/application/wasm/wasm-strict-profile.wasm: ZIG_WASM_MAX_MEMORY = 2097
 components/application/wasm/wasm-strict-profile.wasm: components/application/wasm/wasm-strict-profile.zig components/application/wasm/lib/wasm-reader.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+components/application/wasm/wasm-read-input-content-type.wasm: ZIG_WASM_MAX_MEMORY = 16777216
+components/application/wasm/wasm-read-input-content-type.wasm: components/application/wasm/wasm-read-input-content-type.zig components/application/wasm/lib/wasm-reader.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 components/application/wasm/wasm-validate-core-1.0.wasm: ZIG_WASM_MAX_MEMORY = 25165824
 # Keep bulk-memory lowering for copies, but do not emit sign-extension opcodes.
 components/application/wasm/wasm-validate-core-1.0.wasm: components/application/wasm/wasm-validate-core-1.0.zig

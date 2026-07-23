@@ -8,6 +8,8 @@
 //! - no atomic instructions
 //! - no indirect calls (`call_indirect`, `return_call_indirect`, `call_ref`)
 //! - no recursion (the direct call graph must be acyclic)
+//! - content-type metadata, when exported, is statically readable from the
+//!   module's initial memory image without instantiation
 //!
 //! This component enforces artifact policy, not the WebAssembly specification's
 //! complete module-validation algorithm. It assumes a valid Wasm module. The
@@ -27,6 +29,7 @@
 //! | Reject atomic instructions                | O(I)     | O(1)        |
 //! | Reject indirect and reference calls       | O(I)     | O(1)        |
 //! | Detect recursive direct-call cycles       | O(V + E) | O(V + E)    |
+//! | Resolve static content-type metadata      | O(B)     | O(S)        |
 //!
 //! The module bytes are read sequentially once. Direct-call edges are collected
 //! during that pass, then an iterative depth-first search traverses the graph.
@@ -57,6 +60,9 @@ const Instr = wasm_reader.Instr;
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
 const MAX_DEFINED_FUNCS: usize = 8192;
+const MAX_TYPES: usize = MAX_DEFINED_FUNCS;
+const MAX_GLOBALS: usize = MAX_DEFINED_FUNCS;
+const MAX_DATA_SEGMENTS: usize = 16384;
 const MAX_CALL_EDGES: usize = 262144;
 const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
@@ -71,6 +77,41 @@ var edge_count: usize = 0;
 var dfs_state_buf: [MAX_DEFINED_FUNCS]u8 = undefined;
 var dfs_stack_buf: [MAX_DEFINED_FUNCS]u32 = undefined;
 var dfs_edge_buf: [MAX_DEFINED_FUNCS]i32 = undefined;
+var type_buf: [MAX_TYPES]FuncType = undefined;
+var func_type_buf: [MAX_DEFINED_FUNCS]u32 = undefined;
+var global_buf: [MAX_GLOBALS]StaticGlobal = undefined;
+var data_range_buf: [MAX_DATA_SEGMENTS]DataRange = undefined;
+var data_range_count: usize = 0;
+var function_body_buf: [MAX_DEFINED_FUNCS][]const u8 = undefined;
+
+const FuncType = struct {
+    param_count: u32 = 0,
+    result_count: u32 = 0,
+    result_type: u8 = 0,
+};
+
+const StaticGlobal = struct {
+    is_static_i32: bool = false,
+    value: u32 = 0,
+};
+
+const DataRange = struct {
+    start: u64,
+    end: u64,
+};
+
+const MetadataExport = union(enum) {
+    missing,
+    function: u32,
+    invalid,
+};
+
+const ContentTypeMetadata = struct {
+    input_ptr: MetadataExport = .missing,
+    input_size: MetadataExport = .missing,
+    output_ptr: MetadataExport = .missing,
+    output_size: MetadataExport = .missing,
+};
 
 const CheckError = wasm_reader.Error || error{
     ImportNotAllowed,
@@ -86,6 +127,16 @@ const CheckError = wasm_reader.Error || error{
     FunctionCodeMismatch,
     TooManyFunctions,
     TooManyEdges,
+    TooManyTypes,
+    TooManyGlobals,
+    TooManyDataSegments,
+    ContentTypePairRequired,
+    ContentTypeExportInvalid,
+    ContentTypeSignatureInvalid,
+    ContentTypeGetterNotStatic,
+    ContentTypeGlobalNotStatic,
+    ContentTypeOutOfBounds,
+    ContentTypeNotPreinitialized,
 };
 
 export fn input_ptr() u32 {
@@ -217,9 +268,10 @@ const ProfileHandler = struct {
 // Sections
 // ---------------------------------------------------------------------------
 
-fn parseTypeSection(payload: []const u8) CheckError!void {
+fn parseTypeSection(payload: []const u8) CheckError!u32 {
     var r = Reader.init(payload);
     const n = try r.readVarU32();
+    if (n > MAX_TYPES) return CheckError.TooManyTypes;
     var i: u32 = 0;
     while (i < n) : (i += 1) {
         const form = try r.readByte();
@@ -227,9 +279,19 @@ fn parseTypeSection(payload: []const u8) CheckError!void {
         const params = try r.readVarU32();
         _ = try r.readN(params);
         const results = try r.readVarU32();
-        _ = try r.readN(results);
+        var result_type: u8 = 0;
+        if (results > 0) {
+            result_type = try r.readByte();
+            if (results > 1) _ = try r.readN(results - 1);
+        }
+        type_buf[i] = .{
+            .param_count = params,
+            .result_count = results,
+            .result_type = result_type,
+        };
     }
     if (r.remaining() != 0) return CheckError.TrailingBytes;
+    return n;
 }
 
 fn parseImportSection(payload: []const u8) CheckError!void {
@@ -242,30 +304,229 @@ fn parseImportSection(payload: []const u8) CheckError!void {
 fn parseFunctionSection(payload: []const u8) CheckError!u32 {
     var r = Reader.init(payload);
     const n = try r.readVarU32();
+    if (n > MAX_DEFINED_FUNCS) return CheckError.TooManyFunctions;
     var i: u32 = 0;
     while (i < n) : (i += 1) {
-        _ = try r.readVarU32();
+        func_type_buf[i] = try r.readVarU32();
     }
     if (r.remaining() != 0) return CheckError.TrailingBytes;
     return n;
 }
 
-fn parseMemorySection(payload: []const u8) CheckError!bool {
+fn readInitExpr(r: *Reader, prior_global_count: u32) CheckError!StaticGlobal {
+    const op = try r.readByte();
+    var result = StaticGlobal{};
+    switch (op) {
+        0x41 => {
+            const value = try r.readVarS32();
+            result = .{ .is_static_i32 = true, .value = @bitCast(value) };
+        },
+        0x42 => _ = try r.readVarS64(10),
+        0x43 => _ = try r.readN(4),
+        0x44 => _ = try r.readN(8),
+        0x23 => {
+            const idx = try r.readVarU32();
+            if (idx < prior_global_count and global_buf[idx].is_static_i32) {
+                result = global_buf[idx];
+            }
+        },
+        0xd0 => _ = try r.readVarS64(5),
+        0xd2 => _ = try r.readVarU32(),
+        0xfd => {
+            if (try r.readVarU32() != 12) return CheckError.InvalidWasm;
+            _ = try r.readN(16);
+        },
+        else => return CheckError.InvalidWasm,
+    }
+    if (try r.readByte() != 0x0b) return CheckError.InvalidWasm;
+    return result;
+}
+
+fn parseGlobalSection(payload: []const u8) CheckError!u32 {
+    var r = Reader.init(payload);
+    const n = try r.readVarU32();
+    if (n > MAX_GLOBALS) return CheckError.TooManyGlobals;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const value_type = try r.readByte();
+        const mutable = try r.readByte();
+        const init = try readInitExpr(&r, i);
+        global_buf[i] = if (value_type == 0x7f and mutable == 0) init else .{};
+    }
+    if (r.remaining() != 0) return CheckError.TrailingBytes;
+    return n;
+}
+
+fn metadataSlot(metadata: *ContentTypeMetadata, name: []const u8) ?*MetadataExport {
+    if (std.mem.eql(u8, name, "input_content_type_ptr")) return &metadata.input_ptr;
+    if (std.mem.eql(u8, name, "input_content_type_size")) return &metadata.input_size;
+    if (std.mem.eql(u8, name, "output_content_type_ptr")) return &metadata.output_ptr;
+    if (std.mem.eql(u8, name, "output_content_type_size")) return &metadata.output_size;
+    return null;
+}
+
+fn parseExportSection(payload: []const u8, metadata: *ContentTypeMetadata) CheckError!void {
+    var r = Reader.init(payload);
+    const n = try r.readVarU32();
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const name_len = try r.readVarU32();
+        const name = try r.readN(name_len);
+        const kind = try r.readByte();
+        const index = try r.readVarU32();
+        const slot = metadataSlot(metadata, name) orelse continue;
+        slot.* = switch (kind) {
+            0x00 => .{ .function = index },
+            else => .invalid,
+        };
+    }
+    if (r.remaining() != 0) return CheckError.TrailingBytes;
+}
+
+fn parseMemorySection(payload: []const u8) CheckError!?u64 {
     var r = Reader.init(payload);
     const n = try r.readVarU32();
     if (n > 1) return CheckError.TooManyMemories;
+    var min_bytes: ?u64 = null;
     var i: u32 = 0;
     while (i < n) : (i += 1) {
         const limits = try wasm_reader.readLimits(&r);
         if (limits.memory64) return CheckError.Memory64NotAllowed;
         if (limits.shared) return CheckError.SharedMemoryNotAllowed;
         if (!limits.has_max) return CheckError.MemoryMaxRequired;
+        min_bytes = limits.min * 65536;
     }
     if (r.remaining() != 0) return CheckError.TrailingBytes;
-    return n == 1;
+    return min_bytes;
 }
 
-fn parseCodeSection(payload: []const u8, defined_func_count: u32) CheckError!void {
+fn readStaticOffset(r: *Reader, global_count: u32) CheckError!?u32 {
+    const op = try r.readByte();
+    var result: ?u32 = null;
+    switch (op) {
+        0x41 => result = @bitCast(try r.readVarS32()),
+        0x23 => {
+            const idx = try r.readVarU32();
+            if (idx < global_count and global_buf[idx].is_static_i32) {
+                result = global_buf[idx].value;
+            }
+        },
+        else => return CheckError.InvalidWasm,
+    }
+    if (try r.readByte() != 0x0b) return CheckError.InvalidWasm;
+    return result;
+}
+
+fn parseDataSection(payload: []const u8, global_count: u32) CheckError!void {
+    var r = Reader.init(payload);
+    const n = try r.readVarU32();
+    data_range_count = 0;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const flags = try r.readVarU32();
+        var active = false;
+        var offset: ?u32 = null;
+        switch (flags) {
+            0 => {
+                active = true;
+                offset = try readStaticOffset(&r, global_count);
+            },
+            1 => {},
+            2 => {
+                active = (try r.readVarU32()) == 0;
+                offset = try readStaticOffset(&r, global_count);
+            },
+            else => return CheckError.InvalidWasm,
+        }
+        const size = try r.readVarU32();
+        _ = try r.readN(size);
+        if (active and offset != null) {
+            if (data_range_count >= MAX_DATA_SEGMENTS) return CheckError.TooManyDataSegments;
+            const start: u64 = offset.?;
+            data_range_buf[data_range_count] = .{ .start = start, .end = start + size };
+            data_range_count += 1;
+        }
+    }
+    if (r.remaining() != 0) return CheckError.TrailingBytes;
+}
+
+fn resolveGetterBody(body: []const u8, global_count: u32) CheckError!u32 {
+    var r = Reader.init(body);
+    if (try r.readVarU32() != 0) return CheckError.ContentTypeGetterNotStatic;
+    const op = try r.readByte();
+    const value: u32 = switch (op) {
+        0x41 => @bitCast(try r.readVarS32()),
+        0x23 => blk: {
+            const idx = try r.readVarU32();
+            if (idx >= global_count or !global_buf[idx].is_static_i32) {
+                return CheckError.ContentTypeGlobalNotStatic;
+            }
+            break :blk global_buf[idx].value;
+        },
+        else => return CheckError.ContentTypeGetterNotStatic,
+    };
+    if (try r.readByte() != 0x0b or r.remaining() != 0) {
+        return CheckError.ContentTypeGetterNotStatic;
+    }
+    return value;
+}
+
+fn resolveMetadataExport(
+    target: MetadataExport,
+    function_bodies: []const []const u8,
+    type_count: u32,
+    global_count: u32,
+) CheckError!u32 {
+    return switch (target) {
+        .missing => CheckError.ContentTypePairRequired,
+        .invalid => CheckError.ContentTypeExportInvalid,
+        .function => |idx| blk: {
+            if (idx >= function_bodies.len) return CheckError.ContentTypeExportInvalid;
+            const type_idx = func_type_buf[idx];
+            if (type_idx >= type_count) return CheckError.ContentTypeSignatureInvalid;
+            const func_type = type_buf[type_idx];
+            if (func_type.param_count != 0 or func_type.result_count != 1 or func_type.result_type != 0x7f) {
+                return CheckError.ContentTypeSignatureInvalid;
+            }
+            break :blk try resolveGetterBody(function_bodies[idx], global_count);
+        },
+    };
+}
+
+fn validateContentTypeRegion(ptr: u32, size: u32, memory_min_bytes: u64) CheckError!void {
+    const start: u64 = ptr;
+    const end = start + size;
+    if (end > memory_min_bytes) return CheckError.ContentTypeOutOfBounds;
+
+    var found = false;
+    var i: usize = 0;
+    while (i < data_range_count) : (i += 1) {
+        const range = data_range_buf[i];
+        if (range.end <= start or range.start >= end) continue;
+        if (found or range.start > start or range.end < end) {
+            return CheckError.ContentTypeNotPreinitialized;
+        }
+        found = true;
+    }
+    if (!found) return CheckError.ContentTypeNotPreinitialized;
+}
+
+fn validateContentTypePair(
+    ptr_export: MetadataExport,
+    size_export: MetadataExport,
+    function_bodies: []const []const u8,
+    type_count: u32,
+    global_count: u32,
+    memory_min_bytes: u64,
+) CheckError!void {
+    if (ptr_export == .missing and size_export == .missing) return;
+    if (ptr_export == .missing or size_export == .missing) return CheckError.ContentTypePairRequired;
+    const ptr = try resolveMetadataExport(ptr_export, function_bodies, type_count, global_count);
+    const size = try resolveMetadataExport(size_export, function_bodies, type_count, global_count);
+    try validateContentTypeRegion(ptr, size, memory_min_bytes);
+}
+
+fn parseCodeSection(payload: []const u8, defined_func_count: u32, function_bodies: *[MAX_DEFINED_FUNCS][]const u8) CheckError!void {
     if (defined_func_count > MAX_DEFINED_FUNCS) return CheckError.TooManyFunctions;
     initEdgeGraph(defined_func_count);
 
@@ -277,6 +538,7 @@ fn parseCodeSection(payload: []const u8, defined_func_count: u32) CheckError!voi
     while (i < n) : (i += 1) {
         const body_size = try r.readVarU32();
         const body = try r.readN(body_size);
+        function_bodies[i] = body;
         var handler = ProfileHandler{ .func_idx = i, .defined_func_count = defined_func_count };
         try wasm_reader.walkFunctionBody(&handler, body);
     }
@@ -288,9 +550,14 @@ fn checkModule(wasm: []const u8) CheckError!void {
 
     var r = Reader.init(wasm[8..]);
     var defined_func_count: u32 = 0;
+    var type_count: u32 = 0;
+    var global_count: u32 = 0;
     var have_function_section = false;
     var have_code_section = false;
     var have_memory = false;
+    var memory_min_bytes: u64 = 0;
+    var metadata = ContentTypeMetadata{};
+    data_range_count = 0;
 
     while (r.remaining() > 0) {
         const section_id = try r.readByte();
@@ -299,28 +566,36 @@ fn checkModule(wasm: []const u8) CheckError!void {
 
         switch (section_id) {
             0 => {},
-            1 => try parseTypeSection(payload),
+            1 => type_count = try parseTypeSection(payload),
             2 => try parseImportSection(payload),
             3 => {
                 defined_func_count = try parseFunctionSection(payload);
                 have_function_section = true;
             },
             5 => {
-                const declares_memory = try parseMemorySection(payload);
-                if (declares_memory and have_memory) return CheckError.TooManyMemories;
-                have_memory = have_memory or declares_memory;
+                const min_bytes = try parseMemorySection(payload);
+                if (min_bytes != null and have_memory) return CheckError.TooManyMemories;
+                if (min_bytes) |value| {
+                    have_memory = true;
+                    memory_min_bytes = value;
+                }
             },
+            6 => global_count = try parseGlobalSection(payload),
+            7 => try parseExportSection(payload, &metadata),
             8 => return CheckError.StartFunctionNotAllowed,
             10 => {
-                try parseCodeSection(payload, defined_func_count);
+                try parseCodeSection(payload, defined_func_count, &function_body_buf);
                 have_code_section = true;
             },
+            11 => try parseDataSection(payload, global_count),
             else => {},
         }
     }
 
     if (have_function_section and !have_code_section) return CheckError.InvalidWasm;
     if (hasCallCycle(defined_func_count)) return CheckError.RecursionNotAllowed;
+    try validateContentTypePair(metadata.input_ptr, metadata.input_size, function_body_buf[0..defined_func_count], type_count, global_count, memory_min_bytes);
+    try validateContentTypePair(metadata.output_ptr, metadata.output_size, function_body_buf[0..defined_func_count], type_count, global_count, memory_min_bytes);
 }
 
 export fn render(input_size: u32) u32 {

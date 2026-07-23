@@ -15,7 +15,7 @@ Every Content component exports:
 - `output_ptr() -> i32`: offset where the host reads output. The host calls this only after a successful `render`.
 - Either `output_utf8_cap() -> i32` or `output_bytes_cap() -> i32`: maximum output bytes.
 
-Pointer and capacity exports may also be `i32` globals, although zero-argument functions are preferred.
+Every pointer and capacity export is a zero-argument function returning `i32`.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
 
@@ -57,6 +57,30 @@ A component may declare an exact input or output MIME type with:
 Both exports in a pointer/size pair must be present. Omit a pair when the content type is unknown or intentionally generic.
 
 When present, the value must be one lowercase MIME media type, such as `text/markdown`, `text/html`, or `image/bmp`. Do not include whitespace, media ranges, comma-separated lists, or parameters such as `charset=utf-8`. Hosts compare these strings exactly; they do not trim, lowercase, or remove parameters.
+
+Content type is module metadata, not render state. Its pointer, size, and bytes
+must not vary with input, uniforms, previous calls, or other runtime state.
+Modules in the strict artifact profile make that invariant statically readable:
+
+- each pointer and size export is a zero-argument `i32` getter containing
+  exactly one `i32.const` or one `global.get` of an immutable constant `i32`
+  global, followed by `end`;
+- both exports in the pair are present; and
+- the referenced bytes are within initial memory and supplied by one
+  non-overlapping active data segment, rather than assembled by a start
+  function or `render`.
+
+This lets tooling read the declared type directly from Wasm sections without
+allocating memory or instantiating and executing the module.
+
+The repository includes such a reader as a QIP component. It prints the input
+content type, prints an empty line when the pair is omitted, and traps when any
+input or output content-type metadata violates the static form:
+
+```bash
+qip run -i component.wasm -- \
+  components/application/wasm/wasm-read-input-content-type.wasm
+```
 
 Do not export `text/plain` merely to describe generic UTF-8. The `input_utf8_cap` and `output_utf8_cap` exports already express that constraint. Export a content type when the component requires or guarantees a specific format. Generic raw bytes normally omit it.
 

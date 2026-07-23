@@ -54,7 +54,6 @@ qip comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
 
 - checks exported qip contract functions such as `input_ptr`, `output_ptr`, and capacity exports
 - function exports must be vanilla sequences: no calls, no loops, no dynamic control flow
-- checks exported qip contract globals are constant init expressions with no `global.get` dependency
 
 3. Optional behavior checks (`--with`):
 
@@ -67,14 +66,14 @@ qip comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
 `render` component requires:
 
 - `render(i32) -> i32`
-- `input_ptr` as exported global or function returning `i32`
-- `input_utf8_cap` or `input_bytes_cap` as exported global or function returning `i32`
+- `input_ptr() -> i32` as an exported function
+- `input_utf8_cap() -> i32` or `input_bytes_cap() -> i32`
 
 `tile` component requires:
 
 - `tile_rgba32float_64x64(f32, f32) -> ()`
-- `input_ptr` as exported global or function returning `i32`
-- `input_bytes_cap` as exported global or function returning `i32`
+- `input_ptr() -> i32` as an exported function
+- `input_bytes_cap() -> i32`
 
 ## Memory Model
 

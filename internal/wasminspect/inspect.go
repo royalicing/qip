@@ -997,35 +997,8 @@ func evaluateContractChecks(
 				checks = append(checks, contractCheck{Export: name, Kind: "func", Pass: true})
 			}
 		case 0x03: // global
-			globalIdx := int(exp.index)
-			if globalIdx < importedGlobals {
-				checks = append(checks, contractCheck{Export: name, Kind: "global", Pass: false, Reason: "imported global"})
-				fail = true
-				continue
-			}
-			defIdx := globalIdx - importedGlobals
-			if defIdx < 0 || defIdx >= len(globalMetrics) {
-				checks = append(checks, contractCheck{Export: name, Kind: "global", Pass: false, Reason: "global index out of range"})
-				fail = true
-				continue
-			}
-			gm := globalMetrics[defIdx]
-			reasons := make([]string, 0, 3)
-			if gm.InstructionTotal == 0 {
-				reasons = append(reasons, "empty init expr")
-			}
-			if gm.HasGlobalGet {
-				reasons = append(reasons, "depends on global.get")
-			}
-			if !gm.SimpleConst {
-				reasons = append(reasons, "non-constant init expr")
-			}
-			if len(reasons) > 0 {
-				checks = append(checks, contractCheck{Export: name, Kind: "global", Pass: false, Reason: strings.Join(reasons, ", ")})
-				fail = true
-			} else {
-				checks = append(checks, contractCheck{Export: name, Kind: "global", Pass: true})
-			}
+			checks = append(checks, contractCheck{Export: name, Kind: "global", Pass: false, Reason: "must be function"})
+			fail = true
 		default:
 			checks = append(checks, contractCheck{Export: name, Kind: fmt.Sprintf("kind=%d", exp.kind), Pass: false, Reason: "unsupported export kind"})
 			fail = true
