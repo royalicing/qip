@@ -87,7 +87,8 @@ Host behavior:
 
 - Input is bounded by `input_utf8_cap`.
 - Return value is interpreted as output byte length.
-- Host checks `output_size <= output_utf8_cap`.
+- A valid component guarantees `output_size <= output_utf8_cap`; a generic host
+  accepting arbitrary Wasm verifies that guarantee at its module boundary.
 
 Good for:
 

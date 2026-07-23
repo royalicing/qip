@@ -21,17 +21,51 @@ The `utf8` capacity exports declare that the corresponding bytes must be valid U
 
 ## Host Call Flow
 
-For each render request, the host:
+For each render request using a known-valid QIP component, the host:
 
 1. Instantiates or reuses the component.
 2. Verifies that `input_size` does not exceed the input capacity.
 3. Writes the input bytes at `input_ptr`.
 4. Applies any requested [uniforms](/docs/uniforms).
 5. Calls `render(input_size)`.
-6. Verifies that the returned size does not exceed the output capacity or memory bounds.
-7. Calls `output_ptr` and reads exactly the returned number of bytes.
+6. Calls `output_ptr` and reads exactly the returned number of bytes.
 
 If `render` traps, the request fails. The host must not read `output_ptr`; the buffer may contain stale or partial output.
+
+A valid component guarantees that a successful `render` returns a byte count
+within its declared output capacity and that `output_ptr` identifies a region
+large enough for those bytes. Application wrappers for a component they trust
+may rely on those guarantees. They still check input size because the caller,
+not the component, chooses the input.
+
+## Known And Untrusted Components
+
+A known-valid component is an artifact the application deliberately trusts:
+for example, one built and tested with the application or obtained through a
+controlled artifact pipeline. Its QIP exports, memory regions, content types,
+and render behavior are part of that trust decision. Ordinary wrappers should
+use the contract directly instead of repeatedly checking whether the component
+honored it.
+
+Arbitrary Wasm is different. Core WebAssembly validation proves that a module
+is structurally valid Wasm, not that it implements a QIP contract. A generic
+host accepting modules from users or third parties must establish that boundary
+itself. Before execution it checks the required exports and their signatures.
+Before copying input it checks the advertised input region. After `render` it
+checks the returned size and output region before reading component memory. It
+also applies the memory and execution policies described in [Hard
+Limits](/docs/hard-limits).
+
+These checks belong at the point where arbitrary modules enter the application.
+Once an artifact has been admitted as a known-valid component, downstream
+wrappers can use the simpler call flow above.
+
+Components can make the successful output-size guarantee statically
+certifiable with `components/application/wasm/wasm-bounded-output.wasm`. The
+checker recognizes a small compiled-Wasm proof epilogue that traps when the
+result exceeds the exact static output capacity. See [Bounded Output
+Proofs](/docs/hard-limits#bounded-output-proofs) for the accepted shape and its
+limits.
 
 ## Repeated Renders
 

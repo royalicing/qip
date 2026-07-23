@@ -44,7 +44,6 @@ public sealed class MarkdownRenderer : IDisposable
     private readonly Func<int> inputPtr;
     private readonly Func<int> inputCap;
     private readonly Func<int> outputPtr;
-    private readonly Func<int> outputCap;
     private readonly Func<int, int> render;
 
     public MarkdownRenderer()
@@ -66,9 +65,6 @@ public sealed class MarkdownRenderer : IDisposable
         outputPtr = instance.GetFunction<int>("output_ptr")
             ?? throw new InvalidOperationException(
                 "Component does not export output_ptr");
-        outputCap = instance.GetFunction<int>("output_utf8_cap")
-            ?? throw new InvalidOperationException(
-                "Component does not export output_utf8_cap");
         render = instance.GetFunction<int, int>("render")
             ?? throw new InvalidOperationException(
                 "Component does not export render");
@@ -87,33 +83,13 @@ public sealed class MarkdownRenderer : IDisposable
         }
 
         int inputStart = inputPtr();
-        CheckRange(inputStart, source.Length, "Input");
         source.AsSpan().CopyTo(
             memory.GetSpan(inputStart, source.Length));
 
         int outputSize = render(source.Length);
-        int outputCapacity = outputCap();
-        if (outputSize < 0 || outputSize > outputCapacity)
-        {
-            throw new InvalidOperationException(
-                $"Component returned an invalid output size: " +
-                $"{outputSize}, capacity {outputCapacity}");
-        }
-
         int outputStart = outputPtr();
-        CheckRange(outputStart, outputSize, "Output");
         return Encoding.UTF8.GetString(
             memory.GetSpan(outputStart, outputSize));
-    }
-
-    private void CheckRange(int pointer, int size, string label)
-    {
-        long end = (long)pointer + size;
-        if (pointer < 0 || size < 0 || end > memory.GetLength())
-        {
-            throw new InvalidOperationException(
-                $"{label} is outside component memory");
-        }
     }
 
     public void Dispose()
@@ -173,9 +149,14 @@ The loader is runtime-specific; the QIP calls are not:
 3. .NET encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `Memory.GetSpan` exposes the range at `input_ptr()` so the app can copy in the bytes.
 5. `render(input_size)` returns the number of output bytes.
-6. .NET checks `output_utf8_cap()`, copies from `output_ptr()`, and decodes UTF-8.
+6. .NET copies that many bytes from `output_ptr()` and decodes UTF-8.
 
 The code asks for typed delegates such as `Func<int, int>` when resolving exports. A missing export or mismatched WebAssembly signature therefore fails during setup rather than at the first render.
+
+This wrapper trusts the known-valid GFM component and checks only the
+caller-controlled input size. A host accepting arbitrary Wasm has a different
+validation boundary; see [Known And Untrusted
+Components](/docs/content-component#known-and-untrusted-components).
 
 The input span is used only before calling `render`. A span returned by Wasmtime may become invalid when WebAssembly runs and grows its memory, so the output is read through a new span after `render` returns.
 

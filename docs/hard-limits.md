@@ -32,6 +32,7 @@ This page is the canonical map of Wasm validation in the CLI:
 | Enforce declared memory bounds | With `--max-memory` | With `--max-memory` | Not applied to the implementation |
 | Strict Wasm artifact structure | Only when `wasm-strict-profile.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
 | Recognizable bounded loops | Only when `wasm-bounded-loops.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
+| Recognizable bounded render output | Only when `wasm-bounded-output.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
 | Declarative Compliance checker | Not applicable | Not applicable | With `--declarative-checkers`, applied to every `--with` checker |
 
 `qip run` and `qip dry run` share the Go module-policy validator. The strict
@@ -153,8 +154,46 @@ qip run -i component.wasm -- \
 `wasm-strict-profile` checks imports, memory shape, banned instructions, indirect
 calls, recursion, and statically readable content-type metadata.
 `wasm-bounded-loops` checks loop bounds. Keeping these checks separate allows a
-host to enforce the structural profile while using a
-runtime mechanism for execution, such as a timeout or fuel meter.
+host to enforce the structural profile while using a runtime mechanism for
+execution, such as a timeout or fuel meter.
+
+## Bounded Output Proofs
+
+`wasm-bounded-output` certifies that every successful exit from a Content
+component's `render(i32) -> i32` returns no more than its static
+`output_utf8_cap()` or `output_bytes_cap()`. Run it independently after normal
+Wasm and QIP contract validation:
+
+```bash
+qip run -i component.wasm -- \
+  components/application/wasm/wasm-bounded-output.wasm
+```
+
+The checker is deliberately narrower than whole-program range analysis. It
+accepts a constant result within capacity or a final compiled-Wasm epilogue
+equivalent to:
+
+```wat
+local.get $output_size
+i32.const OUTPUT_CAP
+i32.gt_u
+if
+  unreachable
+end
+local.get $output_size
+```
+
+The capacity operand may instead be a `global.get` of an immutable constant
+used by the capacity export. The checked local must be returned unchanged, and
+no earlier `return` or branch may escape to the function label. These rules
+make the proof local and mechanically checkable: every normal exit crosses the
+guard, while an excessive value traps inside the component.
+
+This certificate covers the returned byte count only. It does not prove that
+the component wrote meaningful output, stayed within the output buffer while
+writing, or returned a valid output pointer. Those remain QIP contract and
+component-correctness concerns. Modules without the recognized proof may still
+be correct; the checker fails closed when it cannot establish the property.
 
 For a readable inspection report, use:
 

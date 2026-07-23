@@ -27,6 +27,8 @@ pub const Instr = struct {
     op: u8 = 0,
     imm: i64 = 0,
     has_imm: bool = false,
+    subop: u32 = 0,
+    has_subop: bool = false,
 };
 
 pub const Limits = struct {
@@ -175,7 +177,7 @@ fn readMemArg(r: *Reader) Error!void {
     _ = try r.readVarU32();
 }
 
-fn readFCImmediate(r: *Reader) Error!void {
+fn readFCImmediate(r: *Reader) Error!u32 {
     const sub = try r.readVarU32();
     switch (sub) {
         // i32/i64.trunc_sat_f32/f64_s/u
@@ -189,9 +191,10 @@ fn readFCImmediate(r: *Reader) Error!void {
         9, 11, 13, 15, 16, 17 => _ = try r.readVarU32(),
         else => return Error.UnsupportedInstruction,
     }
+    return sub;
 }
 
-fn readFDImmediate(r: *Reader) Error!void {
+fn readFDImmediate(r: *Reader) Error!u32 {
     const sub = try r.readVarU32();
     switch (sub) {
         // v128.load*/store
@@ -211,16 +214,18 @@ fn readFDImmediate(r: *Reader) Error!void {
         14...20, 35...83, 94...275 => {},
         else => return Error.UnsupportedInstruction,
     }
+    return sub;
 }
 
-fn readFEImmediate(r: *Reader) Error!void {
+fn readFEImmediate(r: *Reader) Error!u32 {
     const sub = try r.readVarU32();
     if (sub == 3) {
         // atomic.fence reserved immediate
         _ = try r.readByte();
-        return;
+        return sub;
     }
     try readMemArg(r);
+    return sub;
 }
 
 /// Decodes every instruction of a function body (local declarations
@@ -330,9 +335,18 @@ pub fn walkFunctionBody(handler: anytype, body: []const u8) !void {
             0xd0 => _ = try r.readByte(),
             // ref.func
             0xd2 => _ = try r.readVarU32(),
-            0xfc => try readFCImmediate(&r),
-            0xfd => try readFDImmediate(&r),
-            0xfe => try readFEImmediate(&r),
+            0xfc => {
+                instr.subop = try readFCImmediate(&r);
+                instr.has_subop = true;
+            },
+            0xfd => {
+                instr.subop = try readFDImmediate(&r);
+                instr.has_subop = true;
+            },
+            0xfe => {
+                instr.subop = try readFEImmediate(&r);
+                instr.has_subop = true;
+            },
             else => return Error.UnsupportedInstruction,
         }
         try handler.onInstr(instr);

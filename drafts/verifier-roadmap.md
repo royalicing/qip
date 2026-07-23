@@ -84,18 +84,17 @@ What it costs:
   in the safety-check rewrite. The mitigation is a shared
   `components/application/wasm/lib/wasm-reader.zig` (the `vnd.sqlite3/lib/`
   pattern) holding the Reader and immediate decoding, imported by every
-  wasm-inspecting component. That consolidation is worth doing regardless of
-  the split: `wasm-score.zig` and `wasm-trace-instrument.zig` each carry
-  their own decoder today.
+  wasm-inspecting component. `wasm-trace-instrument.zig` still carries its own
+  decoder; the redundant `wasm-score.zig` component was removed in favor of
+  the native `qip score` diagnostic.
 
 Done (2026-07-13): the split shipped as `wasm-strict-profile.wasm` +
 `wasm-bounded-loops.wasm` on top of a shared `lib/wasm-reader.zig`, and
 `wasm-safety-check.wasm` was retired — the two-stage pipeline reproduced its
 verdict on every module in the corpus, so the bundle added nothing. The Go
 `wasminspect` package remains the diagnostic twin; the shared Zig reader is
-the single source of truth for decoding on the component side. Remaining
-follow-up: move `wasm-score.zig` and `wasm-trace-instrument.zig` onto the
-shared reader too.
+the single source of truth for decoding on the checker side. Remaining
+follow-up: move `wasm-trace-instrument.zig` onto the shared reader too.
 
 ## What would it take to verify output length never exceeds capacity?
 

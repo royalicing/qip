@@ -113,5 +113,8 @@
         (i32.const 10))
       (then unreachable))
 
+    (if (i32.gt_u (local.get $out_i) (global.get $output_utf8_cap))
+      (then unreachable))
+
     (local.get $out_i))
 )

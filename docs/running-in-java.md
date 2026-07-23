@@ -44,7 +44,6 @@ public final class MarkdownRenderer {
     private final ExportFunction inputPtr;
     private final ExportFunction inputCap;
     private final ExportFunction outputPtr;
-    private final ExportFunction outputCap;
     private final ExportFunction render;
 
     public MarkdownRenderer() {
@@ -55,7 +54,6 @@ public final class MarkdownRenderer {
         inputPtr = instance.export("input_ptr");
         inputCap = instance.export("input_utf8_cap");
         outputPtr = instance.export("output_ptr");
-        outputCap = instance.export("output_utf8_cap");
         render = instance.export("render");
     }
 
@@ -74,29 +72,12 @@ public final class MarkdownRenderer {
         }
 
         int inputStart = callI32(inputPtr);
-        checkRange(inputStart, source.length, "Input");
         memory.write(inputStart, source);
 
         int outputSize = callI32(render, source.length);
-        int outputCapacity = callI32(outputCap);
-        if (outputSize < 0 || outputSize > outputCapacity) {
-            throw new IllegalStateException(
-                    "Component returned an invalid output size: "
-                            + outputSize + ", capacity " + outputCapacity);
-        }
-
         int outputStart = callI32(outputPtr);
-        checkRange(outputStart, outputSize, "Output");
         byte[] output = memory.readBytes(outputStart, outputSize);
         return new String(output, StandardCharsets.UTF_8);
-    }
-
-    private void checkRange(int pointer, int size, String label) {
-        long end = (long) pointer + size;
-        long memorySize = (long) memory.pages() * Memory.PAGE_SIZE;
-        if (pointer < 0 || size < 0 || end > memorySize) {
-            throw new IllegalStateException(label + " is outside component memory");
-        }
     }
 
     public static void main(String[] args) {
@@ -146,9 +127,12 @@ The loader is runtime-specific; the QIP calls are not:
 3. Java encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `memory.write` copies those bytes to `input_ptr()`.
 5. `render(input_size)` returns the number of output bytes.
-6. Java checks `output_utf8_cap()`, copies from `output_ptr()`, and decodes UTF-8.
+6. Java copies that many bytes from `output_ptr()` and decodes UTF-8.
 
-The capacity and memory-range checks enforce the QIP boundary before Java reads or writes component memory.
+This wrapper trusts the known-valid GFM component and checks only the
+caller-controlled input size. A host accepting arbitrary Wasm has a different
+validation boundary; see [Known And Untrusted
+Components](/docs/content-component#known-and-untrusted-components).
 
 ## Traps And Reuse
 

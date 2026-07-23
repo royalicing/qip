@@ -43,15 +43,7 @@ memory = exports["memory"]
 input_ptr = exports["input_ptr"]
 input_cap = exports["input_utf8_cap"]
 output_ptr = exports["output_ptr"]
-output_cap = exports["output_utf8_cap"]
 render = exports["render"]
-
-
-def memory_range(pointer: int, size: int, label: str) -> tuple[int, int]:
-    end = pointer + size
-    if pointer < 0 or size < 0 or end > memory.data_len(store):
-        raise ValueError(f"{label} is outside component memory")
-    return pointer, end
 
 
 def markdown_to_html(markdown: str) -> str:
@@ -63,17 +55,11 @@ def markdown_to_html(markdown: str) -> str:
             f"Markdown input exceeds component capacity: {len(source)} > {capacity}"
         )
 
-    start, _ = memory_range(input_ptr(store), len(source), "Input")
-    memory.write(store, source, start)
+    memory.write(store, source, input_ptr(store))
 
     size = render(store, len(source))
-    capacity = output_cap(store)
-    if size < 0 or size > capacity:
-        raise ValueError(
-            f"Component returned an invalid output size: {size}, capacity {capacity}"
-        )
-
-    start, end = memory_range(output_ptr(store), size, "Output")
+    start = output_ptr(store)
+    end = start + size
     result = memory.read(store, start, end)
     return bytes(result).decode("utf-8")
 
@@ -130,9 +116,12 @@ The loader is runtime-specific; the QIP calls are not:
 3. Python encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `memory.write` copies those bytes to `input_ptr()`.
 5. `render(input_size)` returns the number of output bytes.
-6. Python checks `output_utf8_cap()`, copies from `output_ptr()`, and decodes UTF-8.
+6. Python copies that many bytes from `output_ptr()` and decodes UTF-8.
 
-The capacity checks enforce the QIP contract. The `memory_range` check also rejects negative pointers and out-of-bounds slices before they reach Wasmtime's Python memory API, where negative offsets and clipped reads otherwise follow Python slice conventions.
+This wrapper trusts the known-valid GFM component and checks only the
+caller-controlled input size. A host accepting arbitrary Wasm has a different
+validation boundary; see [Known And Untrusted
+Components](/docs/content-component#known-and-untrusted-components).
 
 ## Traps And Reuse
 

@@ -118,6 +118,8 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/zig-components">Writing QIP Components In Zig</a></li>
 <li><a href="/docs/c-wasm-toolchains">Building C Libraries As QIP Components</a></li>
 <li><a href="/docs/tracing">Tracing</a></li>
+<li><a href="/docs/wasm-counts">Counting A WebAssembly Module</a></li>
+<li><a href="/docs/nontrapping-divides">Proving Non-Trapping Divides</a></li>
 <li><a href="/docs/interactive-rendering-performance">Interactive Rendering Performance</a></li>
 <li><a href="/docs/testing-interactive-components">Testing Interactive Components</a></li>
 </ol>

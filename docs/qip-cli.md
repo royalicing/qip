@@ -111,6 +111,8 @@ Current CLI guardrails:
 - `--allow-memory-grow` permits growth when paired with `--max-memory <bytes>`.
 - `qip score` reports `fixed_bound_loops: PASS` when loop backedges match the accepted fixed-counter pattern, and `WARN` when the bound is not proven.
 - `components/application/wasm/wasm-strict-profile.wasm` enforces the strict artifact profile's factual rules: imports, memory shape, banned instructions, recursion, and statically readable content-type metadata. `components/application/wasm/wasm-bounded-loops.wasm` proves loop bounds. Pipe through both for the full strict tier. [Hard Limits](/docs/hard-limits) is the canonical map of which commands enforce each rule.
+- `components/application/wasm/wasm-bounded-output.wasm` independently certifies a recognized `render` epilogue that traps above the component's static output capacity. It is opt-in while components adopt that proof shape.
+- `components/application/wasm/wasm-counts.wasm` reports deterministic long-form CSV counts for functions, control flow, calls, SIMD, potentially trapping instructions, declared memory, and data segments. See [Counting A WebAssembly Module](/docs/wasm-counts).
 - `components/application/wasm/wasm-nontrapping-divides.wasm` conservatively proves that integer division and remainder instructions cannot trap. Its proof vocabulary covers constants, unsigned ranges, dominating zero/overflow guards, and facts propagated through locals; see [Proving Integer Divisions Do Not Trap](/docs/nontrapping-divides).
 
 The browser JavaScript hosts expose the same policy with `max-memory="<bytes>"` and `allow-memory-grow`; see [Browser Elements](/docs/qip-elements) and the [Interactive Component Contract](/docs/interactive-component).

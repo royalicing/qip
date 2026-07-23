@@ -194,8 +194,12 @@ components/application/wasm/wasm-bounded-loops.wasm: ZIG_WASM_MAX_MEMORY = 25165
 components/application/wasm/wasm-bounded-loops.wasm: components/application/wasm/wasm-bounded-loops.zig components/application/wasm/lib/wasm-reader.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-components/application/wasm/wasm-score.wasm: ZIG_WASM_MAX_MEMORY = 14680064
-components/application/wasm/wasm-score.wasm: components/application/wasm/wasm-score.zig
+components/application/wasm/wasm-bounded-output.wasm: ZIG_WASM_MAX_MEMORY = 20971520
+components/application/wasm/wasm-bounded-output.wasm: components/application/wasm/wasm-bounded-output.zig components/application/wasm/lib/wasm-reader.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+components/application/wasm/wasm-counts.wasm: ZIG_WASM_MAX_MEMORY = 12582912
+components/application/wasm/wasm-counts.wasm: components/application/wasm/wasm-counts.zig components/application/wasm/lib/wasm-reader.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 components/application/wasm/wasm-nontrapping-divides.wasm: ZIG_WASM_MAX_MEMORY = 25165824
