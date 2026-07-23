@@ -65,9 +65,10 @@ import { contentComponent, contentTypeUTF8 } from "/qip-runner.js";
 const input = document.getElementById("a11y-input");
 const output = document.getElementById("a11y-output");
 const copyButton = document.getElementById("a11y-copy");
-const text = contentTypeUTF8();
+const html = contentTypeUTF8("text/html");
+const markdown = contentTypeUTF8("text/markdown");
 const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/html/html-to-accessibility-tree.wasm"));
-const accessibilityTreeComponent = contentComponent(text, componentModule, text);
+const accessibilityTreeComponent = contentComponent(html, componentModule, markdown);
 
 function computeTree() {
   try {

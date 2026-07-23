@@ -4,7 +4,7 @@
 
 Paste code and convert to highlighted HTML locally in your browser.
 Each language is its own small component — TypeScript’s is
-<a href="/components/text/html/highlight-syntax-highlight-tsx.wasm" download><qip-content-size src="/components/text/html/highlight-syntax-highlight-tsx.wasm"></qip-content-size> of WebAssembly</a>
+<a href="/components/text/html/html-code-syntax-highlight-tsx.wasm" download><qip-content-size src="/components/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size> of WebAssembly</a>
 — chained with an HTML escaper and a Night Owl stylesheet.
 
 <style>
@@ -97,6 +97,7 @@ const previewElement = document.getElementById("highlight-preview");
 const output = document.getElementById("highlight-output");
 const copyButton = document.getElementById("highlight-copy");
 const text = contentTypeUTF8();
+const html = contentTypeUTF8("text/html");
 const languageClasses = {
   zig: "language-zig",
   c: "language-c",
@@ -119,7 +120,7 @@ const languages = Object.keys(languageClasses);
 const modules = await Promise.all([
   ...languages.map((language) =>
     WebAssembly.compileStreaming(
-      fetch("/components/text/html/highlight-syntax-highlight-" + language + ".wasm"),
+      fetch("/components/text/html/html-code-syntax-highlight-" + language + ".wasm"),
     ),
   ),
   WebAssembly.compileStreaming(fetch("/components/text/html/html-escape.wasm")),
@@ -127,10 +128,10 @@ const modules = await Promise.all([
 ]);
 const highlightComponents = {};
 languages.forEach((language, i) => {
-  highlightComponents[language] = contentComponent(text, modules[i], text);
+  highlightComponents[language] = contentComponent(html, modules[i], html);
 });
-const escapeComponent = contentComponent(text, modules[languages.length], text);
-const stylesheetComponent = contentComponent(text, modules[languages.length + 1], text);
+const escapeComponent = contentComponent(text, modules[languages.length], html);
+const stylesheetComponent = contentComponent(html, modules[languages.length + 1], html);
 
 function highlight() {
   const language = languageSelect.value;
@@ -178,13 +179,13 @@ or email with no external stylesheet.
 
 ## Download
 
-- <a href="/components/text/html/highlight-syntax-highlight-zig.wasm" download>highlight-syntax-highlight-zig.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-zig.wasm"></qip-content-size>
-- <a href="/components/text/html/highlight-syntax-highlight-c.wasm" download>highlight-syntax-highlight-c.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-c.wasm"></qip-content-size>
-- <a href="/components/text/html/highlight-syntax-highlight-bash.wasm" download>highlight-syntax-highlight-bash.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-bash.wasm"></qip-content-size>
-- <a href="/components/text/html/highlight-syntax-highlight-tsx.wasm" download>highlight-syntax-highlight-tsx.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-tsx.wasm"></qip-content-size>
-- <a href="/components/text/html/highlight-syntax-highlight-html.wasm" download>highlight-syntax-highlight-html.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-html.wasm"></qip-content-size>
-- <a href="/components/text/html/highlight-syntax-highlight-css.wasm" download>highlight-syntax-highlight-css.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-css.wasm"></qip-content-size>
-- <a href="/components/text/html/highlight-syntax-highlight-wasm.wasm" download>highlight-syntax-highlight-wasm.wasm</a> — <qip-content-size src="/components/text/html/highlight-syntax-highlight-wasm.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-zig.wasm" download>html-code-syntax-highlight-zig.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-zig.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-c.wasm" download>html-code-syntax-highlight-c.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-c.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-bash.wasm" download>html-code-syntax-highlight-bash.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-bash.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-tsx.wasm" download>html-code-syntax-highlight-tsx.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-html.wasm" download>html-code-syntax-highlight-html.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-html.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-css.wasm" download>html-code-syntax-highlight-css.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-css.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-wasm.wasm" download>html-code-syntax-highlight-wasm.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-wasm.wasm"></qip-content-size>
 - <a href="/components/text/html/html-escape.wasm" download>html-escape.wasm</a> — <qip-content-size src="/components/text/html/html-escape.wasm"></qip-content-size>
 - <a href="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" download>html-add-highlight-stylesheet-night-owl.wasm</a> — <qip-content-size src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm"></qip-content-size>
 
@@ -195,9 +196,9 @@ The highlighters transform whole HTML documents: each rewrites
 everything else untouched, so they chain safely.
 
 ```bash
-qip run components/text/html/highlight-syntax-highlight-zig.wasm \
-  components/text/html/highlight-syntax-highlight-css.wasm \
-  components/text/html/highlight-syntax-highlight-bash.wasm \
+qip run components/text/html/html-code-syntax-highlight-zig.wasm \
+  components/text/html/html-code-syntax-highlight-css.wasm \
+  components/text/html/html-code-syntax-highlight-bash.wasm \
   components/text/html/html-add-highlight-stylesheet-night-owl.wasm \
   < page.html > highlighted.html
 ```

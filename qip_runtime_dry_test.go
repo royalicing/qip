@@ -136,8 +136,8 @@ func TestDocumentedRunPipelinesRemainCompatible(t *testing.T) {
 		{"SVG directly to ICO", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
 		{"PNG to ICO", []string{"components/image/png/png-to-bmp-bgra32.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
 		{"strict Wasm checks", []string{"components/application/wasm/wasm-strict-profile.wasm", "components/application/wasm/wasm-bounded-loops.wasm"}},
-		{"Markdown highlighting", []string{"components/text/markdown/commonmark.0.31.2.wasm", "components/text/html/highlight-syntax-highlight-tsx.wasm"}},
-		{"HTML highlighter chain", []string{"components/text/html/highlight-syntax-highlight-zig.wasm", "components/text/html/highlight-syntax-highlight-css.wasm", "components/text/html/highlight-syntax-highlight-bash.wasm", "components/text/html/html-add-highlight-stylesheet-night-owl.wasm"}},
+		{"Markdown highlighting", []string{"components/text/markdown/commonmark.0.31.2.wasm", "components/text/html/html-code-syntax-highlight-tsx.wasm"}},
+		{"HTML highlighter chain", []string{"components/text/html/html-code-syntax-highlight-zig.wasm", "components/text/html/html-code-syntax-highlight-css.wasm", "components/text/html/html-code-syntax-highlight-bash.wasm", "components/text/html/html-add-highlight-stylesheet-night-owl.wasm"}},
 		{"SVG data URI to CSS", []string{"components/image/svg+xml/svg-to-data-uri.wasm", "components/text/uri-list/data-uri-to-css-url.wasm"}},
 		{"Content Tile Content", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/rgba/brightness.wasm", "?brightness=0.1", "components/image/bmp/bmp-to-ico.wasm"}},
 	}

@@ -55,7 +55,7 @@ The element is intentionally small: the page provides input controls, Wasm sourc
 <form aria-label="Markdown to HTML">
   <qip-edit>
     <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
-    <source src="/components/text/html/highlight-syntax-highlight-tsx.wasm" type="application/wasm" />
+    <source src="/components/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
 
     <textarea name="input" rows="5" placeholder="Write some Markdown"># A Markdown renderer that works identically cross-platform! Try typing…</textarea>
 

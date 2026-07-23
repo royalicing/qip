@@ -78,9 +78,9 @@ components/utf8/currency-format-zh-cn.wasm: components/utf8/lib/currency-format-
 components/image/svg+xml/svg-to-data-uri.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 components/text/uri-list/data-uri-to-css-url.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 
-components/text/html/highlight-syntax-highlight-css.wasm: components/text/html/lib/syntax-highlight-css.zig
-components/text/html/highlight-syntax-highlight-tsx.wasm: components/text/html/lib/syntax-highlight-javascript.zig
-components/text/html/highlight-syntax-highlight-html.wasm: components/text/html/lib/syntax-highlight-css.zig components/text/html/lib/syntax-highlight-javascript.zig
+components/text/html/html-code-syntax-highlight-css.wasm: components/text/html/lib/syntax-highlight-css.zig
+components/text/html/html-code-syntax-highlight-tsx.wasm: components/text/html/lib/syntax-highlight-javascript.zig
+components/text/html/html-code-syntax-highlight-html.wasm: components/text/html/lib/syntax-highlight-css.zig components/text/html/lib/syntax-highlight-javascript.zig
 
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -210,10 +210,10 @@ components/text/html/html-add-highlight-stylesheet-night-owl.wasm: components/te
 recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm: components/text/html/html-add-highlight-stylesheet-night-owl.wasm
 	cp $< $@
 
-recipes/text/markdown/28-highlight-syntax-highlight-css.wasm: components/text/html/highlight-syntax-highlight-css.wasm
+recipes/text/markdown/28-html-code-syntax-highlight-css.wasm: components/text/html/html-code-syntax-highlight-css.wasm
 	cp $< $@
 
-recipes/text/markdown/23-highlight-syntax-highlight-tsx.wasm: components/text/html/highlight-syntax-highlight-tsx.wasm
+recipes/text/markdown/23-html-code-syntax-highlight-tsx.wasm: components/text/html/html-code-syntax-highlight-tsx.wasm
 	cp $< $@
 
 components/text/markdown/markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.wasm
@@ -344,9 +344,9 @@ recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(w
 recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 recipes: recipes/application/warc/99-add-custom-element-scripts.wasm
-recipes: recipes/text/markdown/23-highlight-syntax-highlight-tsx.wasm
-recipes: recipes/text/markdown/24-highlight-syntax-highlight-html.wasm
-recipes: recipes/text/markdown/28-highlight-syntax-highlight-css.wasm
+recipes: recipes/text/markdown/23-html-code-syntax-highlight-tsx.wasm
+recipes: recipes/text/markdown/24-html-code-syntax-highlight-html.wasm
+recipes: recipes/text/markdown/28-html-code-syntax-highlight-css.wasm
 recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 components: components-wat-wasm components-c-wasm components-zig-wasm
@@ -402,12 +402,12 @@ test-deno: qip components
 	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip components compliance
-	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-tsx.wasm --with compliance/syntax-highlight-javascript.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-html.wasm --with compliance/syntax-highlight-html.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/highlight-syntax-highlight-css.wasm --with compliance/syntax-highlight-css.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply recipes/text/markdown/25-highlight-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply recipes/text/markdown/26-highlight-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply recipes/text/markdown/27-highlight-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-tsx.wasm --with compliance/syntax-highlight-javascript.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-html.wasm --with compliance/syntax-highlight-html.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-css.wasm --with compliance/syntax-highlight-css.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply recipes/text/markdown/25-html-code-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply recipes/text/markdown/26-html-code-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply recipes/text/markdown/27-html-code-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --declarative-checkers

@@ -118,3 +118,34 @@ const page = renderPage(" # qip ");
 if (typeof page !== "string" || !page.includes("<html")) {
   throw new Error("Wasm-backed contentRecipe failed");
 }
+
+const htmlEscapeModule = await WebAssembly.compile(
+  await readFile("components/text/html/html-escape.wasm"),
+);
+const cHighlightModule = await WebAssembly.compile(
+  await readFile("components/text/html/html-code-syntax-highlight-c.wasm"),
+);
+const escapeHTML = contentComponent(text, htmlEscapeModule, html);
+const highlightC = contentComponent(html, cHighlightModule, html);
+const highlightedC = highlightC(
+  '<pre><code class="language-c">' +
+    escapeHTML("int main(void) { return 0; }") +
+    "</code></pre>",
+);
+
+if (!highlightedC.includes("hljs-keyword")) {
+  throw new Error("generic text to syntax-highlighted HTML pipeline failed");
+}
+
+const accessibilityTreeModule = await WebAssembly.compile(
+  await readFile("components/text/html/html-to-accessibility-tree.wasm"),
+);
+const accessibilityTree = contentComponent(
+  html,
+  accessibilityTreeModule,
+  markdown,
+);
+if (accessibilityTree("<main><button>Save</button></main>") !==
+    "- `main`\n  - `button` **Save**\n") {
+  throw new Error("HTML to Markdown accessibility-tree component failed");
+}

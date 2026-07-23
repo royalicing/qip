@@ -94,7 +94,7 @@ printf '%s\n' \
   '```' \
 | qip run \
   components/text/markdown/commonmark.0.31.2.wasm \
-  components/text/html/highlight-syntax-highlight-tsx.wasm
+  components/text/html/html-code-syntax-highlight-tsx.wasm
 
 # <h1>Markdown with code snippet</h1>
 # <pre><code class="language-tsx hljs"><span class="hljs-keyword">const</span> pi: <span class="hljs-type">number</span> = <span class="hljs-number">3.14</span>;
@@ -108,7 +108,7 @@ You can render the same QIP components in the browser:
 <form class="browser-preview-demo" aria-label="Markdown to HTML">
     <qip-edit>
         <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
-        <source src="/components/text/html/highlight-syntax-highlight-tsx.wasm" type="application/wasm" />
+        <source src="/components/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
         <source src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
         <label class="browser-preview-view">
             <strong>Markdown input</strong>
@@ -128,7 +128,7 @@ Use the `<qip-edit>` custom element to render a series of QIP components with us
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
     &lt;qip-edit&gt;
         &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-        &lt;source src=&quot;/components/text/html/highlight-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;source src=&quot;/components/text/html/html-code-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
         &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
 ```tsx
 const pi: number = 3.14;
@@ -202,7 +202,7 @@ qip router head ./site /about
 qip router get ./site /about
 
 # Copy a component to syntax highlight bash code
-cp syntax-highlight-bash.wasm ./site/_recipes/text/markdown/20-syntax-highlight-bash.wasm
+cp html-code-syntax-highlight-bash.wasm ./site/_recipes/text/markdown/20-html-code-syntax-highlight-bash.wasm
 
 # Run a dev server
 qip router dev ./site
