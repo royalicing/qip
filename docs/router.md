@@ -233,9 +233,21 @@ In `qip router warc`, qip must:
 
 1. Enumerate routed content, component asset, and element module paths.
 2. Resolve each path to an HTTP response.
-3. Build a WARC response record for each response.
+3. Build a WARC 1.1 response record for each response.
 4. Run the `application/warc` recipe chain over the whole archive, if one exists.
-5. Emit the resulting WARC bytes.
+5. Validate the transformed archive and emit it only when every record remains
+   structurally valid.
+
+Every emitted record includes `WARC-Type`, `WARC-Date`, `WARC-Record-ID`, and
+`Content-Length`. Response blocks contain a complete HTTP response with its own
+recalculated `Content-Length`. The exporter uses the fixed capture time
+`2000-01-01T00:00:00Z` and derives record UUIDs from the target URI and response
+bytes. Given the same routes and content, the archive bytes are reproducible.
+
+The validator runs after the WARC recipe chain, not just before it. A recipe
+that drops a mandatory field, emits WARC 1.0, misstates a block length, or
+returns an incomplete HTTP response makes the router fail instead of writing a
+plausible but invalid archive.
 
 In `qip router dev`, `qip router get`, and `qip router head`, qip should apply the same WARC recipe layer to the single requested response so local preview matches archive export.
 
@@ -279,6 +291,11 @@ Each listed route must include:
 `qip router list <content_dir> ...` must print the base route table.
 
 `qip router warc <content_dir> ...` must emit a WARC archive. If `--view-source` is set, qip must also add recipe source and view-source records so downstream tools can inspect the transformation inputs.
+
+The archive conforms to [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/).
+This command is intended for deterministic application builds rather than
+forensic capture: its fixed `WARC-Date` records the build convention, not a
+network retrieval time.
 
 The project directory flags are overrides, not requirements:
 

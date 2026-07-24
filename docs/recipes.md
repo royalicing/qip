@@ -41,7 +41,7 @@ qip router warc ./site --view-source \
   | qip run components/application/warc/warc-extract-broken-links.wasm
 ```
 
-The result is another `application/warc` archive. It keeps only response pages containing broken links and reduces each HTML body to the exact opening tags with broken `href`, `src`, `action`, `data`, or `srcset` values. An archive with no broken links produces an empty WARC.
+The result is another `application/warc` archive. It keeps only response pages containing broken links and reduces each HTML body to the exact opening tags with broken `href`, `src`, `action`, `data`, or `srcset` values. An archive with no broken links contains only a `warcinfo` record; WARC 1.1 does not define a zero-record archive.
 
 ### Rendering referenced content sizes
 
@@ -58,6 +58,29 @@ kilobytes with two fractional digits. The recipe updates the enclosing HTTP
 and WARC content lengths. During single-route development, the router adds
 direct static `src` dependencies to the subset WARC. An unresolved size path
 is an error instead of producing a plausible size.
+
+The rewrite preserves the input record's `WARC-Date`, `WARC-Record-ID`,
+`WARC-Target-URI`, content type, and extension fields, then emits the record as
+WARC 1.1. Because the HTML and HTTP block changed, it removes stale
+`WARC-Block-Digest` and `WARC-Payload-Digest` fields. It also removes HTTP
+`ETag`, `Content-MD5`, and `Digest` validators rather than claiming they still
+describe the rewritten body. Records with no content-size replacement keep
+their metadata and payload.
+
+### Writing WARC transforms
+
+An `application/warc -> application/warc` recipe receives standards-valid WARC
+1.1 and must return standards-valid WARC 1.1. In particular:
+
+- preserve `WARC-Type`, `WARC-Date`, `WARC-Record-ID`, and all extension fields;
+- preserve unknown fields rather than rebuilding a short allowlist;
+- recalculate the WARC and HTTP `Content-Length` values after a rewrite;
+- remove or regenerate block and payload digests when their bytes change; and
+- remove or regenerate HTTP entity validators when the HTTP body changes.
+
+The router validates the final archive after the full recipe chain. This keeps
+the trust boundary at export: malformed output traps or fails the command
+instead of being written to disk.
 
 ### Loading custom elements selectively
 
