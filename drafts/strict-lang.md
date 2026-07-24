@@ -361,3 +361,383 @@ generator shape used in the Unicode comply module) need to ship as language
 builtins or a small audited prelude. That prelude is probably the largest
 real chunk of work in this design, bigger than the compiler frontend or the
 wasm backend.
+
+## Ideas from MLIR
+
+MLIR has a deeper contribution to make here than a specific syntax feature:
+keep the program's logical operation separate from its SIMD schedule, and
+keep both separate from the final wasm instructions. Borrow the model, not
+necessarily MLIR itself. A custom MLIR dialect and lowering pipeline would
+work against the "few hundred lines, predictable direct-to-wasm compiler"
+goal for v1; the useful part is the separation of concerns:
+
+```
+structured operation
+    ↓ vectorization schedule
+virtual vectors and masks
+    ↓ fixed wasm lowering
+v128 instructions + scalar tail
+```
+
+MLIR makes roughly this distinction between structured `linalg` operations,
+its target-independent Vector dialect, and hardware-level vectors. QIP's
+bottom level is unusually simple: wasm has one 128-bit vector value, viewed
+through lane shapes such as `i8x16`, `i16x8`, `i32x4`, and `f32x4`.
+
+The rule worth carrying through the whole design:
+
+> Keep iteration space, memory layout, vector width, and target instructions
+> as separate concepts, then permit only lowering steps that preserve the
+> strict profile's proofs.
+
+### Structured operations describe meaning
+
+Rather than starting with a hand-vectorized loop, let an author express a
+bounded iteration space:
+
+```
+map p in pixels {
+    output[p] = brighten(input[p], amount)
+}
+```
+
+Or a stencil:
+
+```
+stencil p in pixels radius 2 edge clamp {
+    output[p] = gaussian(input[p + offset])
+}
+```
+
+Or a reduction whose evaluation order is part of its semantics:
+
+```
+reduce sum in samples order tree {
+    yield sum +% samples[index]
+}
+```
+
+This is the strongest idea in MLIR's Linalg dialect. An operation retains its
+iteration domain, indexing maps, and iterator kinds instead of immediately
+becoming arbitrary loops. The compiler can tile or vectorize from that
+structure without reverse-engineering memory access from pointer arithmetic.
+
+For this language, the same structure could prove:
+
+- loop bounds
+- which buffers are read and written
+- whether accesses are contiguous
+- whether iterations are independent
+- required image halo
+- temporary storage
+- output-size bounds
+
+The halo result is especially useful. A stencil whose declared reads range
+from `p - 2` through `p + 2` can have `calculate_halo_px()` generated as `2`.
+The compiler also owns the expanded tile stride, eliminating the dynamic-span
+WAT gotcha described in this repo's image notes.
+
+The current scalar halo should be treated as one host projection of a richer
+**access footprint**, not as the source language's fundamental model. A
+footprint can distinguish:
+
+- left, right, top, and bottom extents instead of overfetching a symmetric
+  square
+- boundary semantics such as clamp, reflect, wrap, constant, or reject
+- a compile-time maximum footprint from the exact value selected by uniforms
+- logical valid and output regions from the physical buffer extent
+- an immutable input view from output storage, so in-place traversal order
+  cannot accidentally change stencil results
+
+For example, a directional filter might declare:
+
+```
+reads p + [x: -8..2, y: -1..1] boundary clamp
+writes p
+```
+
+The existing image ABI can conservatively lower that to
+`calculate_halo_px() == 8` and a symmetric clamped tile. A future host can use
+the full footprint to fetch less data. Keeping the richer declaration in the
+language also leaves room for resampling and geometric transforms, where the
+required source region is an affine mapping of the output tile rather than
+"the same tile plus N pixels."
+
+Materializing the full image between stages, as the current halo pipeline
+does, keeps each stage's footprint local and independent. If pipeline fusion
+is added later, the planner must compose footprints backwards through the
+pipeline: a blur after an edge detector needs source pixels for both
+neighborhoods, not merely the larger of the two scalar halo values. Structured
+access maps make that composition explicit instead of relying on filter-name
+knowledge in the host.
+
+### A first-class virtual vector type
+
+Model vectors by their lane meaning, not as a raw `v128`:
+
+```
+vec<16, u8>
+vec<8, i16>
+vec<4, u32>
+vec<4, f32>
+mask<16>
+```
+
+`v128` is a storage and register representation. `vec<16, u8>` carries the
+lane interpretation needed to choose arithmetic, comparisons, widening,
+narrowing, and reductions.
+
+For v1, require:
+
+```
+lanes * bit_width(T) == 128
+```
+
+That gives direct, predictable lowering. Later, virtual widths could be
+permitted:
+
+```
+vec<32, u8>   # two v128 values
+vec<3, f32>   # scalarized or padded according to declared policy
+```
+
+MLIR progressively lowers non-native and multidimensional vectors into
+target-supported one-dimensional vectors. QIP needs only a much smaller
+fixed-width subset of that machinery.
+
+This also complements the element-type / logical-shape / physical-layout
+separation in [Numeric Outputs as SIMD-Aware Tensors](tensor-outputs.md). A
+tensor or view is memory; a vector is a computation value loaded from that
+memory. They should not be the same type.
+
+### Masks are a real type
+
+Comparisons produce masks:
+
+```
+let dark: mask<16> = pixels < splat(32)
+let adjusted = select(dark, brighten(pixels), pixels)
+
+if any(dark) { ... }
+let bits: u32 = bitmask(dark)
+```
+
+This maps cleanly onto wasm comparisons, `v128.bitselect`, `*.all_true`,
+`*.any_true`, and `*.bitmask`. It also prevents masks from becoming vaguely
+typed vectors of zero and negative one, with the signedness and lane-width
+mistakes that follow.
+
+A mask must not imply generally safe masked memory access, however. Wasm
+does not provide it. That makes boundary semantics part of the language
+rather than an optimizer detail.
+
+### Tail and boundary behavior are explicit
+
+MLIR's `vector.transfer_read` and `vector.transfer_write` describe vector
+access independently of how boundary lanes eventually lower. This language
+could adopt a smaller, more explicit form:
+
+```
+load<16>(input, at i) in_bounds
+load<16>(input, at i) pad 0
+load<16>(input, at i) edge clamp
+```
+
+Vector loops declare their tail policy:
+
+```
+vector for i in 0..input.size lanes 16 tail scalar {
+    ...
+}
+```
+
+Useful policies:
+
+- `tail scalar`: full-vector loop followed by a bounded scalar loop
+- `tail pad value`: missing lanes have a specified value
+- `tail clamp`: image-style edge clamping
+- `tail reject`: input length must be a lane multiple
+- `tail store_partial`: only valid lanes are written
+
+The compiler must never implement `pad` by performing an out-of-bounds
+`v128.load` and masking afterward; the illegal load has already happened.
+It must prove all 16 bytes lie inside the physical buffer or construct the
+final vector from safe scalar or lane loads.
+
+This gives vector memory operations meaningful safety semantics rather than
+exposing a fast but sharp raw load primitive.
+
+### The algorithm and its schedule are separate
+
+MLIR's Transform dialect separates payload IR from the IR directing tiling,
+unrolling, and vectorization. A deliberately small QIP version could look
+like:
+
+```
+schedule gaussian_fast for gaussian {
+    tile y by 4
+    vectorize x lanes 4
+    tail scalar
+}
+```
+
+Or:
+
+```
+emit gaussian_scalar using default
+emit gaussian_simd using gaussian_fast
+```
+
+This fits the repo's benchmark discipline directly:
+
+```
+qip bench gaussian_scalar.wasm gaussian_simd.wasm
+```
+
+It should not become an open-ended rewrite language. Each schedule operation
+is compiler-defined and proof-preserving: initially `tile`, `vectorize`,
+`unroll`, `fuse`, `tail`, and possibly `layout`. The compiler rejects a
+schedule when it cannot preserve bounds, access safety, or exact arithmetic
+semantics.
+
+The applied schedule belongs in the score manifest:
+
+```
+kernel gaussian
+  logical iterations: width × height
+  tile:                 64 × 64
+  vector lanes:         4 × f32
+  full-vector loops:    floor(width / 4)
+  scalar tail:          width % 4
+  memory alignment:     16
+  halo:                 6
+```
+
+That is more useful than silently hoping an optimizer vectorizes something.
+
+### Arithmetic has lane-level modes
+
+The scalar proposal already distinguishes trapping and wrapping arithmetic.
+SIMD makes the distinction more important because wasm offers wrapping and
+saturating operations but not general trapping vector addition:
+
+```
+a +% b                # wrapping
+add_sat(a, b)         # saturating
+add_checked(a, b)     # traps if any lane overflows
+```
+
+`add_checked` lowers to arithmetic plus overflow comparisons, followed by
+`any(mask)` and a trap.
+
+For image processing, widening and narrowing should also be first-class:
+
+```
+let wide = widen_low<u16>(bytes)
+let result = narrow_sat<u8>(wide_a, wide_b)
+```
+
+These map directly to wasm SIMD and avoid asking the compiler to recognize a
+fragile collection of casts and clamps.
+
+### Reductions pin their order
+
+Automatic SIMD reduction is dangerous for deterministic floating-point
+output because vectorization may change association:
+
+```
+((a + b) + c) + d
+```
+
+is not necessarily equal to:
+
+```
+(a + b) + (c + d)
+```
+
+Reductions therefore distinguish:
+
+```
+reduce ... order left
+reduce ... order tree
+reduce ... order lanes_then_left
+```
+
+The order is program semantics, not an optimizer choice. For integer
+wrapping operations, several orderings may be equivalent and the compiler
+can exploit that. For floats, it must preserve the declared tree and
+canonicalize NaNs if that remains the language rule.
+
+Relaxed SIMD should be outside the strict language. Core wasm SIMD is already
+accepted by the repository's strict-profile checker, including lane loads and
+shuffles; relaxed instructions add target-dependent choices that work against
+the determinism goal.
+
+### Layout types unlock vectorization
+
+Buffers and views can carry logical shape and physical layout separately:
+
+```
+view<rgba8, [height, width], interleaved, align 16>
+view<u8, [4, height, width], planar, align 16>
+view<f32, [rows, cols], row_stride 112, align 16>
+```
+
+An indexing expression then contains enough information to determine whether
+adjacent logical elements are adjacent bytes. That makes several
+transformations mechanically checkable:
+
+- interleaved RGBA: operate on four pixels as `u8x16`
+- planar RGBA: operate on sixteen channel samples as `u8x16`
+- padded matrix rows: vector loads never cross row boundaries
+- halo tiles: vector loads can use physical halo while respecting logical
+  edges
+
+MLIR uses affine indexing maps for the general version. QIP probably wants a
+finite set of layouts — dense, strided, planar, interleaved, transpose —
+rather than arbitrary affine expressions in v1.
+
+### A complete source sketch
+
+The structured operation says "four independent RGBA pixels"; the schedule
+says to pack them into one `u8x16`; lowering chooses the shuffles or masks
+needed to preserve alpha:
+
+```
+kernel brighten(
+    input: view<rgba8, [height, width], interleaved, align 16>,
+    output: view<rgba8, [height, width], interleaved, align 16>,
+    amount: u8,
+) {
+    map p in input.pixels {
+        let rgba = input[p]
+        output[p] = rgba {
+            r = add_sat(rgba.r, amount)
+            g = add_sat(rgba.g, amount)
+            b = add_sat(rgba.b, amount)
+            a = rgba.a
+        }
+    }
+}
+
+schedule brighten_simd for brighten {
+    vectorize pixels lanes 4
+    tail scalar
+}
+```
+
+Most compilers discard high-level structure, optimize aggressively, and emit
+whatever loop form results. Here, retaining structured operations strengthens
+the certificate:
+
+- vectorization multiplies the induction step by a compile-time constant
+- scalar tails remain visibly bounded
+- access maps prove full-width loads
+- stencil offsets derive halo
+- layouts determine alignment and stride
+- reduction order preserves determinism
+- the final emitted wasm remains the trust anchor
+
+The combination looks genuinely useful: MLIR-style structured vectorization
+inside a total language where every transformation must preserve a
+mechanically reported memory and execution bound.
