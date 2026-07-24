@@ -66,6 +66,9 @@ details.raw-html textarea {
       <option value="tsx" selected>TypeScript / JavaScript / JSX</option>
       <option value="html">HTML / XML</option>
       <option value="css">CSS</option>
+      <option value="go">Go</option>
+      <option value="swift">Swift</option>
+      <option value="ruby">Ruby</option>
       <option value="zig">Zig</option>
       <option value="c">C</option>
       <option value="bash">Bash / shell</option>
@@ -105,6 +108,9 @@ const languageClasses = {
   tsx: "language-tsx",
   html: "language-html",
   css: "language-css",
+  go: "language-go",
+  swift: "language-swift",
+  ruby: "language-ruby",
   wasm: "language-wat",
 };
 const samples = {
@@ -114,6 +120,9 @@ const samples = {
   tsx: '// Highlighted locally, in ~9 KB of wasm.\ntype Size = { bytes: number };\n\nexport function label({ bytes }: Size): string {\n  return `${(bytes / 1000).toFixed(2)} kB`;\n}',
   html: '<!-- Highlighted locally, in ~16 KB of wasm. -->\n<nav aria-label="Main">\n  <a href="/">Home</a>\n  <a href="/tools">Tools</a>\n</nav>',
   css: '/* Highlighted locally, in ~7 KB of wasm. */\n.card:hover {\n  color: #c792ea;\n  transform: translateY(-0.125rem);\n}',
+  go: 'package main\n\nimport "fmt"\n\ntype Size struct {\n\tBytes int\n}\n\nfunc (s Size) Label() string {\n\treturn fmt.Sprintf("Size: %d bytes", s.Bytes)\n}',
+  swift: 'import Foundation\n\nstruct Size {\n  let bytes: Int\n}\n\nfunc label(_ size: Size) -> String {\n  "Size: \\(size.bytes) bytes"\n}',
+  ruby: 'class Size\n  attr_reader :bytes\n\n  def initialize(bytes:)\n    @bytes = bytes\n  end\n\n  def label\n    "Size: #{@bytes} bytes"\n  end\nend',
   wasm: '(module\n  ;; Highlighted locally, in ~8 KB of wasm.\n  (func (export "double") (param i32) (result i32)\n    (i32.mul (local.get 0) (i32.const 2))))',
 };
 const languages = Object.keys(languageClasses);
@@ -185,6 +194,9 @@ or email with no external stylesheet.
 - <a href="/components/text/html/html-code-syntax-highlight-tsx.wasm" download>html-code-syntax-highlight-tsx.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size>
 - <a href="/components/text/html/html-code-syntax-highlight-html.wasm" download>html-code-syntax-highlight-html.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-html.wasm"></qip-content-size>
 - <a href="/components/text/html/html-code-syntax-highlight-css.wasm" download>html-code-syntax-highlight-css.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-css.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-go.wasm" download>html-code-syntax-highlight-go.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-go.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-swift.wasm" download>html-code-syntax-highlight-swift.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-swift.wasm"></qip-content-size>
+- <a href="/components/text/html/html-code-syntax-highlight-ruby.wasm" download>html-code-syntax-highlight-ruby.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-ruby.wasm"></qip-content-size>
 - <a href="/components/text/html/html-code-syntax-highlight-wasm.wasm" download>html-code-syntax-highlight-wasm.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-wasm.wasm"></qip-content-size>
 - <a href="/components/text/html/html-escape.wasm" download>html-escape.wasm</a> — <qip-content-size src="/components/text/html/html-escape.wasm"></qip-content-size>
 - <a href="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" download>html-add-highlight-stylesheet-night-owl.wasm</a> — <qip-content-size src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm"></qip-content-size>
@@ -197,6 +209,9 @@ everything else untouched, so they chain safely.
 
 ```bash
 qip run components/text/html/html-code-syntax-highlight-zig.wasm \
+  components/text/html/html-code-syntax-highlight-go.wasm \
+  components/text/html/html-code-syntax-highlight-swift.wasm \
+  components/text/html/html-code-syntax-highlight-ruby.wasm \
   components/text/html/html-code-syntax-highlight-css.wasm \
   components/text/html/html-code-syntax-highlight-bash.wasm \
   components/text/html/html-add-highlight-stylesheet-night-owl.wasm \

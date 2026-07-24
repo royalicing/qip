@@ -1,0 +1,71 @@
+=== INPUT ===
+<section><pre><code class="language-swift">import Foundation
+import WasmKit
+
+final class MarkdownRenderer {
+    private let memory: Memory
+
+    func render(_ source: String) throws -&gt; String {
+        let bytes = Array(source.utf8)
+        // Keep the view inside this call.
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}</code></pre></section>
+=== OUTPUT ===
+<section><pre><code class="language-swift hljs"><span class="hljs-keyword">import</span> <span class="hljs-built_in">Foundation</span>
+<span class="hljs-keyword">import</span> <span class="hljs-built_in">WasmKit</span>
+
+<span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> MarkdownRenderer {
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">let</span> memory: <span class="hljs-type">Memory</span>
+
+    <span class="hljs-keyword">func</span> render(_ source: <span class="hljs-type">String</span>) <span class="hljs-keyword">throws</span> -&gt; <span class="hljs-type">String</span> {
+        <span class="hljs-keyword">let</span> bytes = <span class="hljs-type">Array</span>(source.utf8)
+        <span class="hljs-comment">// Keep the view inside this call.</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-type">String</span>(decoding: bytes, <span class="hljs-keyword">as</span>: <span class="hljs-type">UTF8</span>.<span class="hljs-keyword">self</span>)
+    }
+}</code></pre></section>
+=== END ===
+=== INPUT ===
+<code data-x="1" class='compact language-swift'>@main
+struct App {
+    static func main() {
+        let count: Int = 0x10
+        let ready = true
+        let message = &quot;count: \(count + 1)&quot;
+        /* outer /* nested */ comment */
+        print(message)
+    }
+}</code>
+=== OUTPUT ===
+<code data-x="1" class='compact language-swift hljs'><span class="hljs-meta">@main</span>
+<span class="hljs-keyword">struct</span> App {
+    <span class="hljs-keyword">static</span> <span class="hljs-keyword">func</span> main() {
+        <span class="hljs-keyword">let</span> count: <span class="hljs-type">Int</span> = <span class="hljs-number">0x10</span>
+        <span class="hljs-keyword">let</span> ready = <span class="hljs-literal">true</span>
+        <span class="hljs-keyword">let</span> message = <span class="hljs-string">&quot;count: </span><span class="hljs-subst">\(count + <span class="hljs-number">1</span>)</span><span class="hljs-string">&quot;</span>
+        <span class="hljs-comment">/* outer /* nested */ comment */</span>
+        <span class="hljs-built_in">print</span>(message)
+    }
+}</code>
+=== END ===
+=== INPUT ===
+<code class="language-swift">let text = #&quot;&quot;raw&quot; \#(value)&quot;#
+let block = &quot;&quot;&quot;
+class return \(ready)
+&quot;&quot;&quot;</code>
+=== OUTPUT ===
+<code class="language-swift hljs"><span class="hljs-keyword">let</span> text = <span class="hljs-string">#&quot;&quot;raw&quot; </span><span class="hljs-subst">\#(value)</span><span class="hljs-string">&quot;#</span>
+<span class="hljs-keyword">let</span> block = <span class="hljs-string">&quot;&quot;&quot;
+class return </span><span class="hljs-subst">\(ready)</span><span class="hljs-string">
+&quot;&quot;&quot;</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-swift hljs"><span class="hljs-keyword">let</span> ready = true</code>
+=== OUTPUT ===
+<code class="language-swift hljs"><span class="hljs-keyword">let</span> ready = true</code>
+=== END ===
+=== INPUT ===
+<code class="language-java">public class App {}</code>
+=== OUTPUT ===
+<code class="language-java">public class App {}</code>
+=== END ===

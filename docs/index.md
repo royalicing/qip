@@ -98,9 +98,12 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a hidden href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
 <li><a href="/docs/running-in-javascript">Running In JavaScript</a></li>
 <li><a href="/docs/running-in-react">Running In React</a></li>
-<li><a href="/docs/running-in-python">Running In Python</a></li>
+<li><a href="/docs/running-in-swift">Running In Swift</a></li>
 <li><a href="/docs/running-in-java">Running In Java</a></li>
+<li><a href="/docs/running-in-python">Running In Python</a></li>
+<li><a href="/docs/running-in-go">Running In Go</a></li>
 <li><a href="/docs/running-in-dotnet">Running In .NET</a></li>
+<li><a href="/docs/running-in-ruby">Running In Ruby</a></li>
 </ol>
 </li>
 <li><span class="docs-section">QIP spec</span>

@@ -1,0 +1,91 @@
+=== INPUT ===
+<pre><code class="language-go">package main
+
+import (
+	&quot;context&quot;
+	&quot;fmt&quot;
+)
+
+type Renderer struct {
+	name string
+}
+
+func (r *Renderer) Render(ctx context.Context, input []byte) (string, error) {
+	if input == nil {
+		return &quot;&quot;, fmt.Errorf(&quot;empty input&quot;)
+	}
+	return string(input), nil
+}</code></pre>
+=== OUTPUT ===
+<pre><code class="language-go hljs"><span class="hljs-keyword">package</span> main
+
+<span class="hljs-keyword">import</span> (
+	<span class="hljs-string">&quot;context&quot;</span>
+	<span class="hljs-string">&quot;fmt&quot;</span>
+)
+
+<span class="hljs-keyword">type</span> Renderer <span class="hljs-keyword">struct</span> {
+	name <span class="hljs-type">string</span>
+}
+
+<span class="hljs-keyword">func</span> (r *Renderer) Render(ctx context.Context, input []<span class="hljs-type">byte</span>) (<span class="hljs-type">string</span>, <span class="hljs-type">error</span>) {
+	<span class="hljs-keyword">if</span> input == <span class="hljs-literal">nil</span> {
+		<span class="hljs-keyword">return</span> <span class="hljs-string">&quot;&quot;</span>, fmt.Errorf(<span class="hljs-string">&quot;empty input&quot;</span>)
+	}
+	<span class="hljs-keyword">return</span> <span class="hljs-type">string</span>(input), <span class="hljs-literal">nil</span>
+}</code></pre>
+=== END ===
+=== INPUT ===
+<code class='language-golang extra'>// Keywords inside comments stay plain: func return
+const limit = 0x_FF + 0b1010 + 1_000
+var ratio = 6.022e23
+var z = 2.5i
+var letter = &#39;\n&#39;
+var raw = `first
+second`
+ready := true
+missing := false</code>
+=== OUTPUT ===
+<code class='language-golang extra hljs'><span class="hljs-comment">// Keywords inside comments stay plain: func return</span>
+<span class="hljs-keyword">const</span> limit = <span class="hljs-number">0x_FF</span> + <span class="hljs-number">0b1010</span> + <span class="hljs-number">1_000</span>
+<span class="hljs-keyword">var</span> ratio = <span class="hljs-number">6.022e23</span>
+<span class="hljs-keyword">var</span> z = <span class="hljs-number">2.5i</span>
+<span class="hljs-keyword">var</span> letter = <span class="hljs-string">&#39;\n&#39;</span>
+<span class="hljs-keyword">var</span> raw = <span class="hljs-string">`first
+second`</span>
+ready := <span class="hljs-literal">true</span>
+missing := <span class="hljs-literal">false</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-go">/* select case return */
+type Set[T comparable] map[T]struct{}
+
+func Map[S ~[]E, E any](items S, apply func(E) E) S {
+	out := make(S, len(items))
+	for i, item := range items {
+		out[i] = apply(item)
+	}
+	return out
+}</code>
+=== OUTPUT ===
+<code class="language-go hljs"><span class="hljs-comment">/* select case return */</span>
+<span class="hljs-keyword">type</span> Set[T <span class="hljs-type">comparable</span>] <span class="hljs-keyword">map</span>[T]<span class="hljs-keyword">struct</span>{}
+
+<span class="hljs-keyword">func</span> Map[S ~[]E, E <span class="hljs-type">any</span>](items S, apply <span class="hljs-keyword">func</span>(E) E) S {
+	out := <span class="hljs-built_in">make</span>(S, <span class="hljs-built_in">len</span>(items))
+	<span class="hljs-keyword">for</span> i, item := <span class="hljs-keyword">range</span> items {
+		out[i] = apply(item)
+	}
+	<span class="hljs-keyword">return</span> out
+}</code>
+=== END ===
+=== INPUT ===
+<code class="language-go hljs"><span class="hljs-keyword">package</span> main</code>
+=== OUTPUT ===
+<code class="language-go hljs"><span class="hljs-keyword">package</span> main</code>
+=== END ===
+=== INPUT ===
+<code class="language-ruby">def go; true; end</code>
+=== OUTPUT ===
+<code class="language-ruby">def go; true; end</code>
+=== END ===

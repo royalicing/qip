@@ -1,0 +1,108 @@
+=== INPUT ===
+<pre><code class="language-ruby">require &quot;json&quot;
+
+class Renderer
+  attr_reader :name
+
+  def initialize(name:)
+    @name = name
+  end
+
+  def render(value)
+    puts &quot;#{@name}: #{value || nil}&quot;
+  rescue JSON::ParserError
+    raise
+  end
+end</code></pre>
+=== OUTPUT ===
+<pre><code class="language-ruby hljs"><span class="hljs-keyword">require</span> <span class="hljs-string">&quot;json&quot;</span>
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Renderer</span>
+  <span class="hljs-built_in">attr_reader</span> <span class="hljs-symbol">:name</span>
+
+  <span class="hljs-keyword">def</span> <span class="hljs-title function_">initialize</span>(<span class="hljs-params"><span class="hljs-symbol">name:</span></span>)
+    <span class="hljs-variable">@name</span> = name
+  <span class="hljs-keyword">end</span>
+
+  <span class="hljs-keyword">def</span> <span class="hljs-title function_">render</span>(<span class="hljs-params">value</span>)
+    puts <span class="hljs-string">&quot;<span class="hljs-subst">#{<span class="hljs-variable">@name</span>}</span>: <span class="hljs-subst">#{value || <span class="hljs-literal">nil</span>}</span>&quot;</span>
+  <span class="hljs-keyword">rescue</span> <span class="hljs-variable constant_">JSON</span>::<span class="hljs-title class_">ParserError</span>
+    <span class="hljs-keyword">raise</span>
+  <span class="hljs-keyword">end</span>
+<span class="hljs-keyword">end</span></code></pre>
+=== END ===
+=== INPUT ===
+<code class='language-rb extra'>items = %W[one #{2 + 1}]
+pattern = /item-\d+/i
+ready = true unless items.empty?
+# return class false
+@@renders += 0x10</code>
+=== OUTPUT ===
+<code class='language-rb extra hljs'>items = <span class="hljs-string">%W[one <span class="hljs-subst">#{<span class="hljs-number">2</span> + <span class="hljs-number">1</span>}</span>]</span>
+pattern = <span class="hljs-regexp">/item-\d+/i</span>
+ready = <span class="hljs-literal">true</span> <span class="hljs-keyword">unless</span> items.empty?
+<span class="hljs-comment"># return class false</span>
+<span class="hljs-variable">@@renders</span> += <span class="hljs-number">0x10</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-ruby">template = &lt;&lt;~HTML
+  &lt;p&gt;#{message}&lt;/p&gt;
+HTML
+literal = %q(class return #{ignored})
+=begin
+class return false
+=end</code>
+=== OUTPUT ===
+<code class="language-ruby hljs">template = <span class="hljs-string">&lt;&lt;~HTML
+  &lt;p&gt;<span class="hljs-subst">#{message}</span>&lt;/p&gt;
+HTML</span>
+literal = <span class="hljs-string">%q(class return #{ignored})</span>
+<span class="hljs-comment">=begin
+class return false
+=end</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-ruby">source = markdown.encode(Encoding::UTF_8)
+capacity = @input_cap.call
+
+if source.bytesize &gt; capacity
+  raise ArgumentError, &quot;too large&quot;
+end
+
+module Storage
+  include Enumerable
+  private_constant :LIMIT
+  LIMIT = 100
+
+  def self.build(value = false)
+    super(value)
+  end
+end</code>
+=== OUTPUT ===
+<code class="language-ruby hljs">source = markdown.encode(<span class="hljs-title class_">Encoding</span>::<span class="hljs-variable constant_">UTF_8</span>)
+capacity = <span class="hljs-variable">@input_cap</span>.call
+
+<span class="hljs-keyword">if</span> source.bytesize &gt; capacity
+  <span class="hljs-keyword">raise</span> <span class="hljs-title class_">ArgumentError</span>, <span class="hljs-string">&quot;too large&quot;</span>
+<span class="hljs-keyword">end</span>
+
+<span class="hljs-keyword">module</span> <span class="hljs-title class_">Storage</span>
+  <span class="hljs-keyword">include</span> <span class="hljs-title class_">Enumerable</span>
+  <span class="hljs-built_in">private_constant</span> <span class="hljs-symbol">:LIMIT</span>
+  <span class="hljs-variable constant_">LIMIT</span> = <span class="hljs-number">100</span>
+
+  <span class="hljs-keyword">def</span> <span class="hljs-title function_">self</span>.build(<span class="hljs-params">value = <span class="hljs-literal">false</span></span>)
+    <span class="hljs-variable language_">super</span>(value)
+  <span class="hljs-keyword">end</span>
+<span class="hljs-keyword">end</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-ruby hljs"><span class="hljs-keyword">def</span> ready; true; end</code>
+=== OUTPUT ===
+<code class="language-ruby hljs"><span class="hljs-keyword">def</span> ready; true; end</code>
+=== END ===
+=== INPUT ===
+<code class="language-python">def ready(): return True</code>
+=== OUTPUT ===
+<code class="language-python">def ready(): return True</code>
+=== END ===

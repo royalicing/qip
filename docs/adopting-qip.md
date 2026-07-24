@@ -60,6 +60,8 @@ qip bench -i page.md --benchtime=2s components/text/markdown/commonmark.0.31.2.w
 The QIP memory contract stays the same across hosts. These guides show the loading, memory, failure, and instance-lifetime choices for specific application runtimes:
 
 - [Running QIP In Python](/docs/running-in-python) loads a WebAssembly Core module from disk with Wasmtime.
+- [Running QIP In Ruby](/docs/running-in-ruby) uses the Wasmtime gem and covers native-gem deployment and thread ownership.
+- [Running QIP In Go](/docs/running-in-go) uses pure-Go wazero and covers cancellation and instance ownership.
 - [Running QIP In Java](/docs/running-in-java) loads the same module with the pure-Java Chicory runtime.
 - [Running QIP In .NET](/docs/running-in-dotnet) uses Wasmtime from C# and covers ASP.NET instance ownership.
 - [Running QIP In Swift](/docs/running-in-swift) uses the Swift-native WasmKit runtime and covers app-bundle resources and concurrency.

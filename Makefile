@@ -97,7 +97,7 @@ compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-ht
 compliance/jpeg-to-bmp-bgra32.comply.wasm: compliance/jpeg-to-bmp-bgra32.comply.zig $(wildcard compliance/jpeg-to-bmp-bgra32-fixtures/*)
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-javascript.comply.wasm compliance/syntax-highlight-html.comply.wasm compliance/syntax-highlight-css.comply.wasm compliance/syntax-highlight-python.comply.wasm compliance/syntax-highlight-java.comply.wasm compliance/syntax-highlight-csharp.comply.wasm
+SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-javascript.comply.wasm compliance/syntax-highlight-html.comply.wasm compliance/syntax-highlight-css.comply.wasm compliance/syntax-highlight-python.comply.wasm compliance/syntax-highlight-java.comply.wasm compliance/syntax-highlight-csharp.comply.wasm compliance/syntax-highlight-swift.comply.wasm compliance/syntax-highlight-ruby.comply.wasm compliance/syntax-highlight-go.comply.wasm
 
 compliance/syntax-highlight-%.comply.wasm: compliance/syntax-highlight-%.comply.zig compliance/syntax-highlight-%.fixtures.txt compliance/lib/syntax-highlight-comply.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -218,6 +218,15 @@ components/text/x-c/c-to-bmp.wasm: components/text/x-c/c-to-bmp.c
 recipes/text/markdown/80-html-page-wrap.wasm: recipes/text/markdown/styles.css recipes/text/markdown/header.html recipes/text/markdown/footer.html
 
 components/text/html/html-add-highlight-stylesheet-night-owl.wasm: components/text/html/highlight-night-owl.css
+
+recipes/text/markdown/17-html-code-syntax-highlight-go.wasm: components/text/html/html-code-syntax-highlight-go.wasm
+	cp $< $@
+
+recipes/text/markdown/18-html-code-syntax-highlight-ruby.wasm: components/text/html/html-code-syntax-highlight-ruby.wasm
+	cp $< $@
+
+recipes/text/markdown/19-html-code-syntax-highlight-swift.wasm: components/text/html/html-code-syntax-highlight-swift.wasm
+	cp $< $@
 
 recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm: components/text/html/html-add-highlight-stylesheet-night-owl.wasm
 	cp $< $@
@@ -359,6 +368,9 @@ recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(w
 recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 recipes: recipes/application/warc/99-add-custom-element-scripts.wasm
+recipes: recipes/text/markdown/17-html-code-syntax-highlight-go.wasm
+recipes: recipes/text/markdown/18-html-code-syntax-highlight-ruby.wasm
+recipes: recipes/text/markdown/19-html-code-syntax-highlight-swift.wasm
 recipes: recipes/text/markdown/23-html-code-syntax-highlight-tsx.wasm
 recipes: recipes/text/markdown/24-html-code-syntax-highlight-html.wasm
 recipes: recipes/text/markdown/28-html-code-syntax-highlight-css.wasm
@@ -426,6 +438,9 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply recipes/text/markdown/25-html-code-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply recipes/text/markdown/26-html-code-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply recipes/text/markdown/27-html-code-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-swift.wasm --with compliance/syntax-highlight-swift.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-ruby.wasm --with compliance/syntax-highlight-ruby.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-go.wasm --with compliance/syntax-highlight-go.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --declarative-checkers
@@ -597,7 +612,7 @@ wasm-safety-report: qip components
 	total=$$((pass + fail)); \
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
-site-static: qip
+site-static: qip recipes
 	$(QIP_BIN) router warc ./site --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static

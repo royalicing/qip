@@ -297,6 +297,16 @@ fn findCodeCloseTag(input: []const u8, from: usize) ?CodeCloseTag {
     return null;
 }
 
+fn containsSpanTag(code: []const u8) bool {
+    var i: usize = 0;
+    while (i + 5 <= code.len) : (i += 1) {
+        if (code[i] != '<') continue;
+        if (!eqlIgnoreCase(code[i + 1 .. i + 5], "span")) continue;
+        if (i + 5 == code.len or isTagNameBoundary(code[i + 5])) return true;
+    }
+    return false;
+}
+
 fn numberEnd(code: []const u8, start: usize) usize {
     var i = start;
     if (i < code.len and code[i] == '.' and i + 1 < code.len and isDigit(code[i + 1])) {
@@ -453,7 +463,7 @@ fn transformHTML(input: []const u8, w: *Writer) void {
         };
 
         const inner = input[open.end + 1 .. close.start];
-        const should_highlight = open.has_language_c;
+        const should_highlight = open.has_language_c and !containsSpanTag(inner);
         if (!should_highlight) {
             w.writeSlice(input[i .. close.end + 1]);
             cursor = close.end + 1;
