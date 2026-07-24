@@ -38,10 +38,18 @@ const Writer = struct {
     }
 
     pub fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    pub fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    pub fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -381,7 +389,7 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights plain text language-tsx code blocks" {
     const input = "<pre><code class=\"language-tsx\">const App = () =&gt; &lt;Button label={msg} /&gt;;</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-tsx hljs\"><span class=\"hljs-keyword\">const</span> App = () =&gt; <span class=\"hljs-tag\">&lt;Button label={msg} /&gt;</span>;</code></pre>";
+    const expected = "<pre><code class=\"language-tsx hljs\"><span class=\"hljs-keyword\">const</span> <span class=\"hljs-title function_\">App</span> = (<span class=\"hljs-params\"></span>) =&gt; <span class=\"hljs-tag\">&lt;<span class=\"hljs-name\">Button</span> <span class=\"hljs-attr\">label</span>={msg} /&gt;</span>;</code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
@@ -400,6 +408,6 @@ test "skips non-js-tsx code blocks" {
 test "highlights js ts and jsx aliases" {
     const input = "<code class=\"language-jsx\">const n: number = 0xff; // comment</code><code class=\"language-ts\">console.log(n)</code>";
     const got = runForTest(input);
-    const expected = "<code class=\"language-jsx hljs\"><span class=\"hljs-keyword\">const</span> n: <span class=\"hljs-type\">number</span> = <span class=\"hljs-number\">0xff</span>; <span class=\"hljs-comment\">// comment</span></code><code class=\"language-ts hljs\"><span class=\"hljs-built_in\">console</span>.log(n)</code>";
+    const expected = "<code class=\"language-jsx hljs\"><span class=\"hljs-keyword\">const</span> <span class=\"hljs-attr\">n</span>: <span class=\"hljs-built_in\">number</span> = <span class=\"hljs-number\">0xff</span>; <span class=\"hljs-comment\">// comment</span></code><code class=\"language-ts hljs\"><span class=\"hljs-variable language_\">console</span>.<span class=\"hljs-title function_\">log</span>(n)</code>";
     try std.testing.expectEqualStrings(expected, got);
 }

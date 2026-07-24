@@ -1,0 +1,35 @@
+=== INPUT ===
+<code class="language-c">static int render(const char *input, size_t len) { return len &gt; 0 ? 1 : 0; }</code>
+=== OUTPUT ===
+<code class="language-c hljs"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">render</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *input, <span class="hljs-type">size_t</span> len)</span> { <span class="hljs-keyword">return</span> len &gt; <span class="hljs-number">0</span> ? <span class="hljs-number">1</span> : <span class="hljs-number">0</span>; }</code>
+=== END ===
+=== INPUT ===
+<pre><code class="language-c">typedef struct Renderer {
+  const char *name;
+} Renderer;</code></pre>
+=== OUTPUT ===
+<pre><code class="language-c hljs"><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Renderer</span> {</span>
+  <span class="hljs-type">const</span> <span class="hljs-type">char</span> *name;
+} Renderer;</code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-c">#include &lt;stdio.h&gt;
+#define LABEL &quot;render&quot;
+// static int ignored
+int value = 0x2aU;</code>
+=== OUTPUT ===
+<code class="language-c hljs"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> LABEL <span class="hljs-string">&quot;render&quot;</span></span>
+<span class="hljs-comment">// static int ignored</span>
+<span class="hljs-type">int</span> value = <span class="hljs-number">0x2aU</span>;</code>
+=== END ===
+=== INPUT ===
+<code class="language-c hljs"><span class="hljs-type">int</span> value;</code>
+=== OUTPUT ===
+<code class="language-c hljs"><span class="hljs-type">int</span> value;</code>
+=== END ===
+=== INPUT ===
+<code class="language-go">func render() {}</code>
+=== OUTPUT ===
+<code class="language-go">func render() {}</code>
+=== END ===

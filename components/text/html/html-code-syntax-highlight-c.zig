@@ -9,30 +9,22 @@ var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 const KeywordSet = std.StaticStringMap(void).initComptime(.{
-    .{ "auto", {} },
     .{ "break", {} },
     .{ "case", {} },
-    .{ "const", {} },
     .{ "continue", {} },
     .{ "default", {} },
     .{ "do", {} },
     .{ "else", {} },
     .{ "enum", {} },
-    .{ "extern", {} },
     .{ "for", {} },
     .{ "goto", {} },
     .{ "if", {} },
-    .{ "inline", {} },
-    .{ "register", {} },
-    .{ "restrict", {} },
     .{ "return", {} },
     .{ "sizeof", {} },
-    .{ "static", {} },
     .{ "struct", {} },
     .{ "switch", {} },
     .{ "typedef", {} },
     .{ "union", {} },
-    .{ "volatile", {} },
     .{ "while", {} },
     .{ "_Alignas", {} },
     .{ "_Alignof", {} },
@@ -44,6 +36,14 @@ const KeywordSet = std.StaticStringMap(void).initComptime(.{
 });
 
 const TypeSet = std.StaticStringMap(void).initComptime(.{
+    .{ "auto", {} },
+    .{ "const", {} },
+    .{ "extern", {} },
+    .{ "inline", {} },
+    .{ "register", {} },
+    .{ "restrict", {} },
+    .{ "static", {} },
+    .{ "volatile", {} },
     .{ "void", {} },
     .{ "char", {} },
     .{ "short", {} },
@@ -97,10 +97,18 @@ const Writer = struct {
     }
 
     fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -108,6 +116,7 @@ const Writer = struct {
 const CodeOpenTag = struct {
     end: usize,
     has_language_c: bool,
+    has_hljs: bool,
 };
 
 const CodeCloseTag = struct {
@@ -192,13 +201,13 @@ fn isHexDigit(c: u8) bool {
     return isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
-fn classContainsLanguageC(value: []const u8) bool {
+fn classContains(value: []const u8, wanted: []const u8) bool {
     var i: usize = 0;
     while (i < value.len) {
         while (i < value.len and isSpace(value[i])) : (i += 1) {}
         const start = i;
         while (i < value.len and !isSpace(value[i])) : (i += 1) {}
-        if (i > start and eqlIgnoreCase(value[start..i], "language-c")) return true;
+        if (i > start and eqlIgnoreCase(value[start..i], wanted)) return true;
     }
     return false;
 }
@@ -221,8 +230,13 @@ fn findTagEnd(input: []const u8, start: usize) ?usize {
     return null;
 }
 
-fn codeTagHasLanguageC(tag: []const u8) bool {
-    if (tag.len < 6) return false;
+const ClassRange = struct {
+    start: usize,
+    end: usize,
+};
+
+fn classRange(tag: []const u8) ?ClassRange {
+    if (tag.len < 6) return null;
     var i: usize = 5; // after "<code"
     while (i < tag.len) {
         while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
@@ -241,28 +255,28 @@ fn codeTagHasLanguageC(tag: []const u8) bool {
         const name = tag[name_start..i];
 
         while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
-        var value: []const u8 = "";
         if (i < tag.len and tag[i] == '=') {
             i += 1;
             while (i < tag.len and isSpace(tag[i])) : (i += 1) {}
             if (i >= tag.len) break;
+            var value_start = i;
+            var value_end = i;
             if (tag[i] == '"' or tag[i] == '\'') {
                 const quote = tag[i];
                 i += 1;
-                const value_start = i;
+                value_start = i;
                 while (i < tag.len and tag[i] != quote) : (i += 1) {}
-                value = tag[value_start..@min(i, tag.len)];
+                value_end = @min(i, tag.len);
                 if (i < tag.len and tag[i] == quote) i += 1;
             } else {
-                const value_start = i;
+                value_start = i;
                 while (i < tag.len and !isSpace(tag[i]) and tag[i] != '>' and tag[i] != '/') : (i += 1) {}
-                value = tag[value_start..i];
+                value_end = i;
             }
+            if (eqlIgnoreCase(name, "class")) return .{ .start = value_start, .end = value_end };
         }
-
-        if (eqlIgnoreCase(name, "class") and classContainsLanguageC(value)) return true;
     }
-    return false;
+    return null;
 }
 
 fn parseCodeOpenTag(input: []const u8, start: usize) ?CodeOpenTag {
@@ -272,11 +286,25 @@ fn parseCodeOpenTag(input: []const u8, start: usize) ?CodeOpenTag {
     if (start + 5 < input.len and !isTagNameBoundary(input[start + 5])) return null;
 
     const end = findTagEnd(input, start + 5) orelse return null;
-    const has_language_c = codeTagHasLanguageC(input[start .. end + 1]);
+    const tag = input[start .. end + 1];
+    const range = classRange(tag);
+    const classes = if (range) |value| tag[value.start..value.end] else "";
     return .{
         .end = end,
-        .has_language_c = has_language_c,
+        .has_language_c = classContains(classes, "language-c"),
+        .has_hljs = classContains(classes, "hljs"),
     };
+}
+
+fn writeOpenTag(tag: []const u8, w: *Writer) void {
+    const range = classRange(tag) orelse {
+        w.writeSlice(tag);
+        return;
+    };
+    w.writeSlice(tag[0..range.end]);
+    if (range.start != range.end) w.writeByte(' ');
+    w.writeSlice("hljs");
+    w.writeSlice(tag[range.end..]);
 }
 
 fn findCodeCloseTag(input: []const u8, from: usize) ?CodeCloseTag {
@@ -356,9 +384,75 @@ fn stringEnd(code: []const u8, start: usize) usize {
     return code.len;
 }
 
+fn parameterEnd(code: []const u8, start: usize) usize {
+    var i = start + 1;
+    var depth: usize = 1;
+    while (i < code.len) {
+        if (code[i] == '"' or code[i] == '\'') {
+            i = stringEnd(code, i);
+            continue;
+        }
+        if (i + 1 < code.len and code[i] == '/' and code[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < code.len and !(code[i] == '*' and code[i + 1] == '/')) : (i += 1) {}
+            i = @min(i + 2, code.len);
+            continue;
+        }
+        if (code[i] == '(') depth += 1;
+        if (code[i] == ')') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+        i += 1;
+    }
+    return code.len;
+}
+
+fn writePreprocessor(line: []const u8, w: *Writer) void {
+    w.openSpan("hljs-meta");
+    w.writeByte('#');
+    var i: usize = 1;
+    while (i < line.len and isSpace(line[i])) : (i += 1) {
+        w.writeByte(line[i]);
+    }
+    const directive_start = i;
+    while (i < line.len and isIdentContinue(line[i])) : (i += 1) {}
+    if (i > directive_start) w.writeSpan("hljs-keyword", line[directive_start..i]);
+    while (i < line.len) {
+        if (std.mem.startsWith(u8, line[i..], "&quot;")) {
+            const end_marker = std.mem.indexOfPos(u8, line, i + 6, "&quot;");
+            if (end_marker) |marker| {
+                const end = marker + 6;
+                w.writeSpan("hljs-string", line[i..end]);
+                i = end;
+                continue;
+            }
+        }
+        if (line[i] == '"' or line[i] == '\'') {
+            const end = stringEnd(line, i);
+            w.writeSpan("hljs-string", line[i..end]);
+            i = end;
+            continue;
+        }
+        if (std.mem.startsWith(u8, line[i..], "&lt;")) {
+            const end_marker = std.mem.indexOfPos(u8, line, i + 4, "&gt;");
+            if (end_marker) |marker| {
+                const end = marker + 4;
+                w.writeSpan("hljs-string", line[i..end]);
+                i = end;
+                continue;
+            }
+        }
+        w.writeByte(line[i]);
+        i += 1;
+    }
+    w.closeSpan();
+}
+
 fn writeHighlightedC(code: []const u8, w: *Writer) void {
     var i: usize = 0;
     var at_line_start = true;
+    var has_declaration_type = false;
 
     while (i < code.len) {
         if (code[i] == '\n') {
@@ -377,7 +471,7 @@ fn writeHighlightedC(code: []const u8, w: *Writer) void {
             if (code[i] == '#') {
                 var j = i;
                 while (j < code.len and code[j] != '\n') : (j += 1) {}
-                w.writeSpan("hljs-meta", code[i..j]);
+                writePreprocessor(code[i..j], w);
                 i = j;
                 at_line_start = false;
                 continue;
@@ -424,10 +518,45 @@ fn writeHighlightedC(code: []const u8, w: *Writer) void {
             var j = i + 1;
             while (j < code.len and isIdentContinue(code[j])) : (j += 1) {}
             const ident = code[i..j];
+            if ((std.mem.eql(u8, ident, "struct") or std.mem.eql(u8, ident, "union") or std.mem.eql(u8, ident, "enum"))) {
+                var name_start = j;
+                while (name_start < code.len and isSpace(code[name_start])) : (name_start += 1) {}
+                var name_end = name_start;
+                while (name_end < code.len and isIdentContinue(code[name_end])) : (name_end += 1) {}
+                var brace = name_end;
+                while (brace < code.len and code[brace] != '\n' and code[brace] != ';' and code[brace] != '{') : (brace += 1) {}
+                if (name_end > name_start and brace < code.len and code[brace] == '{') {
+                    w.openSpan("hljs-class");
+                    w.writeSpan("hljs-keyword", ident);
+                    w.writeSlice(code[j..name_start]);
+                    w.writeSpan("hljs-title", code[name_start..name_end]);
+                    w.writeSlice(code[name_end .. brace + 1]);
+                    w.closeSpan();
+                    i = brace + 1;
+                    has_declaration_type = false;
+                    continue;
+                }
+            }
+
+            var next = j;
+            while (next < code.len and (code[next] == ' ' or code[next] == '\t')) : (next += 1) {}
+            if (has_declaration_type and next < code.len and code[next] == '(') {
+                const close = parameterEnd(code, next);
+                w.writeSpan("hljs-title function_", ident);
+                w.writeSlice(code[j..next]);
+                w.openSpan("hljs-params");
+                writeHighlightedC(code[next .. @min(close + 1, code.len)], w);
+                w.closeSpan();
+                i = @min(close + 1, code.len);
+                has_declaration_type = false;
+                continue;
+            }
+
             if (KeywordSet.get(ident) != null) {
                 w.writeSpan("hljs-keyword", ident);
             } else if (TypeSet.get(ident) != null) {
                 w.writeSpan("hljs-type", ident);
+                has_declaration_type = true;
             } else if (LiteralSet.get(ident) != null) {
                 w.writeSpan("hljs-literal", ident);
             } else {
@@ -438,6 +567,7 @@ fn writeHighlightedC(code: []const u8, w: *Writer) void {
         }
 
         w.writeByte(code[i]);
+        if (code[i] == ';' or code[i] == '{' or code[i] == '}' or code[i] == '=') has_declaration_type = false;
         i += 1;
     }
 }
@@ -463,7 +593,7 @@ fn transformHTML(input: []const u8, w: *Writer) void {
         };
 
         const inner = input[open.end + 1 .. close.start];
-        const should_highlight = open.has_language_c and !containsSpanTag(inner);
+        const should_highlight = open.has_language_c and !open.has_hljs and !containsSpanTag(inner);
         if (!should_highlight) {
             w.writeSlice(input[i .. close.end + 1]);
             cursor = close.end + 1;
@@ -471,7 +601,7 @@ fn transformHTML(input: []const u8, w: *Writer) void {
             continue;
         }
 
-        w.writeSlice(input[i .. open.end + 1]);
+        writeOpenTag(input[i .. open.end + 1], w);
         writeHighlightedC(inner, w);
         w.writeSlice(input[close.start .. close.end + 1]);
         cursor = close.end + 1;
@@ -503,7 +633,7 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights plain text language-c code blocks" {
     const input = "<pre><code class=\"language-c\">int main(){return 0;}</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-c\"><span class=\"hljs-type\">int</span> main(){<span class=\"hljs-keyword\">return</span> <span class=\"hljs-number\">0</span>;}</code></pre>";
+    const expected = "<pre><code class=\"language-c hljs\"><span class=\"hljs-type\">int</span> <span class=\"hljs-title function_\">main</span><span class=\"hljs-params\">()</span>{<span class=\"hljs-keyword\">return</span> <span class=\"hljs-number\">0</span>;}</code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
@@ -522,6 +652,6 @@ test "skips non-c code blocks" {
 test "highlights preprocessor and numbers" {
     const input = "<code class=\"language-c\">#include &lt;stdio.h&gt;\nint x = 1;</code>";
     const got = runForTest(input);
-    const expected = "<code class=\"language-c\"><span class=\"hljs-meta\">#include &lt;stdio.h&gt;</span>\n<span class=\"hljs-type\">int</span> x = <span class=\"hljs-number\">1</span>;</code>";
+    const expected = "<code class=\"language-c hljs\"><span class=\"hljs-meta\">#<span class=\"hljs-keyword\">include</span> <span class=\"hljs-string\">&lt;stdio.h&gt;</span></span>\n<span class=\"hljs-type\">int</span> x = <span class=\"hljs-number\">1</span>;</code>";
     try std.testing.expectEqualStrings(expected, got);
 }

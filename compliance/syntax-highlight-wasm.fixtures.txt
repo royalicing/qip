@@ -1,0 +1,41 @@
+=== INPUT ===
+<code class="language-wasm">(module
+  (func $render (param $size i32) (result i32)
+    local.get $size
+    i32.const 1
+    i32.add)
+  (export &quot;render&quot; (func $render)))</code>
+=== OUTPUT ===
+<code class="language-wasm hljs"><span class="hljs-punctuation">(</span><span class="hljs-keyword">module</span>
+  <span class="hljs-punctuation">(</span><span class="hljs-keyword">func</span> <span class="hljs-title function_">$render</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">param</span> <span class="hljs-variable">$size</span> <span class="hljs-type">i32</span><span class="hljs-punctuation">)</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">result</span> <span class="hljs-type">i32</span><span class="hljs-punctuation">)</span>
+    <span class="hljs-keyword">local.get</span> <span class="hljs-variable">$size</span>
+    <span class="hljs-keyword">i32.const</span> <span class="hljs-number">1</span>
+    <span class="hljs-keyword">i32.add</span><span class="hljs-punctuation">)</span>
+  <span class="hljs-punctuation">(</span><span class="hljs-keyword">export</span> <span class="hljs-string">&quot;render&quot;</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">func</span> <span class="hljs-title function_">$render</span><span class="hljs-punctuation">)))</span></code>
+=== END ===
+=== INPUT ===
+<pre><code class="language-wat">;; head
+(data (i32.const 0) &quot;hi&quot;)</code></pre>
+=== OUTPUT ===
+<pre><code class="language-wat hljs"><span class="hljs-comment">;; head</span>
+<span class="hljs-punctuation">(</span><span class="hljs-keyword">data</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">i32.const</span> <span class="hljs-number">0</span><span class="hljs-punctuation">)</span> <span class="hljs-string">&quot;hi&quot;</span><span class="hljs-punctuation">)</span></code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-wasm">(type $callback (func (param externref) (result i64)))
+(memory $memory 1 4)
+(; outer (; nested ;) comment ;)</code>
+=== OUTPUT ===
+<code class="language-wasm hljs"><span class="hljs-punctuation">(</span><span class="hljs-keyword">type</span> <span class="hljs-variable">$callback</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">func</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">param</span> externref<span class="hljs-punctuation">)</span> <span class="hljs-punctuation">(</span><span class="hljs-keyword">result</span> <span class="hljs-type">i64</span><span class="hljs-punctuation">)))</span>
+<span class="hljs-punctuation">(</span><span class="hljs-keyword">memory</span> <span class="hljs-variable">$memory</span> <span class="hljs-number">1</span> <span class="hljs-number">4</span><span class="hljs-punctuation">)</span>
+<span class="hljs-comment">(; outer (; nested ;) comment ;)</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-wasm hljs"><span class="hljs-keyword">module</span></code>
+=== OUTPUT ===
+<code class="language-wasm hljs"><span class="hljs-keyword">module</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-zig">export fn run() void {}</code>
+=== OUTPUT ===
+<code class="language-zig">export fn run() void {}</code>
+=== END ===

@@ -5,25 +5,34 @@
   return await Promise.resolve(`${message}: ${value}`);
 }</code></pre>
 === OUTPUT ===
-<pre><code class="language-javascript hljs"><span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> render(value) {
+<pre><code class="language-javascript hljs"><span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">render</span>(<span class="hljs-params">value</span>) {
   <span class="hljs-keyword">const</span> message = <span class="hljs-string">"return await class"</span>;
   <span class="hljs-comment">// return await class</span>
-  <span class="hljs-keyword">return</span> <span class="hljs-keyword">await</span> <span class="hljs-type">Promise</span>.resolve(<span class="hljs-string">`${message}: ${value}`</span>);
+  <span class="hljs-keyword">return</span> <span class="hljs-keyword">await</span> <span class="hljs-title class_">Promise</span>.<span class="hljs-title function_">resolve</span>(<span class="hljs-string">`<span class="hljs-subst">${message}</span>: <span class="hljs-subst">${value}</span>`</span>);
 }</code></pre>
 === END ===
 === INPUT ===
 <code class="language-js">const config = { enabled: true, count: 0x10 };
 console.log(JSON.stringify(config));</code>
 === OUTPUT ===
-<code class="language-js hljs"><span class="hljs-keyword">const</span> config = { enabled: <span class="hljs-literal">true</span>, count: <span class="hljs-number">0x10</span> };
-<span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(config));</code>
+<code class="language-js hljs"><span class="hljs-keyword">const</span> config = { <span class="hljs-attr">enabled</span>: <span class="hljs-literal">true</span>, <span class="hljs-attr">count</span>: <span class="hljs-number">0x10</span> };
+<span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-title class_">JSON</span>.<span class="hljs-title function_">stringify</span>(config));</code>
 === END ===
 === INPUT ===
 <code class="language-tsx">interface Props { label: string }
 const Button = ({ label }: Props) =&gt; &lt;button&gt;{label}&lt;/button&gt;;</code>
 === OUTPUT ===
-<code class="language-tsx hljs"><span class="hljs-keyword">interface</span> Props { label: <span class="hljs-type">string</span> }
-<span class="hljs-keyword">const</span> Button = ({ label }: Props) =&gt; <span class="hljs-tag">&lt;button&gt;</span>{label}<span class="hljs-tag">&lt;/button&gt;</span>;</code>
+<code class="language-tsx hljs"><span class="hljs-keyword">interface</span> <span class="hljs-title class_">Props</span> { <span class="hljs-attr">label</span>: <span class="hljs-built_in">string</span> }
+<span class="hljs-keyword">const</span> <span class="hljs-title function_">Button</span> = (<span class="hljs-params">{ label }: <span class="hljs-title class_">Props</span></span>) =&gt; <span class="hljs-tag">&lt;<span class="hljs-name">button</span>&gt;</span>{label}<span class="hljs-tag">&lt;/<span class="hljs-name">button</span>&gt;</span>;</code>
+=== END ===
+=== INPUT ===
+<code class="language-javascript">class Renderer extends BaseRenderer {
+  render(input) { return /qip\d+/gi.test(input); }
+}</code>
+=== OUTPUT ===
+<code class="language-javascript hljs"><span class="hljs-keyword">class</span> <span class="hljs-title class_">Renderer</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_ inherited__">BaseRenderer</span> {
+  <span class="hljs-title function_">render</span>(<span class="hljs-params">input</span>) { <span class="hljs-keyword">return</span> <span class="hljs-regexp">/qip\d+/gi</span>.<span class="hljs-title function_">test</span>(input); }
+}</code>
 === END ===
 === INPUT ===
 <code class="language-js hljs"><span class="hljs-keyword">const</span> ready = true;</code>

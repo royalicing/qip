@@ -8,11 +8,11 @@
     }
 }</code></pre></section>
 === OUTPUT ===
-<section><pre><code class="language-java hljs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> MarkdownRenderer {
-    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">String</span> MESSAGE = <span class="hljs-string">"public class return"</span>;
+<section><pre><code class="language-java hljs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">MarkdownRenderer</span> {
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">String</span> <span class="hljs-variable">MESSAGE</span> <span class="hljs-operator">=</span> <span class="hljs-string">"public class return"</span>;
     <span class="hljs-comment">// private String ignored;</span>
     <span class="hljs-meta">@Override</span>
-    <span class="hljs-keyword">public</span> <span class="hljs-type">String</span> render(<span class="hljs-type">int</span> size) {
+    <span class="hljs-keyword">public</span> <span class="hljs-type">String</span> <span class="hljs-title function_">render</span><span class="hljs-params">(<span class="hljs-type">int</span> size)</span> {
         <span class="hljs-keyword">return</span> size &gt; <span class="hljs-number">0</span> ? MESSAGE : <span class="hljs-literal">null</span>;
     }
 }</code></pre></section>
@@ -21,13 +21,24 @@
 <code class="language-java">String template = """public class return null""";
 /* public int ignored = 42; */</code>
 === OUTPUT ===
-<code class="language-java hljs"><span class="hljs-type">String</span> template = <span class="hljs-string">"""public class return null"""</span>;
+<code class="language-java hljs"><span class="hljs-type">String</span> template <span class="hljs-operator">=</span> <span class="hljs-string">"""public class return null"""</span>;
 <span class="hljs-comment">/* public int ignored = 42; */</span></code>
 === END ===
 === INPUT ===
 <code class='language-java extra'>public record Point(int x, int y) {}</code>
 === OUTPUT ===
-<code class='language-java extra hljs'><span class="hljs-keyword">public</span> <span class="hljs-keyword">record</span> Point(<span class="hljs-type">int</span> x, <span class="hljs-type">int</span> y) {}</code>
+<code class='language-java extra hljs'><span class="hljs-keyword">public</span> <span class="hljs-keyword">record</span> <span class="hljs-title class_">Point</span><span class="hljs-params">(<span class="hljs-type">int</span> x, <span class="hljs-type">int</span> y)</span> {}</code>
+=== END ===
+=== INPUT ===
+<code class="language-java">sealed interface Shape permits Circle, Square {}
+final class Circle implements Shape {
+    public double area() { return Math.PI; }
+}</code>
+=== OUTPUT ===
+<code class="language-java hljs"><span class="hljs-keyword">sealed</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">Shape</span> <span class="hljs-keyword">permits</span> Circle, Square {}
+<span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Circle</span> <span class="hljs-keyword">implements</span> <span class="hljs-title class_">Shape</span> {
+    <span class="hljs-keyword">public</span> <span class="hljs-type">double</span> <span class="hljs-title function_">area</span><span class="hljs-params">()</span> { <span class="hljs-keyword">return</span> <span class="hljs-built_in">Math</span>.PI; }
+}</code>
 === END ===
 === INPUT ===
 <code class="language-java hljs"><span class="hljs-keyword">class</span> App {}</code>

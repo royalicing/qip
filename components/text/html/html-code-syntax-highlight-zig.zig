@@ -31,7 +31,6 @@ const KeywordSet = std.StaticStringMap(void).initComptime(.{
     .{ "error", {} },
     .{ "export", {} },
     .{ "extern", {} },
-    .{ "false", {} },
     .{ "fn", {} },
     .{ "for", {} },
     .{ "if", {} },
@@ -52,7 +51,6 @@ const KeywordSet = std.StaticStringMap(void).initComptime(.{
     .{ "switch", {} },
     .{ "test", {} },
     .{ "threadlocal", {} },
-    .{ "true", {} },
     .{ "try", {} },
     .{ "union", {} },
     .{ "unreachable", {} },
@@ -101,7 +99,9 @@ const TypeSet = std.StaticStringMap(void).initComptime(.{
 });
 
 const LiteralSet = std.StaticStringMap(void).initComptime(.{
+    .{ "false", {} },
     .{ "null", {} },
+    .{ "true", {} },
     .{ "undefined", {} },
 });
 
@@ -134,10 +134,18 @@ const Writer = struct {
     }
 
     fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -469,8 +477,65 @@ fn stringEnd(code: []const u8, start: usize) usize {
     return code.len;
 }
 
+fn multilineStringEnd(code: []const u8, start: usize) usize {
+    var line_start = start;
+    while (line_start < code.len) {
+        var line_end = line_start;
+        while (line_end < code.len and code[line_end] != '\n') : (line_end += 1) {}
+        if (line_end == code.len) return line_end;
+        var next = line_end + 1;
+        while (next < code.len and (code[next] == ' ' or code[next] == '\t')) : (next += 1) {}
+        if (next + 1 < code.len and code[next] == '\\' and code[next + 1] == '\\') {
+            line_start = next;
+            continue;
+        }
+        return line_end;
+    }
+    return code.len;
+}
+
+fn matchingParen(code: []const u8, start: usize) ?usize {
+    if (start >= code.len or code[start] != '(') return null;
+    var depth: usize = 1;
+    var i = start + 1;
+    while (i < code.len) {
+        if (code[i] == '"' or code[i] == '\'') {
+            i = stringEnd(code, i);
+            continue;
+        }
+        if (code[i] == '(') depth += 1;
+        if (code[i] == ')') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+        i += 1;
+    }
+    return null;
+}
+
+fn skipSpace(code: []const u8, start: usize) usize {
+    var i = start;
+    while (i < code.len and isSpace(code[i])) : (i += 1) {}
+    return i;
+}
+
+fn isContainerBinding(code: []const u8, ident_end: usize) bool {
+    var i = skipSpace(code, ident_end);
+    if (i >= code.len or code[i] != '=') return false;
+    i = skipSpace(code, i + 1);
+    const end = blk: {
+        var j = i;
+        while (j < code.len and isIdentContinue(code[j])) : (j += 1) {}
+        break :blk j;
+    };
+    const word = code[i..end];
+    return std.mem.eql(u8, word, "struct") or std.mem.eql(u8, word, "enum") or
+        std.mem.eql(u8, word, "union") or std.mem.eql(u8, word, "opaque");
+}
+
 fn writeHighlightedZig(code: []const u8, w: *Writer) void {
     var i: usize = 0;
+    var expect_function_name = false;
 
     while (i < code.len) {
         if (i + 1 < code.len and code[i] == '/' and code[i + 1] == '/') {
@@ -483,6 +548,13 @@ fn writeHighlightedZig(code: []const u8, w: *Writer) void {
 
         if (code[i] == '"' or code[i] == '\'') {
             const j = stringEnd(code, i);
+            w.writeSpan("hljs-string", code[i..j]);
+            i = j;
+            continue;
+        }
+
+        if (i + 1 < code.len and code[i] == '\\' and code[i + 1] == '\\') {
+            const j = multilineStringEnd(code, i);
             w.writeSpan("hljs-string", code[i..j]);
             i = j;
             continue;
@@ -509,10 +581,32 @@ fn writeHighlightedZig(code: []const u8, w: *Writer) void {
             const ident = code[i..j];
             if (KeywordSet.get(ident) != null) {
                 w.writeSpan("hljs-keyword", ident);
+                expect_function_name = std.mem.eql(u8, ident, "fn");
             } else if (TypeSet.get(ident) != null) {
                 w.writeSpan("hljs-type", ident);
+                expect_function_name = false;
             } else if (LiteralSet.get(ident) != null) {
                 w.writeSpan("hljs-literal", ident);
+                expect_function_name = false;
+            } else if (expect_function_name) {
+                w.writeSpan("hljs-title function_", ident);
+                const params_start = skipSpace(code, j);
+                if (params_start < code.len and code[params_start] == '(') {
+                    if (matchingParen(code, params_start)) |params_end| {
+                        w.writeSlice(code[j..params_start]);
+                        w.writeByte('(');
+                        w.openSpan("hljs-params");
+                        writeHighlightedZig(code[params_start + 1 .. params_end], w);
+                        w.closeSpan();
+                        w.writeByte(')');
+                        i = params_end + 1;
+                        expect_function_name = false;
+                        continue;
+                    }
+                }
+                expect_function_name = false;
+            } else if (isContainerBinding(code, j)) {
+                w.writeSpan("hljs-title class_", ident);
             } else {
                 w.writeSlice(ident);
             }
@@ -586,7 +680,7 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights plain text language-zig code blocks" {
     const input = "<pre><code class=\"language-zig\">const std = @import(\"std\"); fn main() void { return; }</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-zig hljs\"><span class=\"hljs-keyword\">const</span> std = <span class=\"hljs-built_in\">@import</span>(<span class=\"hljs-string\">\"std\"</span>); <span class=\"hljs-keyword\">fn</span> main() <span class=\"hljs-type\">void</span> { <span class=\"hljs-keyword\">return</span>; }</code></pre>";
+    const expected = "<pre><code class=\"language-zig hljs\"><span class=\"hljs-keyword\">const</span> std = <span class=\"hljs-built_in\">@import</span>(<span class=\"hljs-string\">\"std\"</span>); <span class=\"hljs-keyword\">fn</span> <span class=\"hljs-title function_\">main</span>(<span class=\"hljs-params\"></span>) <span class=\"hljs-type\">void</span> { <span class=\"hljs-keyword\">return</span>; }</code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 

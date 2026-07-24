@@ -156,10 +156,18 @@ const Writer = struct {
     }
 
     fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -503,9 +511,109 @@ fn numberEnd(code: []const u8, start: usize) usize {
     return i;
 }
 
+fn skipSpace(code: []const u8, start: usize) usize {
+    var i = start;
+    while (i < code.len and isSpace(code[i])) : (i += 1) {}
+    return i;
+}
+
+fn matchingParen(code: []const u8, start: usize) ?usize {
+    if (start >= code.len or code[start] != '(') return null;
+    var depth: usize = 1;
+    var i = start + 1;
+    while (i < code.len) {
+        if (isStringStart(code, i)) {
+            i = stringEnd(code, i);
+            continue;
+        }
+        if (code[i] == '(') depth += 1;
+        if (code[i] == ')') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+        i += 1;
+    }
+    return null;
+}
+
+fn previousNonSpace(code: []const u8, start: usize) ?u8 {
+    var i = start;
+    while (i > 0) {
+        i -= 1;
+        if (!isSpace(code[i])) return code[i];
+    }
+    return null;
+}
+
+fn methodParams(code: []const u8, ident_start: usize, ident_end: usize) ?struct { start: usize, end: usize } {
+    if (previousNonSpace(code, ident_start) == '.') return null;
+    const start = skipSpace(code, ident_end);
+    if (start >= code.len or code[start] != '(') return null;
+    const end = matchingParen(code, start) orelse return null;
+    const after = skipSpace(code, end + 1);
+    if (after < code.len and (code[after] == '{' or code[after] == ';' or
+        std.mem.startsWith(u8, code[after..], "=&gt;") or std.mem.startsWith(u8, code[after..], "=>")))
+    {
+        return .{ .start = start, .end = end };
+    }
+    return null;
+}
+
+fn interpolationEnd(code: []const u8, start: usize, limit: usize) usize {
+    var depth: usize = 1;
+    var i = start + 1;
+    while (i < limit) : (i += 1) {
+        if (code[i] == '{') depth += 1;
+        if (code[i] == '}') {
+            depth -= 1;
+            if (depth == 0) return i + 1;
+        }
+    }
+    return limit;
+}
+
+fn writeCsharpString(code: []const u8, start: usize, w: *Writer) usize {
+    const end = stringEnd(code, start);
+    var quote_start = start;
+    var interpolated = false;
+    while (quote_start < code.len and (code[quote_start] == '$' or code[quote_start] == '@')) {
+        if (code[quote_start] == '$') interpolated = true;
+        quote_start += 1;
+    }
+    if (!interpolated) {
+        w.writeSpan("hljs-string", code[start..end]);
+        return end;
+    }
+    const triple = quote_start + 2 < code.len and code[quote_start] == '"' and code[quote_start + 1] == '"' and code[quote_start + 2] == '"';
+    const content_start = quote_start + (if (triple) @as(usize, 3) else 1);
+    const content_end = end -| (if (triple) @as(usize, 3) else 1);
+    w.openSpan("hljs-string");
+    w.writeSlice(code[start..content_start]);
+    var i = content_start;
+    while (i < content_end) {
+        if (code[i] == '{' and !(i + 1 < content_end and code[i + 1] == '{')) {
+            const subst_end = interpolationEnd(code, i, content_end);
+            w.openSpan("hljs-subst");
+            w.writeSlice(code[i..subst_end]);
+            w.closeSpan();
+            i = subst_end;
+            continue;
+        }
+        w.writeByte(code[i]);
+        i += 1;
+    }
+    w.writeSlice(code[content_end..end]);
+    w.closeSpan();
+    return end;
+}
+
 fn writeHighlightedCsharp(code: []const u8, w: *Writer) void {
     var i: usize = 0;
     var at_line_start = true;
+    var expect_class_name = false;
+    var record_declaration = false;
+    var class_header = false;
+    var in_inheritance = false;
     while (i < code.len) {
         if (code[i] == '\n') {
             w.writeByte('\n');
@@ -543,10 +651,19 @@ fn writeHighlightedCsharp(code: []const u8, w: *Writer) void {
             continue;
         }
         if (isStringStart(code, i)) {
-            const j = stringEnd(code, i);
-            w.writeSpan("hljs-string", code[i..j]);
-            i = j;
+            i = writeCsharpString(code, i, w);
             continue;
+        }
+        if (code[i] == '[' and i + 2 < code.len and isIdentStart(code[i + 1])) {
+            var end = i + 2;
+            while (end < code.len and isIdentContinue(code[end])) : (end += 1) {}
+            if (end < code.len and code[end] == ']') {
+                w.writeByte('[');
+                w.writeSpan("hljs-meta", code[i + 1 .. end]);
+                w.writeByte(']');
+                i = end + 1;
+                continue;
+            }
         }
         if (isDigit(code[i])) {
             const j = numberEnd(code, i);
@@ -560,8 +677,44 @@ fn writeHighlightedCsharp(code: []const u8, w: *Writer) void {
             const ident = code[i..j];
             if (KeywordSet.get(ident) != null) {
                 w.writeSpan("hljs-keyword", ident);
+                expect_class_name = std.mem.eql(u8, ident, "class") or std.mem.eql(u8, ident, "interface") or
+                    std.mem.eql(u8, ident, "struct") or std.mem.eql(u8, ident, "enum") or std.mem.eql(u8, ident, "record");
+                record_declaration = std.mem.eql(u8, ident, "record");
+            } else if (expect_class_name) {
+                w.writeSpan("hljs-title", ident);
+                expect_class_name = false;
+                class_header = true;
+                if (record_declaration) {
+                    const params_start = skipSpace(code, j);
+                    if (params_start < code.len and code[params_start] == '(') {
+                        if (matchingParen(code, params_start)) |params_end| {
+                            w.writeSlice(code[j..params_start]);
+                            w.writeByte('(');
+                            w.openSpan("hljs-params");
+                            writeHighlightedCsharp(code[params_start + 1 .. params_end], w);
+                            w.closeSpan();
+                            w.writeByte(')');
+                            i = params_end + 1;
+                            record_declaration = false;
+                            continue;
+                        }
+                    }
+                }
+                record_declaration = false;
+            } else if (in_inheritance) {
+                w.writeSpan("hljs-title", ident);
+            } else if (methodParams(code, i, j)) |params| {
+                w.writeSpan("hljs-title function_", ident);
+                w.writeSlice(code[j..params.start]);
+                w.writeByte('(');
+                w.openSpan("hljs-params");
+                writeHighlightedCsharp(code[params.start + 1 .. params.end], w);
+                w.closeSpan();
+                w.writeByte(')');
+                i = params.end + 1;
+                continue;
             } else if (TypeSet.get(ident) != null) {
-                w.writeSpan("hljs-type", ident);
+                w.writeSpan("hljs-built_in", ident);
             } else if (LiteralSet.get(ident) != null) {
                 w.writeSpan("hljs-literal", ident);
             } else if (BuiltinSet.get(ident) != null) {
@@ -571,6 +724,11 @@ fn writeHighlightedCsharp(code: []const u8, w: *Writer) void {
             }
             i = j;
             continue;
+        }
+        if (code[i] == ':' and class_header) in_inheritance = true;
+        if (code[i] == '{' and class_header) {
+            class_header = false;
+            in_inheritance = false;
         }
         w.writeByte(code[i]);
         i += 1;
@@ -638,14 +796,14 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights C sharp declarations strings and literals" {
     const input = "<pre><code class=\"language-csharp\">public sealed class App { string name = \"QIP\"; bool ready = true; }</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-csharp hljs\"><span class=\"hljs-keyword\">public</span> <span class=\"hljs-keyword\">sealed</span> <span class=\"hljs-keyword\">class</span> App { <span class=\"hljs-type\">string</span> name = <span class=\"hljs-string\">\"QIP\"</span>; <span class=\"hljs-type\">bool</span> ready = <span class=\"hljs-literal\">true</span>; }</code></pre>";
+    const expected = "<pre><code class=\"language-csharp hljs\"><span class=\"hljs-keyword\">public</span> <span class=\"hljs-keyword\">sealed</span> <span class=\"hljs-keyword\">class</span> <span class=\"hljs-title\">App</span> { <span class=\"hljs-built_in\">string</span> name = <span class=\"hljs-string\">\"QIP\"</span>; <span class=\"hljs-built_in\">bool</span> ready = <span class=\"hljs-literal\">true</span>; }</code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
 test "highlights C sharp aliases interpolation comments and numbers" {
     const input = "<code class=\"language-cs\">return $\"size: {42}\"; // bytes</code>";
     const got = runForTest(input);
-    const expected = "<code class=\"language-cs hljs\"><span class=\"hljs-keyword\">return</span> <span class=\"hljs-string\">$\"size: {42}\"</span>; <span class=\"hljs-comment\">// bytes</span></code>";
+    const expected = "<code class=\"language-cs hljs\"><span class=\"hljs-keyword\">return</span> <span class=\"hljs-string\">$\"size: <span class=\"hljs-subst\">{42}</span>\"</span>; <span class=\"hljs-comment\">// bytes</span></code>";
     try std.testing.expectEqualStrings(expected, got);
 }
 

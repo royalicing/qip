@@ -99,6 +99,8 @@ const input = document.getElementById("highlight-input");
 const previewElement = document.getElementById("highlight-preview");
 const output = document.getElementById("highlight-output");
 const copyButton = document.getElementById("highlight-copy");
+const jsExample = document.querySelector("#highlight-js-example code");
+const jsExampleTemplate = jsExample.innerHTML;
 const text = contentTypeUTF8();
 const html = contentTypeUTF8("text/html");
 const languageClasses = {
@@ -142,6 +144,25 @@ languages.forEach((language, i) => {
 const escapeComponent = contentComponent(text, modules[languages.length], html);
 const stylesheetComponent = contentComponent(html, modules[languages.length + 1], html);
 
+function replaceExampleLiteral(source, literal, value) {
+  const escaped = value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  return source.replaceAll(literal, () => escaped);
+}
+
+function updateJavaScriptExample(language) {
+  const moduleName = `html-code-syntax-highlight-${language}.wasm`;
+  let example = replaceExampleLiteral(
+    jsExampleTemplate,
+    "html-code-syntax-highlight-tsx.wasm",
+    moduleName,
+  );
+  example = replaceExampleLiteral(example, "language-tsx", languageClasses[language]);
+  jsExample.innerHTML = example;
+}
+
 function highlight() {
   const language = languageSelect.value;
   try {
@@ -178,13 +199,95 @@ languageSelect.addEventListener("change", () => {
     input.value = sample;
     currentSample = sample;
   }
+  updateJavaScriptExample(languageSelect.value);
   highlight();
 });
+updateJavaScriptExample(languageSelect.value);
 highlight();
 </script>
 
 The output embeds its own `<style>`, so it pastes straight into a blog post
 or email with no external stylesheet.
+
+## What gets parsed
+
+These components do more than color isolated keywords. Each one keeps enough
+context to recognize declarations and nested language constructs while staying
+small enough to ship as a language-specific Wasm module. For example:
+
+- function, method, class, struct, and parameter names get their own scopes;
+- Swift, C#, JavaScript, Python, and Ruby interpolation is parsed inside strings;
+- JavaScript template substitutions and JSX tags keep their nested highlighting;
+- Bash strings can contain variables and command substitutions;
+- HTML can switch into JavaScript, and CSS distinguishes selectors, properties,
+  custom properties, and conditional features; and
+- C preprocessor directives and WebAssembly instructions retain their internal
+  structure instead of becoming one uniformly colored token.
+
+The result uses Highlight.js class names such as `hljs-keyword`, `hljs-title`,
+and `hljs-params`, so existing Highlight.js themes can style it. It is a compact
+contextual parser rather than a compiler front end: malformed code is preserved
+as escaped text, and it does not try to validate types or resolve names.
+
+Each language also has a comply component containing source snippets paired
+with the HTML produced by Highlight.js. The highlighter and its executable
+expectations are built separately and then compared byte for byte. Adding a
+special case to the parser therefore requires adding the corresponding output
+to the other side of the ledger.
+
+## JavaScript
+
+<section id="highlight-js-example">
+
+<copy-code>
+
+```js
+const [highlighter, escaper, stylesheet] = await Promise.all([
+  WebAssembly.instantiateStreaming(
+    fetch("/components/text/html/html-code-syntax-highlight-tsx.wasm"),
+  ),
+  WebAssembly.instantiateStreaming(
+    fetch("/components/text/html/html-escape.wasm"),
+  ),
+  WebAssembly.instantiateStreaming(
+    fetch("/components/text/html/html-add-highlight-stylesheet-night-owl.wasm"),
+  ),
+]);
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+
+function run(component, source) {
+  const {
+    memory,
+    input_ptr,
+    input_utf8_cap,
+    output_ptr,
+    render,
+  } = component.instance.exports;
+  const input = encoder.encode(source);
+  if (input.length > input_utf8_cap()) throw new RangeError("Input is too large");
+  new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
+  const outputSize = render(input.length);
+  return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
+}
+
+function highlight(source) {
+  const escaped = run(escaper, source);
+  const codeBlock =
+    '<pre><code class="language-tsx">' + escaped + "</code></pre>";
+  return run(stylesheet, run(highlighter, codeBlock));
+}
+
+const source = document.querySelector("#source").textContent;
+document.querySelector("#highlighted").innerHTML = highlight(source);
+```
+
+</copy-code>
+
+</section>
+
+The language highlighter accepts HTML, so the source is escaped before it is
+wrapped in a `<code>` element. The stylesheet stage makes the returned fragment
+self-contained.
 
 ## Download
 

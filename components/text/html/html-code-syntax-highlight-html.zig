@@ -39,10 +39,18 @@ const Writer = struct {
     }
 
     pub fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    pub fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    pub fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -391,20 +399,45 @@ fn findEscapedCommentEnd(code: []const u8, start: usize) usize {
     return code.len;
 }
 
+fn startsWithIgnoreCaseAt(code: []const u8, start: usize, needle: []const u8) bool {
+    if (start + needle.len > code.len) return false;
+    return eqlIgnoreCase(code[start .. start + needle.len], needle);
+}
+
+fn writeDoctype(code: []const u8, w: *Writer, start: usize) ?usize {
+    if (!startsWithIgnoreCaseAt(code, start, "&lt;!doctype")) return null;
+    var end = start + "&lt;!doctype".len;
+    while (end < code.len and !isEscapedTagEnd(code, end)) : (end += 1) {}
+    if (end < code.len) end += "&gt;".len;
+
+    w.openSpan("hljs-meta");
+    var keyword_start = start + "&lt;!doctype".len;
+    while (keyword_start < end and isSpace(code[keyword_start])) : (keyword_start += 1) {}
+    w.writeSlice(code[start..keyword_start]);
+    var keyword_end = keyword_start;
+    while (keyword_end < end and isHTMLNameContinue(code[keyword_end])) : (keyword_end += 1) {}
+    if (keyword_end > keyword_start) w.writeSpan("hljs-keyword", code[keyword_start..keyword_end]);
+    w.writeSlice(code[keyword_end..end]);
+    w.closeSpan();
+    return end;
+}
+
 fn writeHighlightedEscapedTag(code: []const u8, w: *Writer, start: usize) usize {
     if (startsWithAt(code, start, "&lt;!--")) {
         const end = findEscapedCommentEnd(code, start + "&lt;!--".len);
         w.writeSpan("hljs-comment", code[start..end]);
         return end;
     }
+    if (writeDoctype(code, w, start)) |end| return end;
 
     var i = start;
-    w.writeSpan("hljs-tag", code[i .. i + "&lt;".len]);
+    w.openSpan("hljs-tag");
+    w.writeSlice(code[i .. i + "&lt;".len]);
     i += "&lt;".len;
 
     i = skipSpaces(code, i);
     if (i < code.len and code[i] == '/') {
-        w.writeSpan("hljs-tag", code[i .. i + 1]);
+        w.writeByte('/');
         i += 1;
         i = skipSpaces(code, i);
     }
@@ -418,7 +451,8 @@ fn writeHighlightedEscapedTag(code: []const u8, w: *Writer, start: usize) usize 
 
     while (i < code.len) {
         if (isEscapedTagEnd(code, i)) {
-            w.writeSpan("hljs-tag", code[i .. i + "&gt;".len]);
+            w.writeSlice(code[i .. i + "&gt;".len]);
+            w.closeSpan();
             return i + "&gt;".len;
         }
 
@@ -429,7 +463,7 @@ fn writeHighlightedEscapedTag(code: []const u8, w: *Writer, start: usize) usize 
         }
 
         if (code[i] == '/') {
-            w.writeSpan("hljs-tag", code[i .. i + 1]);
+            w.writeByte('/');
             i += 1;
             continue;
         }
@@ -457,6 +491,7 @@ fn writeHighlightedEscapedTag(code: []const u8, w: *Writer, start: usize) usize 
         i += 1;
     }
 
+    w.closeSpan();
     return i;
 }
 
@@ -513,6 +548,15 @@ fn writeHighlightedHTML(code: []const u8, w: *Writer) void {
             while (j < code.len and code[j] != '>') : (j += 1) {}
             if (j < code.len) j += 1;
             writeEntity(w, "hljs-tag", code, i, j);
+            i = j;
+            continue;
+        }
+
+        if (startsWithAt(code, i, "&amp;")) {
+            var j = i + "&amp;".len;
+            while (j < code.len and code[j] != ';' and !isSpace(code[j])) : (j += 1) {}
+            if (j < code.len and code[j] == ';') j += 1;
+            w.writeSpan("hljs-symbol", code[i..j]);
             i = j;
             continue;
         }
@@ -582,7 +626,7 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights escaped html code blocks" {
     const input = "<pre><code class=\"language-html\">&lt;div class=&quot;card&quot;&gt;Hello&lt;/div&gt;</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-html hljs\"><span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">div</span> <span class=\"hljs-attr\">class</span>=<span class=\"hljs-string\">&quot;card&quot;</span><span class=\"hljs-tag\">&gt;</span>Hello<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">div</span><span class=\"hljs-tag\">&gt;</span></code></pre>";
+    const expected = "<pre><code class=\"language-html hljs\"><span class=\"hljs-tag\">&lt;<span class=\"hljs-name\">div</span> <span class=\"hljs-attr\">class</span>=<span class=\"hljs-string\">&quot;card&quot;</span>&gt;</span>Hello<span class=\"hljs-tag\">&lt;/<span class=\"hljs-name\">div</span>&gt;</span></code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
@@ -607,6 +651,6 @@ test "skips non-html code blocks" {
 
 test "highlights CSS and JavaScript inside escaped style and script elements" {
     const input = "<code class=\"language-html\">&lt;style&gt;.card { color: #fff; content: \"return\"; }&lt;/style&gt;\n&lt;script&gt;const message = \"return class\"; console.log(message);&lt;/script&gt;</code>";
-    const expected = "<code class=\"language-html hljs\"><span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">style</span><span class=\"hljs-tag\">&gt;</span><span class=\"hljs-selector-class\">.card</span> { <span class=\"hljs-attribute\">color</span>: <span class=\"hljs-number\">#fff</span>; <span class=\"hljs-attribute\">content</span>: <span class=\"hljs-string\">\"return\"</span>; }<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">style</span><span class=\"hljs-tag\">&gt;</span>\n<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-name\">script</span><span class=\"hljs-tag\">&gt;</span><span class=\"hljs-keyword\">const</span> message = <span class=\"hljs-string\">\"return class\"</span>; <span class=\"hljs-built_in\">console</span>.log(message);<span class=\"hljs-tag\">&lt;</span><span class=\"hljs-tag\">/</span><span class=\"hljs-name\">script</span><span class=\"hljs-tag\">&gt;</span></code>";
+    const expected = "<code class=\"language-html hljs\"><span class=\"hljs-tag\">&lt;<span class=\"hljs-name\">style</span>&gt;</span><span class=\"hljs-selector-class\">.card</span> { <span class=\"hljs-attribute\">color</span>: <span class=\"hljs-number\">#fff</span>; <span class=\"hljs-attribute\">content</span>: <span class=\"hljs-string\">\"return\"</span>; }<span class=\"hljs-tag\">&lt;/<span class=\"hljs-name\">style</span>&gt;</span>\n<span class=\"hljs-tag\">&lt;<span class=\"hljs-name\">script</span>&gt;</span><span class=\"hljs-keyword\">const</span> message = <span class=\"hljs-string\">\"return class\"</span>; <span class=\"hljs-variable language_\">console</span>.<span class=\"hljs-title function_\">log</span>(message);<span class=\"hljs-tag\">&lt;/<span class=\"hljs-name\">script</span>&gt;</span></code>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }

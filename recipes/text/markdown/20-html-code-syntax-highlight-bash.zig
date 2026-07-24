@@ -33,6 +33,7 @@ const KeywordSet = std.StaticStringMap(void).initComptime(.{
 const BuiltinSet = std.StaticStringMap(void).initComptime(.{
     .{ "echo", {} },
     .{ "printf", {} },
+    .{ "cat", {} },
     .{ "read", {} },
     .{ "cd", {} },
     .{ "pwd", {} },
@@ -86,10 +87,18 @@ const Writer = struct {
     }
 
     fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -374,22 +383,64 @@ fn findCodeCloseTag(input: []const u8, from: usize) ?CodeCloseTag {
     return null;
 }
 
-fn stringEnd(code: []const u8, start: usize) usize {
-    if (start >= code.len) return start;
-    const quote = code[start];
-    var i = start + 1;
+const Quote = struct {
+    byte: u8,
+    len: usize,
+};
+
+fn quoteAt(code: []const u8, start: usize) ?Quote {
+    if (start >= code.len) return null;
+    if (code[start] == '"' or code[start] == '\'') return .{ .byte = code[start], .len = 1 };
+    if (std.mem.startsWith(u8, code[start..], "&quot;")) return .{ .byte = '"', .len = 6 };
+    if (std.mem.startsWith(u8, code[start..], "&#39;")) return .{ .byte = '\'', .len = 5 };
+    return null;
+}
+
+fn matchingQuoteAt(code: []const u8, start: usize, quote: Quote) bool {
+    const candidate = quoteAt(code, start) orelse return false;
+    return candidate.byte == quote.byte and candidate.len == quote.len;
+}
+
+fn plainStringEnd(code: []const u8, start: usize, quote: Quote) usize {
+    var i = start + quote.len;
     var escaped = false;
-    while (i < code.len) : (i += 1) {
-        const c = code[i];
+    while (i < code.len) {
         if (escaped) {
             escaped = false;
+            i += 1;
             continue;
         }
-        if (quote == '"' and c == '\\') {
+        if (quote.byte == '"' and code[i] == '\\') {
             escaped = true;
+            i += 1;
             continue;
         }
-        if (c == quote) return i + 1;
+        if (matchingQuoteAt(code, i, quote)) return i + quote.len;
+        i += 1;
+    }
+    return code.len;
+}
+
+fn commandSubstitutionEnd(code: []const u8, start: usize) usize {
+    var i = start + 2;
+    var depth: usize = 1;
+    while (i < code.len) {
+        if (quoteAt(code, i)) |quote| {
+            i = plainStringEnd(code, i, quote);
+            continue;
+        }
+        if (i + 1 < code.len and code[i] == '$' and code[i + 1] == '(') {
+            depth += 1;
+            i += 2;
+            continue;
+        }
+        if (code[i] == ')') {
+            depth -= 1;
+            i += 1;
+            if (depth == 0) return i;
+            continue;
+        }
+        i += 1;
     }
     return code.len;
 }
@@ -429,6 +480,88 @@ fn numberEnd(code: []const u8, start: usize) usize {
     return i;
 }
 
+fn writeBashString(code: []const u8, start: usize, quote: Quote, w: *Writer) usize {
+    w.openSpan("hljs-string");
+    w.writeSlice(code[start .. start + quote.len]);
+
+    var i = start + quote.len;
+    if (quote.byte == '\'') {
+        const end = plainStringEnd(code, start, quote);
+        w.writeSlice(code[i..end]);
+        w.closeSpan();
+        return end;
+    }
+
+    while (i < code.len) {
+        if (matchingQuoteAt(code, i, quote)) {
+            w.writeSlice(code[i .. i + quote.len]);
+            i += quote.len;
+            w.closeSpan();
+            return i;
+        }
+        if (i + 1 < code.len and code[i] == '$' and code[i + 1] == '(') {
+            const end = commandSubstitutionEnd(code, i);
+            w.openSpan("hljs-subst");
+            w.writeSlice("$(");
+            if (end >= i + 3) writeHighlightedBash(code[i + 2 .. end - 1], w);
+            if (end > i + 2 and code[end - 1] == ')') w.writeByte(')');
+            w.closeSpan();
+            i = end;
+            continue;
+        }
+        if (code[i] == '$') {
+            const end = variableEnd(code, i);
+            w.writeSpan("hljs-variable", code[i..end]);
+            i = end;
+            continue;
+        }
+        if (code[i] == '\\' and i + 1 < code.len) {
+            w.writeSlice(code[i .. i + 2]);
+            i += 2;
+            continue;
+        }
+        w.writeByte(code[i]);
+        i += 1;
+    }
+
+    w.closeSpan();
+    return i;
+}
+
+fn heredocEnd(code: []const u8, start: usize) ?struct { operator_end: usize, marker_start: usize, end: usize } {
+    var operator_end: usize = undefined;
+    if (std.mem.startsWith(u8, code[start..], "&lt;&lt;")) {
+        operator_end = start + 8;
+    } else if (std.mem.startsWith(u8, code[start..], "<<")) {
+        operator_end = start + 2;
+    } else {
+        return null;
+    }
+
+    var marker_start = operator_end;
+    if (marker_start < code.len and code[marker_start] == '-') marker_start += 1;
+    while (marker_start < code.len and (code[marker_start] == ' ' or code[marker_start] == '\t')) : (marker_start += 1) {}
+    const marker_end = blk: {
+        var j = marker_start;
+        while (j < code.len and isIdentContinue(code[j])) : (j += 1) {}
+        break :blk j;
+    };
+    if (marker_end == marker_start or marker_end >= code.len or code[marker_end] != '\n') return null;
+    const marker = code[marker_start..marker_end];
+
+    var line_start = marker_end + 1;
+    while (line_start <= code.len) {
+        var line_end = line_start;
+        while (line_end < code.len and code[line_end] != '\n') : (line_end += 1) {}
+        if (std.mem.eql(u8, code[line_start..line_end], marker)) {
+            return .{ .operator_end = operator_end, .marker_start = marker_start, .end = line_end };
+        }
+        if (line_end == code.len) break;
+        line_start = line_end + 1;
+    }
+    return null;
+}
+
 fn writeHighlightedBash(code: []const u8, w: *Writer) void {
     var i: usize = 0;
     var at_line_start = true;
@@ -459,10 +592,17 @@ fn writeHighlightedBash(code: []const u8, w: *Writer) void {
             continue;
         }
 
-        if (code[i] == '"' or code[i] == '\'') {
-            const j = stringEnd(code, i);
-            w.writeSpan("hljs-string", code[i..j]);
-            i = j;
+        if (heredocEnd(code, i)) |heredoc| {
+            w.writeSlice(code[i..heredoc.operator_end]);
+            w.writeSlice(code[heredoc.operator_end..heredoc.marker_start]);
+            w.writeSpan("hljs-string", code[heredoc.marker_start..heredoc.end]);
+            i = heredoc.end;
+            at_line_start = false;
+            continue;
+        }
+
+        if (quoteAt(code, i)) |quote| {
+            i = writeBashString(code, i, quote, w);
             at_line_start = false;
             continue;
         }
@@ -489,7 +629,14 @@ fn writeHighlightedBash(code: []const u8, w: *Writer) void {
             var j = i + 1;
             while (j < code.len and (isIdentContinue(code[j]) or code[j] == '-')) : (j += 1) {}
             const ident = code[i..j];
-            if (KeywordSet.get(ident) != null) {
+            var after = j;
+            while (after < code.len and (code[after] == ' ' or code[after] == '\t')) : (after += 1) {}
+            const is_function = after + 1 < code.len and code[after] == '(' and code[after + 1] == ')';
+            if (is_function) {
+                w.openSpan("hljs-function");
+                w.writeSpan("hljs-title", ident);
+                w.closeSpan();
+            } else if (KeywordSet.get(ident) != null) {
                 w.writeSpan("hljs-keyword", ident);
             } else if (BuiltinSet.get(ident) != null) {
                 w.writeSpan("hljs-built_in", ident);
@@ -568,7 +715,7 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights plain text language-bash code blocks" {
     const input = "<pre><code class=\"language-bash\">if [ -n \"$HOME\" ]; then echo $HOME; fi</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-bash hljs\"><span class=\"hljs-keyword\">if</span> [ -n <span class=\"hljs-string\">\"$HOME\"</span> ]; <span class=\"hljs-keyword\">then</span> <span class=\"hljs-built_in\">echo</span> <span class=\"hljs-variable\">$HOME</span>; <span class=\"hljs-keyword\">fi</span></code></pre>";
+    const expected = "<pre><code class=\"language-bash hljs\"><span class=\"hljs-keyword\">if</span> [ -n <span class=\"hljs-string\">\"<span class=\"hljs-variable\">$HOME</span>\"</span> ]; <span class=\"hljs-keyword\">then</span> <span class=\"hljs-built_in\">echo</span> <span class=\"hljs-variable\">$HOME</span>; <span class=\"hljs-keyword\">fi</span></code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 

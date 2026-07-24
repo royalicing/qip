@@ -34,10 +34,18 @@ const Writer = struct {
     }
 
     pub fn writeSpan(self: *Writer, class_name: []const u8, value: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(value);
+        self.closeSpan();
+    }
+
+    pub fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(value);
+    }
+
+    pub fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -241,7 +249,7 @@ fn runForTest(input: []const u8) []const u8 {
 
 test "highlights selectors properties values strings and comments" {
     const input = "<code class=\"language-css\">.card:hover { color: #fff; transform: translateY(-0.125rem); content: \"class color\"; /* display */ }</code>";
-    const expected = "<code class=\"language-css hljs\"><span class=\"hljs-selector-class\">.card</span><span class=\"hljs-selector-pseudo\">:hover</span> { <span class=\"hljs-attribute\">color</span>: <span class=\"hljs-number\">#fff</span>; <span class=\"hljs-attribute\">transform</span>: <span class=\"hljs-built_in\">translateY</span>(<span class=\"hljs-number\">-0.125rem</span>); <span class=\"hljs-attribute\">content</span>: <span class=\"hljs-string\">\"class color\"</span>; <span class=\"hljs-comment\">/* display */</span> }</code>";
+    const expected = "<code class=\"language-css hljs\"><span class=\"hljs-selector-class\">.card</span><span class=\"hljs-selector-pseudo\">:hover</span> { <span class=\"hljs-attribute\">color</span>: <span class=\"hljs-number\">#fff</span>; <span class=\"hljs-attribute\">transform</span>: <span class=\"hljs-built_in\">translateY</span>(-<span class=\"hljs-number\">0.125rem</span>); <span class=\"hljs-attribute\">content</span>: <span class=\"hljs-string\">\"class color\"</span>; <span class=\"hljs-comment\">/* display */</span> }</code>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }
 

@@ -72,10 +72,18 @@ const Writer = struct {
     }
 
     fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -335,7 +343,92 @@ fn numberEnd(code: []const u8, start: usize) usize {
     return i;
 }
 
-fn writeGo(code: []const u8, writer: *Writer) void {
+fn matchingDelimiter(code: []const u8, start: usize, open: u8, close: u8) ?usize {
+    if (start >= code.len or code[start] != open) return null;
+    var depth: usize = 1;
+    var i = start + 1;
+    while (i < code.len) {
+        if (quoteAt(code, i)) |quote| {
+            i = stringEnd(code, i, quote);
+            continue;
+        }
+        if (code[i] == open) depth += 1;
+        if (code[i] == close) {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+        i += 1;
+    }
+    return null;
+}
+
+fn skipHorizontalSpace(code: []const u8, start: usize) usize {
+    var i = start;
+    while (i < code.len and (code[i] == ' ' or code[i] == '\t')) : (i += 1) {}
+    return i;
+}
+
+fn writeFunctionDeclaration(code: []const u8, start: usize, keyword_end: usize, writer: *Writer) ?usize {
+    var i = skipHorizontalSpace(code, keyword_end);
+    writer.openSpan("hljs-function");
+    writer.writeSpan("hljs-keyword", code[start..keyword_end]);
+    writer.writeSlice(code[keyword_end..i]);
+
+    if (i < code.len and code[i] == '(') {
+        const receiver_end = matchingDelimiter(code, i, '(', ')') orelse {
+            writer.closeSpan();
+            return null;
+        };
+        writer.openSpan("hljs-params");
+        writer.writeByte('(');
+        writeGoTokens(code[i + 1 .. receiver_end], writer, false);
+        writer.writeByte(')');
+        writer.closeSpan();
+        const after_receiver = skipHorizontalSpace(code, receiver_end + 1);
+        writer.writeSlice(code[receiver_end + 1 .. after_receiver]);
+        i = after_receiver;
+    }
+
+    if (i >= code.len or !isIdentStart(code[i])) {
+        writer.closeSpan();
+        return null;
+    }
+    var name_end = i + 1;
+    while (name_end < code.len and isIdentContinue(code[name_end])) : (name_end += 1) {}
+    writer.writeSpan("hljs-title", code[i..name_end]);
+    i = name_end;
+
+    if (i < code.len and code[i] == '[') {
+        const generics_end = matchingDelimiter(code, i, '[', ']') orelse {
+            writer.closeSpan();
+            return null;
+        };
+        writer.writeByte('[');
+        writeGoTokens(code[i + 1 .. generics_end], writer, false);
+        writer.writeByte(']');
+        i = generics_end + 1;
+    }
+
+    const params_start = skipHorizontalSpace(code, i);
+    writer.writeSlice(code[i..params_start]);
+    if (params_start >= code.len or code[params_start] != '(') {
+        writer.closeSpan();
+        return null;
+    }
+    const params_end = matchingDelimiter(code, params_start, '(', ')') orelse {
+        writer.closeSpan();
+        return null;
+    };
+    writer.openSpan("hljs-params");
+    writer.writeByte('(');
+    writeGoTokens(code[params_start + 1 .. params_end], writer, false);
+    writer.writeByte(')');
+    writer.closeSpan();
+    writer.closeSpan();
+    return params_end + 1;
+}
+
+fn writeGoTokens(code: []const u8, writer: *Writer, allow_function_declaration: bool) void {
     var i: usize = 0;
     while (i < code.len) {
         if (i + 1 < code.len and code[i] == '/' and code[i + 1] == '/') {
@@ -369,6 +462,12 @@ fn writeGo(code: []const u8, writer: *Writer) void {
             var end = i + 1;
             while (end < code.len and isIdentContinue(code[end])) : (end += 1) {}
             const identifier = code[i..end];
+            if (allow_function_declaration and std.mem.eql(u8, identifier, "func")) {
+                if (writeFunctionDeclaration(code, i, end, writer)) |function_end| {
+                    i = function_end;
+                    continue;
+                }
+            }
             if (KeywordSet.get(identifier) != null) {
                 writer.writeSpan("hljs-keyword", identifier);
             } else if (TypeSet.get(identifier) != null) {
@@ -386,6 +485,10 @@ fn writeGo(code: []const u8, writer: *Writer) void {
         writer.writeByte(code[i]);
         i += 1;
     }
+}
+
+fn writeGo(code: []const u8, writer: *Writer) void {
+    writeGoTokens(code, writer, true);
 }
 
 fn transform(input: []const u8, writer: *Writer) void {
@@ -435,7 +538,7 @@ fn runForTest(input: []const u8) []const u8 {
 
 test "highlights Go declarations types builtins and literals" {
     const input = "<code class=\"language-go\">package main\nfunc Map[T any](in []byte) error { if in == nil { return nil }; return make(error) }</code>";
-    const expected = "<code class=\"language-go hljs\"><span class=\"hljs-keyword\">package</span> main\n<span class=\"hljs-keyword\">func</span> Map[T <span class=\"hljs-type\">any</span>](in []<span class=\"hljs-type\">byte</span>) <span class=\"hljs-type\">error</span> { <span class=\"hljs-keyword\">if</span> in == <span class=\"hljs-literal\">nil</span> { <span class=\"hljs-keyword\">return</span> <span class=\"hljs-literal\">nil</span> }; <span class=\"hljs-keyword\">return</span> <span class=\"hljs-built_in\">make</span>(<span class=\"hljs-type\">error</span>) }</code>";
+    const expected = "<code class=\"language-go hljs\"><span class=\"hljs-keyword\">package</span> main\n<span class=\"hljs-function\"><span class=\"hljs-keyword\">func</span> <span class=\"hljs-title\">Map</span>[T <span class=\"hljs-type\">any</span>]<span class=\"hljs-params\">(in []<span class=\"hljs-type\">byte</span>)</span></span> <span class=\"hljs-type\">error</span> { <span class=\"hljs-keyword\">if</span> in == <span class=\"hljs-literal\">nil</span> { <span class=\"hljs-keyword\">return</span> <span class=\"hljs-literal\">nil</span> }; <span class=\"hljs-keyword\">return</span> <span class=\"hljs-built_in\">make</span>(<span class=\"hljs-type\">error</span>) }</code>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }
 

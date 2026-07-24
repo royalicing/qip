@@ -12,14 +12,14 @@ final class MarkdownRenderer {
     }
 }</code></pre></section>
 === OUTPUT ===
-<section><pre><code class="language-swift hljs"><span class="hljs-keyword">import</span> <span class="hljs-built_in">Foundation</span>
-<span class="hljs-keyword">import</span> <span class="hljs-built_in">WasmKit</span>
+<section><pre><code class="language-swift hljs"><span class="hljs-keyword">import</span> Foundation
+<span class="hljs-keyword">import</span> WasmKit
 
-<span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> MarkdownRenderer {
+<span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">MarkdownRenderer</span> {
     <span class="hljs-keyword">private</span> <span class="hljs-keyword">let</span> memory: <span class="hljs-type">Memory</span>
 
-    <span class="hljs-keyword">func</span> render(_ source: <span class="hljs-type">String</span>) <span class="hljs-keyword">throws</span> -&gt; <span class="hljs-type">String</span> {
-        <span class="hljs-keyword">let</span> bytes = <span class="hljs-type">Array</span>(source.utf8)
+    <span class="hljs-keyword">func</span> <span class="hljs-title function_">render</span>(<span class="hljs-keyword">_</span> <span class="hljs-params">source</span>: <span class="hljs-type">String</span>) <span class="hljs-keyword">throws</span> -&gt; <span class="hljs-type">String</span> {
+        <span class="hljs-keyword">let</span> bytes <span class="hljs-operator">=</span> <span class="hljs-type">Array</span>(source.utf8)
         <span class="hljs-comment">// Keep the view inside this call.</span>
         <span class="hljs-keyword">return</span> <span class="hljs-type">String</span>(decoding: bytes, <span class="hljs-keyword">as</span>: <span class="hljs-type">UTF8</span>.<span class="hljs-keyword">self</span>)
     }
@@ -27,7 +27,7 @@ final class MarkdownRenderer {
 === END ===
 === INPUT ===
 <code data-x="1" class='compact language-swift'>@main
-struct App {
+struct App: Sendable {
     static func main() {
         let count: Int = 0x10
         let ready = true
@@ -37,12 +37,12 @@ struct App {
     }
 }</code>
 === OUTPUT ===
-<code data-x="1" class='compact language-swift hljs'><span class="hljs-meta">@main</span>
-<span class="hljs-keyword">struct</span> App {
-    <span class="hljs-keyword">static</span> <span class="hljs-keyword">func</span> main() {
-        <span class="hljs-keyword">let</span> count: <span class="hljs-type">Int</span> = <span class="hljs-number">0x10</span>
-        <span class="hljs-keyword">let</span> ready = <span class="hljs-literal">true</span>
-        <span class="hljs-keyword">let</span> message = <span class="hljs-string">&quot;count: </span><span class="hljs-subst">\(count + <span class="hljs-number">1</span>)</span><span class="hljs-string">&quot;</span>
+<code data-x="1" class='compact language-swift hljs'><span class="hljs-keyword">@main</span>
+<span class="hljs-keyword">struct</span> <span class="hljs-title class_">App</span>: <span class="hljs-title class_ inherited__">Sendable</span> {
+    <span class="hljs-keyword">static</span> <span class="hljs-keyword">func</span> <span class="hljs-title function_">main</span>() {
+        <span class="hljs-keyword">let</span> count: <span class="hljs-type">Int</span> <span class="hljs-operator">=</span> <span class="hljs-number">0x10</span>
+        <span class="hljs-keyword">let</span> ready <span class="hljs-operator">=</span> <span class="hljs-literal">true</span>
+        <span class="hljs-keyword">let</span> message <span class="hljs-operator">=</span> <span class="hljs-string">&quot;count: <span class="hljs-subst">\(count <span class="hljs-operator">+</span> <span class="hljs-number">1</span>)</span>&quot;</span>
         <span class="hljs-comment">/* outer /* nested */ comment */</span>
         <span class="hljs-built_in">print</span>(message)
     }
@@ -54,9 +54,9 @@ let block = &quot;&quot;&quot;
 class return \(ready)
 &quot;&quot;&quot;</code>
 === OUTPUT ===
-<code class="language-swift hljs"><span class="hljs-keyword">let</span> text = <span class="hljs-string">#&quot;&quot;raw&quot; </span><span class="hljs-subst">\#(value)</span><span class="hljs-string">&quot;#</span>
-<span class="hljs-keyword">let</span> block = <span class="hljs-string">&quot;&quot;&quot;
-class return </span><span class="hljs-subst">\(ready)</span><span class="hljs-string">
+<code class="language-swift hljs"><span class="hljs-keyword">let</span> text <span class="hljs-operator">=</span> <span class="hljs-string">#&quot;&quot;raw&quot; <span class="hljs-subst">\#(value)</span>&quot;#</span>
+<span class="hljs-keyword">let</span> block <span class="hljs-operator">=</span> <span class="hljs-string">&quot;&quot;&quot;
+class return <span class="hljs-subst">\(ready)</span>
 &quot;&quot;&quot;</span></code>
 === END ===
 === INPUT ===

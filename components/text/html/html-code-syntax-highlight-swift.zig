@@ -158,9 +158,6 @@ const LiteralSet = std.StaticStringMap(void).initComptime(.{
 });
 
 const BuiltinSet = std.StaticStringMap(void).initComptime(.{
-    .{ "Foundation", {} },
-    .{ "Swift", {} },
-    .{ "WasmKit", {} },
     .{ "assert", {} },
     .{ "fatalError", {} },
     .{ "max", {} },
@@ -560,13 +557,11 @@ fn writeString(code: []const u8, start: usize, string: StringStart, writer: *Wri
         }
 
         writer.writeSlice(code[segment_start..cursor]);
-        writer.closeSpan();
         writer.openSpan("hljs-subst");
         writer.writeSlice(code[cursor .. open_paren + 1]);
         writeHighlightedSwift(code[open_paren + 1 .. close_paren], writer);
         writer.writeByte(')');
         writer.closeSpan();
-        writer.openSpan("hljs-string");
         cursor = close_paren + 1;
         segment_start = cursor;
     }
@@ -575,14 +570,54 @@ fn writeString(code: []const u8, start: usize, string: StringStart, writer: *Wri
     return end;
 }
 
+fn swiftParameterEnd(code: []const u8, start: usize) usize {
+    var cursor = start + 1;
+    var depth: usize = 1;
+    while (cursor < code.len) {
+        if (stringStart(code, cursor)) |string| {
+            cursor = stringEnd(code, string.quote, string.quote_len, string.hashes);
+            continue;
+        }
+        if (cursor + 1 < code.len and code[cursor] == '/' and code[cursor + 1] == '*') {
+            cursor = blockCommentEnd(code, cursor);
+            continue;
+        }
+        if (code[cursor] == '(') depth += 1;
+        if (code[cursor] == ')') {
+            depth -= 1;
+            if (depth == 0) return cursor;
+        }
+        cursor += 1;
+    }
+    return code.len;
+}
+
+fn isOperatorByte(byte: u8) bool {
+    return std.mem.indexOfScalar(u8, "=+-*/%<>!&|^~?", byte) != null;
+}
+
 fn writeHighlightedSwift(code: []const u8, writer: *Writer) void {
+    writeHighlightedSwiftInternal(code, writer, false);
+}
+
+fn writeHighlightedSwiftInternal(code: []const u8, writer: *Writer, in_parameters: bool) void {
     var cursor: usize = 0;
     var at_line_start = true;
+    var expect_type_title = false;
+    var expect_function_title = false;
+    var after_function_title = false;
+    var after_type_title = false;
+    var in_inheritance = false;
     while (cursor < code.len) {
         if (code[cursor] == '\n') {
             writer.writeByte('\n');
             cursor += 1;
             at_line_start = true;
+            expect_type_title = false;
+            expect_function_title = false;
+            after_function_title = false;
+            after_type_title = false;
+            in_inheritance = false;
             continue;
         }
         if (at_line_start and (code[cursor] == ' ' or code[cursor] == '\t')) {
@@ -599,6 +634,16 @@ fn writeHighlightedSwift(code: []const u8, writer: *Writer) void {
             continue;
         }
         at_line_start = false;
+
+        if (after_function_title and code[cursor] == '(') {
+            const end = swiftParameterEnd(code, cursor);
+            writer.writeByte('(');
+            writeHighlightedSwiftInternal(code[cursor + 1 .. end], writer, true);
+            if (end < code.len) writer.writeByte(')');
+            cursor = @min(end + 1, code.len);
+            after_function_title = false;
+            continue;
+        }
 
         if (cursor + 1 < code.len and code[cursor] == '/' and code[cursor + 1] == '/') {
             var end = cursor + 2;
@@ -620,7 +665,19 @@ fn writeHighlightedSwift(code: []const u8, writer: *Writer) void {
         if (code[cursor] == '@' and cursor + 1 < code.len and isIdentStart(code[cursor + 1])) {
             var end = cursor + 2;
             while (end < code.len and (isIdentContinue(code[end]) or code[end] == '.')) : (end += 1) {}
-            writer.writeSpan("hljs-meta", code[cursor..end]);
+            writer.writeSpan("hljs-keyword", code[cursor..end]);
+            cursor = end;
+            continue;
+        }
+        if (std.mem.startsWith(u8, code[cursor..], "-&gt;")) {
+            writer.writeSlice("-&gt;");
+            cursor += 5;
+            continue;
+        }
+        if (isOperatorByte(code[cursor])) {
+            var end = cursor + 1;
+            while (end < code.len and isOperatorByte(code[end])) : (end += 1) {}
+            writer.writeSpan("hljs-operator", code[cursor..end]);
             cursor = end;
             continue;
         }
@@ -635,8 +692,36 @@ fn writeHighlightedSwift(code: []const u8, writer: *Writer) void {
             while (end < code.len and isIdentContinue(code[end])) : (end += 1) {}
             const identifier = code[cursor..end];
             const is_member = cursor > 0 and code[cursor - 1] == '.';
-            if (KeywordSet.get(identifier) != null and (!is_member or std.mem.eql(u8, identifier, "self"))) {
+            var next = end;
+            while (next < code.len and (code[next] == ' ' or code[next] == '\t')) : (next += 1) {}
+            if (expect_type_title) {
+                writer.writeSpan("hljs-title class_", identifier);
+                expect_type_title = false;
+                after_type_title = true;
+            } else if (expect_function_title) {
+                writer.writeSpan("hljs-title function_", identifier);
+                expect_function_title = false;
+                after_function_title = true;
+            } else if (in_inheritance and (std.ascii.isUpper(identifier[0]) or TypeSet.get(identifier) != null)) {
+                writer.writeSpan("hljs-title class_ inherited__", identifier);
+            } else if (in_parameters and std.mem.eql(u8, identifier, "_")) {
                 writer.writeSpan("hljs-keyword", identifier);
+            } else if (in_parameters and next < code.len and code[next] == ':') {
+                writer.writeSpan("hljs-params", identifier);
+            } else if (KeywordSet.get(identifier) != null and (!is_member or std.mem.eql(u8, identifier, "self"))) {
+                writer.writeSpan("hljs-keyword", identifier);
+                if (std.mem.eql(u8, identifier, "struct") or
+                    std.mem.eql(u8, identifier, "protocol") or
+                    std.mem.eql(u8, identifier, "class") or
+                    std.mem.eql(u8, identifier, "extension") or
+                    std.mem.eql(u8, identifier, "enum") or
+                    std.mem.eql(u8, identifier, "actor"))
+                {
+                    expect_type_title = true;
+                }
+                if (std.mem.eql(u8, identifier, "func") or std.mem.eql(u8, identifier, "macro")) {
+                    expect_function_title = true;
+                }
             } else if (TypeSet.get(identifier) != null) {
                 writer.writeSpan("hljs-type", identifier);
             } else if (LiteralSet.get(identifier) != null) {
@@ -648,6 +733,14 @@ fn writeHighlightedSwift(code: []const u8, writer: *Writer) void {
             }
             cursor = end;
             continue;
+        }
+        if (after_type_title and code[cursor] == ':') {
+            in_inheritance = true;
+            after_type_title = false;
+        }
+        if (code[cursor] == '{') {
+            in_inheritance = false;
+            after_type_title = false;
         }
         writer.writeByte(code[cursor]);
         cursor += 1;
@@ -700,25 +793,25 @@ fn runForTest(input: []const u8) []const u8 {
 
 test "highlights Swift declarations strings and literals" {
     const input = "<pre><code class=\"language-swift\">final class App { let name: String = \"QIP\"; let ready = true }</code></pre>";
-    const expected = "<pre><code class=\"language-swift hljs\"><span class=\"hljs-keyword\">final</span> <span class=\"hljs-keyword\">class</span> App { <span class=\"hljs-keyword\">let</span> name: <span class=\"hljs-type\">String</span> = <span class=\"hljs-string\">\"QIP\"</span>; <span class=\"hljs-keyword\">let</span> ready = <span class=\"hljs-literal\">true</span> }</code></pre>";
+    const expected = "<pre><code class=\"language-swift hljs\"><span class=\"hljs-keyword\">final</span> <span class=\"hljs-keyword\">class</span> <span class=\"hljs-title class_\">App</span> { <span class=\"hljs-keyword\">let</span> name: <span class=\"hljs-type\">String</span> <span class=\"hljs-operator\">=</span> <span class=\"hljs-string\">\"QIP\"</span>; <span class=\"hljs-keyword\">let</span> ready <span class=\"hljs-operator\">=</span> <span class=\"hljs-literal\">true</span> }</code></pre>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }
 
 test "highlights Swift attributes nested comments and numbers" {
     const input = "<code class=\"language-swift\">@main struct App { static func main() { print(42) } } /* a /* b */ c */</code>";
-    const expected = "<code class=\"language-swift hljs\"><span class=\"hljs-meta\">@main</span> <span class=\"hljs-keyword\">struct</span> App { <span class=\"hljs-keyword\">static</span> <span class=\"hljs-keyword\">func</span> main() { <span class=\"hljs-built_in\">print</span>(<span class=\"hljs-number\">42</span>) } } <span class=\"hljs-comment\">/* a /* b */ c */</span></code>";
+    const expected = "<code class=\"language-swift hljs\"><span class=\"hljs-keyword\">@main</span> <span class=\"hljs-keyword\">struct</span> <span class=\"hljs-title class_\">App</span> { <span class=\"hljs-keyword\">static</span> <span class=\"hljs-keyword\">func</span> <span class=\"hljs-title function_\">main</span>() { <span class=\"hljs-built_in\">print</span>(<span class=\"hljs-number\">42</span>) } } <span class=\"hljs-comment\">/* a /* b */ c */</span></code>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }
 
 test "highlights interpolation inside multiline and extended strings" {
     const input = "<code class=\"language-swift\">let message = \"\"\"value: \\(count + 1)\"\"\"\nlet raw = #\"value: \\#(count)\"#</code>";
-    const expected = "<code class=\"language-swift hljs\"><span class=\"hljs-keyword\">let</span> message = <span class=\"hljs-string\">\"\"\"value: </span><span class=\"hljs-subst\">\\(count + <span class=\"hljs-number\">1</span>)</span><span class=\"hljs-string\">\"\"\"</span>\n<span class=\"hljs-keyword\">let</span> raw = <span class=\"hljs-string\">#\"value: </span><span class=\"hljs-subst\">\\#(count)</span><span class=\"hljs-string\">\"#</span></code>";
+    const expected = "<code class=\"language-swift hljs\"><span class=\"hljs-keyword\">let</span> message <span class=\"hljs-operator\">=</span> <span class=\"hljs-string\">\"\"\"value: <span class=\"hljs-subst\">\\(count <span class=\"hljs-operator\">+</span> <span class=\"hljs-number\">1</span>)</span>\"\"\"</span>\n<span class=\"hljs-keyword\">let</span> raw <span class=\"hljs-operator\">=</span> <span class=\"hljs-string\">#\"value: <span class=\"hljs-subst\">\\#(count)</span>\"#</span></code>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }
 
 test "highlights HTML-encoded strings and interpolation" {
     const input = "<code class=\"language-swift\">let message = &quot;value: \\(count)&quot;\nlet block = &quot;&quot;&quot;\\#(raw)&quot;&quot;&quot;</code>";
-    const expected = "<code class=\"language-swift hljs\"><span class=\"hljs-keyword\">let</span> message = <span class=\"hljs-string\">&quot;value: </span><span class=\"hljs-subst\">\\(count)</span><span class=\"hljs-string\">&quot;</span>\n<span class=\"hljs-keyword\">let</span> block = <span class=\"hljs-string\">&quot;&quot;&quot;\\#(raw)&quot;&quot;&quot;</span></code>";
+    const expected = "<code class=\"language-swift hljs\"><span class=\"hljs-keyword\">let</span> message <span class=\"hljs-operator\">=</span> <span class=\"hljs-string\">&quot;value: <span class=\"hljs-subst\">\\(count)</span>&quot;</span>\n<span class=\"hljs-keyword\">let</span> block <span class=\"hljs-operator\">=</span> <span class=\"hljs-string\">&quot;&quot;&quot;\\#(raw)&quot;&quot;&quot;</span></code>";
     try std.testing.expectEqualStrings(expected, runForTest(input));
 }
 

@@ -56,10 +56,7 @@ fn numberEnd(code: []const u8, start: usize) usize {
 fn startsNumber(code: []const u8, start: usize) bool {
     if (code[start] >= '0' and code[start] <= '9') return true;
     if (code[start] == '.') return start + 1 < code.len and code[start + 1] >= '0' and code[start + 1] <= '9';
-    if (code[start] != '+' and code[start] != '-') return false;
-    if (start + 1 >= code.len) return false;
-    if (code[start + 1] >= '0' and code[start + 1] <= '9') return true;
-    return code[start + 1] == '.' and start + 2 < code.len and code[start + 2] >= '0' and code[start + 2] <= '9';
+    return false;
 }
 
 fn isHexDigit(c: u8) bool {
@@ -70,11 +67,16 @@ fn isContainerAtRule(name: []const u8) bool {
     return eqlIgnoreCase(name, "media") or eqlIgnoreCase(name, "supports") or eqlIgnoreCase(name, "layer") or eqlIgnoreCase(name, "container") or eqlIgnoreCase(name, "keyframes");
 }
 
+fn isConditionAtRule(name: []const u8) bool {
+    return eqlIgnoreCase(name, "media") or eqlIgnoreCase(name, "supports") or eqlIgnoreCase(name, "container");
+}
+
 pub fn write(code: []const u8, writer: anytype) void {
     var declaration_stack: [64]bool = [_]bool{false} ** 64;
     var property_stack: [64]bool = [_]bool{false} ** 64;
     var depth: usize = 0;
     var pending_container = false;
+    var pending_condition = false;
     var i: usize = 0;
 
     while (i < code.len) {
@@ -105,6 +107,7 @@ pub fn write(code: []const u8, writer: anytype) void {
             while (end < code.len and isNameContinue(code[end])) : (end += 1) {}
             writer.writeSpan("hljs-keyword", code[i..end]);
             pending_container = isContainerAtRule(code[i + 1 .. end]);
+            pending_condition = isConditionAtRule(code[i + 1 .. end]);
             i = end;
             continue;
         }
@@ -116,6 +119,7 @@ pub fn write(code: []const u8, writer: anytype) void {
                 depth += 1;
             }
             pending_container = false;
+            pending_condition = false;
             i += 1;
             continue;
         }
@@ -137,7 +141,7 @@ pub fn write(code: []const u8, writer: anytype) void {
             var next = end;
             while (next < code.len and isSpace(code[next])) : (next += 1) {}
             if (next < code.len and code[next] == ':') {
-                writer.writeSpan("hljs-attribute", code[i..end]);
+                writer.writeSpan(if (std.mem.startsWith(u8, code[i..end], "--")) "hljs-attr" else "hljs-attribute", code[i..end]);
                 property_stack[depth - 1] = false;
             } else {
                 writer.writeSlice(code[i..end]);
@@ -156,6 +160,13 @@ pub fn write(code: []const u8, writer: anytype) void {
             const end = numberEnd(code, i);
             writer.writeSpan("hljs-number", code[i..end]);
             i = end;
+            continue;
+        }
+        if ((code[i] == '-' or code[i] == '+') and i + 1 < code.len and
+            (std.ascii.isDigit(code[i + 1]) or code[i + 1] == '.'))
+        {
+            writer.writeByte(code[i]);
+            i += 1;
             continue;
         }
         if (!in_declarations and code[i] == '.' and i + 1 < code.len and isNameStart(code[i + 1])) {
@@ -184,7 +195,28 @@ pub fn write(code: []const u8, writer: anytype) void {
             var end = i + 1;
             while (end < code.len and code[end] != ']') : (end += 1) {}
             if (end < code.len) end += 1;
-            writer.writeSpan("hljs-selector-attr", code[i..end]);
+            writer.openSpan("hljs-selector-attr");
+            var part = i;
+            var cursor = i + 1;
+            while (cursor < end) {
+                var quote_len: usize = 0;
+                if (std.mem.startsWith(u8, code[cursor..], "&quot;")) quote_len = 6;
+                if (code[cursor] == '"' or code[cursor] == '\'') quote_len = 1;
+                if (quote_len == 0) {
+                    cursor += 1;
+                    continue;
+                }
+                writer.writeSlice(code[part..cursor]);
+                const quote_start = cursor;
+                const quote = code[cursor .. cursor + quote_len];
+                cursor += quote_len;
+                while (cursor < end and !std.mem.startsWith(u8, code[cursor..], quote)) : (cursor += 1) {}
+                if (cursor < end) cursor += quote_len;
+                writer.writeSpan("hljs-string", code[quote_start..cursor]);
+                part = cursor;
+            }
+            writer.writeSlice(code[part..end]);
+            writer.closeSpan();
             i = end;
             continue;
         }
@@ -193,7 +225,9 @@ pub fn write(code: []const u8, writer: anytype) void {
             while (end < code.len and isNameContinue(code[end])) : (end += 1) {}
             var next = end;
             while (next < code.len and isSpace(code[next])) : (next += 1) {}
-            if (in_declarations and next < code.len and code[next] == '(') {
+            if (pending_condition) {
+                writer.writeSpan("hljs-attribute", code[i..end]);
+            } else if (in_declarations and next < code.len and code[next] == '(') {
                 writer.writeSpan("hljs-built_in", code[i..end]);
             } else if (!in_declarations and !pending_container) {
                 writer.writeSpan("hljs-selector-tag", code[i..end]);

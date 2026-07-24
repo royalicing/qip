@@ -5,8 +5,8 @@ async def render(value: str) -&gt; str:
     return message if value else None  # fallback</code></pre>
 === OUTPUT ===
 <pre data-kind="example"><code class="language-python hljs"><span class="hljs-meta">@app.get</span>
-<span class="hljs-keyword">async</span> <span class="hljs-keyword">def</span> render(value: <span class="hljs-type">str</span>) -&gt; <span class="hljs-type">str</span>:
-    message = <span class="hljs-string">f"return class {value}"</span>
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">def</span> <span class="hljs-title function_">render</span>(<span class="hljs-params">value: <span class="hljs-built_in">str</span></span>) -&gt; <span class="hljs-built_in">str</span>:
+    message = <span class="hljs-string">f"return class <span class="hljs-subst">{value}</span>"</span>
     <span class="hljs-keyword">return</span> message <span class="hljs-keyword">if</span> value <span class="hljs-keyword">else</span> <span class="hljs-literal">None</span>  <span class="hljs-comment"># fallback</span></code></pre>
 === END ===
 === INPUT ===
@@ -24,6 +24,15 @@ print(message)</code>
 === OUTPUT ===
 <code data-x="1" class="compact language-py hljs"><span class="hljs-keyword">for</span> number <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0x10</span>):
     <span class="hljs-keyword">yield</span> number</code>
+=== END ===
+=== INPUT ===
+<code class="language-python">class Renderer(BaseRenderer):
+    def render(self, value: str = "x") -&gt; bytes:
+        return f"{value!r:&gt;10}".encode()</code>
+=== OUTPUT ===
+<code class="language-python hljs"><span class="hljs-keyword">class</span> <span class="hljs-title class_">Renderer</span>(<span class="hljs-title class_ inherited__">BaseRenderer</span>):
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">render</span>(<span class="hljs-params">self, value: <span class="hljs-built_in">str</span> = <span class="hljs-string">"x"</span></span>) -&gt; <span class="hljs-built_in">bytes</span>:
+        <span class="hljs-keyword">return</span> <span class="hljs-string">f"<span class="hljs-subst">{value!r:&gt;<span class="hljs-number">10</span>}</span>"</span>.encode()</code>
 === END ===
 === INPUT ===
 <code class="language-python hljs"><span class="hljs-keyword">def</span> ready(): ...</code>

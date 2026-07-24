@@ -1,0 +1,47 @@
+=== INPUT ===
+<code class="language-zig">export fn render(input: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    return try allocator.dupe(u8, input);
+}</code>
+=== OUTPUT ===
+<code class="language-zig hljs"><span class="hljs-keyword">export</span> <span class="hljs-keyword">fn</span> <span class="hljs-title function_">render</span>(<span class="hljs-params">input: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span>, allocator: std.mem.Allocator</span>) ![]<span class="hljs-type">u8</span> {
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span> allocator.dupe(<span class="hljs-type">u8</span>, input);
+}</code>
+=== END ===
+=== INPUT ===
+<pre><code class="language-zig">const usage =
+    \\Usage: qip &lt;file&gt;
+    \\Writes bytes.
+;
+const ready = true;</code></pre>
+=== OUTPUT ===
+<pre><code class="language-zig hljs"><span class="hljs-keyword">const</span> usage =
+    <span class="hljs-string">\\Usage: qip &lt;file&gt;
+    \\Writes bytes.</span>
+;
+<span class="hljs-keyword">const</span> ready = <span class="hljs-literal">true</span>;</code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-zig">const Renderer = struct {
+    name: []const u8,
+    pub fn init(name: []const u8) Renderer {
+        return .{ .name = name };
+    }
+};</code>
+=== OUTPUT ===
+<code class="language-zig hljs"><span class="hljs-keyword">const</span> <span class="hljs-title class_">Renderer</span> = <span class="hljs-keyword">struct</span> {
+    name: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span>,
+    <span class="hljs-keyword">pub</span> <span class="hljs-keyword">fn</span> <span class="hljs-title function_">init</span>(<span class="hljs-params">name: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span></span>) Renderer {
+        <span class="hljs-keyword">return</span> .{ .name = name };
+    }
+};</code>
+=== END ===
+=== INPUT ===
+<code class="language-zig hljs"><span class="hljs-keyword">const</span> n = 1;</code>
+=== OUTPUT ===
+<code class="language-zig hljs"><span class="hljs-keyword">const</span> n = 1;</code>
+=== END ===
+=== INPUT ===
+<code class="language-c">int render(void);</code>
+=== OUTPUT ===
+<code class="language-c">int render(void);</code>
+=== END ===

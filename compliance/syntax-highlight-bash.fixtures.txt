@@ -1,0 +1,39 @@
+=== INPUT ===
+<code class="language-bash">render() {
+  local output=&quot;$(qip run &quot;$module&quot;)&quot;
+  printf &quot;%s\n&quot; &quot;$output&quot;
+}</code>
+=== OUTPUT ===
+<code class="language-bash hljs"><span class="hljs-function"><span class="hljs-title">render</span></span>() {
+  <span class="hljs-built_in">local</span> output=<span class="hljs-string">&quot;<span class="hljs-subst">$(qip run <span class="hljs-string">&quot;<span class="hljs-variable">$module</span>&quot;</span>)</span>&quot;</span>
+  <span class="hljs-built_in">printf</span> <span class="hljs-string">&quot;%s\n&quot;</span> <span class="hljs-string">&quot;<span class="hljs-variable">$output</span>&quot;</span>
+}</code>
+=== END ===
+=== INPUT ===
+<pre><code class="language-sh">#!/usr/bin/env bash
+name=${USER:-guest}
+if [[ -n $name ]]; then echo &quot;hello $name&quot;; fi</code></pre>
+=== OUTPUT ===
+<pre><code class="language-sh hljs"><span class="hljs-meta">#!/usr/bin/env bash</span>
+name=<span class="hljs-variable">${USER:-guest}</span>
+<span class="hljs-keyword">if</span> [[ -n <span class="hljs-variable">$name</span> ]]; <span class="hljs-keyword">then</span> <span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;hello <span class="hljs-variable">$name</span>&quot;</span>; <span class="hljs-keyword">fi</span></code></pre>
+=== END ===
+=== INPUT ===
+<code class="language-shell">cat &lt;&lt;EOF
+hello $USER
+EOF</code>
+=== OUTPUT ===
+<code class="language-shell hljs"><span class="hljs-built_in">cat</span> &lt;&lt;<span class="hljs-string">EOF
+hello $USER
+EOF</span></code>
+=== END ===
+=== INPUT ===
+<code class="language-bash hljs"><span class="hljs-keyword">if</span> true; then :; fi</code>
+=== OUTPUT ===
+<code class="language-bash hljs"><span class="hljs-keyword">if</span> true; then :; fi</code>
+=== END ===
+=== INPUT ===
+<code class="language-ruby">puts &quot;$HOME&quot;</code>
+=== OUTPUT ===
+<code class="language-ruby">puts &quot;$HOME&quot;</code>
+=== END ===

@@ -120,10 +120,18 @@ const Writer = struct {
     }
 
     fn writeSpan(self: *Writer, class_name: []const u8, text: []const u8) void {
+        self.openSpan(class_name);
+        self.writeSlice(text);
+        self.closeSpan();
+    }
+
+    fn openSpan(self: *Writer, class_name: []const u8) void {
         self.writeSlice("<span class=\"");
         self.writeSlice(class_name);
         self.writeSlice("\">");
-        self.writeSlice(text);
+    }
+
+    fn closeSpan(self: *Writer) void {
         self.writeSlice("</span>");
     }
 };
@@ -448,8 +456,58 @@ fn numberEnd(code: []const u8, start: usize) usize {
     return i;
 }
 
+fn matchingParen(code: []const u8, start: usize) ?usize {
+    if (start >= code.len or code[start] != '(') return null;
+    var depth: usize = 1;
+    var i = start + 1;
+    while (i < code.len) {
+        if (code[i] == '"' or code[i] == '\'') {
+            i = stringEnd(code, i);
+            continue;
+        }
+        if (code[i] == '(') depth += 1;
+        if (code[i] == ')') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+        i += 1;
+    }
+    return null;
+}
+
+fn skipSpace(code: []const u8, start: usize) usize {
+    var i = start;
+    while (i < code.len and isSpace(code[i])) : (i += 1) {}
+    return i;
+}
+
+fn isMethodDeclaration(code: []const u8, ident_end: usize) ?struct { params_start: usize, params_end: usize } {
+    const params_start = skipSpace(code, ident_end);
+    if (params_start >= code.len or code[params_start] != '(') return null;
+    const params_end = matchingParen(code, params_start) orelse return null;
+    var after = skipSpace(code, params_end + 1);
+    if (after + "throws".len <= code.len and std.mem.eql(u8, code[after .. after + "throws".len], "throws")) {
+        after += "throws".len;
+        while (after < code.len and code[after] != '{' and code[after] != ';' and code[after] != '\n') : (after += 1) {}
+    }
+    if (after < code.len and code[after] == '{') return .{ .params_start = params_start, .params_end = params_end };
+    return null;
+}
+
+fn isConstantName(ident: []const u8) bool {
+    var has_letter = false;
+    for (ident) |c| {
+        if (c >= 'a' and c <= 'z') return false;
+        if (c >= 'A' and c <= 'Z') has_letter = true;
+    }
+    return has_letter;
+}
+
 fn writeHighlightedJava(code: []const u8, w: *Writer) void {
     var i: usize = 0;
+    var expect_class_name = false;
+    var expect_inherited_name = false;
+    var record_declaration = false;
     while (i < code.len) {
         if (i + 1 < code.len and code[i] == '/' and code[i + 1] == '/') {
             var j = i + 2;
@@ -485,12 +543,56 @@ fn writeHighlightedJava(code: []const u8, w: *Writer) void {
             i = j;
             continue;
         }
+        if (code[i] == '=') {
+            w.writeSpan("hljs-operator", code[i .. i + 1]);
+            i += 1;
+            continue;
+        }
         if (isIdentStart(code[i])) {
             var j = i + 1;
             while (j < code.len and isIdentContinue(code[j])) : (j += 1) {}
             const ident = code[i..j];
             if (KeywordSet.get(ident) != null) {
                 w.writeSpan("hljs-keyword", ident);
+                expect_class_name = std.mem.eql(u8, ident, "class") or std.mem.eql(u8, ident, "interface") or
+                    std.mem.eql(u8, ident, "enum") or std.mem.eql(u8, ident, "record");
+                record_declaration = std.mem.eql(u8, ident, "record");
+                expect_inherited_name = std.mem.eql(u8, ident, "extends") or std.mem.eql(u8, ident, "implements");
+            } else if (expect_class_name) {
+                w.writeSpan("hljs-title class_", ident);
+                expect_class_name = false;
+                if (record_declaration) {
+                    const params_start = skipSpace(code, j);
+                    if (params_start < code.len and code[params_start] == '(') {
+                        if (matchingParen(code, params_start)) |params_end| {
+                            w.writeSlice(code[j..params_start]);
+                            w.openSpan("hljs-params");
+                            w.writeByte('(');
+                            writeHighlightedJava(code[params_start + 1 .. params_end], w);
+                            w.writeByte(')');
+                            w.closeSpan();
+                            i = params_end + 1;
+                            record_declaration = false;
+                            continue;
+                        }
+                    }
+                }
+                record_declaration = false;
+            } else if (expect_inherited_name) {
+                w.writeSpan("hljs-title class_", ident);
+                expect_inherited_name = false;
+            } else if (isMethodDeclaration(code, j)) |method| {
+                w.writeSpan("hljs-title function_", ident);
+                w.writeSlice(code[j..method.params_start]);
+                w.openSpan("hljs-params");
+                w.writeByte('(');
+                writeHighlightedJava(code[method.params_start + 1 .. method.params_end], w);
+                w.writeByte(')');
+                w.closeSpan();
+                i = method.params_end + 1;
+                continue;
+            } else if (isConstantName(ident) and skipSpace(code, j) < code.len and code[skipSpace(code, j)] == '=') {
+                w.writeSpan("hljs-variable", ident);
             } else if (TypeSet.get(ident) != null) {
                 w.writeSpan("hljs-type", ident);
             } else if (LiteralSet.get(ident) != null) {
@@ -569,14 +671,14 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights Java declarations strings and literals" {
     const input = "<pre><code class=\"language-java\">public final class App { String name = \"QIP\"; boolean ready = true; }</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-java hljs\"><span class=\"hljs-keyword\">public</span> <span class=\"hljs-keyword\">final</span> <span class=\"hljs-keyword\">class</span> App { <span class=\"hljs-type\">String</span> name = <span class=\"hljs-string\">\"QIP\"</span>; <span class=\"hljs-type\">boolean</span> ready = <span class=\"hljs-literal\">true</span>; }</code></pre>";
+    const expected = "<pre><code class=\"language-java hljs\"><span class=\"hljs-keyword\">public</span> <span class=\"hljs-keyword\">final</span> <span class=\"hljs-keyword\">class</span> <span class=\"hljs-title class_\">App</span> { <span class=\"hljs-type\">String</span> name <span class=\"hljs-operator\">=</span> <span class=\"hljs-string\">\"QIP\"</span>; <span class=\"hljs-type\">boolean</span> ready <span class=\"hljs-operator\">=</span> <span class=\"hljs-literal\">true</span>; }</code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
 test "highlights Java annotations comments and numbers" {
     const input = "<code class=\"language-java\">@Override public int size() { return 42; } // bytes</code>";
     const got = runForTest(input);
-    const expected = "<code class=\"language-java hljs\"><span class=\"hljs-meta\">@Override</span> <span class=\"hljs-keyword\">public</span> <span class=\"hljs-type\">int</span> size() { <span class=\"hljs-keyword\">return</span> <span class=\"hljs-number\">42</span>; } <span class=\"hljs-comment\">// bytes</span></code>";
+    const expected = "<code class=\"language-java hljs\"><span class=\"hljs-meta\">@Override</span> <span class=\"hljs-keyword\">public</span> <span class=\"hljs-type\">int</span> <span class=\"hljs-title function_\">size</span><span class=\"hljs-params\">()</span> { <span class=\"hljs-keyword\">return</span> <span class=\"hljs-number\">42</span>; } <span class=\"hljs-comment\">// bytes</span></code>";
     try std.testing.expectEqualStrings(expected, got);
 }
 

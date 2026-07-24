@@ -38,8 +38,6 @@ const TypeSet = std.StaticStringMap(void).initComptime(.{
     .{ "f32", {} },
     .{ "f64", {} },
     .{ "v128", {} },
-    .{ "funcref", {} },
-    .{ "externref", {} },
 });
 
 const InstrSet = std.StaticStringMap(void).initComptime(.{
@@ -378,6 +376,13 @@ fn findCodeCloseTag(input: []const u8, from: usize) ?CodeCloseTag {
 
 fn stringEnd(code: []const u8, start: usize) usize {
     if (start >= code.len) return start;
+    if (std.mem.startsWith(u8, code[start..], "&quot;")) {
+        var i = start + 6;
+        while (i < code.len) : (i += 1) {
+            if (std.mem.startsWith(u8, code[i..], "&quot;")) return i + 6;
+        }
+        return code.len;
+    }
     const quote = code[start];
     var i = start + 1;
     var escaped = false;
@@ -468,6 +473,7 @@ fn isOpcodeLike(atom: []const u8) bool {
 
 fn writeHighlightedWasm(code: []const u8, w: *Writer) void {
     var i: usize = 0;
+    var expect_function_title = false;
 
     while (i < code.len) {
         if (i + 1 < code.len and code[i] == ';' and code[i + 1] == ';') {
@@ -485,9 +491,17 @@ fn writeHighlightedWasm(code: []const u8, w: *Writer) void {
             continue;
         }
 
-        if (code[i] == '"' or code[i] == '\'') {
+        if (code[i] == '"' or code[i] == '\'' or std.mem.startsWith(u8, code[i..], "&quot;")) {
             const j = stringEnd(code, i);
             w.writeSpan("hljs-string", code[i..j]);
+            i = j;
+            continue;
+        }
+
+        if (code[i] == '(' or code[i] == ')') {
+            var j = i + 1;
+            while (j < code.len and (code[j] == '(' or code[j] == ')')) : (j += 1) {}
+            w.writeSpan("hljs-punctuation", code[i..j]);
             i = j;
             continue;
         }
@@ -503,17 +517,27 @@ fn writeHighlightedWasm(code: []const u8, w: *Writer) void {
         const atom = code[i..j];
 
         if (atom.len > 0 and atom[0] == '$') {
-            w.writeSpan("hljs-variable", atom);
+            if (expect_function_title) {
+                w.writeSpan("hljs-title function_", atom);
+            } else {
+                w.writeSpan("hljs-variable", atom);
+            }
+            expect_function_title = false;
         } else if (KeywordSet.get(atom) != null) {
             w.writeSpan("hljs-keyword", atom);
+            expect_function_title = std.mem.eql(u8, atom, "func");
         } else if (TypeSet.get(atom) != null) {
             w.writeSpan("hljs-type", atom);
+            expect_function_title = false;
         } else if (isNumericAtom(atom)) {
             w.writeSpan("hljs-number", atom);
+            expect_function_title = false;
         } else if (isOpcodeLike(atom)) {
-            w.writeSpan("hljs-built_in", atom);
+            w.writeSpan("hljs-keyword", atom);
+            expect_function_title = false;
         } else {
             w.writeSlice(atom);
+            expect_function_title = false;
         }
         i = j;
     }
@@ -580,7 +604,7 @@ fn runForTest(input: []const u8) []const u8 {
 test "highlights plain text language-wasm code blocks" {
     const input = "<pre><code class=\"language-wasm\">(module (func $add (param $a i32) (param $b i32) (result i32) local.get $a local.get $b i32.add))</code></pre>";
     const got = runForTest(input);
-    const expected = "<pre><code class=\"language-wasm hljs\">(<span class=\"hljs-keyword\">module</span> (<span class=\"hljs-keyword\">func</span> <span class=\"hljs-variable\">$add</span> (<span class=\"hljs-keyword\">param</span> <span class=\"hljs-variable\">$a</span> <span class=\"hljs-type\">i32</span>) (<span class=\"hljs-keyword\">param</span> <span class=\"hljs-variable\">$b</span> <span class=\"hljs-type\">i32</span>) (<span class=\"hljs-keyword\">result</span> <span class=\"hljs-type\">i32</span>) <span class=\"hljs-built_in\">local.get</span> <span class=\"hljs-variable\">$a</span> <span class=\"hljs-built_in\">local.get</span> <span class=\"hljs-variable\">$b</span> <span class=\"hljs-built_in\">i32.add</span>))</code></pre>";
+    const expected = "<pre><code class=\"language-wasm hljs\"><span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">module</span> <span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">func</span> <span class=\"hljs-title function_\">$add</span> <span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">param</span> <span class=\"hljs-variable\">$a</span> <span class=\"hljs-type\">i32</span><span class=\"hljs-punctuation\">)</span> <span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">param</span> <span class=\"hljs-variable\">$b</span> <span class=\"hljs-type\">i32</span><span class=\"hljs-punctuation\">)</span> <span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">result</span> <span class=\"hljs-type\">i32</span><span class=\"hljs-punctuation\">)</span> <span class=\"hljs-keyword\">local.get</span> <span class=\"hljs-variable\">$a</span> <span class=\"hljs-keyword\">local.get</span> <span class=\"hljs-variable\">$b</span> <span class=\"hljs-keyword\">i32.add</span><span class=\"hljs-punctuation\">))</span></code></pre>";
     try std.testing.expectEqualStrings(expected, got);
 }
 
@@ -599,6 +623,6 @@ test "skips non-wasm code blocks" {
 test "highlights comments strings and numbers" {
     const input = "<code class=\"language-wasm\">;; head\n(data (i32.const 0) \"hi\")</code>";
     const got = runForTest(input);
-    const expected = "<code class=\"language-wasm hljs\"><span class=\"hljs-comment\">;; head</span>\n(<span class=\"hljs-keyword\">data</span> (<span class=\"hljs-built_in\">i32.const</span> <span class=\"hljs-number\">0</span>) <span class=\"hljs-string\">\"hi\"</span>)</code>";
+    const expected = "<code class=\"language-wasm hljs\"><span class=\"hljs-comment\">;; head</span>\n<span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">data</span> <span class=\"hljs-punctuation\">(</span><span class=\"hljs-keyword\">i32.const</span> <span class=\"hljs-number\">0</span><span class=\"hljs-punctuation\">)</span> <span class=\"hljs-string\">\"hi\"</span><span class=\"hljs-punctuation\">)</span></code>";
     try std.testing.expectEqualStrings(expected, got);
 }

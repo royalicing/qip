@@ -28,7 +28,7 @@ func (r *Renderer) Render(ctx context.Context, input []byte) (string, error) {
 	name <span class="hljs-type">string</span>
 }
 
-<span class="hljs-keyword">func</span> (r *Renderer) Render(ctx context.Context, input []<span class="hljs-type">byte</span>) (<span class="hljs-type">string</span>, <span class="hljs-type">error</span>) {
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(r *Renderer)</span> <span class="hljs-title">Render</span><span class="hljs-params">(ctx context.Context, input []<span class="hljs-type">byte</span>)</span></span> (<span class="hljs-type">string</span>, <span class="hljs-type">error</span>) {
 	<span class="hljs-keyword">if</span> input == <span class="hljs-literal">nil</span> {
 		<span class="hljs-keyword">return</span> <span class="hljs-string">&quot;&quot;</span>, fmt.Errorf(<span class="hljs-string">&quot;empty input&quot;</span>)
 	}
@@ -71,7 +71,7 @@ func Map[S ~[]E, E any](items S, apply func(E) E) S {
 <code class="language-go hljs"><span class="hljs-comment">/* select case return */</span>
 <span class="hljs-keyword">type</span> Set[T <span class="hljs-type">comparable</span>] <span class="hljs-keyword">map</span>[T]<span class="hljs-keyword">struct</span>{}
 
-<span class="hljs-keyword">func</span> Map[S ~[]E, E <span class="hljs-type">any</span>](items S, apply <span class="hljs-keyword">func</span>(E) E) S {
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">Map</span>[S ~[]E, E <span class="hljs-type">any</span>]<span class="hljs-params">(items S, apply <span class="hljs-keyword">func</span>(E) E)</span></span> S {
 	out := <span class="hljs-built_in">make</span>(S, <span class="hljs-built_in">len</span>(items))
 	<span class="hljs-keyword">for</span> i, item := <span class="hljs-keyword">range</span> items {
 		out[i] = apply(item)
