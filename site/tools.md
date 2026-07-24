@@ -9,7 +9,7 @@ entirely in the browser. You can run the same `.wasm` files in your shell via th
   Markdown or CommonMark 0.31.2.
 - [Mermaid to Unicode box art](/mermaid) converts a strict Mermaid subset into
   terminal-style diagrams and styled HTML.
-- [QR code generator](/qr) turns a URL into a downloadable SVG QR code.
+- [QR code maker](/qr) turns a URL into a downloadable SVG QR code.
 - [Currency formatter](/currency) formats decimal amounts using a selected
   locale and ISO 4217 currency.
 - [Unicode transforms](/unicode) applies Unicode 17 uppercase and lowercase

@@ -34,7 +34,9 @@ A QIP component only sees the bytes written into its memory. It cannot scan your
 
 ## Performance
 
-Each QIP stage is a benchmark target. Feed it bytes, measure runtime, optimize the component, and compare output bytes. If the bytes still match and the stage gets faster, ship the same `.wasm` anywhere that component runs.
+Every recipe step is a benchmark target. Feed it bytes, measure runtime, optimize the component, and compare output bytes. If the bytes still match and the stage gets faster, ship the same `.wasm` module everywhere that component runs.
+
+Agents get room to optimize without widening the blast radius. They can use Zig or C compilers, explicit memory layouts, and SIMD inside portable WebAssembly, while the sandbox keeps filesystem, network, secrets, and platform side effects out of the component.
 
 Use host code instead when the fast path needs platform APIs, shared mutable app state, GPU integration, or background network access.
 
@@ -60,6 +62,7 @@ The QIP memory contract stays the same across hosts. These guides show the loadi
 - [Running QIP In Python](/docs/running-in-python) loads a WebAssembly Core module from disk with Wasmtime.
 - [Running QIP In Java](/docs/running-in-java) loads the same module with the pure-Java Chicory runtime.
 - [Running QIP In .NET](/docs/running-in-dotnet) uses Wasmtime from C# and covers ASP.NET instance ownership.
+- [Running QIP In Swift](/docs/running-in-swift) uses the Swift-native WasmKit runtime and covers app-bundle resources and concurrency.
 - [Running QIP In React](/docs/running-in-react) covers browser Client Components and Next.js Server Components.
 
 For lower-level JavaScript integration, including direct `.wasm` imports where the runtime supports them, see [Running In JavaScript](/docs/running-in-javascript).

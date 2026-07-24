@@ -85,7 +85,7 @@ echo "# A Markdown renderer that works _identically_ on any platform" \
 <a href="/markdown-to-html">Try our GitHub-Flavored Markdown renderer</a>
 </nav>
 
-## Reproducible recipes
+## Portable pipelines of purity
 
 You can pipe one component into another step-by-step like a recipe.
 
@@ -146,6 +146,47 @@ const pi: number = 3.14;
 &lt;/form&gt;
 </code></pre>
 
+## The website router without bitrot
+
+Markdown… Recipes… We can compose this into a static website generator. Each file gets rendered by a recipe of QIP components based on its MIME type. These become the HTTP response bodies.
+
+Every component is replaceable. Don’t like the Markdown renderer? Swap it out.
+
+And every page route becomes combined into a `.warc` Web Archive. This allows you to do site-wide transforms. Need a plugin to generate OG images? Vibe-code one.
+
+First, create a folder of Markdown and images files and use `qip router` to render a website:
+
+```txt
+site/
+  index.md
+  about.md
+  docs/index.md
+  docs/install.md
+  _recipes/text/markdown/10-commonmark.0.31.2.wasm
+```
+
+```bash
+# Run a dev server on port 4114
+qip router dev ./site -p 4114
+
+# Make a HEAD request to the /about page
+qip router head ./site /about
+
+# Make a GET request to the /about page
+# This works even with no dev server running, letting your coding agent test things
+qip router get ./site /about
+
+# Copy a component to syntax highlight bash code
+cp html-code-syntax-highlight-bash.wasm ./site/_recipes/text/markdown/20-html-code-syntax-highlight-bash.wasm
+
+# Generate an archive of the entire site with view source enabled to share your components
+qip router warc ./site --view-source
+```
+
+The same components that you use to render the static site can run in the browser via JavaScript. There’s no such thing as a “server component” or “client component”: they are the same component.
+
+Because components are self-contained, maintenance becomes a breeze. Don't worry about needing to update your dependencies every few months so your site still builds. Your site is content plus some `.wasm` files and a little bit of glue to connect the two. Bitrot be gone!
+
 ## Cross-platform `<canvas>` components
 
 QIP Interactive Components receive keyboard & pointer events and render out pixels.
@@ -172,60 +213,20 @@ Use `<qip-play>` to render them in the browser, or use our SDK to render them in
 
 See [`/play`](/play) for more interactive examples, or [`/charts`](/charts) for chart-focused components.
 
-## Utilities that run everywhere
+## Tools without the trackers
 
-We believe small functions should not need a massive application environment to run. Write or vibe Zig/C then compile to WebAssembly, and you get a deterministic puzzle piece that runs the same everywhere.
+Ever need to generate a favicon or decode base64 and find yourself on a site with more ad banners than inputs? [Here](/tools) are some open source utilities that you can download the `.wasm` to and run locally.
 
 - [Markdown to HTML](/markdown-to-html)
-- [Mermaid to Unicode box art](/mermaid)
-- [JSON prettifier](/json-prettify)
-- [Unicode transforms](/unicode)
+- [QR code maker](/qr)
+- [Mermaid renderer](/mermaid)
+- [Base64 encoder and decoder](/base64)
 - [Currency formatter](/currency)
+- [Unicode transforms](/unicode)
+- [JSON prettifier](/json-prettify)
 - [CSS minifier](/css-minifier)
-- [CSS expression calculator](/css-expression-calculator)
-- [JPEG location stripper](/jpeg-location-stripper)
-- [Image color palette extractor](/image-color-palette)
-- [SQLite as a payload](/sqlite)
 
-Want a utility without the trackers? Request me to make one.
-
-## Portable pipelines of purity
-
-Use QIP Router to render a website from a folder of Markdown files:
-
-```txt
-site/
-  index.md
-  about.md
-  docs/index.md
-  docs/install.md
-  _recipes/text/markdown/10-commonmark.0.31.2.wasm
-```
-
-```bash
-# Make a HEAD request to the /about page
-qip router head ./site /about
-
-# Make a GET request to the /about page
-qip router get ./site /about
-
-# Copy a component to syntax highlight bash code
-cp html-code-syntax-highlight-bash.wasm ./site/_recipes/text/markdown/20-html-code-syntax-highlight-bash.wasm
-
-# Run a dev server
-qip router dev ./site
-
-# Generate an archive of the entire site with view source enabled
-qip router warc ./site --view-source
-```
-
-Router Recipes allow each MIME type to be processed step-by-step by a series of QIP components. Each source file is transformed by the recipe and becomes served as a webpage route. The same components can be rendered in the browser via custom HTML elements.
-
-If it works here, it works there. If it works today, it'll work tomorrow. Build a recipe of components as a pipeline then carry them to browser, native mobile, server, CLI, CI, or edge with the exact same components and the same rendered output.
-
-QIP makes performance work portable: every pipeline stage is a benchmark boundary. Feed it bytes, measure runtime, optimize the component, and compare output bytes. If the bytes still match and the stage gets faster, ship the same `.wasm` module everywhere that component runs.
-
-Agents get room to optimize without widening the blast radius: they can use Zig or C compilers, explicit memory layouts, and SIMD inside portable Wasm, while the sandbox keeps filesystem, network, secrets, and platform side effects out of the component.
+Want another? Request me to make one.
 
 ## FAQ
 
