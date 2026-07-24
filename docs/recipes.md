@@ -29,7 +29,7 @@ Given MIME `type/subtype`, recipe directory is:
 - Example filenames:
   - `10-warc-check-broken-links.wasm`
   - `20-warc-check-broken-module-imports.wasm`
-  - `30-warc-to-sitemap.wasm`
+  - `30-add-sitemap-xml.wasm`
   - `40-warc-add-open-graph-image-meta.wasm`
 
 ### Debugging broken links
@@ -255,7 +255,13 @@ qip router warc ./site --host https://qip.dev
 WARC recipes can synthesize or rewrite archive records, which means they can add output routes (for example `/sitemap.xml`) when they emit additional WARC records.
 
 - In this repo, route assets like `/favicon.ico` and `/robots.txt` are present in the content/static output.
-- WARC QIP components such as `components/application/warc/warc-to-sitemap.wasm` show the pattern for deriving site-wide artifacts from the archive.
+- `recipes/application/warc/30-add-sitemap-xml.wasm` preserves the input archive
+  and adds `/sitemap.xml` from its successful HTML responses. Set `--host`
+  explicitly when building so the generated locations use the production
+  origin.
+- `components/application/warc/warc-to-sitemap.wasm` is the terminal
+  `application/warc` to `application/xml` form when a standalone sitemap body,
+  rather than an added route, is wanted.
 
 ## Ordering
 

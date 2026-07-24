@@ -138,7 +138,7 @@ ZIG_WASM_MAX_MEMORY ?= 67108864
 
 HOST_OS ?= $(shell uname -s)
 ifeq ($(HOST_OS),Darwin)
-ZIG_TEST_SYSROOT ?= $(firstword $(wildcard /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk))
+ZIG_TEST_SYSROOT ?= $(firstword $(wildcard /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk))
 ifneq ($(ZIG_TEST_SYSROOT),)
 ZIG_TEST_FLAGS ?= --sysroot $(ZIG_TEST_SYSROOT)
 endif
@@ -253,7 +253,8 @@ components/application/warc/warc-add-open-graph-image-meta.wasm components/appli
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/20-add-docs-sidebar.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
-recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm: recipes/application/warc/lib/warc.zig
+recipes/application/warc/30-add-sitemap-xml.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm recipes/application/warc/30-add-sitemap-xml.wasm: recipes/application/warc/lib/warc.zig
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
@@ -542,7 +543,7 @@ test-snapshot: qip components
 	@cat components/utf8/hello.wasm | $(QIP_BIN) run components/application/wasm/wasm-to-js.wasm >> test/latest.txt
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
 
-ZIG_TEST_FILES := $(COMPONENT_ZIG_FILES) $(wildcard recipes/text/markdown/*.zig)
+ZIG_TEST_FILES := $(COMPONENT_ZIG_FILES) $(wildcard recipes/text/markdown/*.zig) $(wildcard recipes/application/warc/*.zig)
 
 test-zig: $(ZIG_TEST_FILES)
 	@status=0; \
@@ -617,7 +618,7 @@ wasm-safety-report: qip components
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
 site-static: qip recipes
-	$(QIP_BIN) router warc ./site --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
+	$(QIP_BIN) router warc ./site --host https://qip.dev --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
 

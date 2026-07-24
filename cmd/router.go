@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -146,10 +147,7 @@ func runRouteWARC(args []string, config RouteConfig) error {
 			return fmt.Errorf("failed to resolve path %q: %w", requestPath, err)
 		}
 
-		requestURI := "http://" + host + requestPath
-		if !strings.HasPrefix(requestPath, "/") {
-			requestURI = "http://" + host + "/" + requestPath
-		}
+		requestURI := buildRouteWARCRequestURI(host, requestPath)
 		record, err := buildMinimalWARCResponseRecord(requestURI, response)
 		if err != nil {
 			return fmt.Errorf("failed to build WARC record for %q: %w", requestPath, err)
@@ -202,10 +200,34 @@ func parseRouteWARCHost(raw string) (string, error) {
 	if host == "" {
 		return "", errors.New("host must not be empty")
 	}
-	if strings.Contains(host, "://") || strings.Contains(host, "/") {
+	if !strings.Contains(host, "://") {
+		if strings.ContainsAny(host, "/?#") {
+			return "", fmt.Errorf("invalid host %q", raw)
+		}
+		return host, nil
+	}
+	origin, err := url.Parse(host)
+	if err != nil ||
+		(origin.Scheme != "http" && origin.Scheme != "https") ||
+		origin.Host == "" ||
+		origin.User != nil ||
+		(origin.Path != "" && origin.Path != "/") ||
+		origin.RawQuery != "" ||
+		origin.Fragment != "" {
 		return "", fmt.Errorf("invalid host %q", raw)
 	}
-	return host, nil
+	return origin.Scheme + "://" + origin.Host, nil
+}
+
+func buildRouteWARCRequestURI(host string, requestPath string) string {
+	origin := host
+	if !strings.Contains(origin, "://") {
+		origin = "http://" + origin
+	}
+	if !strings.HasPrefix(requestPath, "/") {
+		requestPath = "/" + requestPath
+	}
+	return origin + requestPath
 }
 
 func normalizeRouteWarcArgs(args []string) []string {
@@ -240,7 +262,7 @@ func buildRecipeSourceWARCRecords(host string, recipesRoot string, componentsRoo
 		Body:       indexBody,
 	}
 	records := make([][]byte, 0, len(recipeAssets)+len(componentSourceAssets)+1)
-	indexRecord, err := buildMinimalWARCResponseRecord("http://"+host+"/view-source", indexResponse)
+	indexRecord, err := buildMinimalWARCResponseRecord(buildRouteWARCRequestURI(host, "/view-source"), indexResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build WARC record for %q: %w", "/view-source", err)
 	}
@@ -251,7 +273,7 @@ func buildRecipeSourceWARCRecords(host string, recipesRoot string, componentsRoo
 			Header:     http.Header{"Content-Type": []string{asset.ContentType}},
 			Body:       asset.Body,
 		}
-		record, err := buildMinimalWARCResponseRecord("http://"+host+asset.RequestPath, response)
+		record, err := buildMinimalWARCResponseRecord(buildRouteWARCRequestURI(host, asset.RequestPath), response)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build WARC record for %q: %w", asset.RequestPath, err)
 		}
@@ -263,7 +285,7 @@ func buildRecipeSourceWARCRecords(host string, recipesRoot string, componentsRoo
 			Header:     http.Header{"Content-Type": []string{asset.ContentType}},
 			Body:       asset.Body,
 		}
-		record, err := buildMinimalWARCResponseRecord("http://"+host+asset.RequestPath, response)
+		record, err := buildMinimalWARCResponseRecord(buildRouteWARCRequestURI(host, asset.RequestPath), response)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build WARC record for %q: %w", asset.RequestPath, err)
 		}

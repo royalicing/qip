@@ -241,7 +241,8 @@ func TestRunRouteWARCCustomHost(t *testing.T) {
 	}
 }
 
-func TestRunRouteWARCRejectsInvalidHost(t *testing.T) {
+func TestRunRouteWARCAcceptsHTTPSOrigin(t *testing.T) {
+	var out bytes.Buffer
 	err := RunRoute([]string{"warc", "--host", "https://example.com", "docs"}, RouteConfig{
 		UsageRoute:     "usage route",
 		UsageRouteWarc: "usage route warc",
@@ -249,9 +250,27 @@ func TestRunRouteWARCRejectsInvalidHost(t *testing.T) {
 			return []string{"/a"}, nil
 		},
 		ResolveWARC: func(ctx context.Context, request RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
-			return qinternal.InProcessHTTPResponse{}, nil
+			if request.Host != "https://example.com" {
+				t.Fatalf("host=%q, want https://example.com", request.Host)
+			}
+			return qinternal.InProcessHTTPResponse{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/html"}},
+				Body:       []byte("hello"),
+			}, nil
 		},
+		Stdout: &out,
 	})
+	if err != nil {
+		t.Fatalf("RunRoute: %v", err)
+	}
+	if !strings.Contains(out.String(), "WARC-Target-URI: https://example.com/a\r\n") {
+		t.Fatalf("missing HTTPS origin URI")
+	}
+}
+
+func TestRunRouteWARCRejectsHostWithPath(t *testing.T) {
+	_, err := parseRouteWARCHost("https://example.com/docs")
 	if err == nil || !strings.Contains(err.Error(), "invalid host") {
 		t.Fatalf("unexpected error: %v", err)
 	}
