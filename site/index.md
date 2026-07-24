@@ -59,7 +59,15 @@ Render across browser, server, mobile, native, CLI, and CI. Same input, same out
 
 ---
 
-## Render any content
+## Today we grant every line of code the world
+
+Most software is built with layers of frameworks, packages, platforms, and operating-system features. It means even a tiny calculation assumes availability of installed packages, environment variables, filesystem layout, network services, locale, clocks, and the exact setup of the machine around it.
+
+Containers can precisely package that environment. This is useful for full applications, but for a text/image transformation, validator, calculation, or small interactive tool, it is often more machinery than the work requires. Our defaults expand the security boundary that every line of code gets and now AI coding raises the stakes.
+
+QIP uses a narrower boundary: explicit input, output, memory, and zero host access. That makes small components easier to create, test, and review — including code written by coding agents.
+
+## Components that render any content
 
 Use QIP components for text, images, documents, archives, interactive UI, or any MIME type.
 
@@ -69,12 +77,12 @@ Your components can render Markdown into HTML, URLs into QR codes, SVG into bitm
 
 ```bash
 echo "# A Markdown renderer that works _identically_ on any platform" \
-| qip run components/text/markdown/commonmark.0.31.2.wasm
+| qip run components/text/markdown/gfm-commonmark.0.31.2.wasm
 # <h1>A Markdown renderer that works <em>identically</em> on any platform<h1>
 ```
 
 <nav>
-<a href="/markdown-to-html">Try Markdown renderer</a>
+<a href="/markdown-to-html">Try our GitHub-Flavored Markdown renderer</a>
 </nav>
 
 ## Reproducible recipes
@@ -93,7 +101,7 @@ printf '%s\n' \
   'const pi: number = 3.14;' \
   '```' \
 | qip run \
-  components/text/markdown/commonmark.0.31.2.wasm \
+  components/text/markdown/gfm-commonmark.0.31.2.wasm \
   components/text/html/html-code-syntax-highlight-tsx.wasm
 
 # <h1>Markdown with code snippet</h1>
@@ -107,7 +115,7 @@ You can render the same QIP components in the browser:
 
 <form class="browser-preview-demo" aria-label="Markdown to HTML">
     <qip-edit>
-        <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+        <source src="/components/text/markdown/gfm-commonmark.0.31.2.wasm" type="application/wasm" />
         <source src="/components/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
         <source src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
         <label class="browser-preview-view">
@@ -127,7 +135,7 @@ Use the `<qip-edit>` custom element to render a series of QIP components with us
 
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
     &lt;qip-edit&gt;
-        &lt;source src=&quot;/components/text/markdown/commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;source src=&quot;/components/text/markdown/gfm-commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
         &lt;source src=&quot;/components/text/html/html-code-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
         &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
 ```tsx
@@ -218,30 +226,6 @@ If it works here, it works there. If it works today, it'll work tomorrow. Build 
 QIP makes performance work portable: every pipeline stage is a benchmark boundary. Feed it bytes, measure runtime, optimize the component, and compare output bytes. If the bytes still match and the stage gets faster, ship the same `.wasm` module everywhere that component runs.
 
 Agents get room to optimize without widening the blast radius: they can use Zig or C compilers, explicit memory layouts, and SIMD inside portable Wasm, while the sandbox keeps filesystem, network, secrets, and platform side effects out of the component.
-
-## Software today never stops
-
-Modern software depends on libraries, frameworks, and platforms that are continuously changing.
-
-Docker can package that world, but it preserves the idea that a small rendering function needs a whole application environment around it. QIP is for application output that needs to be portable, predictable, testable, and hard to break.
-
-## Principles
-
-A QIP Component is a self-contained WebAssembly module with strict input and output. One component's output can become the next component's input, so useful pieces can grow into repeatable recipes.
-
-- **Quarantined:** no filesystem, network, secrets, environment, or package graph by default.
-- **Reproducible:** same component, same input/uniforms/events, same output.
-- **Portable:** the same `.wasm` runs in the browser, server, CLI, native apps, CI, mobile, and edge.
-- **Composable:** components pipe together like Unix tools.
-- **Agent-friendly:** small modules are easier to generate, review, benchmark, optimize, and replace.
-
-Make a recipe you like? You can be confident it will work identically on mobile, in a browser, in your CI pipeline, on Windows, or whatever comes next. Because components are self-contained with no required dependencies, they can keep working for years.
-
-Your users get small `.wasm` modules that load fast, and you get small amounts of code that are easy to review. You can run AI-generated code without handing it the keys to your machine.
-
-A small function that transforms data should not need a whole application environment around it. Put the small, valuable transformations in QIP so they become portable, predictable, hard to break, and easy to test.
-
-Components, AI coding, security: you can pick all three.
 
 ## FAQ
 

@@ -1,20 +1,23 @@
 # QIP Docs
 
-## The Problem With Software Today
+A QIP Component is a self-contained WebAssembly module with strict input and output. One component's output can become the next component's input, so useful pieces can grow into repeatable recipes.
 
-Much software is built as layers of frameworks, packages, platforms, and operating-system features. The result is often non-deterministic in practice: behavior can depend on installed packages, environment variables, filesystem layout, network services, locale, clocks, and the exact setup of the machine around it.
+You can be confident recipes will work identically on mobile, in a browser, in your CI pipeline, on Windows, or whatever comes next. Because components are self-contained with no required dependencies, they can keep working for years.
 
-Containers can package that environment, which is useful for full applications. For a content transform, validator, image filter, or small interactive tool, it is often more machinery than the work needs.
+Your users get small `.wasm` modules that load fast, and you get small amounts of code that are easy to review. You can run AI-generated code without handing it the keys to your machine.
 
-AI coding raises the stakes. Agents can generate useful code quickly, but that code is easier to review and test when its inputs, outputs, memory, and host access are explicit.
+A small function that transforms data should not need a whole application environment around it. Putting them in QIP allows them to become cross-platform, predictable, hard to break, and easy to test.
 
-## The QIP Values
+Components, AI coding, security: you can pick all three.
 
-QIP is named for the constraints we want every component to keep:
+## Principles
 
-- **Quarantined:** components run in a deterministic sandbox with zero access to the host: no filesystem, no network, and no environment.
+- **Quarantined:** components run in a deterministic sandbox with zero access to the host: no filesystem, no network, and no environment access.
+- **Reproducible:** same component, same input/uniforms/events, same output.
+- **Portable:** the same `.wasm` runs in the browser, server, CLI, native apps, CI, mobile, and edge.
 - **Immutable:** components are self-contained with no required dependencies, so once you have a working component it keeps working with no updates required.
-- **Portable:** components run identically across web and native hosts through the same QIP contract.
+- **Composable:** components pipe together like Unix tools.
+- **Agent-friendly:** small modules are easier to generate, review, benchmark, optimize, and replace.
 
 ## Names In These Docs
 
