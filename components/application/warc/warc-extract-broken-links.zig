@@ -1,12 +1,14 @@
 // Extract response pages containing broken internal links and reduce their HTML to the offending tags.
 const std = @import("std");
+const warc = @import("lib/warc.zig");
 
 const INPUT_CAP: usize = 128 * 1024 * 1024;
 const OUTPUT_CAP: usize = 128 * 1024 * 1024;
 const INPUT_CONTENT_TYPE = "application/warc";
 const OUTPUT_CONTENT_TYPE = "application/warc";
 const PATH_TABLE_CAP: usize = 65536;
-const HTTP_PREFIX = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+const HTTP_PREFIX = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n";
+const WARCINFO_BLOCK = "software: qip warc-extract-broken-links\r\nformat: WARC File Format 1.1\r\n";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -21,6 +23,7 @@ var path_table: [PATH_TABLE_CAP]PathEntry = [_]PathEntry{.{}} ** PATH_TABLE_CAP;
 
 const WARCRecord = struct {
     next: usize,
+    header_block: []const u8,
     warc_type: []const u8,
     target_uri: []const u8,
     payload: []const u8,
@@ -42,7 +45,7 @@ const Output = struct {
     len: usize = 0,
     overflow: bool = false,
 
-    fn write(self: *Output, value: []const u8) void {
+    pub fn write(self: *Output, value: []const u8) void {
         if (self.overflow or value.len == 0) return;
         if (value.len > output_buf.len - self.len) {
             self.overflow = true;
@@ -52,7 +55,11 @@ const Output = struct {
         self.len += value.len;
     }
 
-    fn writeUnsigned(self: *Output, value: usize) void {
+    pub fn writeSlice(self: *Output, value: []const u8) void {
+        self.write(value);
+    }
+
+    pub fn writeUnsigned(self: *Output, value: usize) void {
         var buf: [32]u8 = undefined;
         const formatted = std.fmt.bufPrint(&buf, "{d}", .{value}) catch {
             self.overflow = true;
@@ -193,7 +200,7 @@ fn parseWARCRecord(input: []const u8, start: usize) ?WARCRecord {
     const payload = input[header_end .. header_end + payload_len];
     var next = header_end + payload_len;
     while (next < input.len and (input[next] == '\r' or input[next] == '\n')) : (next += 1) {}
-    return .{ .next = next, .warc_type = warc_type, .target_uri = target_uri, .payload = payload };
+    return .{ .next = next, .header_block = header, .warc_type = warc_type, .target_uri = target_uri, .payload = payload };
 }
 
 fn parseHTTPMeta(payload: []const u8) ?HTTPMeta {
@@ -516,13 +523,13 @@ fn brokenTagBytes(html: []const u8, source_path: []const u8, internal_host: []co
     return total;
 }
 
-fn writePage(output: *Output, target_uri: []const u8, body: []const u8, source_path: []const u8, internal_host: []const u8, snippet_len: usize) void {
-    output.write("WARC/1.0\r\nWARC-Type: response\r\nWARC-Target-URI: ");
-    output.write(target_uri);
-    output.write("\r\nContent-Length: ");
-    output.writeUnsigned(HTTP_PREFIX.len + snippet_len);
-    output.write("\r\n\r\n");
+fn writePage(output: *Output, record: WARCRecord, body: []const u8, source_path: []const u8, internal_host: []const u8, snippet_len: usize) void {
+    const http_header_len = HTTP_PREFIX.len + "Content-Length: ".len + digits10(snippet_len) + 4;
+    warc.writeRecordHeader(output, record.header_block, http_header_len + snippet_len, true);
     output.write(HTTP_PREFIX);
+    output.write("Content-Length: ");
+    output.writeUnsigned(snippet_len);
+    output.write("\r\n\r\n");
     _ = brokenTagBytes(body, source_path, internal_host, output);
     output.write("\r\n\r\n");
 }
@@ -543,6 +550,18 @@ fn listBrokenLinks(input: []const u8) ?usize {
     }
 
     var output = Output{};
+    output.write(
+        "WARC/1.1\r\n" ++
+            "WARC-Type: warcinfo\r\n" ++
+            "WARC-Date: 2000-01-01T00:00:00Z\r\n" ++
+            "WARC-Record-ID: <urn:uuid:27131921-2ca4-5d68-bda7-716ae5544b13>\r\n" ++
+            "Content-Type: application/warc-fields\r\n" ++
+            "Content-Length: ",
+    );
+    output.writeUnsigned(WARCINFO_BLOCK.len);
+    output.write("\r\n\r\n");
+    output.write(WARCINFO_BLOCK);
+    output.write("\r\n\r\n");
     cursor = 0;
     while (cursor < input.len) {
         while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
@@ -556,7 +575,7 @@ fn listBrokenLinks(input: []const u8) ?usize {
         const raw_path = pathFromTargetURI(record.target_uri);
         const source_path = canonicalizePath(raw_path, &source_path_buf) orelse raw_path;
         const snippet_len = brokenTagBytes(http.body, source_path, internal_host, null);
-        if (snippet_len > 0) writePage(&output, record.target_uri, http.body, source_path, internal_host, snippet_len);
+        if (snippet_len > 0) writePage(&output, record, http.body, source_path, internal_host, snippet_len);
     }
     return if (output.overflow) null else output.len;
 }
@@ -564,14 +583,23 @@ fn listBrokenLinks(input: []const u8) ?usize {
 export fn render(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
-    return @intCast(listBrokenLinks(input_buf[0..input_size]) orelse @trap());
+    const output_size = listBrokenLinks(input_buf[0..input_size]) orelse @trap();
+    if (!warc.validateArchive(output_buf[0..output_size])) @trap();
+    return @intCast(output_size);
+}
+
+fn digits10(value: usize) usize {
+    var n = value;
+    var digits: usize = 1;
+    while (n >= 10) : (digits += 1) n /= 10;
+    return digits;
 }
 
 fn appendWARCRecord(output: []u8, cursor: *usize, target_uri: []const u8, payload: []const u8) !void {
     const record = try std.fmt.bufPrint(
         output[cursor.*..],
-        "WARC/1.0\r\nWARC-Type: response\r\nWARC-Target-URI: {s}\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
-        .{ target_uri, payload.len, payload },
+        "WARC/1.1\r\nWARC-Type: response\r\nWARC-Target-URI: {s}\r\nWARC-Date: 2000-01-01T00:00:00Z\r\nWARC-Record-ID: <urn:uuid:00000000-0000-4000-8000-{d:0>12}>\r\nContent-Type: application/http; msgtype=response\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
+        .{ target_uri, cursor.*, payload.len, payload },
     );
     cursor.* += record.len;
 }
@@ -594,10 +622,13 @@ test "keeps only pages and tags with broken links" {
     try std.testing.expect(std.mem.indexOf(u8, result, "<p>Home</p>") == null);
 }
 
-test "returns an empty WARC when every internal link resolves" {
+test "returns a valid warcinfo-only archive when every internal link resolves" {
     var input: [2048]u8 = undefined;
     var input_len: usize = 0;
     try appendWARCRecord(&input, &input_len, "http://qip.local/", "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<a href=\"/ok\">OK</a>");
     try appendWARCRecord(&input, &input_len, "http://qip.local/ok", "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<p>OK</p>");
-    try std.testing.expectEqual(@as(usize, 0), listBrokenLinks(input[0..input_len]) orelse return error.UnexpectedNull);
+    const output_len = listBrokenLinks(input[0..input_len]) orelse return error.UnexpectedNull;
+    try std.testing.expect(warc.validateArchive(output_buf[0..output_len]));
+    try std.testing.expect(std.mem.indexOf(u8, output_buf[0..output_len], "WARC-Type: warcinfo") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output_buf[0..output_len], "WARC-Type: response") == null);
 }

@@ -321,8 +321,8 @@ fn appendWARCRecord(
 ) !void {
     const rec = try std.fmt.bufPrint(
         out_buf[cursor.*..],
-        "WARC/1.0\r\nWARC-Type: {s}\r\nWARC-Target-URI: {s}\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
-        .{ warc_type, target_uri, payload.len, payload },
+        "WARC/1.1\r\nWARC-Type: {s}\r\nWARC-Target-URI: {s}\r\nWARC-Date: 2000-01-01T00:00:00Z\r\nWARC-Record-ID: <urn:uuid:00000000-0000-4000-8000-{d:0>12}>\r\nContent-Type: application/http; msgtype=response\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
+        .{ warc_type, target_uri, cursor.*, payload.len, payload },
     );
     cursor.* += rec.len;
 }

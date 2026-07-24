@@ -1,4 +1,4 @@
-.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply site-static install score wasm-safety-report
+.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs site-static install score wasm-safety-report
 
 default: qip compliance components recipes
 
@@ -240,8 +240,11 @@ components/application/warc/warc-check-broken-module-imports.wasm: ZIG_WASM_MAX_
 components/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/application/warc/warc-add-custom-element-scripts.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+components/application/warc/warc-add-open-graph-image-meta.wasm components/application/warc/warc-add-custom-element-scripts.wasm components/application/warc/warc-extract-broken-links.wasm: components/application/warc/lib/warc.zig
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+recipes/application/warc/20-add-docs-sidebar.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm: recipes/application/warc/lib/warc.zig
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
@@ -363,7 +366,10 @@ recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 components: components-wat-wasm components-c-wasm components-zig-wasm
 
-test: qip components test-go test-node test-zig test-snapshot test-comply
+test: qip components test-go test-node test-zig test-snapshot test-comply test-warc-libs
+
+test-warc-libs:
+	cmp components/application/warc/lib/warc.zig recipes/application/warc/lib/warc.zig
 
 test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --check site/qip-runner.js

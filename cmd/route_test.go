@@ -90,7 +90,7 @@ func TestRunRouteWARCArchivesAllPaths(t *testing.T) {
 	if !reflect.DeepEqual(resolved, []string{"/a", "/b"}) {
 		t.Fatalf("resolved=%v, want [/a /b]", resolved)
 	}
-	if got := strings.Count(out.String(), "WARC/1.0\r\n"); got != 2 {
+	if got := strings.Count(out.String(), "WARC/1.1\r\n"); got != 2 {
 		t.Fatalf("record count=%d, want 2", got)
 	}
 	if !strings.Contains(out.String(), "WARC-Target-URI: http://qip.local/a\r\n") {
@@ -123,20 +123,76 @@ func TestRunRouteWARCTransformsArchive(t *testing.T) {
 		TransformWARC: func(ctx context.Context, request RouteWARCRequest, warc []byte) ([]byte, error) {
 			transformedInput = append([]byte(nil), warc...)
 			transformedRouteCount = request.RouteCount
-			return []byte("transformed"), nil
+			return warc, nil
 		},
 	})
 	if err != nil {
 		t.Fatalf("RunRoute: %v", err)
 	}
-	if len(transformedInput) == 0 || !bytes.Contains(transformedInput, []byte("WARC/1.0\r\n")) {
+	if len(transformedInput) == 0 || !bytes.Contains(transformedInput, []byte("WARC/1.1\r\n")) {
 		t.Fatalf("expected original WARC archive bytes to be passed to TransformWARC")
 	}
 	if transformedRouteCount != 3 {
 		t.Fatalf("route count=%d, want 3", transformedRouteCount)
 	}
-	if out.String() != "transformed" {
-		t.Fatalf("stdout=%q, want transformed", out.String())
+	if !bytes.Equal(out.Bytes(), transformedInput) {
+		t.Fatalf("stdout does not contain the validated transformed archive")
+	}
+}
+
+func TestRunRouteWARCIsReproducible(t *testing.T) {
+	run := func() []byte {
+		t.Helper()
+		var out bytes.Buffer
+		err := RunRoute([]string{"warc", "docs"}, RouteConfig{
+			UsageRoute:     "usage route",
+			UsageRouteWarc: "usage route warc",
+			Stdout:         &out,
+			ListWARCPaths: func(context.Context, RouteWARCRequest) ([]string, error) {
+				return []string{"/b", "/a"}, nil
+			},
+			ResolveWARC: func(_ context.Context, request RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
+				return qinternal.InProcessHTTPResponse{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/plain"}},
+					Body:       []byte("body for " + request.RequestPath),
+				}, nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("RunRoute: %v", err)
+		}
+		return out.Bytes()
+	}
+
+	first := run()
+	second := run()
+	if !bytes.Equal(first, second) {
+		t.Fatal("router WARC export is not reproducible")
+	}
+}
+
+func TestRunRouteWARCRejectsInvalidRecipeOutput(t *testing.T) {
+	err := RunRoute([]string{"warc", "docs"}, RouteConfig{
+		UsageRoute:     "usage route",
+		UsageRouteWarc: "usage route warc",
+		Stdout:         &bytes.Buffer{},
+		ListWARCPaths: func(context.Context, RouteWARCRequest) ([]string, error) {
+			return []string{"/a"}, nil
+		},
+		ResolveWARC: func(context.Context, RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
+			return qinternal.InProcessHTTPResponse{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Body:       []byte("ok"),
+			}, nil
+		},
+		TransformWARC: func(context.Context, RouteWARCRequest, []byte) ([]byte, error) {
+			return []byte("WARC/1.0\r\nContent-Length: 0\r\n\r\n\r\n\r\n"), nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid final WARC archive") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -302,7 +358,7 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 	}
 
 	got := out.String()
-	if gotCount := strings.Count(got, "WARC/1.0\r\n"); gotCount != 9 {
+	if gotCount := strings.Count(got, "WARC/1.1\r\n"); gotCount != 9 {
 		t.Fatalf("record count=%d, want 9", gotCount)
 	}
 	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source\r\n") {
@@ -379,7 +435,9 @@ func TestBuildMinimalWARCResponseRecord(t *testing.T) {
 	}
 
 	checks := []string{
-		"WARC/1.0\r\n",
+		"WARC/1.1\r\n",
+		"WARC-Date: 2000-01-01T00:00:00Z\r\n",
+		"WARC-Record-ID: <urn:uuid:",
 		"WARC-Type: response\r\n",
 		"WARC-Target-URI: http://qip.local/about\r\n",
 		"Content-Type: application/http; msgtype=response\r\n",

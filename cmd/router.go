@@ -3,8 +3,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,11 +10,10 @@ import (
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
-	"time"
 
 	qinternal "github.com/royalicing/qip/internal"
+	qwarc "github.com/royalicing/qip/internal/warc"
 )
 
 type RouteWARCRequest struct {
@@ -180,6 +177,9 @@ func runRouteWARC(args []string, config RouteConfig) error {
 		}
 		warcOutput = transformed
 	}
+	if err := qwarc.ValidateArchive(warcOutput); err != nil {
+		return fmt.Errorf("invalid final WARC archive: %w", err)
+	}
 
 	if outputPath == "" || outputPath == "-" {
 		if _, err := config.Stdout.Write(warcOutput); err != nil {
@@ -221,75 +221,7 @@ func normalizeRouteWarcArgs(args []string) []string {
 }
 
 func buildMinimalWARCResponseRecord(targetURI string, response qinternal.InProcessHTTPResponse) ([]byte, error) {
-	if targetURI == "" {
-		return nil, errors.New("target URI must not be empty")
-	}
-
-	recordID, err := newWARCRecordID()
-	if err != nil {
-		return nil, err
-	}
-	payload := buildHTTPResponsePayload(response)
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-
-	var buf bytes.Buffer
-	buf.WriteString("WARC/1.0\r\n")
-	buf.WriteString("WARC-Type: response\r\n")
-	buf.WriteString("WARC-Target-URI: ")
-	buf.WriteString(targetURI)
-	buf.WriteString("\r\n")
-	buf.WriteString("WARC-Date: ")
-	buf.WriteString(timestamp)
-	buf.WriteString("\r\n")
-	buf.WriteString("WARC-Record-ID: ")
-	buf.WriteString(recordID)
-	buf.WriteString("\r\n")
-	buf.WriteString("Content-Type: application/http; msgtype=response\r\n")
-	buf.WriteString("Content-Length: ")
-	buf.WriteString(strconv.Itoa(len(payload)))
-	buf.WriteString("\r\n\r\n")
-	buf.Write(payload)
-	buf.WriteString("\r\n\r\n")
-	return buf.Bytes(), nil
-}
-
-func buildHTTPResponsePayload(response qinternal.InProcessHTTPResponse) []byte {
-	statusCode := response.StatusCode
-	if statusCode == 0 {
-		statusCode = http.StatusOK
-	}
-	statusText := http.StatusText(statusCode)
-	if statusText == "" {
-		statusText = "Status"
-	}
-
-	headers := response.Header.Clone()
-	if headers == nil {
-		headers = make(http.Header)
-	}
-	if headers.Get("Content-Length") == "" {
-		headers.Set("Content-Length", strconv.Itoa(len(response.Body)))
-	}
-
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	var payload bytes.Buffer
-	fmt.Fprintf(&payload, "HTTP/1.1 %d %s\r\n", statusCode, statusText)
-	for _, key := range keys {
-		for _, value := range headers[key] {
-			payload.WriteString(key)
-			payload.WriteString(": ")
-			payload.WriteString(value)
-			payload.WriteString("\r\n")
-		}
-	}
-	payload.WriteString("\r\n")
-	payload.Write(response.Body)
-	return payload.Bytes()
+	return qwarc.BuildHTTPResponseRecord(targetURI, response.StatusCode, response.Header, response.Body)
 }
 
 func buildRecipeSourceWARCRecords(host string, recipesRoot string, componentsRoot string, markdownRequestPaths []string, componentRequestPaths []string) ([][]byte, error) {
@@ -348,21 +280,4 @@ func filterComponentRequestPaths(paths []string) []string {
 		}
 	}
 	return out
-}
-
-func newWARCRecordID() (string, error) {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", fmt.Errorf("failed to generate WARC record id: %w", err)
-	}
-	raw[6] = (raw[6] & 0x0f) | 0x40
-	raw[8] = (raw[8] & 0x3f) | 0x80
-	return fmt.Sprintf(
-		"<urn:uuid:%s-%s-%s-%s-%s>",
-		hex.EncodeToString(raw[0:4]),
-		hex.EncodeToString(raw[4:6]),
-		hex.EncodeToString(raw[6:8]),
-		hex.EncodeToString(raw[8:10]),
-		hex.EncodeToString(raw[10:16]),
-	), nil
 }

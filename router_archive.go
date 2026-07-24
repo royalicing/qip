@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"net/textproto"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	qinternal "github.com/royalicing/qip/internal"
+	qwarc "github.com/royalicing/qip/internal/warc"
 )
 
 func scaleRouteWARCTransformTimeout(base time.Duration, routeCount int) time.Duration {
@@ -29,6 +29,9 @@ func scaleRouteWARCTransformTimeout(base time.Duration, routeCount int) time.Dur
 
 func processApplicationWARCArchive(ctx context.Context, pipeline *qinternal.Pipeline, warc []byte, requestID uint64) ([]byte, error) {
 	if pipeline == nil {
+		if err := qwarc.ValidateArchive(warc); err != nil {
+			return nil, fmt.Errorf("invalid WARC archive: %w", err)
+		}
 		return warc, nil
 	}
 	input := qinternal.NewRawBytesContentWithType(warc, applicationWARCRecipeMIME)
@@ -39,6 +42,9 @@ func processApplicationWARCArchive(ctx context.Context, pipeline *qinternal.Pipe
 	_, output, err := ensureRawContent(result)
 	if err != nil {
 		return nil, err
+	}
+	if err := qwarc.ValidateArchive(output); err != nil {
+		return nil, fmt.Errorf("WARC recipe returned an invalid archive: %w", err)
 	}
 	return output, nil
 }
@@ -85,68 +91,7 @@ func buildWARCRequestURI(host string, requestPath string) string {
 }
 
 func buildMinimalWARCResponseRecord(targetURI string, response qinternal.InProcessHTTPResponse) ([]byte, error) {
-	targetURI = strings.TrimSpace(targetURI)
-	if targetURI == "" {
-		return nil, errors.New("target URI must not be empty")
-	}
-
-	payload := buildWARCHTTPResponsePayload(response)
-	var buf bytes.Buffer
-	buf.WriteString("WARC/1.0\r\n")
-	buf.WriteString("WARC-Type: response\r\n")
-	buf.WriteString("WARC-Target-URI: ")
-	buf.WriteString(targetURI)
-	buf.WriteString("\r\n")
-	buf.WriteString("WARC-Date: ")
-	buf.WriteString(time.Now().UTC().Format(time.RFC3339))
-	buf.WriteString("\r\n")
-	buf.WriteString("WARC-Record-ID: <urn:uuid:qip-dev-response>\r\n")
-	buf.WriteString("Content-Type: application/http; msgtype=response\r\n")
-	buf.WriteString("Content-Length: ")
-	buf.WriteString(strconv.Itoa(len(payload)))
-	buf.WriteString("\r\n\r\n")
-	buf.Write(payload)
-	buf.WriteString("\r\n\r\n")
-	return buf.Bytes(), nil
-}
-
-func buildWARCHTTPResponsePayload(response qinternal.InProcessHTTPResponse) []byte {
-	statusCode := response.StatusCode
-	if statusCode == 0 {
-		statusCode = http.StatusOK
-	}
-	statusText := http.StatusText(statusCode)
-	if statusText == "" {
-		statusText = "Status"
-	}
-
-	headers := response.Header.Clone()
-	if headers == nil {
-		headers = make(http.Header)
-	}
-	if headers.Get("Content-Length") == "" {
-		headers.Set("Content-Length", strconv.Itoa(len(response.Body)))
-	}
-
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	var payload bytes.Buffer
-	fmt.Fprintf(&payload, "HTTP/1.1 %d %s\r\n", statusCode, statusText)
-	for _, key := range keys {
-		for _, value := range headers[key] {
-			payload.WriteString(key)
-			payload.WriteString(": ")
-			payload.WriteString(value)
-			payload.WriteString("\r\n")
-		}
-	}
-	payload.WriteString("\r\n")
-	payload.Write(response.Body)
-	return payload.Bytes()
+	return qwarc.BuildHTTPResponseRecord(targetURI, response.StatusCode, response.Header, response.Body)
 }
 
 func extractFirstWARCResponseRecord(warc []byte) (qinternal.InProcessHTTPResponse, error) {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const warc = @import("lib/warc.zig");
 
 const INPUT_CAP: usize = 256 * 1024 * 1024;
 const OUTPUT_CAP: usize = 256 * 1024 * 1024;
@@ -11,6 +12,7 @@ var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 const WARCRecord = struct {
     next: usize,
+    header_block: []const u8,
     warc_type: []const u8,
     target_uri: []const u8,
     payload: []const u8,
@@ -50,7 +52,7 @@ const Output = struct {
         self.idx += 1;
     }
 
-    fn writeSlice(self: *Output, s: []const u8) void {
+    pub fn writeSlice(self: *Output, s: []const u8) void {
         if (self.overflow or s.len == 0) return;
         if (self.remaining() < s.len) {
             self.overflow = true;
@@ -60,7 +62,7 @@ const Output = struct {
         self.idx += s.len;
     }
 
-    fn writeUnsigned(self: *Output, value: usize) void {
+    pub fn writeUnsigned(self: *Output, value: usize) void {
         var buf: [32]u8 = undefined;
         const formatted = std.fmt.bufPrint(&buf, "{d}", .{value}) catch {
             self.overflow = true;
@@ -216,7 +218,13 @@ fn parseWARCRecord(input: []const u8, start: usize) ?WARCRecord {
     var next = header_end + payload_len;
     while (next < input.len and (input[next] == '\r' or input[next] == '\n')) : (next += 1) {}
 
-    return .{ .next = next, .warc_type = warc_type, .target_uri = target_uri, .payload = payload };
+    return .{
+        .next = next,
+        .header_block = header_slice,
+        .warc_type = warc_type,
+        .target_uri = target_uri,
+        .payload = payload,
+    };
 }
 
 fn parseHTTPPayload(payload: []const u8) ?HTTPPayload {
@@ -420,6 +428,13 @@ fn sizeTextLen(byte_len: usize) usize {
     return digits10(hundredths / 100) + ".00 kB".len;
 }
 
+fn digits10(value: usize) usize {
+    var n = value;
+    var digits: usize = 1;
+    while (n >= 10) : (digits += 1) n /= 10;
+    return digits;
+}
+
 fn writeSizeText(out: *Output, byte_len: usize) void {
     if (byte_len < 1000) {
         out.writeUnsigned(byte_len);
@@ -445,73 +460,16 @@ fn bodyLenWithContentSizes(input: []const u8, body: []const u8) usize {
     }
     return len;
 }
-fn digits10(value: usize) usize {
-    var n = value;
-    var digits: usize = 1;
-    while (n >= 10) : (digits += 1) n /= 10;
-    return digits;
-}
-
 fn computeHeaderRewriteLen(http: HTTPPayload, body_len: usize) usize {
-    var len: usize = http.status_line.len + 2;
-    var line_start: usize = 0;
-    var line_index: usize = 0;
-    while (line_start < http.header_block.len) : (line_index += 1) {
-        const nl = std.mem.indexOfPos(u8, http.header_block, line_start, "\n") orelse http.header_block.len;
-        var line = http.header_block[line_start..nl];
-        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
-        line_start = if (nl < http.header_block.len) nl + 1 else http.header_block.len;
-        const trimmed = trimASCIIWhitespace(line);
-        if (trimmed.len == 0) break;
-        if (line_index == 0) continue;
-        const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse {
-            len += trimmed.len + 2;
-            continue;
-        };
-        const key = trimASCIIWhitespace(trimmed[0..colon]);
-        if (eqlIgnoreCase(key, "Content-Length")) continue;
-        len += trimmed.len + 2;
-    }
-    len += "Content-Length: ".len + digits10(body_len) + 4;
-    return len;
+    return warc.httpHeaderRewriteLen(http.header_block, http.status_line, body_len);
 }
 
-fn writeWARCRecordHeader(out: *Output, warc_type: []const u8, target_uri: []const u8, payload_len: usize) void {
-    out.writeSlice("WARC/1.0\r\nWARC-Type: ");
-    out.writeSlice(warc_type);
-    out.writeSlice("\r\nWARC-Target-URI: ");
-    out.writeSlice(target_uri);
-    out.writeSlice("\r\nContent-Length: ");
-    out.writeUnsigned(payload_len);
-    out.writeSlice("\r\n\r\n");
+fn writeWARCRecordHeader(out: *Output, record: WARCRecord, payload_len: usize, changed: bool) void {
+    warc.writeRecordHeader(out, record.header_block, payload_len, changed);
 }
 
 fn writeHTTPHeaders(out: *Output, http: HTTPPayload, body_len: usize) void {
-    out.writeSlice(http.status_line);
-    out.writeSlice("\r\n");
-    var line_start: usize = 0;
-    var line_index: usize = 0;
-    while (line_start < http.header_block.len) : (line_index += 1) {
-        const nl = std.mem.indexOfPos(u8, http.header_block, line_start, "\n") orelse http.header_block.len;
-        var line = http.header_block[line_start..nl];
-        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
-        line_start = if (nl < http.header_block.len) nl + 1 else http.header_block.len;
-        const trimmed = trimASCIIWhitespace(line);
-        if (trimmed.len == 0) break;
-        if (line_index == 0) continue;
-        const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse {
-            out.writeSlice(trimmed);
-            out.writeSlice("\r\n");
-            continue;
-        };
-        const key = trimASCIIWhitespace(trimmed[0..colon]);
-        if (eqlIgnoreCase(key, "Content-Length")) continue;
-        out.writeSlice(trimmed);
-        out.writeSlice("\r\n");
-    }
-    out.writeSlice("Content-Length: ");
-    out.writeUnsigned(body_len);
-    out.writeSlice("\r\n\r\n");
+    warc.writeRewrittenHTTPHeaders(out, http.header_block, http.status_line, body_len);
 }
 
 fn writeBodyWithContentSizes(input: []const u8, out: *Output, body: []const u8) void {
@@ -556,7 +514,7 @@ fn processWARC(input: []const u8, out: *Output) void {
             }
         }
 
-        writeWARCRecordHeader(out, record.warc_type, record.target_uri, payload_len);
+        writeWARCRecordHeader(out, record, payload_len, payload_to_write != null);
         if (payload_to_write) |http| {
             writeHTTPPayloadWithContentSizes(input, out, http);
         } else {
@@ -573,14 +531,15 @@ export fn render(input_size_u32: u32) u32 {
     var out = Output{};
     processWARC(input_buf[0..input_size], &out);
     if (out.overflow) @trap();
+    if (!warc.validateArchive(output_buf[0..out.idx])) @trap();
     return @as(u32, @intCast(out.idx));
 }
 
 fn appendWARCRecord(out_buf: []u8, cursor: *usize, warc_type: []const u8, target_uri: []const u8, payload: []const u8) !void {
     const rec = try std.fmt.bufPrint(
         out_buf[cursor.*..],
-        "WARC/1.0\r\nWARC-Type: {s}\r\nWARC-Target-URI: {s}\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
-        .{ warc_type, target_uri, payload.len, payload },
+        "WARC/1.1\r\nWARC-Type: {s}\r\nWARC-Target-URI: {s}\r\nWARC-Date: 2000-01-01T00:00:00Z\r\nWARC-Record-ID: <urn:uuid:00000000-0000-4000-8000-{d:0>12}>\r\nContent-Type: application/http; msgtype=response\r\nX-QIP-Test: kept\r\nContent-Length: {d}\r\n\r\n{s}\r\n\r\n",
+        .{ warc_type, target_uri, cursor.*, payload.len, payload },
     );
     cursor.* += rec.len;
 }
