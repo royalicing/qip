@@ -25,15 +25,15 @@ const START_BTN_W: i32 = 54;
 const START_BTN_H: i32 = 16;
 const START_MENU_X: i32 = 4;
 const START_MENU_W: i32 = 124;
-const START_MENU_H: i32 = 82;
-const START_MENU_Y: i32 = TASKBAR_Y - START_MENU_H;
 const START_BAND_W: i32 = 20;
-const START_ITEM_X: i32 = START_MENU_X + START_BAND_W + 4;
-const START_ITEM_W: i32 = START_MENU_W - START_BAND_W - 8;
 const START_ITEM_H: i32 = 16;
 const START_ITEM_GAP: i32 = 2;
-const START_ITEM_Y0: i32 = START_MENU_Y + 8;
 const START_MENU_ITEMS: i32 = 6;
+const START_MENU_H: i32 = 16 + START_MENU_ITEMS * (START_ITEM_H + START_ITEM_GAP);
+const START_MENU_Y: i32 = TASKBAR_Y - START_MENU_H;
+const START_ITEM_X: i32 = START_MENU_X + START_BAND_W + 4;
+const START_ITEM_W: i32 = START_MENU_W - START_BAND_W - 8;
+const START_ITEM_Y0: i32 = START_MENU_Y + 8;
 const START_PROGRAMS_X: i32 = START_MENU_X + START_MENU_W - 2;
 const START_PROGRAMS_Y: i32 = START_ITEM_Y0;
 const START_PROGRAMS_W: i32 = 110;
@@ -605,6 +605,10 @@ fn startMenuItemAt(x: i32, y: i32) i32 {
     return idx;
 }
 
+fn startMenuItemY(item: i32) i32 {
+    return START_ITEM_Y0 + item * (START_ITEM_H + START_ITEM_GAP);
+}
+
 fn handleStartMenuAction(item: i32) void {
     switch (item) {
         1 => {
@@ -981,7 +985,7 @@ fn drawStartMenu() void {
 }
 
 fn drawStartMenuItem(item: i32, label: []const u8) void {
-    const y = START_ITEM_Y0 + item * (START_ITEM_H + START_ITEM_GAP);
+    const y = startMenuItemY(item);
     fillRectI32(START_ITEM_X, y, START_ITEM_W, START_ITEM_H, C_PANEL);
     drawRaised(START_ITEM_X, y, START_ITEM_W, START_ITEM_H);
     drawText(START_ITEM_X + 8, y + 5, label, C_DARK);
@@ -1298,8 +1302,9 @@ test "start menu Open restores minimized window" {
     _ = pointer_event(BTN_PRIMARY, 12, 206, 0);
     _ = pointer_event(0, 12, 206, 0);
     try std.testing.expect(start_menu_open);
-    _ = pointer_event(BTN_PRIMARY, START_ITEM_X + 6, START_ITEM_Y0 + 6, 0);
-    _ = pointer_event(0, START_ITEM_X + 6, START_ITEM_Y0 + 6, 0);
+    const open_y = startMenuItemY(1) + 6;
+    _ = pointer_event(BTN_PRIMARY, START_ITEM_X + 6, open_y, 0);
+    _ = pointer_event(0, START_ITEM_X + 6, open_y, 0);
     try std.testing.expect(!window_minimized);
     try std.testing.expect(!start_menu_open);
 }
@@ -1326,7 +1331,7 @@ test "start menu Restart resets desktop state" {
     try std.testing.expect(icons[0].x != 18 or icons[0].y != 18);
     _ = pointer_event(BTN_PRIMARY, 12, 206, 0);
     _ = pointer_event(0, 12, 206, 0);
-    const shutdown_y = START_ITEM_Y0 + 5 * (START_ITEM_H + START_ITEM_GAP) + 6;
+    const shutdown_y = startMenuItemY(5) + 6;
     _ = pointer_event(BTN_PRIMARY, START_ITEM_X + 6, shutdown_y, 0);
     _ = pointer_event(0, START_ITEM_X + 6, shutdown_y, 0);
     try std.testing.expect(icons[0].x == 18 and icons[0].y == 18);
@@ -1337,8 +1342,9 @@ test "desktop context menu opens on right click and action clears selection" {
     resetDesktop();
     selected_icon = 2;
     selected_mask = 1 << 2;
-    _ = pointer_event(BTN_SECONDARY, 200, 120, 0);
-    _ = pointer_event(0, 200, 120, 0);
+    try std.testing.expect(desktopSurfaceAt(250, 150));
+    _ = pointer_event(BTN_SECONDARY, 250, 150, 0);
+    _ = pointer_event(0, 250, 150, 0);
     try std.testing.expect(desktop_menu_open);
     _ = pointer_event(BTN_PRIMARY, desktop_menu_x + 10, desktop_menu_y + 20, 0);
     _ = pointer_event(0, desktop_menu_x + 10, desktop_menu_y + 20, 0);

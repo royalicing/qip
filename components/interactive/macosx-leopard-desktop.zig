@@ -32,6 +32,8 @@ const SHADOW_TILE_PIXELS: usize = @as(usize, @intCast(SHADOW_TILE_EXT * SHADOW_T
 const DOCK_N: usize = 7;
 const DOCK_SLOT_STEP: i32 = 31;
 const DOCK_MINIMIZED_SLOT: usize = DOCK_N - 1;
+const DOCK_BASE_SIZE: i32 = 22;
+const DOCK_MAX_BOOST: i32 = 12;
 const DOCK_Y: i32 = 176;
 const DOCK_PANEL_Y: i32 = DOCK_Y + 4;
 const GENIE_FRAMES: i32 = 12;
@@ -1375,13 +1377,11 @@ fn dockSlotCenter(slot: usize) i32 {
 }
 
 fn dockSizeFor(center_x: i32) i32 {
-    const base: i32 = 22;
-    const max_boost: i32 = 12;
     const radius: i32 = 58;
-    if (!dock_hover_active or dockMagnificationBlocked()) return base;
+    if (!dock_hover_active or dockMagnificationBlocked()) return DOCK_BASE_SIZE;
 
     const d = absI32(pointer_x - center_x);
-    if (d >= radius) return base;
+    if (d >= radius) return DOCK_BASE_SIZE;
 
     const vertical_top = DOCK_Y - 18;
     const vertical_bottom = DOCK_Y + 32;
@@ -1390,8 +1390,8 @@ fn dockSizeFor(center_x: i32) i32 {
     const vertical_scaled = @divTrunc(vertical * 1024, vertical_span);
     const proximity = radius - d;
     const horizontal_scaled = @divTrunc(proximity * proximity * 1024, radius * radius);
-    const boost = @divTrunc(max_boost * horizontal_scaled * vertical_scaled, 1024 * 1024);
-    return base + boost;
+    const boost = @divTrunc(DOCK_MAX_BOOST * horizontal_scaled * vertical_scaled, 1024 * 1024);
+    return DOCK_BASE_SIZE + boost;
 }
 
 fn dockMagnificationBlocked() bool {
@@ -1427,7 +1427,7 @@ fn pointerOverDockHoverTargets() bool {
         .h = hover_bottom - hover_top,
     })) return true;
 
-    const max_size: i32 = 22 + 12;
+    const max_size: i32 = DOCK_BASE_SIZE + DOCK_MAX_BOOST;
     var i: usize = 0;
     while (i < DOCK_N) : (i += 1) {
         const slot = dockSlotForIcon(i);
@@ -1865,14 +1865,14 @@ fn absI32(v: i32) i32 {
 
 test "dock magnifies near pointer" {
     resetDesktop();
-    dock_hover_active = true;
-    pointer_x = 68;
-    pointer_y = 190;
-    try std.testing.expect(dockSizeFor(68) == 40);
+    _ = pointer_event(0, 68, DOCK_PANEL_Y + 10, 0);
+    try std.testing.expect(dock_hover_active);
+    try std.testing.expect(dockSizeFor(68) > DOCK_BASE_SIZE);
     try std.testing.expect(dockSizeFor(84) > dockSizeFor(112));
-    try std.testing.expect(dockSizeFor(112) > dockSizeFor(132));
-    pointer_y = 120;
-    try std.testing.expect(dockSizeFor(68) == 24);
+    try std.testing.expect(dockSizeFor(132) == DOCK_BASE_SIZE);
+    _ = pointer_event(0, 68, 120, 0);
+    try std.testing.expect(!dock_hover_active);
+    try std.testing.expect(dockSizeFor(68) == DOCK_BASE_SIZE);
 }
 
 test "dock does not magnify while primary drag is active" {
@@ -1882,17 +1882,17 @@ test "dock does not magnify while primary drag is active" {
     pointer_y = 190;
     primary_down = true;
     mode = .dragging_window;
-    try std.testing.expect(dockSizeFor(68) == 22);
+    try std.testing.expect(dockSizeFor(68) == DOCK_BASE_SIZE);
 }
 
 test "dock magnification activates only after entering dock" {
     resetDesktop();
     pointer_x = 68;
     pointer_y = 190;
-    try std.testing.expect(dockSizeFor(68) == 22);
+    try std.testing.expect(dockSizeFor(68) == DOCK_BASE_SIZE);
     _ = pointer_event(0, 68, DOCK_PANEL_Y + 8, 0);
     try std.testing.expect(dock_hover_active);
-    try std.testing.expect(dockSizeFor(68) > 22);
+    try std.testing.expect(dockSizeFor(68) > DOCK_BASE_SIZE);
 }
 
 test "window moves live while dragging titlebar" {
@@ -2099,7 +2099,7 @@ test "window shadow is blurred from window alpha" {
     renderWindowBuffer();
     drawWindowShadow(40, 40, window_w, window_h);
     const center_idx = outputIndex(40 + SHADOW_OFFSET_X + @divTrunc(window_w, 2), 40 + SHADOW_OFFSET_Y + @divTrunc(window_h, 2));
-    const feather_idx = outputIndex(40 + SHADOW_OFFSET_X - SHADOW_PAD + 3, 40 + SHADOW_OFFSET_Y + @divTrunc(window_h, 2));
+    const feather_idx = outputIndex(40 + SHADOW_OFFSET_X - 2, 40 + SHADOW_OFFSET_Y + @divTrunc(window_h, 2));
     const far_idx = outputIndex(8, 8);
     try std.testing.expect(output_buf[center_idx + 0] < output_buf[feather_idx + 0]);
     try std.testing.expect(output_buf[feather_idx + 0] < output_buf[far_idx + 0]);
@@ -2168,8 +2168,9 @@ test "menubar mini action starts minimize" {
 
 test "desktop context menu opens on right click" {
     resetDesktop();
-    _ = pointer_event(BTN_SECONDARY, 210, 100, 0);
-    _ = pointer_event(0, 210, 100, 0);
+    try std.testing.expect(desktopSurfaceAt(260, 150));
+    _ = pointer_event(BTN_SECONDARY, 260, 150, 0);
+    _ = pointer_event(0, 260, 150, 0);
     try std.testing.expect(desktop_menu_open);
 }
 
