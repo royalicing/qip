@@ -310,21 +310,29 @@ const copyStatus = document.getElementById("wasm-copy-status");
 let rawCSV = "";
 let inspectionNumber = 0;
 
-const [counterModule, catalogResponse] = await Promise.all([
+const [counterModule, viewSourceResponse] = await Promise.all([
   WebAssembly.compileStreaming(fetch("/components/application/wasm/wasm-counts.wasm")),
-  fetch("/data/wasm-modules.txt"),
+  fetch("/view-source"),
 ]);
-if (!catalogResponse.ok) throw Error("Could not load the module catalog.");
+if (!viewSourceResponse.ok) {
+  throw Error("Could not load /view-source. Run the router with --view-source.");
+}
 
 const countModule = contentComponent(
   contentTypeBytes("application/wasm"),
   counterModule,
   contentTypeUTF8("text/csv"),
 );
-const modulePaths = (await catalogResponse.text())
-  .split("\n")
-  .map((line) => line.trim())
-  .filter((line) => line.startsWith("/components/") && line.endsWith(".wasm"));
+const viewSource = new DOMParser().parseFromString(
+  await viewSourceResponse.text(),
+  "text/html",
+);
+const modulePaths = [
+  ...new Set(
+    [...viewSource.querySelectorAll('a[href^="/components/"][href$=".wasm"]')]
+      .map((link) => new URL(link.getAttribute("href"), location.origin).pathname),
+  ),
+].sort();
 
 function shortName(path) {
   return path.slice(path.lastIndexOf("/") + 1);
@@ -612,8 +620,6 @@ performance score.
 ## Download
 
 - <a href="/components/application/wasm/wasm-counts.wasm" download>wasm-counts.wasm</a> — <qip-content-size src="/components/application/wasm/wasm-counts.wasm"></qip-content-size>
-- <a href="/data/wasm-modules.txt" download>Module catalog</a>
-
 ## CLI equivalent
 
 ```bash

@@ -1,4 +1,4 @@
-.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs wasm-catalog site-static install score wasm-safety-report
+.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs site-static install score wasm-safety-report
 
 default: qip compliance components recipes
 
@@ -618,12 +618,7 @@ wasm-safety-report: qip components
 	total=$$((pass + fail)); \
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
-WASM_CATALOG_SOURCES := $(shell find components -type f -name '*.wasm' | LC_ALL=C sort)
-
-wasm-catalog:
-	@printf '%s\n' $(patsubst %,/%,$(WASM_CATALOG_SOURCES)) > site/data/wasm-modules.txt
-
-site-static: qip recipes wasm-catalog
+site-static: qip recipes
 	$(QIP_BIN) router warc ./site --host https://qip.dev --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
