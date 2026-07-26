@@ -638,7 +638,7 @@ wasm-safety-report: qip components
 	total=$$((pass + fail)); \
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
-site-static: qip recipes
+site-static: qip
 	$(QIP_BIN) router warc ./site --host https://qip.dev --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
