@@ -248,6 +248,15 @@ components/application/warc/warc-counts.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/application/warc/warc-extract-broken-links.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/warc/warc-check-broken-module-imports.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+components/application/x-tar/tar-to-zip.wasm: ZIG_WASM_MAX_MEMORY = 402653184
+components/application/x-tar/tar-to-zip.wasm: components/application/x-tar/tar-to-zip.zig components/bytes/lib/deflate.zig
+	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep deflate -Mroot=$< -Mdeflate=components/bytes/lib/deflate.zig -femit-bin=$@
+components/application/zip/zip-to-tar.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+components/application/zip/zip-to-tar.wasm: components/application/zip/zip-to-tar.zig components/application/zip/lib/zip.zig components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
+	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
+components/application/zip/zip-list-entries-csv.wasm components/application/zip/zip-list-files-csv.wasm components/application/zip/zip-extract-file.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+components/application/zip/zip-list-entries-csv.wasm components/application/zip/zip-list-files-csv.wasm components/application/zip/zip-extract-file.wasm: components/application/zip/%.wasm: components/application/zip/%.zig components/application/zip/lib/zip.zig components/application/zip/lib/list-csv.zig components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
+	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
 components/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/application/warc/warc-add-custom-element-scripts.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/application/warc/warc-add-open-graph-image-meta.wasm components/application/warc/warc-add-custom-element-scripts.wasm components/application/warc/warc-extract-broken-links.wasm: components/application/warc/lib/warc.zig
@@ -443,6 +452,9 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
 	node --test test/pdf-extract-images.mjs
+	node --test test/tar-to-zip.mjs
+	node --test test/zip-to-tar.mjs
+	node --test test/zip-list-extract.mjs
 	node --test test/bmp-png.mjs
 	node --test test/bmp-webp.mjs
 	node --test test/bmp-webp-lossy-opaque.mjs
@@ -577,6 +589,12 @@ test-zig: $(ZIG_TEST_FILES)
 	for f in $^; do \
 		echo "zig test $$f"; \
 		if [ "$$f" = "components/application/pdf/pdf-extract-images.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
+		elif [ "$$f" = "components/application/x-tar/tar-to-zip.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep deflate -Mroot="$$f" -Mdeflate=components/bytes/lib/deflate.zig || status=1; \
+		elif [ "$$f" = "components/application/zip/zip-to-tar.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
+		elif [ "$$f" = "components/application/zip/zip-list-entries-csv.zig" ] || [ "$$f" = "components/application/zip/zip-list-files-csv.zig" ] || [ "$$f" = "components/application/zip/zip-extract-file.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
 		else \
 			$(ZIG_ENV) zig test "$$f" $(ZIG_TEST_FLAGS) || status=1; \

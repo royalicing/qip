@@ -16,6 +16,7 @@ Current formats directly supported by a qip command or supported by this repo’
 
 - `application/warc`: website snapshots
 - `application/x-tar`: directory archive as one input/output blob
+- `application/zip`: compressed directory archive for broad tool compatibility
 - `image/bmp`: simple uncompressed raster interchange
 - `image/svg+xml`: vector graphics that work great with LLMs
 - `image/x-icon`
@@ -32,6 +33,11 @@ Examples:
 - `qip router warc ...` emits `application/warc`
 - `components/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
 - `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
+- `components/application/x-tar/tar-to-zip.wasm` maps `application/x-tar -> application/zip`
+- `components/application/zip/zip-to-tar.wasm` maps `application/zip -> application/x-tar`
+- `components/application/zip/zip-list-entries-csv.wasm` maps `application/zip -> text/csv`
+- `components/application/zip/zip-list-files-csv.wasm` maps `application/zip -> text/csv`
+- `components/application/zip/zip-extract-file.wasm` maps one regular ZIP entry to `application/octet-stream`; select it with `?file_index=N`
 
 Tradeoffs:
 
@@ -72,6 +78,7 @@ Why these defaults:
 If you need:
 
 - One file that represents many files: use `application/x-tar`
+- A compressed archive for download or desktop tools: use `application/zip`
 - A snapshot of routed web output: use `application/warc`
 - Vector graphics interchange: use `image/svg+xml`
 - Simple raster interchange between components: use `image/bmp`

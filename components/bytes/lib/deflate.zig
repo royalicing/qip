@@ -2,8 +2,8 @@
 //! components and image encoders that embed a zlib stream (such as PNG).
 //! This is a private API: callers inside this repository only.
 //!
-//! Emits one final dynamic-Huffman block. Callers provide the output buffer
-//! and a token scratch buffer with at least one u32 per input byte; the
+//! Supports zlib-wrapped and raw streams, including bounded multi-block raw
+//! compression. Callers provide the output and token scratch buffers; the
 //! 32 KB-window hash chains live in this module.
 
 const std = @import("std");
@@ -15,7 +15,7 @@ const HASH_MASK: usize = HASH_SIZE - 1;
 
 const MIN_MATCH: usize = 3;
 pub const MAX_MATCH: usize = 258;
-const MAX_CHAIN: usize = 256;
+const DEFAULT_MAX_CHAIN: usize = 256;
 const LAZY_MATCH_BONUS: usize = 1;
 
 const LIT_CODE_COUNT: usize = 286;
@@ -27,6 +27,12 @@ const CL_ORDER = [_]u8{ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 1
 
 var head: [HASH_SIZE]i32 = undefined;
 var prev: [WINDOW_SIZE]i32 = undefined;
+
+pub const CompressionOptions = struct {
+    /// Maximum number of hash-chain candidates examined for each match.
+    /// Shallower searches trade compression ratio for throughput.
+    max_chain: usize = DEFAULT_MAX_CHAIN,
+};
 
 const TOKEN_MATCH_FLAG: u32 = 0x8000_0000;
 const TOKEN_LEN_MASK: u32 = 0x1ff;
@@ -115,6 +121,11 @@ const DistanceEncoding = struct {
     extra_value: u16,
 };
 
+const FixedCode = struct {
+    bits: u16,
+    len: u8,
+};
+
 const RleEntry = struct {
     symbol: u8,
     extra_bits: u8,
@@ -178,6 +189,19 @@ fn reverseBits(code: u16, len: u8) u16 {
     return out_bits;
 }
 
+fn fixedLiteralCode(symbol: u16) FixedCode {
+    if (symbol <= 143) {
+        return .{ .bits = reverseBits(@as(u16, 0x30) + symbol, 8), .len = 8 };
+    }
+    if (symbol <= 255) {
+        return .{ .bits = reverseBits(@as(u16, 0x190) + symbol - 144, 9), .len = 9 };
+    }
+    if (symbol <= 279) {
+        return .{ .bits = reverseBits(symbol - 256, 7), .len = 7 };
+    }
+    return .{ .bits = reverseBits(@as(u16, 0xc0) + symbol - 280, 8), .len = 8 };
+}
+
 fn hash3(input: []const u8, pos: usize) usize {
     const v = (@as(u32, input[pos]) << 16) |
         (@as(u32, input[pos + 1]) << 8) |
@@ -211,7 +235,7 @@ fn matchLen(input: []const u8, a: usize, b: usize, max: usize) usize {
     return len;
 }
 
-fn findMatch(input: []const u8, pos: usize) Match {
+fn findMatch(input: []const u8, pos: usize, max_chain: usize) Match {
     if (pos + MIN_MATCH > input.len) {
         return .{ .len = 0, .dist = 0 };
     }
@@ -223,7 +247,7 @@ fn findMatch(input: []const u8, pos: usize) Match {
     const max_len = @min(MAX_MATCH, input.len - pos);
 
     var steps: usize = 0;
-    while (cand >= 0 and steps < MAX_CHAIN) : (steps += 1) {
+    while (cand >= 0 and steps < max_chain) : (steps += 1) {
         const cand_pos: usize = @intCast(cand);
         const dist = pos - cand_pos;
         if (dist == 0 or dist > WINDOW_SIZE) break;
@@ -466,6 +490,7 @@ fn tokenizeAndCount(
     token_len: *usize,
     lit_freq: *[LIT_CODE_COUNT]u32,
     dist_freq: *[DIST_CODE_COUNT]u32,
+    options: CompressionOptions,
 ) bool {
     token_len.* = 0;
     @memset(lit_freq[0..], 0);
@@ -477,14 +502,14 @@ fn tokenizeAndCount(
     var carried = Match{ .len = 0, .dist = 0 };
     var carried_valid = false;
     while (pos < input.len) {
-        const m = if (carried_valid) carried else findMatch(input, pos);
+        const m = if (carried_valid) carried else findMatch(input, pos, options.max_chain);
         carried_valid = false;
 
         var used_lookahead = false;
         if (m.len >= MIN_MATCH and m.len < MAX_MATCH and pos + 1 < input.len) {
             used_lookahead = true;
             insertPosition(input, pos);
-            const next = findMatch(input, pos + 1);
+            const next = findMatch(input, pos + 1, options.max_chain);
             if (next.len > m.len + LAZY_MATCH_BONUS) {
                 // The deferred match is exactly what the next iteration's
                 // findMatch would return; carry it instead of recomputing.
@@ -647,6 +672,61 @@ fn emitTokenBuffer(
     return true;
 }
 
+fn emitFixedTokenBuffer(tokens: []const u32, writer: *BitWriter) bool {
+    for (tokens) |token| {
+        if (tokenIsMatch(token)) {
+            const length = encodeLength(tokenLength(token));
+            const length_code = fixedLiteralCode(length.symbol);
+            if (!writer.writeBits(length_code.bits, length_code.len)) return false;
+            if (!writer.writeBits(length.extra_value, length.extra_bits)) return false;
+
+            const distance = encodeDistance(tokenDistance(token));
+            if (!writer.writeBits(reverseBits(distance.symbol, 5), 5)) return false;
+            if (!writer.writeBits(distance.extra_value, distance.extra_bits)) return false;
+        } else {
+            const literal = fixedLiteralCode(tokenLiteral(token));
+            if (!writer.writeBits(literal.bits, literal.len)) return false;
+        }
+    }
+
+    const eob = fixedLiteralCode(256);
+    return writer.writeBits(eob.bits, eob.len);
+}
+
+fn fixedTokenBitCost(tokens: []const u32) u64 {
+    var bits: u64 = 3 + fixedLiteralCode(256).len;
+    for (tokens) |token| {
+        if (tokenIsMatch(token)) {
+            const length = encodeLength(tokenLength(token));
+            const distance = encodeDistance(tokenDistance(token));
+            bits += fixedLiteralCode(length.symbol).len + length.extra_bits +
+                5 + distance.extra_bits;
+        } else {
+            bits += fixedLiteralCode(tokenLiteral(token)).len;
+        }
+    }
+    return bits;
+}
+
+fn dynamicTokenBitCost(
+    tokens: []const u32,
+    lit_len: *const [LIT_CODE_COUNT]u8,
+    dist_len: *const [DIST_CODE_COUNT]u8,
+) u64 {
+    var bits: u64 = lit_len[256];
+    for (tokens) |token| {
+        if (tokenIsMatch(token)) {
+            const length = encodeLength(tokenLength(token));
+            const distance = encodeDistance(tokenDistance(token));
+            bits += lit_len[length.symbol] + length.extra_bits +
+                dist_len[distance.symbol] + distance.extra_bits;
+        } else {
+            bits += lit_len[tokenLiteral(token)];
+        }
+    }
+    return bits;
+}
+
 fn writeU32BE(out: []u8, off: usize, value: u32) void {
     out[off] = @intCast((value >> 24) & 0xff);
     out[off + 1] = @intCast((value >> 16) & 0xff);
@@ -654,16 +734,18 @@ fn writeU32BE(out: []u8, off: usize, value: u32) void {
     out[off + 3] = @intCast(value & 0xff);
 }
 
-/// Compresses `input` as a zlib stream with one final dynamic-Huffman
-/// DEFLATE block, written into `output`. `tokens` must hold at least
-/// `input.len` entries. Returns the number of bytes written, or null when
-/// the output or token buffer is too small (or a Huffman tree could not be
-/// built, which does not happen for well-formed inputs).
-pub fn compressZlib(input: []const u8, output: []u8, tokens: []u32) ?usize {
+fn emitDynamicBlock(
+    input: []const u8,
+    tokens: []u32,
+    options: CompressionOptions,
+    writer_ptr: *BitWriter,
+    is_final: bool,
+    choose_fixed: bool,
+) ?void {
     var lit_freq: [LIT_CODE_COUNT]u32 = undefined;
     var dist_freq: [DIST_CODE_COUNT]u32 = undefined;
     var token_count: usize = 0;
-    if (!tokenizeAndCount(input, tokens, &token_count, &lit_freq, &dist_freq)) return null;
+    if (!tokenizeAndCount(input, tokens, &token_count, &lit_freq, &dist_freq, options)) return null;
 
     var lit_len: [LIT_CODE_COUNT]u8 = undefined;
     var dist_len: [DIST_CODE_COUNT]u8 = undefined;
@@ -698,15 +780,23 @@ pub fn compressZlib(input: []const u8, output: []u8, tokens: []u32) ?usize {
     var num_cl: usize = CL_CODE_COUNT;
     while (num_cl > 4 and cl_len[CL_ORDER[num_cl - 1]] == 0) : (num_cl -= 1) {}
 
-    // zlib header.
-    if (output.len < 2) return null;
-    output[0] = 0x78;
-    output[1] = 0x01;
+    var writer = writer_ptr.*;
+    defer writer_ptr.* = writer;
 
-    var writer = BitWriter.init(output, 2);
+    var dynamic_bits: u64 = 3 + 5 + 5 + 4 + num_cl * 3;
+    for (rle_entries[0..rle_len]) |entry| {
+        dynamic_bits += cl_len[entry.symbol] + entry.extra_bits;
+    }
+    dynamic_bits += dynamicTokenBitCost(tokens[0..token_count], &lit_len, &dist_len);
 
-    // Final block, dynamic Huffman: BFINAL=1, BTYPE=10.
-    if (!writer.writeBits(0b101, 3)) return null;
+    if (choose_fixed and fixedTokenBitCost(tokens[0..token_count]) <= dynamic_bits) {
+        if (!writer.writeBits(0b010 | @as(u3, @intFromBool(is_final)), 3)) return null;
+        if (!emitFixedTokenBuffer(tokens[0..token_count], &writer)) return null;
+        return;
+    }
+
+    // Dynamic Huffman: BTYPE=10, with BFINAL controlled by the caller.
+    if (!writer.writeBits(0b100 | @as(u3, @intFromBool(is_final)), 3)) return null;
 
     if (!writer.writeBits(@intCast(num_lit - 257), 5)) return null;
     if (!writer.writeBits(@intCast(num_dist - 1), 5)) return null;
@@ -728,10 +818,218 @@ pub fn compressZlib(input: []const u8, output: []u8, tokens: []u32) ?usize {
     }
 
     if (!emitTokenBuffer(tokens[0..token_count], &writer, &lit_len, &lit_code, &dist_len, &dist_code)) return null;
+}
+
+fn compressDynamic(
+    input: []const u8,
+    output: []u8,
+    tokens: []u32,
+    options: CompressionOptions,
+    output_start: usize,
+) ?usize {
+    var writer = BitWriter.init(output, output_start);
+    emitDynamicBlock(input, tokens, options, &writer, true, false) orelse return null;
     if (!writer.flush()) return null;
+    return writer.out_i;
+}
 
-    if (writer.out_i + 4 > output.len) return null;
-    writeU32BE(output, writer.out_i, std.hash.Adler32.hash(input));
+/// Compresses `input` as a zlib stream with one final dynamic-Huffman
+/// DEFLATE block, written into `output`. `tokens` must hold at least
+/// `input.len` entries. Returns the number of bytes written, or null when
+/// the output or token buffer is too small (or a Huffman tree could not be
+/// built, which does not happen for well-formed inputs).
+pub fn compressZlib(input: []const u8, output: []u8, tokens: []u32) ?usize {
+    return compressZlibWithOptions(input, output, tokens, .{});
+}
 
-    return writer.out_i + 4;
+pub fn compressZlibWithOptions(input: []const u8, output: []u8, tokens: []u32, options: CompressionOptions) ?usize {
+    if (output.len < 2) return null;
+    output[0] = 0x78;
+    output[1] = 0x01;
+
+    const deflate_end = compressDynamic(input, output, tokens, options, 2) orelse return null;
+    if (deflate_end + 4 > output.len) return null;
+    writeU32BE(output, deflate_end, std.hash.Adler32.hash(input));
+    return deflate_end + 4;
+}
+
+/// Compresses `input` as a raw RFC 1951 DEFLATE stream. This is the payload
+/// shape used by containers such as ZIP; unlike `compressZlib`, it has no
+/// RFC 1950 header or Adler-32 trailer.
+pub fn compressRaw(input: []const u8, output: []u8, tokens: []u32) ?usize {
+    return compressRawWithOptions(input, output, tokens, .{});
+}
+
+pub fn compressRawWithOptions(input: []const u8, output: []u8, tokens: []u32, options: CompressionOptions) ?usize {
+    return compressDynamic(input, output, tokens, options, 0);
+}
+
+const INCOMPRESSIBLE_SAMPLE_SIZE: usize = 8 * 1024;
+const INCOMPRESSIBLE_MATCH_PERCENT: usize = 2;
+
+fn likelyIncompressible(input: []const u8, options: CompressionOptions) bool {
+    if (input.len < INCOMPRESSIBLE_SAMPLE_SIZE) return false;
+
+    const sample = input[0..INCOMPRESSIBLE_SAMPLE_SIZE];
+    const sample_chain = @min(options.max_chain, 8);
+    initMatcher();
+
+    var matched_bytes: usize = 0;
+    var pos: usize = 0;
+    while (pos < sample.len) {
+        const match = findMatch(sample, pos, sample_chain);
+        if (match.len >= MIN_MATCH) {
+            matched_bytes += match.len;
+            const end = pos + match.len;
+            while (pos < end) : (pos += 1) insertPosition(sample, pos);
+        } else {
+            insertPosition(sample, pos);
+            pos += 1;
+        }
+    }
+
+    return matched_bytes * 100 < sample.len * INCOMPRESSIBLE_MATCH_PERCENT;
+}
+
+fn emitStoredBlocks(input: []const u8, writer: *BitWriter, is_final: bool) bool {
+    var input_offset: usize = 0;
+    while (input_offset < input.len) {
+        const block_len = @min(input.len - input_offset, std.math.maxInt(u16));
+        const block_end = input_offset + block_len;
+        const block_is_final = is_final and block_end == input.len;
+
+        if (!writer.writeBits(@intFromBool(block_is_final), 3)) return false;
+        if (!writer.flush()) return false;
+        if (writer.out_i + 4 + block_len > writer.out.len) return false;
+
+        const len: u16 = @intCast(block_len);
+        std.mem.writeInt(u16, writer.out[writer.out_i..][0..2], len, .little);
+        std.mem.writeInt(u16, writer.out[writer.out_i + 2 ..][0..2], ~len, .little);
+        writer.out_i += 4;
+        @memcpy(writer.out[writer.out_i .. writer.out_i + block_len], input[input_offset..block_end]);
+        writer.out_i += block_len;
+        input_offset = block_end;
+    }
+    return true;
+}
+
+fn emitBestBlock(
+    input: []const u8,
+    tokens: []u32,
+    options: CompressionOptions,
+    writer: *BitWriter,
+    is_final: bool,
+) ?void {
+    if (likelyIncompressible(input, options)) {
+        if (!emitStoredBlocks(input, writer, is_final)) return null;
+        return;
+    }
+    return emitDynamicBlock(input, tokens, options, writer, is_final, true);
+}
+
+/// Compresses a raw DEFLATE stream in bounded stored, fixed-Huffman, or
+/// dynamic-Huffman blocks. Match history is reset at each batch boundary.
+/// `tokens.len` controls both the maximum batch size and scratch memory use.
+pub fn compressRawBlocksWithOptions(
+    input: []const u8,
+    output: []u8,
+    tokens: []u32,
+    options: CompressionOptions,
+) ?usize {
+    if (tokens.len == 0) return null;
+
+    var writer = BitWriter.init(output, 0);
+    if (input.len == 0) {
+        emitBestBlock(input, tokens, options, &writer, true) orelse return null;
+    } else {
+        var input_offset: usize = 0;
+        while (input_offset < input.len) {
+            const block_len = @min(tokens.len, input.len - input_offset);
+            const block_end = input_offset + block_len;
+            emitBestBlock(
+                input[input_offset..block_end],
+                tokens[0..block_len],
+                options,
+                &writer,
+                block_end == input.len,
+            ) orelse return null;
+            input_offset = block_end;
+        }
+    }
+
+    if (!writer.flush()) return null;
+    return writer.out_i;
+}
+
+fn emitFixedBlock(
+    input: []const u8,
+    options: CompressionOptions,
+    writer_ptr: *BitWriter,
+    is_final: bool,
+) ?void {
+    initMatcher();
+    var writer = writer_ptr.*;
+    defer writer_ptr.* = writer;
+    if (!writer.writeBits(0b010 | @as(u3, @intFromBool(is_final)), 3)) return null;
+
+    var pos: usize = 0;
+    while (pos < input.len) {
+        const match = findMatch(input, pos, options.max_chain);
+        if (match.len >= MIN_MATCH) {
+            const length = encodeLength(match.len);
+            const length_code = fixedLiteralCode(length.symbol);
+            if (!writer.writeBits(length_code.bits, length_code.len)) return null;
+            if (!writer.writeBits(length.extra_value, length.extra_bits)) return null;
+
+            const distance = encodeDistance(match.dist);
+            if (!writer.writeBits(reverseBits(distance.symbol, 5), 5)) return null;
+            if (!writer.writeBits(distance.extra_value, distance.extra_bits)) return null;
+
+            const end = pos + match.len;
+            while (pos < end) : (pos += 1) insertPosition(input, pos);
+        } else {
+            const literal = fixedLiteralCode(input[pos]);
+            if (!writer.writeBits(literal.bits, literal.len)) return null;
+            insertPosition(input, pos);
+            pos += 1;
+        }
+    }
+
+    const eob = fixedLiteralCode(256);
+    if (!writer.writeBits(eob.bits, eob.len)) return null;
+}
+
+fn compressFixed(input: []const u8, output: []u8, options: CompressionOptions, output_start: usize) ?usize {
+    var writer = BitWriter.init(output, output_start);
+    emitFixedBlock(input, options, &writer, true) orelse return null;
+    if (!writer.flush()) return null;
+    return writer.out_i;
+}
+
+/// Compresses `input` as a zlib stream with one fixed-Huffman DEFLATE block.
+/// This path needs no token buffer, so image encoders can accept large pixel
+/// streams without reserving four scratch bytes for every input byte.
+pub fn compressZlibFixed(input: []const u8, output: []u8) ?usize {
+    return compressZlibFixedWithOptions(input, output, .{});
+}
+
+pub fn compressZlibFixedWithOptions(input: []const u8, output: []u8, options: CompressionOptions) ?usize {
+    if (output.len < 2) return null;
+    output[0] = 0x78;
+    output[1] = 0x01;
+
+    const deflate_end = compressFixed(input, output, options, 2) orelse return null;
+    if (deflate_end + 4 > output.len) return null;
+    writeU32BE(output, deflate_end, std.hash.Adler32.hash(input));
+    return deflate_end + 4;
+}
+
+/// Compresses `input` as a raw RFC 1951 fixed-Huffman DEFLATE stream without
+/// allocating a token buffer.
+pub fn compressRawFixed(input: []const u8, output: []u8) ?usize {
+    return compressRawFixedWithOptions(input, output, .{});
+}
+
+pub fn compressRawFixedWithOptions(input: []const u8, output: []u8, options: CompressionOptions) ?usize {
+    return compressFixed(input, output, options, 0);
 }

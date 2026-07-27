@@ -302,3 +302,22 @@ pub fn inflateZlib(input: []const u8, output: []u8) ?usize {
 
     return out_len;
 }
+
+pub const RawResult = struct {
+    length: usize,
+    crc32: u32,
+};
+
+/// Decompresses one raw DEFLATE stream that spans exactly `input`.
+/// The result includes the decompressed length and ZIP-compatible CRC-32.
+/// A stream that leaves compressed bytes unread, exceeds `output`, or is
+/// malformed returns null.
+pub fn inflateRawExact(input: []const u8, output: []u8) ?RawResult {
+    var br = BitReader.init(input, 0);
+    const out_len = inflateBlocks(&br, output) orelse return null;
+    if (br.alignToByte() != input.len) return null;
+    return .{
+        .length = out_len,
+        .crc32 = std.hash.Crc32.hash(output[0..out_len]),
+    };
+}

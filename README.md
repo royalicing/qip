@@ -527,6 +527,8 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 
 ## TODO
 
+- [x] Add `tar-to-zip.wasm`
+- [x] Add `zip-to-tar.wasm`
 - [ ] Update to latest Zig
 - [ ] Consider making `qip comply --declarative-checkers` the default after all supported Compliance components satisfy it; keep the explicit flag available for reproducible older workflows.
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
