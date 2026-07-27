@@ -95,8 +95,19 @@ func devCmd(args []string) {
 	}()
 
 	routeOptions := qinternal.DefaultRouteOptions()
+	handlerTimeouts := RouterServerTimeouts{
+		contentRecipe:   defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteWARCTransformTimeout,
+	}
 	state, err := loadRouterServerState(context.Background(), layout, qipRuntime, routeOptions)
 	if err != nil {
+		_ = listener.Close()
+		removeDevServerIdentity(port, devIdentity)
+		gameOver("%v", err)
+	}
+	state.derivedRoutes, err = discoverDevDerivedRoutes(context.Background(), state, handlerTimeouts)
+	if err != nil {
+		state.close(context.Background())
 		_ = listener.Close()
 		removeDevServerIdentity(port, devIdentity)
 		gameOver("%v", err)
@@ -116,6 +127,12 @@ func devCmd(args []string) {
 		reloadStart := time.Now()
 		nextState, err := loadRouterServerState(context.Background(), layout, qipRuntime, routeOptions)
 		if err != nil {
+			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
+			return
+		}
+		nextState.derivedRoutes, err = discoverDevDerivedRoutes(context.Background(), nextState, handlerTimeouts)
+		if err != nil {
+			nextState.close(context.Background())
 			log.Printf("dev: reload failed reason=%s error=%v", reason, err)
 			return
 		}
@@ -151,6 +168,12 @@ func devCmd(args []string) {
 			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
 			return
 		}
+		nextState.derivedRoutes, err = discoverDevDerivedRoutes(context.Background(), nextState, handlerTimeouts)
+		if err != nil {
+			nextState.close(context.Background())
+			log.Printf("dev: auto-reload failed reason=recipe_change error=%v", err)
+			return
+		}
 
 		swapRuntimeState(nextState)
 		log.Printf("dev: reloaded reason=recipe_change paths=%d recipe_mimes=%d components=%d elements=%d duration_ms=%d", len(nextState.contentRoutes), len(nextState.recipeChains), len(nextState.componentAssets), len(nextState.elementAssets), time.Since(reloadStart).Milliseconds())
@@ -170,10 +193,8 @@ func devCmd(args []string) {
 	if componentsRoot != "" {
 		log.Printf("dev: loaded %d browser components from %s", len(state.componentAssets), componentsRoot)
 	}
-
-	handlerTimeouts := RouterServerTimeouts{
-		contentRecipe:   defaultRouteRecipeTimeout,
-		applicationWARC: defaultRouteWARCTransformTimeout,
+	if state.derivedRoutes != nil {
+		log.Printf("dev: discovered %d full-site routes", len(state.derivedRoutes.known))
 	}
 	reloadStateIfHardRefresh := func(r *http.Request) {
 		if opts.mode != modeDev {

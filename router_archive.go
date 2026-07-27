@@ -99,6 +99,28 @@ func extractFirstWARCResponseRecord(warc []byte) (qinternal.InProcessHTTPRespons
 }
 
 func extractWARCResponseRecordByTargetURI(warc []byte, targetURI string) (qinternal.InProcessHTTPResponse, error) {
+	records, err := parseWARCResponseRecords(warc)
+	if err != nil {
+		return qinternal.InProcessHTTPResponse{}, err
+	}
+	for _, record := range records {
+		if targetURI == "" || record.targetURI == targetURI {
+			return record.response, nil
+		}
+	}
+	if targetURI != "" {
+		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("WARC archive has no response record for %s", targetURI)
+	}
+	return qinternal.InProcessHTTPResponse{}, errors.New("WARC archive has no response record")
+}
+
+type warcResponseRecord struct {
+	targetURI string
+	response  qinternal.InProcessHTTPResponse
+}
+
+func parseWARCResponseRecords(warc []byte) ([]warcResponseRecord, error) {
+	records := make([]warcResponseRecord, 0)
 	cursor := 0
 	for cursor < len(warc) {
 		for cursor < len(warc) && (warc[cursor] == '\r' || warc[cursor] == '\n') {
@@ -110,7 +132,7 @@ func extractWARCResponseRecordByTargetURI(warc []byte, targetURI string) (qinter
 
 		headerEnd := findHeaderBlockEnd(warc[cursor:])
 		if headerEnd == -1 {
-			return qinternal.InProcessHTTPResponse{}, errors.New("WARC header terminator not found")
+			return nil, errors.New("WARC header terminator not found")
 		}
 		headerBlock := warc[cursor : cursor+headerEnd]
 
@@ -137,30 +159,31 @@ func extractWARCResponseRecordByTargetURI(warc []byte, targetURI string) (qinter
 			case strings.EqualFold(key, "Content-Length"):
 				n, err := strconv.Atoi(value)
 				if err != nil || n < 0 {
-					return qinternal.InProcessHTTPResponse{}, fmt.Errorf("invalid WARC Content-Length %q", value)
+					return nil, fmt.Errorf("invalid WARC Content-Length %q", value)
 				}
 				contentLength = n
 			}
 		}
 		if contentLength < 0 {
-			return qinternal.InProcessHTTPResponse{}, errors.New("WARC record is missing Content-Length")
+			return nil, errors.New("WARC record is missing Content-Length")
 		}
 
 		payloadStart := cursor + headerEnd
 		payloadEnd := payloadStart + contentLength
 		if payloadEnd > len(warc) {
-			return qinternal.InProcessHTTPResponse{}, errors.New("WARC record payload exceeds archive length")
+			return nil, errors.New("WARC record payload exceeds archive length")
 		}
 		payload := warc[payloadStart:payloadEnd]
-		if strings.EqualFold(warcType, "response") && (targetURI == "" || recordTargetURI == targetURI) {
-			return parseWARCHTTPResponsePayload(payload)
+		if strings.EqualFold(warcType, "response") {
+			response, err := parseWARCHTTPResponsePayload(payload)
+			if err != nil {
+				return nil, err
+			}
+			records = append(records, warcResponseRecord{targetURI: recordTargetURI, response: response})
 		}
 		cursor = payloadEnd
 	}
-	if targetURI != "" {
-		return qinternal.InProcessHTTPResponse{}, fmt.Errorf("WARC archive has no response record for %s", targetURI)
-	}
-	return qinternal.InProcessHTTPResponse{}, errors.New("WARC archive has no response record")
+	return records, nil
 }
 
 func parseWARCHTTPResponsePayload(payload []byte) (qinternal.InProcessHTTPResponse, error) {

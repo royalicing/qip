@@ -49,8 +49,9 @@ type RouterFileState struct {
 // Reloads build a replacement generation before atomically swapping it in.
 type RouterServerState struct {
 	*RouterFileState
-	recipeChains map[string]*qinternal.Pipeline
-	recipeOutput map[string]string
+	recipeChains  map[string]*qinternal.Pipeline
+	recipeOutput  map[string]string
+	derivedRoutes *devDerivedRouteSet
 }
 
 // routerServerStateSlot keeps a generation alive while requests use it and
@@ -163,6 +164,9 @@ func loadRouterServerState(ctx context.Context, layout RouterFileLayout, compile
 func (state *RouterServerState) close(ctx context.Context) {
 	if state == nil {
 		return
+	}
+	if state.derivedRoutes != nil {
+		state.derivedRoutes.close()
 	}
 	closePipelines(ctx, state.recipeChains)
 }

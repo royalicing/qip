@@ -64,6 +64,17 @@ output {
     line-height: inherit;
 }
 [hidden] { display: none !important }
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -103,6 +114,47 @@ footer[role="contentinfo"] {
             text-decoration: underline;
         }
     }
+}
+
+qip-search {
+    position: relative;
+    display: block;
+}
+qip-search input[type="search"] {
+    width: 12em;
+    padding: 0.25lh 0.5em;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid currentColor;
+    border-radius: 0;
+}
+qip-search .qip-search-results {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 0.25lh);
+    right: 0;
+    width: min(32em, calc(100vw - 2em));
+    max-height: min(32em, 70vh);
+    overflow: auto;
+    padding: 0.5lh 0.75em;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid currentColor;
+}
+qip-search .qip-search-results ol {
+    display: block;
+    list-style: none;
+}
+qip-search .qip-search-results li + li {
+    margin-top: 0.5lh;
+}
+qip-search .qip-search-results a {
+    display: block;
+    text-decoration: none;
+}
+qip-search .qip-search-results a:hover,
+qip-search .qip-search-results a:focus-visible {
+    text-decoration: underline;
 }
 
 main,

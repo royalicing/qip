@@ -255,7 +255,8 @@ recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 67108
 recipes/application/warc/20-add-docs-sidebar.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/30-add-sitemap-xml.wasm: ZIG_WASM_MAX_MEMORY = 671088640
-recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm recipes/application/warc/30-add-sitemap-xml.wasm: recipes/application/warc/lib/warc.zig
+recipes/application/warc/35-add-search-index.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm recipes/application/warc/30-add-sitemap-xml.wasm recipes/application/warc/35-add-search-index.wasm: recipes/application/warc/lib/warc.zig
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
@@ -413,6 +414,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/qip-edit-stats.mjs
 	node --test test/qip-form-element.mjs
+	node --test test/qip-search.mjs
 	node --test test/sudoku-ui.mjs
 	node --test test/html-id-validator.mjs
 	node --test test/css-expression-to-value.mjs

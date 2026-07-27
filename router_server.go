@@ -42,6 +42,26 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 				stateSlot.mu.RUnlock()
 				return qinternal.RoutedResponse{}, errors.New("runtime state is unavailable")
 			}
+			if current.derivedRoutes != nil {
+				current.derivedRoutes.start()
+				response, known, err := current.derivedRoutes.resolve(r.Context(), r.URL.Path)
+				if err != nil {
+					stateSlot.mu.RUnlock()
+					return qinternal.RoutedResponse{}, err
+				}
+				if known {
+					stateSlot.mu.RUnlock()
+					headers := response.Header.Clone()
+					headers.Del("Content-Length")
+					return qinternal.RoutedResponse{
+						StatusCode:             response.StatusCode,
+						Header:                 headers,
+						Body:                   response.Body,
+						ModuleDurations:        []time.Duration{},
+						InstantiationDurations: []time.Duration{},
+					}, nil
+				}
+			}
 			if response, ok := resolveRecipeSourceResponse(r.URL.Path, current); ok {
 				stateSlot.mu.RUnlock()
 				return response, nil
