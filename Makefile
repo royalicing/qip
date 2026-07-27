@@ -271,6 +271,9 @@ components/image/bmp/bmp-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762
 components/image/webp/webp-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 469762048
 components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/application/pdf/pdf-extract-images.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+components/application/pdf/pdf-extract-images.wasm: components/application/pdf/pdf-extract-images.zig components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
+	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseSmall -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
 
 LIBWEBP_ROOT := third_party/libwebp-1.6.0
 LIBWEBP_DEC_NAMES := alpha_dec buffer_dec frame_dec idec_dec io_dec quant_dec tree_dec vp8_dec vp8l_dec webp_dec
@@ -437,6 +440,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/trace-with.mjs
 	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
+	node --test test/pdf-extract-images.mjs
 	node --test test/bmp-png.mjs
 	node --test test/bmp-webp.mjs
 	node --test test/bmp-webp-lossy-opaque.mjs
@@ -570,7 +574,11 @@ test-zig: $(ZIG_TEST_FILES)
 	@status=0; \
 	for f in $^; do \
 		echo "zig test $$f"; \
-		$(ZIG_ENV) zig test "$$f" $(ZIG_TEST_FLAGS) || status=1; \
+		if [ "$$f" = "components/application/pdf/pdf-extract-images.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
+		else \
+			$(ZIG_ENV) zig test "$$f" $(ZIG_TEST_FLAGS) || status=1; \
+		fi; \
 	done; \
 	exit $$status
 
