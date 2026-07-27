@@ -5,6 +5,7 @@
 #include "src/webp/decode.h"
 
 #define MAX_PIXELS 25000000u
+#define MAX_DIMENSION 8192u
 #define INPUT_CAP (64u * 1024u * 1024u)
 #define BMP_HEADER_SIZE 54u
 #define OUTPUT_CAP (MAX_PIXELS * 4u + BMP_HEADER_SIZE)
@@ -204,7 +205,8 @@ uint32_t render(uint32_t input_size_value) {
 
   status = WebPGetFeatures(input_buf, input_size_value, &features);
   if (status != VP8_STATUS_OK || features.width <= 0 || features.height <= 0 ||
-      features.has_animation) {
+      (uint32_t)features.width > MAX_DIMENSION ||
+      (uint32_t)features.height > MAX_DIMENSION || features.has_animation) {
     return 0;
   }
   pixel_count = (uint64_t)(uint32_t)features.width *

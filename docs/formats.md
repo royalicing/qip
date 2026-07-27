@@ -18,6 +18,7 @@ Current formats directly supported by a qip command or supported by this repo’
 - `application/x-tar`: directory archive as one input/output blob
 - `application/zip`: compressed directory archive for broad tool compatibility
 - `image/bmp`: simple uncompressed raster interchange
+- `image/jp2`: JPEG 2000 still images
 - `image/svg+xml`: vector graphics that work great with LLMs
 - `image/x-icon`
 - `image/gif`
@@ -32,6 +33,7 @@ Examples:
 
 - `qip router warc ...` emits `application/warc`
 - `components/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
+- `components/image/jp2/jp2-to-bmp-bgra32.wasm` maps `image/jp2 -> image/bmp`
 - `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
 - `components/application/x-tar/tar-to-zip.wasm` maps `application/x-tar -> application/zip`
 - `components/application/zip/zip-to-tar.wasm` maps `application/zip -> application/x-tar`
@@ -42,7 +44,42 @@ Examples:
 Tradeoffs:
 
 - BMP is larger than PNG/JPEG on disk, but excellent as an internal interchange format because it is straightforward to parse and transform.
-- Tar is uncompressed; in the future we might pair it with compression.
+- Tar is straightforward to process sequentially and preserves Unix archive
+  semantics. ZIP is more widely convenient at system boundaries; the
+  `tar-to-zip` component uses DEFLATE per entry when it saves space and stores
+  already-compressed data unchanged. `zip-to-tar` accepts bounded classic ZIP
+  archives, decodes stored or DEFLATE bodies directly into TAR output, and
+  uses PAX records for names or metadata that do not fit ustar fields. It
+  rejects ZIP64, encrypted and split archives, special file types, and unsafe
+  extraction paths.
+
+  The ZIP listing components assign indices from central-directory order.
+  `entry_index` counts every explicit archive entry, while `file_index` counts
+  only regular files. This keeps `zip-extract-file.wasm '?file_index=0'`
+  pointed at the first file even when directory or symlink entries precede it.
+
+## Raster conversion limits
+
+Raster format converters use one decoded-image ceiling: 25,000,000 pixels,
+with neither dimension above 8192 pixels. A 32-bit BMP at that ceiling needs
+100,000,054 bytes including its header. BMP-consuming converters reserve an
+additional 64 KiB for larger DIB headers and metadata.
+
+Compressed PNG, JPEG, JPEG 2000, and WebP inputs have a separate 64 MiB byte
+cap. That cap does not replace the pixel limit: a small compressed file that
+expands beyond 25 MP is rejected before its pixel buffers are written.
+
+These limits cost memory even for small conversions because the modules use
+fixed Wasm memories. PNG decoding uses fixed scanline batches and reserves
+about 162 MiB; its `simd128` fork uses the same memory with vectorized row
+operations. BMP-to-PNG reserves about 332 MiB. It uses dynamic Huffman coding
+while its filtered input fits an 8 MiB token buffer, then switches to fixed
+Huffman coding for larger images. Both paths are lossless; the large-image path
+may produce a larger PNG in exchange for bounded scratch memory.
+
+`image/x-icon` remains a format-specific exception because this repository's
+ICO component writes one BMP-backed image and the directory entry represents
+at most 256×256 directly.
 
 ## Encodings
 

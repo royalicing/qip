@@ -15,6 +15,7 @@
 const std = @import("std");
 const deflate = @import("deflate.zig");
 
+const WINDOW_SIZE: usize = 32 * 1024;
 const MAX_BITS: u5 = 15;
 const TABLE_SIZE: usize = 1 << MAX_BITS;
 const CL_BITS: u5 = 7;
@@ -154,40 +155,36 @@ fn buildTable(lens: []const u8, table: []u16, table_bits: u5, allow_incomplete_s
     return true;
 }
 
-fn inflateBlocks(br: *BitReader, output: []u8) ?usize {
-    var out_i: usize = 0;
-
+fn inflateBlocks(br: *BitReader, writer: anytype) bool {
     while (true) {
-        const bfinal = br.getBits(1) orelse return null;
-        const btype = br.getBits(2) orelse return null;
+        const bfinal = br.getBits(1) orelse return false;
+        const btype = br.getBits(2) orelse return false;
 
         switch (btype) {
             0 => {
                 var pos = br.alignToByte();
-                if (pos + 4 > br.input.len) return null;
+                if (pos + 4 > br.input.len) return false;
                 const len: usize = @as(usize, br.input[pos]) | (@as(usize, br.input[pos + 1]) << 8);
                 const nlen: usize = @as(usize, br.input[pos + 2]) | (@as(usize, br.input[pos + 3]) << 8);
-                if (len != (~nlen & 0xffff)) return null;
+                if (len != (~nlen & 0xffff)) return false;
                 pos += 4;
-                if (pos + len > br.input.len) return null;
-                if (out_i + len > output.len) return null;
-                @memcpy(output[out_i..][0..len], br.input[pos..][0..len]);
-                out_i += len;
+                if (pos + len > br.input.len) return false;
+                if (!writer.writeStored(br.input[pos..][0..len])) return false;
                 br.seekTo(pos + len);
             },
             1, 2 => {
                 if (btype == 1) {
-                    if (!buildTable(&FIXED_LIT_LENGTHS, &litlen_table, MAX_BITS, false)) return null;
-                    if (!buildTable(&FIXED_DIST_LENGTHS, &dist_table, MAX_BITS, false)) return null;
+                    if (!buildTable(&FIXED_LIT_LENGTHS, &litlen_table, MAX_BITS, false)) return false;
+                    if (!buildTable(&FIXED_DIST_LENGTHS, &dist_table, MAX_BITS, false)) return false;
                 } else {
-                    if (!readDynamicTables(br)) return null;
+                    if (!readDynamicTables(br)) return false;
                 }
-                out_i = inflateHuffmanBlock(br, output, out_i) orelse return null;
+                if (!inflateHuffmanBlock(br, writer)) return false;
             },
-            else => return null,
+            else => return false,
         }
 
-        if (bfinal == 1) return out_i;
+        if (bfinal == 1) return true;
     }
 }
 
@@ -238,45 +235,171 @@ fn readDynamicTables(br: *BitReader) bool {
     return true;
 }
 
-fn inflateHuffmanBlock(br: *BitReader, output: []u8, start: usize) ?usize {
-    var out_i = start;
-
+fn inflateHuffmanBlock(br: *BitReader, writer: anytype) bool {
     while (true) {
-        const sym = br.decode(&litlen_table, TABLE_SIZE - 1) orelse return null;
+        const sym = br.decode(&litlen_table, TABLE_SIZE - 1) orelse return false;
 
         if (sym < 256) {
-            if (out_i >= output.len) return null;
-            output[out_i] = @intCast(sym);
-            out_i += 1;
+            if (!writer.writeLiteral(@intCast(sym))) return false;
             continue;
         }
-        if (sym == 256) return out_i;
-        if (sym > 285) return null;
+        if (sym == 256) return true;
+        if (sym > 285) return false;
 
         const len_idx = sym - 257;
         const length: usize = @as(usize, deflate.LENGTH_BASE[len_idx]) +
-            @as(usize, br.getBits(@intCast(deflate.LENGTH_EXTRA[len_idx])) orelse return null);
+            @as(usize, br.getBits(@intCast(deflate.LENGTH_EXTRA[len_idx])) orelse return false);
 
-        const dist_sym = br.decode(&dist_table, TABLE_SIZE - 1) orelse return null;
-        if (dist_sym > 29) return null;
+        const dist_sym = br.decode(&dist_table, TABLE_SIZE - 1) orelse return false;
+        if (dist_sym > 29) return false;
         const distance: usize = @as(usize, deflate.DIST_BASE[dist_sym]) +
-            @as(usize, br.getBits(@intCast(deflate.DIST_EXTRA[dist_sym])) orelse return null);
+            @as(usize, br.getBits(@intCast(deflate.DIST_EXTRA[dist_sym])) orelse return false);
+        if (!writer.writeMatch(length, distance)) return false;
+    }
+}
 
-        if (distance > out_i) return null;
-        if (out_i + length > output.len) return null;
+const ContiguousWriter = struct {
+    output: []u8,
+    out_i: usize = 0,
 
-        const src_start = out_i - distance;
+    fn writeStored(self: *ContiguousWriter, bytes: []const u8) bool {
+        if (self.out_i + bytes.len > self.output.len) return false;
+        @memcpy(self.output[self.out_i..][0..bytes.len], bytes);
+        self.out_i += bytes.len;
+        return true;
+    }
+
+    fn writeLiteral(self: *ContiguousWriter, byte: u8) bool {
+        if (self.out_i >= self.output.len) return false;
+        self.output[self.out_i] = byte;
+        self.out_i += 1;
+        return true;
+    }
+
+    fn writeMatch(self: *ContiguousWriter, length: usize, distance: usize) bool {
+        if (distance > self.out_i or self.out_i + length > self.output.len) return false;
+        const src_start = self.out_i - distance;
         if (distance >= length) {
-            @memcpy(output[out_i..][0..length], output[src_start..][0..length]);
-            out_i += length;
+            @memcpy(self.output[self.out_i..][0..length], self.output[src_start..][0..length]);
+            self.out_i += length;
         } else {
             var k: usize = 0;
             while (k < length) : (k += 1) {
-                output[out_i] = output[src_start + k];
-                out_i += 1;
+                self.output[self.out_i] = self.output[src_start + k];
+                self.out_i += 1;
             }
         }
+        return true;
     }
+};
+
+fn BatchWriter(comptime Context: type, comptime consume: fn (*Context, []u8) bool) type {
+    return struct {
+        const Self = @This();
+
+        work: []u8,
+        history_scratch: []u8,
+        history_len: usize = 0,
+        out_i: usize = 0,
+        total: usize = 0,
+        batch_bytes: usize,
+        adler: std.hash.Adler32 = .{},
+        context: *Context,
+
+        fn newBytes(self: *const Self) usize {
+            return self.out_i - self.history_len;
+        }
+
+        fn flush(self: *Self) bool {
+            const batch = self.work[self.history_len..self.out_i];
+            if (batch.len == 0) return true;
+            self.adler.update(batch);
+
+            const keep = @min(self.out_i, WINDOW_SIZE);
+            const keep_start = self.out_i - keep;
+            @memcpy(self.history_scratch[0..keep], self.work[keep_start..self.out_i]);
+
+            if (!consume(self.context, batch)) return false;
+
+            @memcpy(self.work[0..keep], self.history_scratch[0..keep]);
+            self.history_len = keep;
+            self.out_i = keep;
+            return true;
+        }
+
+        fn writeStored(self: *Self, bytes: []const u8) bool {
+            const initial_room = self.batch_bytes - self.newBytes();
+            if (bytes.len <= initial_room) {
+                @memcpy(self.work[self.out_i..][0..bytes.len], bytes);
+                self.out_i += bytes.len;
+                self.total += bytes.len;
+                return self.newBytes() != self.batch_bytes or self.flush();
+            }
+
+            var pos: usize = 0;
+            while (pos < bytes.len) {
+                const room = self.batch_bytes - self.newBytes();
+                const count = @min(room, bytes.len - pos);
+                @memcpy(self.work[self.out_i..][0..count], bytes[pos..][0..count]);
+                self.out_i += count;
+                self.total += count;
+                pos += count;
+                if (self.newBytes() == self.batch_bytes and !self.flush()) return false;
+            }
+            return true;
+        }
+
+        fn writeLiteral(self: *Self, byte: u8) bool {
+            if (self.out_i >= self.work.len) return false;
+            self.work[self.out_i] = byte;
+            self.out_i += 1;
+            self.total += 1;
+            return self.newBytes() != self.batch_bytes or self.flush();
+        }
+
+        fn writeMatch(self: *Self, length: usize, distance: usize) bool {
+            if (distance == 0 or distance > self.total or distance > WINDOW_SIZE) return false;
+            const initial_room = self.batch_bytes - self.newBytes();
+            if (length <= initial_room) {
+                if (distance > self.out_i or self.out_i + length > self.work.len) return false;
+                const src_start = self.out_i - distance;
+                if (distance >= length) {
+                    @memcpy(self.work[self.out_i..][0..length], self.work[src_start..][0..length]);
+                    self.out_i += length;
+                } else {
+                    var k: usize = 0;
+                    while (k < length) : (k += 1) {
+                        self.work[self.out_i] = self.work[src_start + k];
+                        self.out_i += 1;
+                    }
+                }
+                self.total += length;
+                return self.newBytes() != self.batch_bytes or self.flush();
+            }
+
+            var remaining = length;
+            while (remaining != 0) {
+                const room = self.batch_bytes - self.newBytes();
+                const count = @min(room, remaining);
+                if (distance > self.out_i or self.out_i + count > self.work.len) return false;
+                const src_start = self.out_i - distance;
+                if (distance >= count) {
+                    @memcpy(self.work[self.out_i..][0..count], self.work[src_start..][0..count]);
+                    self.out_i += count;
+                } else {
+                    var k: usize = 0;
+                    while (k < count) : (k += 1) {
+                        self.work[self.out_i] = self.work[src_start + k];
+                        self.out_i += 1;
+                    }
+                }
+                self.total += count;
+                remaining -= count;
+                if (self.newBytes() == self.batch_bytes and !self.flush()) return false;
+            }
+            return true;
+        }
+    };
 }
 
 /// Decompresses a zlib stream that spans exactly the whole of `input`,
@@ -293,7 +416,9 @@ pub fn inflateZlib(input: []const u8, output: []u8) ?usize {
     if (input[1] & 0x20 != 0) return null;
 
     var br = BitReader.init(input, 2);
-    const out_len = inflateBlocks(&br, output) orelse return null;
+    var writer = ContiguousWriter{ .output = output };
+    if (!inflateBlocks(&br, &writer)) return null;
+    const out_len = writer.out_i;
 
     const trailer = br.alignToByte();
     if (trailer + 4 != input.len) return null;
@@ -314,10 +439,48 @@ pub const RawResult = struct {
 /// malformed returns null.
 pub fn inflateRawExact(input: []const u8, output: []u8) ?RawResult {
     var br = BitReader.init(input, 0);
-    const out_len = inflateBlocks(&br, output) orelse return null;
+    var writer = ContiguousWriter{ .output = output };
+    if (!inflateBlocks(&br, &writer)) return null;
     if (br.alignToByte() != input.len) return null;
     return .{
-        .length = out_len,
-        .crc32 = std.hash.Crc32.hash(output[0..out_len]),
+        .length = writer.out_i,
+        .crc32 = std.hash.Crc32.hash(output[0..writer.out_i]),
     };
+}
+
+/// Inflates one complete zlib stream through fixed-size synchronous batches.
+/// `batch_bytes` is chosen by the caller and must fit in `work` after the
+/// retained 32 KiB DEFLATE history. The callback runs inside this function;
+/// there is no externally resumable decoder state.
+pub fn inflateZlibBatches(
+    comptime Context: type,
+    input: []const u8,
+    work: []u8,
+    history_scratch: []u8,
+    batch_bytes: usize,
+    context: *Context,
+    comptime consume: fn (*Context, []u8) bool,
+) ?usize {
+    if (input.len < 6 or batch_bytes == 0) return null;
+    if (work.len < WINDOW_SIZE + batch_bytes or history_scratch.len < WINDOW_SIZE) return null;
+    if (input[0] & 0x0f != 8 or input[0] >> 4 > 7) return null;
+    if ((@as(u32, input[0]) * 256 + input[1]) % 31 != 0) return null;
+    if (input[1] & 0x20 != 0) return null;
+
+    const Writer = BatchWriter(Context, consume);
+    var writer = Writer{
+        .work = work,
+        .history_scratch = history_scratch,
+        .batch_bytes = batch_bytes,
+        .context = context,
+    };
+    var br = BitReader.init(input, 2);
+    if (!inflateBlocks(&br, &writer)) return null;
+    if (!writer.flush()) return null;
+
+    const trailer = br.alignToByte();
+    if (trailer + 4 != input.len) return null;
+    const stored = std.mem.readInt(u32, input[trailer..][0..4], .big);
+    if (writer.adler.adler != stored) return null;
+    return writer.total;
 }

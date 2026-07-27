@@ -9,16 +9,20 @@
 const std = @import("std");
 const deflate = @import("lib/deflate.zig");
 
-const INPUT_CAP: usize = 8 * 1024 * 1024;
-const FILTERED_CAP: usize = INPUT_CAP + INPUT_CAP / 2;
+const MAX_PIXELS: usize = 25_000_000;
+const MAX_DIMENSION: usize = 8192;
+const BMP_HEADER_CAP: usize = 64 * 1024;
+const INPUT_CAP: usize = MAX_PIXELS * 4 + BMP_HEADER_CAP;
+const FILTERED_CAP: usize = MAX_PIXELS * 4 + MAX_DIMENSION;
 const OUTPUT_CAP: usize = FILTERED_CAP + FILTERED_CAP / 8 + 4096;
-const ROW_CAP: usize = 4 * 1024 * 1024;
+const TOKEN_CAP: usize = 8 * 1024 * 1024;
+const ROW_CAP: usize = MAX_DIMENSION * 4;
 const INPUT_CONTENT_TYPE = "image/bmp";
 const OUTPUT_CONTENT_TYPE = "image/png";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var filtered_buf: [FILTERED_CAP]u8 = undefined;
-var token_buf: [FILTERED_CAP]u32 = undefined;
+var token_buf: [TOKEN_CAP]u32 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var row_a: [ROW_CAP]u8 = undefined;
 var row_b: [ROW_CAP]u8 = undefined;
@@ -157,6 +161,7 @@ export fn render(input_size_in: u32) u32 {
     const width: u64 = @intCast(width_raw);
     const top_down = height_raw < 0;
     const height: u64 = if (top_down) @intCast(-@as(i64, height_raw)) else @intCast(height_raw);
+    if (width > MAX_DIMENSION or height > MAX_DIMENSION or width * height > MAX_PIXELS) return 0;
 
     const bytes_pp: u64 = bpp_bits / 8;
     const src_stride: u64 = (width * bytes_pp + 3) & ~@as(u64, 3);
@@ -227,11 +232,17 @@ export fn render(input_size_in: u32) u32 {
     // IDAT chunk: deflate the filtered stream straight into place.
     const idat_data_start: usize = 41;
     if (idat_data_start >= OUTPUT_CAP) return 0;
-    const compressed_len = deflate.compressZlib(
-        filtered_buf[0..out_f],
-        output_buf[idat_data_start .. OUTPUT_CAP - 16],
-        &token_buf,
-    ) orelse return 0;
+    const compressed_len = (if (out_f <= TOKEN_CAP)
+        deflate.compressZlib(
+            filtered_buf[0..out_f],
+            output_buf[idat_data_start .. OUTPUT_CAP - 16],
+            &token_buf,
+        )
+    else
+        deflate.compressZlibFixed(
+            filtered_buf[0..out_f],
+            output_buf[idat_data_start .. OUTPUT_CAP - 16],
+        )) orelse return 0;
     writeU32BE(&output_buf, 33, @intCast(compressed_len));
     @memcpy(output_buf[37..41], "IDAT");
     writeU32BE(&output_buf, idat_data_start + compressed_len, crc32(output_buf[37 .. idat_data_start + compressed_len]));
@@ -248,4 +259,9 @@ export fn render(input_size_in: u32) u32 {
 
 test "crc32 matches the PNG check value" {
     try std.testing.expectEqual(@as(u32, 0xCBF43926), crc32("123456789"));
+}
+
+test "declares the standard 25 MP image capacities" {
+    try std.testing.expectEqual(@as(u32, MAX_PIXELS * 4 + BMP_HEADER_CAP), input_bytes_cap());
+    try std.testing.expectEqual(@as(u32, FILTERED_CAP + FILTERED_CAP / 8 + 4096), output_bytes_cap());
 }

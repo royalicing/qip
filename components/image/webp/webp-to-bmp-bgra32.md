@@ -18,7 +18,8 @@ qip run components/image/webp/webp-to-bmp-bgra32.wasm \
 ```
 
 The component accepts WebP files up to 64 MiB and images up to 25,000,000
-pixels. It rejects animated WebP rather than silently selecting a frame.
+pixels, with neither dimension above 8192 pixels. It rejects animated WebP
+rather than silently selecting a frame.
 Metadata such as ICC, EXIF, and XMP is not copied into the BMP.
 
 The module reserves 448 MiB of fixed Wasm memory: 64 MiB for input, about

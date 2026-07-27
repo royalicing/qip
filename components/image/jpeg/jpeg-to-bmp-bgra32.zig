@@ -11,9 +11,12 @@
 
 const std = @import("std");
 
-const INPUT_CAP: usize = 8 * 1024 * 1024;
-const OUTPUT_CAP: usize = 32 * 1024 * 1024 + 64;
-const PLANE_CAP: usize = 12 * 1024 * 1024;
+const MAX_PIXELS: usize = 25_000_000;
+const MAX_DIMENSION: usize = 8192;
+const INPUT_CAP: usize = 64 * 1024 * 1024;
+const OUTPUT_CAP: usize = MAX_PIXELS * 4 + 54;
+// JPEG MCU padding can add up to 15 samples on both axes for 4:2:0.
+const PLANE_CAP: usize = MAX_PIXELS + MAX_DIMENSION * 32 + 256;
 const MAX_COMPONENTS: usize = 3;
 const INPUT_CONTENT_TYPE = "image/jpeg";
 const OUTPUT_CONTENT_TYPE = "image/bmp";
@@ -499,6 +502,8 @@ fn decode(input: []const u8) JpegError!usize {
                 width = (@as(usize, seg[3]) << 8) | seg[4];
                 ncomp = seg[5];
                 if (width == 0 or height == 0) return error.InvalidJpeg;
+                if (width > MAX_DIMENSION or height > MAX_DIMENSION or
+                    width * height > MAX_PIXELS) return error.InvalidJpeg;
                 if (ncomp != 1 and ncomp != 3) return error.InvalidJpeg;
                 if (seg.len != 6 + ncomp * 3) return error.InvalidJpeg;
                 var c: usize = 0;
@@ -747,6 +752,11 @@ test "idct of a dc-only block is uniform" {
     for (plane) |sample| {
         try std.testing.expectEqual(@as(u8, 144), sample);
     }
+}
+
+test "declares the standard 25 MP image capacities" {
+    try std.testing.expectEqual(@as(u32, 64 * 1024 * 1024), input_bytes_cap());
+    try std.testing.expectEqual(@as(u32, MAX_PIXELS * 4 + 54), output_bytes_cap());
 }
 
 test "ycc conversion matches libjpeg fixed point rounding" {

@@ -174,6 +174,9 @@ components/image/bmp/bmp-double.wasm: components/image/bmp/bmp-double.c
 components/image/bmp/bmp-double-simd.wasm: components/image/bmp/bmp-double-simd.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
+components/image/png/png-to-bmp-bgra32-simd.wasm: components/image/png/png-to-bmp-bgra32-simd.zig components/image/png/png-to-bmp-bgra32.zig
+	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
+
 components/interactive/cover-flow.wasm: components/interactive/cover-flow.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
@@ -268,7 +271,7 @@ recipes/application/warc/35-add-search-index.wasm: ZIG_WASM_MAX_MEMORY = 6710886
 recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm recipes/application/warc/30-add-sitemap-xml.wasm recipes/application/warc/35-add-search-index.wasm: recipes/application/warc/lib/warc.zig
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
-components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 369098752
 # Full 25 MP level-9 VP8L encoding needs a 1.25 GiB reclaiming arena in
 # addition to its input and worst-case output buffers.
 components/image/bmp/bmp-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
@@ -279,8 +282,11 @@ components/image/bmp/bmp-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
 # arena plus input, output, row scratch, stack, and code.
 components/image/bmp/bmp-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762048
 components/image/webp/webp-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 469762048
-components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
-components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/image/jp2/jp2-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 201326592
+components/image/png/png-to-bmp-bgra32-simd.wasm: ZIG_WASM_MAX_MEMORY = 201326592
+components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/svg+xml/svg-rasterize.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/application/pdf/pdf-extract-images.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/pdf/pdf-extract-images.wasm: components/application/pdf/pdf-extract-images.zig components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
 	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseSmall -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
@@ -311,6 +317,11 @@ LIBWEBP_DEC_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/dsp/,$(addsuffix .c,$(L
 LIBWEBP_DEC_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/dsp/,$(addsuffix .c,$(LIBWEBP_DEC_DSP_SIMD_NAMES)))
 LIBWEBP_DEC_C_SOURCES += $(addprefix $(LIBWEBP_ROOT)/src/utils/,$(addsuffix .c,$(LIBWEBP_DEC_UTILS_NAMES)))
 
+OPENJPEG_ROOT := third_party/openjpeg-2.5.4
+OPENJPEG_LIB_ROOT := $(OPENJPEG_ROOT)/src/lib/openjp2
+OPENJPEG_DEC_NAMES := thread bio cio dwt event ht_dec image invert j2k jp2 mct mqc openjpeg opj_clock pi t1 t2 tcd tgt function_list opj_malloc sparse_array
+OPENJPEG_DEC_C_SOURCES := $(addprefix $(OPENJPEG_LIB_ROOT)/,$(addsuffix .c,$(OPENJPEG_DEC_NAMES)))
+
 EMSDK_VERSION ?= 2.0.34
 EMCC_CACHE ?= $(if $(filter Darwin,$(HOST_OS)),/private/tmp/qip-emcc-2.0.34-cache,/tmp/qip-emcc-2.0.34-cache)
 EMSDK_ROOT ?= $(shell mise where emsdk@$(EMSDK_VERSION) 2>/dev/null)
@@ -325,6 +336,7 @@ LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy.raw.wasm
 LIBWEBP_OPAQUE_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy-opaque.raw.wasm
 LIBWEBP_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossless.raw.wasm
 LIBWEBP_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/webp-to-bmp-bgra32.raw.wasm
+OPENJPEG_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/jp2-to-bmp-bgra32.raw.wasm
 LIBWEBP_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_method uniform_set_sharp_yuv uniform_set_low_memory arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_allocation_size arena_allocation_event arena_allocation_free_event
 LIBWEBP_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_CLANG_EXPORTS),-Xlinker --export=$(name))
 LIBWEBP_OPAQUE_CLANG_EXPORTS := $(LIBWEBP_CLANG_EXPORTS) uniform_set_background_color
@@ -333,6 +345,9 @@ LIBWEBP_LOSSLESS_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr ou
 LIBWEBP_LOSSLESS_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_LOSSLESS_CLANG_EXPORTS),-Xlinker --export=$(name))
 LIBWEBP_DEC_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count
 LIBWEBP_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_DEC_CLANG_EXPORTS),-Xlinker --export=$(name))
+OPENJPEG_DEC_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count
+OPENJPEG_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(OPENJPEG_DEC_CLANG_EXPORTS),-Xlinker --export=$(name))
+OPENJPEG_CLANG_FEATURE_FLAGS = $(LIBWEBP_CLANG_FEATURE_FLAGS)
 LIBWEBP_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DEMSCRIPTEN=1 -D__SSE__=1 -D__SSE2__=1 -D__SSE3__=1 -D__SSSE3__=1 -D__SSE4_1__=1
 
 $(EMSDK_LTO_STAMP):
@@ -365,6 +380,12 @@ $(LIBWEBP_DEC_CLANG_RAW_WASM): components/image/webp/webp-to-bmp-bgra32.c $(LIBW
 components/image/webp/webp-to-bmp-bgra32.wasm: $(LIBWEBP_DEC_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
+$(OPENJPEG_DEC_CLANG_RAW_WASM): components/image/jp2/jp2-to-bmp-bgra32.c $(OPENJPEG_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(OPENJPEG_LIB_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(OPENJPEG_CLANG_FEATURE_FLAGS) -DOPJ_STATIC -DMUTEX_stub -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(OPENJPEG_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/jp2/jp2-to-bmp-bgra32.wasm: $(OPENJPEG_DEC_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
 components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
 components/utf8/unicode-17-uppercase.wasm: components/utf8/lib/unicode-17-uppercase-tables.zig components/utf8/lib/utf8.zig
 components/utf8/iso-4217-alpha-to-numeric.wasm: components/utf8/lib/iso-4217-alpha-numeric-table.zig
@@ -372,7 +393,7 @@ components/utf8/iso-4217-alpha-to-numeric.wasm: components/utf8/lib/iso-4217-alp
 components/bytes/zlib-compress-dynamic-huffman-opt.wasm: components/bytes/lib/deflate.zig
 components/image/bmp/bmp-to-png.wasm: components/image/bmp/lib/deflate.zig
 components/bytes/zlib-decompress.wasm: components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
-components/image/png/png-to-bmp-bgra32.wasm: components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig
+components/image/png/png-to-bmp-bgra32.wasm components/image/png/png-to-bmp-bgra32-simd.wasm: components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig
 
 components/%.wasm: components/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
@@ -452,6 +473,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
 	node --test test/pdf-extract-images.mjs
+	node --test test/jp2-bmp.mjs
 	node --test test/tar-to-zip.mjs
 	node --test test/zip-to-tar.mjs
 	node --test test/zip-list-extract.mjs

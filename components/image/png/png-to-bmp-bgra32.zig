@@ -6,21 +6,48 @@
 //! lib/inflate.zig verifies the zlib header and Adler-32 trailer, and unknown
 //! critical chunks are rejected. 16-bit depths, sub-8-bit depths, and Adam7
 //! interlacing return 0.
+//!
+//! IDAT payloads are compacted inside the disposable input buffer. DEFLATE
+//! then emits fixed, whole-row batches which are immediately unfiltered,
+//! converted, and written to their final bottom-up BMP positions.
 
 const std = @import("std");
 const inflate = @import("lib/inflate.zig");
+const root = @import("root");
 
-const INPUT_CAP: usize = 8 * 1024 * 1024;
-const IDAT_CAP: usize = INPUT_CAP;
-const RAW_CAP: usize = 40 * 1024 * 1024;
-const OUTPUT_CAP: usize = 32 * 1024 * 1024 + 64;
+const MAX_PIXELS: usize = 25_000_000;
+const MAX_DIMENSION: usize = 8192;
+const INPUT_CAP: usize = 64 * 1024 * 1024;
+const OUTPUT_CAP: usize = MAX_PIXELS * 4 + 54;
+const DECODE_BATCH_TARGET: usize = 1 * 1024 * 1024;
+const DEFLATE_WINDOW: usize = 32 * 1024;
+const MAX_ROW_BYTES: usize = MAX_DIMENSION * 4;
 const INPUT_CONTENT_TYPE = "image/png";
 const OUTPUT_CONTENT_TYPE = "image/bmp";
+const USE_SIMD = @hasDecl(root, "PNG_TO_BMP_SIMD") and root.PNG_TO_BMP_SIMD;
+
+const Vec16 = @Vector(16, u8);
+const RGB_TO_BGRA = @Vector(16, i32){
+    2, 1, 0, -1,
+    5, 4, 3, -1,
+    8, 7, 6, -1,
+    11, 10, 9, -1,
+};
+const RGBA_TO_BGRA = @Vector(16, i32){
+    2, 1, 0, 3,
+    6, 5, 4, 7,
+    10, 9, 8, 11,
+    14, 13, 12, 15,
+};
+const OPAQUE = @as(Vec16, @splat(255));
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var idat_buf: [IDAT_CAP]u8 = undefined;
-var raw_buf: [RAW_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
+var decode_work: [DEFLATE_WINDOW + DECODE_BATCH_TARGET]u8 = undefined;
+var history_scratch: [DEFLATE_WINDOW]u8 = undefined;
+var prior_row_buf: [MAX_ROW_BYTES]u8 = undefined;
+var palette_buf: [768]u8 = undefined;
+var trns_buf: [256]u8 = undefined;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -97,6 +124,134 @@ const Header = struct {
     channels: usize,
 };
 
+const DecodeContext = struct {
+    header: Header,
+    palette_len: usize,
+    trns_len: usize,
+    row_bytes: usize,
+    row_span: usize,
+    out_stride: usize,
+    next_y: usize = 0,
+    has_prior: bool = false,
+};
+
+fn unfilterRow(filter: u8, line: []u8, prior: []const u8, bpp: usize) void {
+    if (filter == 0) return;
+
+    var i: usize = 0;
+    if (USE_SIMD and filter == 2 and prior.len != 0) {
+        while (i + 16 <= line.len) : (i += 16) {
+            const filtered = @as(*align(1) const Vec16, @ptrCast(&line[i])).*;
+            const above = @as(*align(1) const Vec16, @ptrCast(&prior[i])).*;
+            @as(*align(1) Vec16, @ptrCast(&line[i])).* = filtered +% above;
+        }
+    }
+
+    while (i < line.len) : (i += 1) {
+        const a = if (i >= bpp) line[i - bpp] else 0;
+        const b = if (prior.len != 0) prior[i] else 0;
+        const c = if (i >= bpp and prior.len != 0) prior[i - bpp] else 0;
+        line[i] = switch (filter) {
+            1 => line[i] +% a,
+            2 => line[i] +% b,
+            3 => line[i] +% @as(u8, @intCast((@as(u16, a) + @as(u16, b)) >> 1)),
+            else => line[i] +% paeth(a, b, c),
+        };
+    }
+}
+
+fn convertPixel(context: *const DecodeContext, line: []const u8, dst: usize, x: usize) bool {
+    switch (context.header.color_type) {
+        0 => {
+            const g = line[x];
+            output_buf[dst] = g;
+            output_buf[dst + 1] = g;
+            output_buf[dst + 2] = g;
+            output_buf[dst + 3] = 255;
+        },
+        4 => {
+            const g = line[x * 2];
+            output_buf[dst] = g;
+            output_buf[dst + 1] = g;
+            output_buf[dst + 2] = g;
+            output_buf[dst + 3] = line[x * 2 + 1];
+        },
+        2 => {
+            output_buf[dst] = line[x * 3 + 2];
+            output_buf[dst + 1] = line[x * 3 + 1];
+            output_buf[dst + 2] = line[x * 3];
+            output_buf[dst + 3] = 255;
+        },
+        6 => {
+            output_buf[dst] = line[x * 4 + 2];
+            output_buf[dst + 1] = line[x * 4 + 1];
+            output_buf[dst + 2] = line[x * 4];
+            output_buf[dst + 3] = line[x * 4 + 3];
+        },
+        else => {
+            const idx: usize = line[x];
+            if (idx * 3 + 3 > context.palette_len) return false;
+            output_buf[dst] = palette_buf[idx * 3 + 2];
+            output_buf[dst + 1] = palette_buf[idx * 3 + 1];
+            output_buf[dst + 2] = palette_buf[idx * 3];
+            output_buf[dst + 3] = if (idx < context.trns_len) trns_buf[idx] else 255;
+        },
+    }
+    return true;
+}
+
+fn convertRow(context: *const DecodeContext, line: []const u8, dst_row: usize) bool {
+    var x: usize = 0;
+    if (USE_SIMD and context.header.color_type == 2) {
+        while (x + 4 <= context.header.width and x * 3 + 16 <= line.len) : (x += 4) {
+            const rgb = @as(*align(1) const Vec16, @ptrCast(&line[x * 3])).*;
+            const bgra = @shuffle(u8, rgb, OPAQUE, RGB_TO_BGRA);
+            @as(*align(1) Vec16, @ptrCast(&output_buf[dst_row + x * 4])).* = bgra;
+        }
+    } else if (USE_SIMD and context.header.color_type == 6) {
+        while (x + 4 <= context.header.width) : (x += 4) {
+            const rgba = @as(*align(1) const Vec16, @ptrCast(&line[x * 4])).*;
+            const bgra = @shuffle(u8, rgba, rgba, RGBA_TO_BGRA);
+            @as(*align(1) Vec16, @ptrCast(&output_buf[dst_row + x * 4])).* = bgra;
+        }
+    }
+
+    while (x < context.header.width) : (x += 1) {
+        if (!convertPixel(context, line, dst_row + x * 4, x)) return false;
+    }
+    return true;
+}
+
+fn consumeRows(context: *DecodeContext, batch: []u8) bool {
+    if (batch.len == 0 or batch.len % context.row_span != 0) return false;
+
+    var pos: usize = 0;
+    var prior: []const u8 = if (context.has_prior)
+        prior_row_buf[0..context.row_bytes]
+    else
+        &.{};
+    var final_line: []const u8 = &.{};
+
+    while (pos < batch.len) : (pos += context.row_span) {
+        if (context.next_y >= context.header.height) return false;
+        const filter = batch[pos];
+        if (filter > 4) return false;
+        const line = batch[pos + 1 .. pos + context.row_span];
+        unfilterRow(filter, line, prior, context.header.channels);
+
+        const dst_row = 54 + (context.header.height - 1 - context.next_y) * context.out_stride;
+        if (!convertRow(context, line, dst_row)) return false;
+
+        prior = line;
+        final_line = line;
+        context.next_y += 1;
+    }
+
+    @memcpy(prior_row_buf[0..context.row_bytes], final_line);
+    context.has_prior = true;
+    return true;
+}
+
 export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     const input = input_buf[0..input_size];
@@ -105,8 +260,8 @@ export fn render(input_size_in: u32) u32 {
     if (input.len < sig.len + 12 or !std.mem.eql(u8, input[0..8], &sig)) return 0;
 
     var header: ?Header = null;
-    var palette: []const u8 = &.{};
-    var trns: []const u8 = &.{};
+    var palette_len: usize = 0;
+    var trns_len: usize = 0;
     var idat_len: usize = 0;
     var seen_iend = false;
 
@@ -140,12 +295,15 @@ export fn render(input_size_in: u32) u32 {
             };
         } else if (std.mem.eql(u8, chunk_type, "PLTE")) {
             if (chunk_len == 0 or chunk_len > 768 or chunk_len % 3 != 0) return 0;
-            palette = data;
+            @memcpy(palette_buf[0..chunk_len], data);
+            palette_len = chunk_len;
         } else if (std.mem.eql(u8, chunk_type, "tRNS")) {
-            trns = data;
+            if (chunk_len > trns_buf.len) return 0;
+            @memcpy(trns_buf[0..chunk_len], data);
+            trns_len = chunk_len;
         } else if (std.mem.eql(u8, chunk_type, "IDAT")) {
-            if (idat_len + chunk_len > IDAT_CAP) return 0;
-            @memcpy(idat_buf[idat_len..][0..chunk_len], data);
+            if (idat_len + chunk_len > INPUT_CAP) return 0;
+            std.mem.copyForwards(u8, input_buf[idat_len..][0..chunk_len], data);
             idat_len += chunk_len;
         } else if (std.mem.eql(u8, chunk_type, "IEND")) {
             if (chunk_len != 0 or pos + 12 != input.len) return 0;
@@ -161,46 +319,17 @@ export fn render(input_size_in: u32) u32 {
     const h = header orelse return 0;
     if (!seen_iend or idat_len == 0) return 0;
     if (h.width == 0 or h.height == 0) return 0;
-    if (h.color_type == 3 and palette.len == 0) return 0;
+    if (h.color_type == 3 and palette_len == 0) return 0;
 
     const width: u64 = h.width;
     const height: u64 = h.height;
+    if (width > MAX_DIMENSION or height > MAX_DIMENSION or width * height > MAX_PIXELS) return 0;
     const row_bytes: u64 = width * h.channels;
     const raw_len: u64 = (1 + row_bytes) * height;
-    if (raw_len > RAW_CAP) return 0;
 
     const out_stride: u64 = width * 4;
     const out_total: u64 = 54 + out_stride * height;
     if (out_total > OUTPUT_CAP) return 0;
-
-    const inflated = inflate.inflateZlib(idat_buf[0..idat_len], raw_buf[0..@intCast(raw_len)]) orelse return 0;
-    if (inflated != raw_len) return 0;
-
-    // Undo per-scanline filters in place.
-    const rb: usize = @intCast(row_bytes);
-    const bpp = h.channels;
-    var prior: []const u8 = &.{};
-    var y: u64 = 0;
-    while (y < height) : (y += 1) {
-        const line_start: usize = @intCast(y * (1 + row_bytes));
-        const filter = raw_buf[line_start];
-        if (filter > 4) return 0;
-        const line = raw_buf[line_start + 1 ..][0..rb];
-        var i: usize = 0;
-        while (i < rb) : (i += 1) {
-            const a = if (i >= bpp) line[i - bpp] else 0;
-            const b = if (prior.len != 0) prior[i] else 0;
-            const c = if (i >= bpp and prior.len != 0) prior[i - bpp] else 0;
-            line[i] = switch (filter) {
-                0 => line[i],
-                1 => line[i] +% a,
-                2 => line[i] +% b,
-                3 => line[i] +% @as(u8, @intCast((@as(u16, a) + @as(u16, b)) >> 1)),
-                else => line[i] +% paeth(a, b, c),
-            };
-        }
-        prior = line;
-    }
 
     // BMP header: BITMAPINFOHEADER, 32-bit BGRA, bottom-up.
     @memset(output_buf[0..54], 0);
@@ -217,55 +346,36 @@ export fn render(input_size_in: u32) u32 {
     std.mem.writeInt(u32, output_buf[38..42], 2835, .little);
     std.mem.writeInt(u32, output_buf[42..46], 2835, .little);
 
-    y = 0;
-    while (y < height) : (y += 1) {
-        const line = raw_buf[@intCast(y * (1 + row_bytes) + 1)..][0..rb];
-        const dst_row: usize = @intCast(54 + (height - 1 - y) * out_stride);
-        var x: usize = 0;
-        while (x < h.width) : (x += 1) {
-            const dst = dst_row + x * 4;
-            switch (h.color_type) {
-                0 => {
-                    const g = line[x];
-                    output_buf[dst] = g;
-                    output_buf[dst + 1] = g;
-                    output_buf[dst + 2] = g;
-                    output_buf[dst + 3] = 255;
-                },
-                4 => {
-                    const g = line[x * 2];
-                    output_buf[dst] = g;
-                    output_buf[dst + 1] = g;
-                    output_buf[dst + 2] = g;
-                    output_buf[dst + 3] = line[x * 2 + 1];
-                },
-                2 => {
-                    output_buf[dst] = line[x * 3 + 2];
-                    output_buf[dst + 1] = line[x * 3 + 1];
-                    output_buf[dst + 2] = line[x * 3];
-                    output_buf[dst + 3] = 255;
-                },
-                6 => {
-                    output_buf[dst] = line[x * 4 + 2];
-                    output_buf[dst + 1] = line[x * 4 + 1];
-                    output_buf[dst + 2] = line[x * 4];
-                    output_buf[dst + 3] = line[x * 4 + 3];
-                },
-                else => {
-                    const idx: usize = line[x];
-                    if (idx * 3 + 3 > palette.len) return 0;
-                    output_buf[dst] = palette[idx * 3 + 2];
-                    output_buf[dst + 1] = palette[idx * 3 + 1];
-                    output_buf[dst + 2] = palette[idx * 3];
-                    output_buf[dst + 3] = if (idx < trns.len) trns[idx] else 255;
-                },
-            }
-        }
-    }
+    const row_span: usize = @intCast(row_bytes + 1);
+    const rows_per_batch = @max(@as(usize, 1), DECODE_BATCH_TARGET / row_span);
+    const batch_bytes = rows_per_batch * row_span;
+    var context = DecodeContext{
+        .header = h,
+        .palette_len = palette_len,
+        .trns_len = trns_len,
+        .row_bytes = @intCast(row_bytes),
+        .row_span = row_span,
+        .out_stride = @intCast(out_stride),
+    };
+    const inflated = inflate.inflateZlibBatches(
+        DecodeContext,
+        input_buf[0..idat_len],
+        &decode_work,
+        &history_scratch,
+        batch_bytes,
+        &context,
+        consumeRows,
+    ) orelse return 0;
+    if (inflated != raw_len or context.next_y != h.height) return 0;
 
     return @as(u32, @intCast(out_total));
 }
 
 test "crc32 matches the PNG check value" {
     try std.testing.expectEqual(@as(u32, 0xCBF43926), crc32("123456789"));
+}
+
+test "declares the standard 25 MP image capacities" {
+    try std.testing.expectEqual(@as(u32, 64 * 1024 * 1024), input_bytes_cap());
+    try std.testing.expectEqual(@as(u32, MAX_PIXELS * 4 + 54), output_bytes_cap());
 }

@@ -123,6 +123,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/module-patterns">QIP Component Patterns</a></li>
 <li><a href="/docs/zig-components">Writing QIP Components In Zig</a></li>
 <li><a href="/docs/c-wasm-toolchains">Building C Libraries As QIP Components</a></li>
+<li><a href="/docs/benchmarking-components">Benchmarking Components</a></li>
 <li><a href="/docs/tracing">Tracing</a></li>
 <li><a href="/docs/wasm-counts">Counting A WebAssembly Module</a></li>
 <li><a href="/docs/nontrapping-divides">Proving Non-Trapping Divides</a></li>

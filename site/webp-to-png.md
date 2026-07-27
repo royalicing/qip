@@ -2,9 +2,7 @@
 
 # WebP to PNG or BMP
 
-Decode a static lossy or lossless WebP locally in your browser. A statically
-linked libwebp component produces 32-bit BGRA BMP; PNG output adds QIP's
-BMP-to-PNG component. The image is not uploaded.
+Convert a WebP image to PNG or BMP locally in your browser. The image is not uploaded to a server.
 
 <style>
 .webp-decode-tool {
@@ -49,7 +47,7 @@ BMP-to-PNG component. The image is not uploaded.
 
 <div class="webp-decode-tool">
   <label>
-    <strong>Static WebP</strong><br>
+    <strong>WebP</strong><br>
     <input id="webp-decode-input" type="file" accept="image/webp,.webp">
   </label>
   <p id="webp-decode-meta" class="webp-decode-meta"></p>
@@ -108,6 +106,19 @@ function finish() {
   cancelButton.disabled = true;
 }
 
+function publishOutput(output, format, inputName, width, height, elapsedMs, peakBytes) {
+  const mime = format === "png" ? "image/png" : "image/bmp";
+  outputURL = URL.createObjectURL(new Blob([output], { type: mime }));
+  outputName = inputName.replace(/\.webp$/i, "") + `.${format}`;
+  downloadButton.textContent = `Download ${format.toUpperCase()}`;
+  downloadButton.disabled = false;
+  status.textContent =
+    `${width}×${height} ${format.toUpperCase()} · ` +
+    `${formatBytes(output.length)} · ${(elapsedMs / 1000).toFixed(2)} s · ` +
+    `decoder peak ${formatBytes(peakBytes)}.`;
+  finish();
+}
+
 fileInput.addEventListener("change", () => {
   selectedFile = null;
   resetOutput();
@@ -158,23 +169,51 @@ convertButton.addEventListener("click", async () => {
         finish();
         return;
       }
-      const output = new Uint8Array(event.data.output);
-      const mime = format === "png" ? "image/png" : "image/bmp";
-      outputURL = URL.createObjectURL(new Blob([output], { type: mime }));
-      outputName = inputName.replace(/\.webp$/i, "") + `.${format}`;
-      downloadButton.textContent = `Download ${format.toUpperCase()}`;
-      downloadButton.disabled = false;
-      status.textContent =
-        `${event.data.width}×${event.data.height} ${format.toUpperCase()} · ` +
-        `${formatBytes(output.length)} · ${(event.data.elapsedMs / 1000).toFixed(2)} s · ` +
-        `decoder peak ${formatBytes(event.data.peakBytes)}.`;
-      finish();
+      const bmp = new Uint8Array(event.data.output);
+      if (format === "bmp") {
+        publishOutput(
+          bmp,
+          format,
+          inputName,
+          event.data.width,
+          event.data.height,
+          event.data.elapsedMs,
+          event.data.peakBytes,
+        );
+        return;
+      }
+
+      const decodeResult = event.data;
+      worker?.terminate();
+      status.textContent = "WebP decoded. Encoding PNG in a fresh worker…";
+      worker = new Worker("/bmp-to-png-worker.js", { type: "module" });
+      worker.onmessage = (pngEvent) => {
+        if (pngEvent.data.type === "error") {
+          status.textContent = pngEvent.data.message;
+          finish();
+          return;
+        }
+        publishOutput(
+          new Uint8Array(pngEvent.data.output),
+          format,
+          inputName,
+          decodeResult.width,
+          decodeResult.height,
+          decodeResult.elapsedMs + pngEvent.data.elapsedMs,
+          decodeResult.peakBytes,
+        );
+      };
+      worker.onerror = (pngError) => {
+        status.textContent = pngError.message || "The PNG worker failed.";
+        finish();
+      };
+      worker.postMessage({ input: bmp.buffer }, [bmp.buffer]);
     };
     worker.onerror = (event) => {
       status.textContent = event.message || "The conversion worker failed.";
       finish();
     };
-    worker.postMessage({ input, format }, [input]);
+    worker.postMessage({ input }, [input]);
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
     worker?.terminate();
@@ -203,13 +242,10 @@ addEventListener("beforeunload", () => {
 });
 </script>
 
-The decoder accepts files up to 64 MiB and images up to 25 MP. Animated WebP
-is rejected rather than reduced to one frame. The worker is discarded after
-each conversion so its 448 MiB fixed Wasm memory is released.
-
-PNG output currently inherits `bmp-to-png.wasm`'s 8 MiB BMP input capacity,
-which is roughly 2 MP for a 32-bit image. Larger images can still be downloaded
-as BMP.
+Both output paths accept images up to 25 MP, with neither dimension above 8192
+pixels. Animated WebP is rejected rather than reduced to one frame. Conversion
+runs in disposable workers so the decoder and PNG encoder do not keep their
+fixed Wasm memory attached to the page.
 
 ## Components
 

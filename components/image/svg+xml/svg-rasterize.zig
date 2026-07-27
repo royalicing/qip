@@ -9,7 +9,9 @@ const std = @import("std");
 // - No stylesheet/style="" cascade engine
 
 const INPUT_CAP: u32 = 1024 * 1024;
-const OUTPUT_CAP: u32 = 16 * 1024 * 1024;
+const MAX_PIXELS: u32 = 25_000_000;
+const MAX_DIMENSION: u32 = 8192;
+const OUTPUT_CAP: u32 = MAX_PIXELS * 4 + 54;
 const INPUT_CONTENT_TYPE = "image/svg+xml";
 const OUTPUT_CONTENT_TYPE = "image/bmp";
 
@@ -1598,6 +1600,8 @@ export fn render(input_size: u32) u32 {
     const width = dims[0];
     const height = dims[1];
     if (width == 0 or height == 0) return 0;
+    if (width > MAX_DIMENSION or height > MAX_DIMENSION or
+        @as(u64, width) * @as(u64, height) > MAX_PIXELS) return 0;
 
     const pixel_bytes: u64 = @as(u64, width) * @as(u64, height) * 4;
     const header_size: u32 = 54;
@@ -1844,4 +1848,8 @@ test "svg-rasterize named stroke color support" {
     try std.testing.expectEqual(@as(u8, 0x00), px.g);
     try std.testing.expectEqual(@as(u8, 0x00), px.b);
     try std.testing.expectEqual(@as(u8, 0xFF), px.a);
+}
+
+test "declares the standard 25 MP image output capacity" {
+    try std.testing.expectEqual(@as(u32, MAX_PIXELS * 4 + 54), output_bytes_cap());
 }

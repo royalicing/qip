@@ -14,6 +14,7 @@ const execFileP = promisify(execFile);
 const qip = fileURLToPath(new URL("../qip", import.meta.url));
 const bmpToPng = fileURLToPath(new URL("../components/image/bmp/bmp-to-png.wasm", import.meta.url));
 const pngToBmp = fileURLToPath(new URL("../components/image/png/png-to-bmp-bgra32.wasm", import.meta.url));
+const pngToBmpSimd = fileURLToPath(new URL("../components/image/png/png-to-bmp-bgra32-simd.wasm", import.meta.url));
 
 async function ensurePrerequisites(t) {
   try {
@@ -44,6 +45,59 @@ function buildBMP(width, height, pixelAt) {
     }
   }
   return bmp;
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc >>> 1 ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const name = Buffer.from(type, "ascii");
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  name.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(Buffer.concat([name, data])), 8 + data.length);
+  return chunk;
+}
+
+function buildRgbUpPNG(width, height) {
+  const rowBytes = width * 3;
+  const filtered = Buffer.alloc((rowBytes + 1) * height);
+  let prior = Buffer.alloc(rowBytes);
+  for (let y = 0; y < height; y += 1) {
+    const row = Buffer.allocUnsafe(rowBytes);
+    for (let x = 0; x < width; x += 1) {
+      row[x * 3] = x * 17 + y & 0xff;
+      row[x * 3 + 1] = x + y * 13 & 0xff;
+      row[x * 3 + 2] = x ^ y;
+    }
+    const start = y * (rowBytes + 1);
+    filtered[start] = 2;
+    for (let i = 0; i < rowBytes; i += 1) {
+      filtered[start + 1 + i] = row[i] - prior[i] & 0xff;
+    }
+    prior = row;
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlib.deflateSync(filtered)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 async function runPipeline(modules, inputPath, outputPath) {
@@ -98,6 +152,29 @@ test("png IDAT inflates to correctly filtered scanlines", async (t) => {
   }
 });
 
+test("bmp to png accepts images beyond the former 8 MiB BMP cap", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-bmp-png-large-"));
+  const width = 2048;
+  const height = 1024;
+  const bmp = buildBMP(width, height, (x, y) => [
+    x & 0xff,
+    y & 0xff,
+    (x + y) & 0xff,
+    255,
+  ]);
+  assert.ok(bmp.length > 8 * 1024 * 1024);
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, bmp);
+
+  const png = await runPipeline([bmpToPng], bmpPath, join(dir, "out.png"));
+  assert.equal(png.readUInt32BE(16), width);
+  assert.equal(png.readUInt32BE(20), height);
+
+  const back = await runPipeline([bmpToPng, pngToBmp], bmpPath, join(dir, "back.bmp"));
+  assert.deepEqual(back.subarray(54), bmp.subarray(54));
+});
+
 test("png to bmp rejects a corrupted chunk CRC", async (t) => {
   await ensurePrerequisites(t);
   const dir = await mkdtemp(join(tmpdir(), "qip-bmp-png-"));
@@ -113,4 +190,35 @@ test("png to bmp rejects a corrupted chunk CRC", async (t) => {
   await execFileP(qip, ["run", pngToBmp, "-i", badPath, "-o", outPath]);
   const out = await readFile(outPath);
   assert.equal(out.length, 0, "corrupted PNG must produce no output");
+});
+
+test("scalar and SIMD png decoders produce identical BMP bytes", async (t) => {
+  await ensurePrerequisites(t);
+  try {
+    await access(pngToBmpSimd, constants.R_OK);
+  } catch {
+    t.skip("build the SIMD PNG decoder first");
+  }
+
+  const dir = await mkdtemp(join(tmpdir(), "qip-png-simd-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(257, 129, (x, y) => [
+    x * 17 + y & 0xff,
+    x + y * 13 & 0xff,
+    x ^ y,
+    255 - (x * 3 & 0x7f),
+  ]));
+  const png = await runPipeline([bmpToPng], bmpPath, join(dir, "in.png"));
+  const pngPath = join(dir, "source.png");
+  await writeFile(pngPath, png);
+
+  const scalar = await runPipeline([pngToBmp], pngPath, join(dir, "scalar.bmp"));
+  const simd = await runPipeline([pngToBmpSimd], pngPath, join(dir, "simd.bmp"));
+  assert.deepEqual(simd, scalar);
+
+  const upPath = join(dir, "rgb-up.png");
+  await writeFile(upPath, buildRgbUpPNG(259, 131));
+  const scalarUp = await runPipeline([pngToBmp], upPath, join(dir, "scalar-up.bmp"));
+  const simdUp = await runPipeline([pngToBmpSimd], upPath, join(dir, "simd-up.bmp"));
+  assert.deepEqual(simdUp, scalarUp);
 });

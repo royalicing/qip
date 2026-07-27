@@ -21,7 +21,7 @@ function run(exports, input) {
 
 self.onmessage = async (event) => {
   try {
-    const { input, format } = event.data;
+    const { input } = event.data;
     const inputBytes = new Uint8Array(input);
     const decoderModule = await WebAssembly.compileStreaming(
       fetch("/components/image/webp/webp-to-bmp-bgra32.wasm"),
@@ -38,35 +38,15 @@ self.onmessage = async (event) => {
     const view = new DataView(bmp.buffer, bmp.byteOffset, bmp.byteLength);
     const width = view.getInt32(18, true);
     const height = Math.abs(view.getInt32(22, true));
-    let output = bmp;
-    if (format === "png") {
-      const pngModule = await WebAssembly.compileStreaming(
-        fetch("/components/image/bmp/bmp-to-png.wasm"),
-      );
-      const pngEncoder = new WebAssembly.Instance(pngModule, {}).exports;
-      pngEncoder._initialize?.();
-      if (bmp.length > (pngEncoder.input_bytes_cap() >>> 0)) {
-        throw Error(
-          `PNG output supports decoded BMPs up to ${pngEncoder.input_bytes_cap() >>> 0} bytes; ` +
-          "choose BMP for this larger image.",
-        );
-      }
-      output = run(pngEncoder, bmp);
-      if (output === null) {
-        throw Error("The PNG component rejected the decoded BMP.");
-      }
-    } else if (format !== "bmp") {
-      throw Error("Unknown output format.");
-    }
     const elapsedMs = performance.now() - started;
     self.postMessage({
       type: "done",
-      output: output.buffer,
+      output: bmp.buffer,
       width,
       height,
       elapsedMs,
       peakBytes: decoder.arena_peak_bytes() >>> 0,
-    }, [output.buffer]);
+    }, [bmp.buffer]);
   } catch (error) {
     self.postMessage({
       type: "error",
