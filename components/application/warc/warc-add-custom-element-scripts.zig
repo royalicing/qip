@@ -25,6 +25,42 @@ const HTTPPayload = struct {
     body: []const u8,
 };
 
+const ElementEntry = struct {
+    name: []const u8,
+    request_path: []const u8,
+};
+
+const MAX_ELEMENT_ENTRIES: usize = 4096;
+var element_entries: [MAX_ELEMENT_ENTRIES]ElementEntry = undefined;
+var element_usage: [MAX_ELEMENT_ENTRIES]u8 = undefined;
+var required_element_indices: [MAX_ELEMENT_ENTRIES]u16 = undefined;
+
+const INDEXED_RECORD_IS_HTML: u8 = 1;
+const MAX_WARC_RECORDS: usize = 65536;
+
+const IndexedRecord = struct {
+    header_start: u32,
+    header_end: u32,
+    payload_start: u32,
+    payload_end: u32,
+    flags: u8,
+};
+
+// Twenty bytes per entry keeps the complete 65,536-record index to 1.25 MiB.
+comptime {
+    if (@sizeOf(IndexedRecord) != 20) @compileError("IndexedRecord must remain compact");
+}
+
+const ArchiveIndex = struct {
+    records: []const IndexedRecord,
+    elements: []const ElementEntry,
+};
+
+var indexed_records: [MAX_WARC_RECORDS]IndexedRecord = undefined;
+
+const ELEMENT_TAG_PRESENT: u8 = 1;
+const ELEMENT_SCRIPT_PRESENT: u8 = 2;
+
 const Output = struct {
     idx: usize = 0,
     overflow: bool = false,
@@ -335,17 +371,16 @@ fn isCustomElementName(name: []const u8) bool {
     return true;
 }
 
-fn elementNameFromRecord(record: WARCRecord) ?[]const u8 {
+fn elementEntryFromTargetURI(record: WARCRecord) ?ElementEntry {
     if (!eqlIgnoreCase(record.warc_type, "response")) return null;
-    const http = parseHTTPPayload(record.payload) orelse return null;
-    if (http.status < 200 or http.status >= 300) return null;
     const request_path = pathFromTargetURI(record.target_uri);
     const prefix = "/elements/";
     if (!std.mem.startsWith(u8, request_path, prefix)) return null;
     const filename = request_path[prefix.len..];
     if (filename.len <= ".js".len or std.mem.indexOfScalar(u8, filename, '/') != null or !std.mem.endsWith(u8, filename, ".js")) return null;
     const name = filename[0 .. filename.len - ".js".len];
-    return if (isCustomElementName(name)) name else null;
+    if (!isCustomElementName(name)) return null;
+    return .{ .name = name, .request_path = request_path };
 }
 
 fn findLastIndexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
@@ -358,12 +393,12 @@ fn findLastIndexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
     return null;
 }
 
-fn tagAttributeEquals(tag: []const u8, wanted_name: []const u8, wanted_value: []const u8) bool {
+fn tagAttributeValue(tag: []const u8, wanted_name: []const u8) ?[]const u8 {
     var i: usize = 1;
     while (i < tag.len and !isTagBoundary(tag[i])) : (i += 1) {}
     while (i < tag.len) {
         i = skipASCIIWhitespaceIn(tag, i);
-        if (i >= tag.len or tag[i] == '>' or tag[i] == '/') return false;
+        if (i >= tag.len or tag[i] == '>' or tag[i] == '/') return null;
         const name_start = i;
         while (i < tag.len and tag[i] != '=' and !isTagBoundary(tag[i])) : (i += 1) {}
         const name = tag[name_start..i];
@@ -371,14 +406,14 @@ fn tagAttributeEquals(tag: []const u8, wanted_name: []const u8, wanted_value: []
         if (i >= tag.len or tag[i] != '=') continue;
         i += 1;
         i = skipASCIIWhitespaceIn(tag, i);
-        if (i >= tag.len) return false;
+        if (i >= tag.len) return null;
         var value: []const u8 = "";
         if (tag[i] == '"' or tag[i] == '\'') {
             const quote = tag[i];
             i += 1;
             const value_start = i;
             while (i < tag.len and tag[i] != quote) : (i += 1) {}
-            if (i >= tag.len) return false;
+            if (i >= tag.len) return null;
             value = tag[value_start..i];
             i += 1;
         } else {
@@ -386,30 +421,27 @@ fn tagAttributeEquals(tag: []const u8, wanted_name: []const u8, wanted_value: []
             while (i < tag.len and !isTagBoundary(tag[i])) : (i += 1) {}
             value = tag[value_start..i];
         }
-        if (eqlIgnoreCase(name, wanted_name) and std.mem.eql(u8, value, wanted_value)) return true;
+        if (eqlIgnoreCase(name, wanted_name)) return value;
     }
-    return false;
+    return null;
 }
 
-fn hasElementModuleScript(body: []const u8, request_path: []const u8) bool {
-    var cursor: usize = 0;
-    while (std.mem.indexOfPos(u8, body, cursor, "<")) |start| {
-        if (start + 7 <= body.len and eqlIgnoreCase(body[start + 1 .. start + 7], "script")) {
-            const boundary = start + 7;
-            if (boundary < body.len and isTagBoundary(body[boundary])) {
-                const end = findTagEnd(body, start) orelse return false;
-                const tag = body[start .. end + 1];
-                if (tagAttributeEquals(tag, "src", request_path)) return true;
-                cursor = end + 1;
-                continue;
-            }
-        }
-        cursor = start + 1;
+fn elementIndexByName(elements: []const ElementEntry, name: []const u8) ?usize {
+    for (elements, 0..) |element, index| {
+        if (eqlIgnoreCase(element.name, name)) return index;
     }
-    return false;
+    return null;
 }
 
-fn hasCustomElementTag(body: []const u8, wanted_name: []const u8) bool {
+fn elementIndexByRequestPath(elements: []const ElementEntry, request_path: []const u8) ?usize {
+    for (elements, 0..) |element, index| {
+        if (std.mem.eql(u8, element.request_path, request_path)) return index;
+    }
+    return null;
+}
+
+fn requiredElements(elements: []const ElementEntry, body: []const u8) []const u16 {
+    @memset(element_usage[0..elements.len], 0);
     var cursor: usize = 0;
     while (std.mem.indexOfPos(u8, body, cursor, "<")) |start| {
         if (start + 4 <= body.len and std.mem.eql(u8, body[start .. start + 4], "<!--")) {
@@ -417,16 +449,28 @@ fn hasCustomElementTag(body: []const u8, wanted_name: []const u8) bool {
             continue;
         }
         const name_start = start + 1;
-        if (name_start >= body.len) return false;
+        if (name_start >= body.len) return required_element_indices[0..0];
         if (body[name_start] == '/' or body[name_start] == '!' or body[name_start] == '?') {
             cursor = start + 1;
             continue;
         }
-        const tag_end = findTagEnd(body, start) orelse return false;
+        const tag_end = findTagEnd(body, start) orelse return required_element_indices[0..0];
         var name_end = name_start;
         while (name_end < body.len and !isTagBoundary(body[name_end])) : (name_end += 1) {}
         const name = body[name_start..name_end];
-        if (eqlIgnoreCase(name, wanted_name)) return true;
+
+        if (elementIndexByName(elements, name)) |index| {
+            element_usage[index] |= ELEMENT_TAG_PRESENT;
+        }
+
+        if (eqlIgnoreCase(name, "script")) {
+            const tag = body[start .. tag_end + 1];
+            if (tagAttributeValue(tag, "src")) |src| {
+                if (elementIndexByRequestPath(elements, src)) |index| {
+                    element_usage[index] |= ELEMENT_SCRIPT_PRESENT;
+                }
+            }
+        }
 
         if (eqlIgnoreCase(name, "script") or eqlIgnoreCase(name, "style") or eqlIgnoreCase(name, "textarea") or eqlIgnoreCase(name, "title")) {
             var close_buf: [32]u8 = undefined;
@@ -440,81 +484,128 @@ fn hasCustomElementTag(body: []const u8, wanted_name: []const u8) bool {
         }
         cursor = tag_end + 1;
     }
-    return false;
+
+    var required_count: usize = 0;
+    for (element_usage[0..elements.len], 0..) |usage, index| {
+        if (usage & ELEMENT_TAG_PRESENT == 0 or usage & ELEMENT_SCRIPT_PRESENT != 0) continue;
+        required_element_indices[required_count] = @as(u16, @intCast(index));
+        required_count += 1;
+    }
+    return required_element_indices[0..required_count];
 }
 
 fn scriptTagLen(request_path: []const u8) usize {
     return "<script type=\"module\" src=\"".len + request_path.len + "\"></script>\n".len;
 }
 
-fn addedScriptsLen(input: []const u8, body: []const u8) usize {
-    var total: usize = 0;
+fn inputOffset(input: []const u8, slice: []const u8) u32 {
+    const offset = @intFromPtr(slice.ptr) - @intFromPtr(input.ptr);
+    if (offset > std.math.maxInt(u32)) @trap();
+    return @as(u32, @intCast(offset));
+}
+
+fn indexArchive(input: []const u8) ArchiveIndex {
+    var record_count: usize = 0;
+    var element_count: usize = 0;
     var cursor: usize = 0;
     while (cursor < input.len) {
         while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
         if (cursor >= input.len) break;
         const record = parseWARCRecord(input, cursor) orelse @trap();
         cursor = record.next;
-        const name = elementNameFromRecord(record) orelse continue;
-        const request_path = pathFromTargetURI(record.target_uri);
-        if (hasCustomElementTag(body, name) and !hasElementModuleScript(body, request_path)) total += scriptTagLen(request_path);
+
+        if (record_count >= indexed_records.len) @trap();
+        var flags: u8 = 0;
+        const element = elementEntryFromTargetURI(record);
+        if (eqlIgnoreCase(record.warc_type, "response")) {
+            const http = parseHTTPPayload(record.payload) orelse @trap();
+            if (isTextHTMLContentType(http.content_type)) {
+                flags |= INDEXED_RECORD_IS_HTML;
+            }
+            if (element) |entry| {
+                if (http.status >= 200 and http.status < 300) {
+                    if (element_count >= element_entries.len) @trap();
+                    element_entries[element_count] = entry;
+                    element_count += 1;
+                }
+            }
+        }
+        indexed_records[record_count] = .{
+            .header_start = inputOffset(input, record.header_block),
+            .header_end = inputOffset(input, record.header_block) + @as(u32, @intCast(record.header_block.len)),
+            .payload_start = inputOffset(input, record.payload),
+            .payload_end = inputOffset(input, record.payload) + @as(u32, @intCast(record.payload.len)),
+            .flags = flags,
+        };
+        record_count += 1;
+    }
+    return .{
+        .records = indexed_records[0..record_count],
+        .elements = element_entries[0..element_count],
+    };
+}
+
+fn indexedWARCRecord(input: []const u8, indexed: IndexedRecord) WARCRecord {
+    return .{
+        .next = 0,
+        .header_block = input[indexed.header_start..indexed.header_end],
+        .warc_type = "",
+        .target_uri = "",
+        .payload = input[indexed.payload_start..indexed.payload_end],
+    };
+}
+
+fn addedScriptsLen(elements: []const ElementEntry, required: []const u16) usize {
+    var total: usize = 0;
+    for (required) |index| {
+        total += scriptTagLen(elements[index].request_path);
     }
     return total;
 }
 
-fn writeAddedScripts(input: []const u8, out: *Output, body: []const u8) void {
-    var cursor: usize = 0;
-    while (cursor < input.len) {
-        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
-        if (cursor >= input.len) break;
-        const record = parseWARCRecord(input, cursor) orelse @trap();
-        cursor = record.next;
-        const name = elementNameFromRecord(record) orelse continue;
-        const request_path = pathFromTargetURI(record.target_uri);
-        if (!hasCustomElementTag(body, name) or hasElementModuleScript(body, request_path)) continue;
+fn writeAddedScripts(elements: []const ElementEntry, required: []const u16, out: *Output) void {
+    for (required) |index| {
+        const element = elements[index];
         out.writeSlice("<script type=\"module\" src=\"");
-        out.writeSlice(request_path);
+        out.writeSlice(element.request_path);
         out.writeSlice("\"></script>\n");
     }
 }
 
-fn writeHTTPPayloadWithElementScripts(input: []const u8, out: *Output, http: HTTPPayload, added_len: usize) void {
+fn writeHTTPPayloadWithElementScripts(elements: []const ElementEntry, required: []const u16, out: *Output, http: HTTPPayload, added_len: usize) void {
     writeHTTPHeaders(out, http, http.body.len + added_len);
     const insert_at = findLastIndexOfIgnoreCase(http.body, "</body>") orelse http.body.len;
     out.writeSlice(http.body[0..insert_at]);
-    writeAddedScripts(input, out, http.body);
+    writeAddedScripts(elements, required, out);
     out.writeSlice(http.body[insert_at..]);
 }
 
 fn processWARC(input: []const u8, out: *Output) void {
-    var cursor: usize = 0;
-    while (cursor < input.len and !out.overflow) {
-        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
-        if (cursor >= input.len) break;
-
-        const record = parseWARCRecord(input, cursor) orelse @trap();
-        cursor = record.next;
+    const archive = indexArchive(input);
+    for (archive.records) |indexed| {
+        if (out.overflow) break;
+        const record = indexedWARCRecord(input, indexed);
 
         var payload_to_write: ?HTTPPayload = null;
+        var required: []const u16 = &.{};
         var scripts_len: usize = 0;
         var payload_len = record.payload.len;
 
-        if (eqlIgnoreCase(record.warc_type, "response")) {
+        if (indexed.flags & INDEXED_RECORD_IS_HTML != 0) {
             if (parseHTTPPayload(record.payload)) |http| {
-                if (isTextHTMLContentType(http.content_type)) {
-                    scripts_len = addedScriptsLen(input, http.body);
-                    if (scripts_len > 0) {
-                        const body_len = http.body.len + scripts_len;
-                        payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
-                        payload_to_write = http;
-                    }
+                required = requiredElements(archive.elements, http.body);
+                scripts_len = addedScriptsLen(archive.elements, required);
+                if (scripts_len > 0) {
+                    const body_len = http.body.len + scripts_len;
+                    payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
+                    payload_to_write = http;
                 }
             }
         }
 
         writeWARCRecordHeader(out, record, payload_len, payload_to_write != null);
         if (payload_to_write) |http| {
-            writeHTTPPayloadWithElementScripts(input, out, http, scripts_len);
+            writeHTTPPayloadWithElementScripts(archive.elements, required, out, http, scripts_len);
         } else {
             out.writeSlice(record.payload);
         }
@@ -604,4 +695,72 @@ test "nested modules are not custom element entrypoints" {
     var out: [16384]u8 = undefined;
     const transformed = try runTransform(warc_buf[0..n], out[0..]);
     try std.testing.expect(std.mem.indexOf(u8, transformed, "src=\"/elements/lib/shared-helper.js\"") == null);
+}
+
+test "scans each html page independently and ignores scripts in comments" {
+    var warc_buf: [16384]u8 = undefined;
+    var n: usize = 0;
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/first",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><!-- <script src=\"/elements/copy-code.js\"></script> --><copy-code></copy-code></body></html>",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/second",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><p>No custom element here.</p></body></html>",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/elements/copy-code.js",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport {};",
+    );
+
+    var out: [32768]u8 = undefined;
+    const transformed = try runTransform(warc_buf[0..n], out[0..]);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        std.mem.count(u8, transformed, "<script type=\"module\" src=\"/elements/copy-code.js\"></script>"),
+    );
+}
+
+test "indexes ordinary html separately from custom element discovery" {
+    var warc_buf: [8192]u8 = undefined;
+    var n: usize = 0;
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/page",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><copy-code></copy-code></body></html>",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/image.png",
+        "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\nPNG",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/elements/copy-code.js",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport {};",
+    );
+
+    @memcpy(input_buf[0..n], warc_buf[0..n]);
+    const archive = indexArchive(input_buf[0..n]);
+    try std.testing.expectEqual(@as(usize, 3), archive.records.len);
+    try std.testing.expect(archive.records[0].flags & INDEXED_RECORD_IS_HTML != 0);
+    try std.testing.expectEqual(@as(u8, 0), archive.records[1].flags);
+    try std.testing.expectEqual(@as(u8, 0), archive.records[2].flags);
+    try std.testing.expectEqual(@as(usize, 1), archive.elements.len);
+    try std.testing.expectEqualStrings("copy-code", archive.elements[0].name);
 }

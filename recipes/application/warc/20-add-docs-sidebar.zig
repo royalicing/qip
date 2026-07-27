@@ -40,6 +40,31 @@ const AttributeRange = struct {
     end: usize,
 };
 
+const INDEXED_RECORD_IS_DOCS_RESPONSE: u8 = 1;
+const MAX_WARC_RECORDS: usize = 65536;
+
+const IndexedRecord = struct {
+    header_start: u32,
+    header_end: u32,
+    payload_start: u32,
+    payload_end: u32,
+    path_start: u32,
+    path_end: u32,
+    flags: u8,
+};
+
+const ArchiveIndex = struct {
+    records: []const IndexedRecord,
+    nav: ?[]const u8,
+};
+
+// Twenty-eight bytes per record keeps the full index below 1.75 MiB.
+comptime {
+    if (@sizeOf(IndexedRecord) != 28) @compileError("IndexedRecord must remain compact");
+}
+
+var indexed_records: [MAX_WARC_RECORDS]IndexedRecord = undefined;
+
 const Output = struct {
     idx: usize = 0,
     overflow: bool = false,
@@ -513,8 +538,7 @@ fn writeAdjustedNav(out: *Output, nav: []const u8, current_path: []const u8) voi
     out.writeSlice(nav[cursor..]);
 }
 
-fn writeHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8, current_path: []const u8, main_range: MainRange) void {
-    const body_len = injectedBodyLen(http.body, nav, current_path);
+fn writeHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8, current_path: []const u8, main_range: MainRange, body_len: usize) void {
     writeHTTPHeaders(out, http, body_len);
     out.writeSlice(http.body[0..main_range.open_end]);
     writeAdjustedNav(out, nav, current_path);
@@ -524,8 +548,7 @@ fn writeHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8,
     out.writeSlice(http.body[main_range.close_start..]);
 }
 
-fn writeRootDocsHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8, current_path: []const u8, main_range: MainRange, nav_range: NavRange) void {
-    const body_len = injectedRootDocsBodyLen(http.body, nav, current_path, nav_range);
+fn writeRootDocsHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []const u8, current_path: []const u8, main_range: MainRange, nav_range: NavRange, body_len: usize) void {
     writeHTTPHeaders(out, http, body_len);
     out.writeSlice(http.body[0..main_range.open_end]);
     writeAdjustedNav(out, nav, current_path);
@@ -536,62 +559,108 @@ fn writeRootDocsHTTPPayloadWithSidebar(out: *Output, http: HTTPPayload, nav: []c
     out.writeSlice(http.body[main_range.close_start..]);
 }
 
-fn findDocsNav(input: []const u8) ?[]const u8 {
+fn inputOffset(input: []const u8, slice: []const u8) u32 {
+    const offset = @intFromPtr(slice.ptr) - @intFromPtr(input.ptr);
+    if (offset > std.math.maxInt(u32)) @trap();
+    return @as(u32, @intCast(offset));
+}
+
+fn indexArchive(input: []const u8) ArchiveIndex {
+    var record_count: usize = 0;
+    var nav: ?[]const u8 = null;
+    var docs_page_decided = false;
     var cursor: usize = 0;
     while (cursor < input.len) {
         while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
         if (cursor >= input.len) break;
-        const record = parseWARCRecord(input, cursor) orelse return null;
+        const record = parseWARCRecord(input, cursor) orelse @trap();
         cursor = record.next;
-        if (!eqlIgnoreCase(record.warc_type, "response")) continue;
-        const path = pathFromTargetURI(record.target_uri);
-        if (!std.mem.eql(u8, path, "/docs")) continue;
-        const http = parseHTTPPayload(record.payload) orelse continue;
-        if (http.status != 200 or !isHTMLContentType(http.content_type)) continue;
-        if (findMainRange(http.body)) |range| {
-            const nav_range = findDocsNavRange(http.body, range) orelse return null;
-            return http.body[nav_range.start..nav_range.end];
+        if (record_count >= indexed_records.len) @trap();
+
+        var path: []const u8 = "";
+        var flags: u8 = 0;
+        if (eqlIgnoreCase(record.warc_type, "response")) {
+            path = pathFromTargetURI(record.target_uri);
+            if (docsPath(path)) flags |= INDEXED_RECORD_IS_DOCS_RESPONSE;
+
+            if (!docs_page_decided and std.mem.eql(u8, path, "/docs")) {
+                if (parseHTTPPayload(record.payload)) |http| {
+                    if (http.status == 200 and isHTMLContentType(http.content_type)) {
+                        docs_page_decided = true;
+                        if (findMainRange(http.body)) |range| {
+                            if (findDocsNavRange(http.body, range)) |nav_range| {
+                                nav = http.body[nav_range.start..nav_range.end];
+                            }
+                        }
+                    }
+                }
+            }
         }
-        return null;
+
+        indexed_records[record_count] = .{
+            .header_start = inputOffset(input, record.header_block),
+            .header_end = inputOffset(input, record.header_block) + @as(u32, @intCast(record.header_block.len)),
+            .payload_start = inputOffset(input, record.payload),
+            .payload_end = inputOffset(input, record.payload) + @as(u32, @intCast(record.payload.len)),
+            .path_start = if (flags & INDEXED_RECORD_IS_DOCS_RESPONSE != 0) inputOffset(input, path) else 0,
+            .path_end = if (flags & INDEXED_RECORD_IS_DOCS_RESPONSE != 0)
+                inputOffset(input, path) + @as(u32, @intCast(path.len))
+            else
+                0,
+            .flags = flags,
+        };
+        record_count += 1;
     }
-    return null;
+    return .{
+        .records = indexed_records[0..record_count],
+        .nav = nav,
+    };
+}
+
+fn indexedWARCRecord(input: []const u8, indexed: IndexedRecord) WARCRecord {
+    return .{
+        .next = 0,
+        .header_block = input[indexed.header_start..indexed.header_end],
+        .warc_type = "",
+        .target_uri = "",
+        .payload = input[indexed.payload_start..indexed.payload_end],
+    };
 }
 
 fn processWARC(input: []const u8, out: *Output) void {
-    const nav = findDocsNav(input);
-    var cursor: usize = 0;
-    while (cursor < input.len and !out.overflow) {
-        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
-        if (cursor >= input.len) break;
-
-        const record = parseWARCRecord(input, cursor) orelse @trap();
-        cursor = record.next;
-
+    const archive = indexArchive(input);
+    for (archive.records) |indexed| {
+        if (out.overflow) break;
+        const record = indexedWARCRecord(input, indexed);
         var payload_to_write: ?HTTPPayload = null;
         var main_range: ?MainRange = null;
         var nav_range: ?NavRange = null;
+        var rewritten_body_len: usize = 0;
         var payload_len = record.payload.len;
-        const request_path = pathFromTargetURI(record.target_uri);
+        const request_path = input[indexed.path_start..indexed.path_end];
 
-        if (nav != null and eqlIgnoreCase(record.warc_type, "response") and docsPath(request_path)) {
+        if (archive.nav != null and indexed.flags & INDEXED_RECORD_IS_DOCS_RESPONSE != 0) {
             if (parseHTTPPayload(record.payload)) |http| {
                 if (http.status == 200 and isHTMLContentType(http.content_type) and std.mem.eql(u8, request_path, "/docs")) {
                     if (findMainRange(http.body)) |range| {
-                        if (!mainStartsWithDocsSidebar(http.body, range) and findDocsNavRange(http.body, range) != null) {
-                            const docs_nav_range = findDocsNavRange(http.body, range).?;
-                            const body_len = injectedRootDocsBodyLen(http.body, nav.?, request_path, docs_nav_range);
-                            payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
-                            payload_to_write = http;
-                            main_range = range;
-                            nav_range = docs_nav_range;
+                        if (!mainStartsWithDocsSidebar(http.body, range)) {
+                            if (findDocsNavRange(http.body, range)) |docs_nav_range| {
+                                const body_len = injectedRootDocsBodyLen(http.body, archive.nav.?, request_path, docs_nav_range);
+                                payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
+                                payload_to_write = http;
+                                main_range = range;
+                                nav_range = docs_nav_range;
+                                rewritten_body_len = body_len;
+                            }
                         }
                     }
                 } else if (http.status == 200 and isHTMLContentType(http.content_type) and childDocsPath(request_path) and !bodyAlreadyHasSidebar(http.body)) {
                     if (findMainRange(http.body)) |range| {
-                        const body_len = injectedBodyLen(http.body, nav.?, request_path);
+                        const body_len = injectedBodyLen(http.body, archive.nav.?, request_path);
                         payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
                         payload_to_write = http;
                         main_range = range;
+                        rewritten_body_len = body_len;
                     }
                 }
             }
@@ -600,9 +669,9 @@ fn processWARC(input: []const u8, out: *Output) void {
         writeWARCRecordHeader(out, record, payload_len, payload_to_write != null);
         if (payload_to_write) |http| {
             if (std.mem.eql(u8, request_path, "/docs")) {
-                writeRootDocsHTTPPayloadWithSidebar(out, http, nav.?, request_path, main_range.?, nav_range.?);
+                writeRootDocsHTTPPayloadWithSidebar(out, http, archive.nav.?, request_path, main_range.?, nav_range.?, rewritten_body_len);
             } else {
-                writeHTTPPayloadWithSidebar(out, http, nav.?, request_path, main_range.?);
+                writeHTTPPayloadWithSidebar(out, http, archive.nav.?, request_path, main_range.?, rewritten_body_len);
             }
         } else {
             out.writeSlice(record.payload);

@@ -354,63 +354,34 @@ fn isTagBoundary(c: u8) bool {
     return c == '>' or c == ' ' or c == '\t' or c == '\r' or c == '\n';
 }
 
-fn indexOfCloseHead(body: []const u8) ?usize {
-    var i: usize = 0;
-    while (i + "</head".len <= body.len) : (i += 1) {
-        if (body[i] != '<') continue;
-        if (i + 2 >= body.len or body[i + 1] != '/') continue;
-        if (i + 2 + "head".len > body.len) continue;
-        if (!eqlIgnoreCase(body[i + 2 .. i + 6], "head")) continue;
-        if (i + 6 < body.len and !isTagBoundary(body[i + 6])) continue;
-        return i;
-    }
-    return null;
+const IMAGE_META_MARKERS = [_][]const u8{
+    "property=\"og:image\"",
+    "property='og:image'",
+    "name=\"twitter:image\"",
+    "name='twitter:image'",
+};
+
+fn startsWithIgnoreCaseAt(input: []const u8, start: usize, needle: []const u8) bool {
+    return start <= input.len and needle.len <= input.len - start and
+        eqlIgnoreCase(input[start .. start + needle.len], needle);
 }
 
-fn indexAfterOpenHead(body: []const u8) ?usize {
-    var i: usize = 0;
-    while (i + "<head".len <= body.len) : (i += 1) {
-        if (body[i] != '<') continue;
-        if (i + "head".len + 1 > body.len) continue;
-        if (!eqlIgnoreCase(body[i + 1 .. i + 5], "head")) continue;
-        if (i + 5 < body.len and !isTagBoundary(body[i + 5])) continue;
-
-        var j = i + 5;
-        var quote: u8 = 0;
-        while (j < body.len) : (j += 1) {
-            const c = body[j];
-            if (quote != 0) {
-                if (c == quote) quote = 0;
-                continue;
-            }
-            if (c == '"' or c == '\'') {
-                quote = c;
-                continue;
-            }
-            if (c == '>') return j + 1;
+fn findTagEndAfter(body: []const u8, start: usize) ?usize {
+    var i = start;
+    var quote: u8 = 0;
+    while (i < body.len) : (i += 1) {
+        const c = body[i];
+        if (quote != 0) {
+            if (c == quote) quote = 0;
+            continue;
         }
-        return null;
+        if (c == '"' or c == '\'') {
+            quote = c;
+            continue;
+        }
+        if (c == '>') return i + 1;
     }
     return null;
-}
-
-fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
-    if (needle.len == 0) return 0;
-    if (haystack.len < needle.len) return null;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return i;
-    }
-    return null;
-}
-
-fn bodyHasOpenGraphImageMeta(body: []const u8) bool {
-    const scan_slice = if (indexOfCloseHead(body)) |head_close| body[0..head_close] else body;
-    if (indexOfIgnoreCase(scan_slice, "property=\"og:image\"") != null) return true;
-    if (indexOfIgnoreCase(scan_slice, "property='og:image'") != null) return true;
-    if (indexOfIgnoreCase(scan_slice, "name=\"twitter:image\"") != null) return true;
-    if (indexOfIgnoreCase(scan_slice, "name='twitter:image'") != null) return true;
-    return false;
 }
 
 fn metaSnippetLen(og_path: []const u8) usize {
@@ -459,14 +430,31 @@ fn writeHTTPPayload(out: *Output, http: HTTPPayload, body_injection: BodyInjecti
 }
 
 fn computeBodyInjection(body: []const u8) BodyInjection {
-    if (bodyHasOpenGraphImageMeta(body)) {
-        return .{ .should_inject = false, .insert_at = 0 };
+    var head_open_end: ?usize = null;
+    var i: usize = 0;
+    while (i < body.len) : (i += 1) {
+        if (body[i] == '<') {
+            if (startsWithIgnoreCaseAt(body, i + 1, "/head")) {
+                const boundary = i + 1 + "/head".len;
+                if (boundary >= body.len or isTagBoundary(body[boundary])) {
+                    return .{ .should_inject = true, .insert_at = i };
+                }
+            } else if (head_open_end == null and startsWithIgnoreCaseAt(body, i + 1, "head")) {
+                const boundary = i + 1 + "head".len;
+                if (boundary >= body.len or isTagBoundary(body[boundary])) {
+                    head_open_end = findTagEndAfter(body, boundary);
+                }
+            }
+        } else if (body[i] == 'p' or body[i] == 'P' or body[i] == 'n' or body[i] == 'N') {
+            for (IMAGE_META_MARKERS) |marker| {
+                if (startsWithIgnoreCaseAt(body, i, marker)) {
+                    return .{ .should_inject = false, .insert_at = 0 };
+                }
+            }
+        }
     }
-    if (indexOfCloseHead(body)) |head_close| {
-        return .{ .should_inject = true, .insert_at = head_close };
-    }
-    if (indexAfterOpenHead(body)) |head_open_end| {
-        return .{ .should_inject = true, .insert_at = head_open_end };
+    if (head_open_end) |insert_at| {
+        return .{ .should_inject = true, .insert_at = insert_at };
     }
     return .{ .should_inject = false, .insert_at = 0 };
 }

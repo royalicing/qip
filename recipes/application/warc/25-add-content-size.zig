@@ -34,6 +34,54 @@ const Element = struct {
     src: []const u8,
 };
 
+const INDEXED_RECORD_IS_TEXT_HTML: u8 = 1;
+const RESOURCE_IS_RESOLVABLE: u8 = 1;
+const MAX_WARC_RECORDS: usize = 65536;
+const MAX_REPLACEMENTS_PER_PAGE: usize = 4096;
+
+const IndexedRecord = struct {
+    header_start: u32,
+    header_end: u32,
+    payload_start: u32,
+    payload_end: u32,
+    flags: u8,
+};
+
+const ResourceEntry = struct {
+    path_start: u32,
+    path_end: u32,
+    body_len: u32,
+    flags: u8,
+};
+
+const Replacement = struct {
+    open_end: u32,
+    content_end: u32,
+    end: u32,
+    byte_len: u32,
+};
+
+const ReplacementPlan = struct {
+    replacements: []const Replacement,
+    body_len: usize,
+};
+
+const ArchiveIndex = struct {
+    records: []const IndexedRecord,
+    resources: []const ResourceEntry,
+};
+
+// The complete fixed-capacity record and resource indexes occupy 2 MiB.
+comptime {
+    if (@sizeOf(IndexedRecord) != 20) @compileError("IndexedRecord must remain compact");
+    if (@sizeOf(ResourceEntry) != 16) @compileError("ResourceEntry must remain compact");
+    if (@sizeOf(Replacement) != 16) @compileError("Replacement must remain compact");
+}
+
+var indexed_records: [MAX_WARC_RECORDS]IndexedRecord = undefined;
+var resource_entries: [MAX_WARC_RECORDS]ResourceEntry = undefined;
+var page_replacements: [MAX_REPLACEMENTS_PER_PAGE]Replacement = undefined;
+
 const Output = struct {
     idx: usize = 0,
     overflow: bool = false,
@@ -402,20 +450,77 @@ fn normalizedSourcePath(src: []const u8) []const u8 {
     return src[0..end];
 }
 
-fn lookupBodySize(input: []const u8, src: []const u8) ?usize {
-    const wanted = normalizedSourcePath(src);
+fn inputOffset(input: []const u8, slice: []const u8) u32 {
+    const offset = @intFromPtr(slice.ptr) - @intFromPtr(input.ptr);
+    if (offset > std.math.maxInt(u32)) @trap();
+    return @as(u32, @intCast(offset));
+}
+
+fn indexArchive(input: []const u8) ArchiveIndex {
+    var record_count: usize = 0;
+    var resource_count: usize = 0;
     var cursor: usize = 0;
     while (cursor < input.len) {
         while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
         if (cursor >= input.len) break;
+
         const record = parseWARCRecord(input, cursor) orelse @trap();
         cursor = record.next;
-        if (!eqlIgnoreCase(record.warc_type, "response")) continue;
-        if (!std.mem.eql(u8, pathFromTargetURI(record.target_uri), wanted)) continue;
-        const http = parseHTTPPayload(record.payload) orelse continue;
-        if (http.status < 200 or http.status >= 300) return null;
-        if (isHTMLContentType(http.content_type)) return null;
-        return http.body.len;
+        if (record_count >= indexed_records.len) @trap();
+
+        var flags: u8 = 0;
+        if (eqlIgnoreCase(record.warc_type, "response")) {
+            if (parseHTTPPayload(record.payload)) |http| {
+                const is_html = isTextHTMLContentType(http.content_type);
+                if (is_html) flags |= INDEXED_RECORD_IS_TEXT_HTML;
+
+                if (resource_count >= resource_entries.len) @trap();
+                const path = pathFromTargetURI(record.target_uri);
+                resource_entries[resource_count] = .{
+                    .path_start = inputOffset(input, path),
+                    .path_end = inputOffset(input, path) + @as(u32, @intCast(path.len)),
+                    .body_len = @as(u32, @intCast(http.body.len)),
+                    .flags = if (http.status >= 200 and http.status < 300 and !isHTMLContentType(http.content_type))
+                        RESOURCE_IS_RESOLVABLE
+                    else
+                        0,
+                };
+                resource_count += 1;
+            }
+        }
+
+        indexed_records[record_count] = .{
+            .header_start = inputOffset(input, record.header_block),
+            .header_end = inputOffset(input, record.header_block) + @as(u32, @intCast(record.header_block.len)),
+            .payload_start = inputOffset(input, record.payload),
+            .payload_end = inputOffset(input, record.payload) + @as(u32, @intCast(record.payload.len)),
+            .flags = flags,
+        };
+        record_count += 1;
+    }
+
+    return .{
+        .records = indexed_records[0..record_count],
+        .resources = resource_entries[0..resource_count],
+    };
+}
+
+fn indexedWARCRecord(input: []const u8, indexed: IndexedRecord) WARCRecord {
+    return .{
+        .next = 0,
+        .header_block = input[indexed.header_start..indexed.header_end],
+        .warc_type = "",
+        .target_uri = "",
+        .payload = input[indexed.payload_start..indexed.payload_end],
+    };
+}
+
+fn lookupBodySize(input: []const u8, resources: []const ResourceEntry, src: []const u8) ?usize {
+    const wanted = normalizedSourcePath(src);
+    for (resources) |resource| {
+        if (!std.mem.eql(u8, input[resource.path_start..resource.path_end], wanted)) continue;
+        if (resource.flags & RESOURCE_IS_RESOLVABLE == 0) return null;
+        return resource.body_len;
     }
     return null;
 }
@@ -449,17 +554,31 @@ fn writeSizeText(out: *Output, byte_len: usize) void {
     out.writeSlice(" kB");
 }
 
-fn bodyLenWithContentSizes(input: []const u8, body: []const u8) usize {
+fn planReplacements(input: []const u8, resources: []const ResourceEntry, body: []const u8) ?ReplacementPlan {
     var len = body.len;
+    var count: usize = 0;
     var cursor: usize = 0;
     while (findNextElement(body, cursor)) |element| {
-        const byte_len = lookupBodySize(input, element.src) orelse @trap();
+        if (count >= page_replacements.len) @trap();
+        const byte_len = lookupBodySize(input, resources, element.src) orelse @trap();
         const replacement_len = sizeTextLen(byte_len);
         len = len - (element.content_end - element.open_end) + replacement_len;
+        page_replacements[count] = .{
+            .open_end = @as(u32, @intCast(element.open_end)),
+            .content_end = @as(u32, @intCast(element.content_end)),
+            .end = @as(u32, @intCast(element.end)),
+            .byte_len = @as(u32, @intCast(byte_len)),
+        };
+        count += 1;
         cursor = element.end;
     }
-    return len;
+    if (count == 0) return null;
+    return .{
+        .replacements = page_replacements[0..count],
+        .body_len = len,
+    };
 }
+
 fn computeHeaderRewriteLen(http: HTTPPayload, body_len: usize) usize {
     return warc.httpHeaderRewriteLen(http.header_block, http.status_line, body_len);
 }
@@ -472,51 +591,44 @@ fn writeHTTPHeaders(out: *Output, http: HTTPPayload, body_len: usize) void {
     warc.writeRewrittenHTTPHeaders(out, http.header_block, http.status_line, body_len);
 }
 
-fn writeBodyWithContentSizes(input: []const u8, out: *Output, body: []const u8) void {
+fn writeBodyWithContentSizes(out: *Output, body: []const u8, plan: ReplacementPlan) void {
     var cursor: usize = 0;
-    while (findNextElement(body, cursor)) |element| {
-        out.writeSlice(body[cursor..element.open_end]);
-        const byte_len = lookupBodySize(input, element.src) orelse @trap();
-        writeSizeText(out, byte_len);
-        out.writeSlice(body[element.content_end..element.end]);
-        cursor = element.end;
+    for (plan.replacements) |replacement| {
+        out.writeSlice(body[cursor..replacement.open_end]);
+        writeSizeText(out, replacement.byte_len);
+        out.writeSlice(body[replacement.content_end..replacement.end]);
+        cursor = replacement.end;
     }
     out.writeSlice(body[cursor..]);
 }
 
-fn writeHTTPPayloadWithContentSizes(input: []const u8, out: *Output, http: HTTPPayload) void {
-    const body_len = bodyLenWithContentSizes(input, http.body);
-    writeHTTPHeaders(out, http, body_len);
-    writeBodyWithContentSizes(input, out, http.body);
+fn writeHTTPPayloadWithContentSizes(out: *Output, http: HTTPPayload, plan: ReplacementPlan) void {
+    writeHTTPHeaders(out, http, plan.body_len);
+    writeBodyWithContentSizes(out, http.body, plan);
 }
 
 fn processWARC(input: []const u8, out: *Output) void {
-    var cursor: usize = 0;
-    while (cursor < input.len and !out.overflow) {
-        while (cursor < input.len and (input[cursor] == '\r' or input[cursor] == '\n')) : (cursor += 1) {}
-        if (cursor >= input.len) break;
-
-        const record = parseWARCRecord(input, cursor) orelse @trap();
-        cursor = record.next;
-
+    const archive = indexArchive(input);
+    for (archive.records) |indexed| {
+        if (out.overflow) break;
+        const record = indexedWARCRecord(input, indexed);
         var payload_to_write: ?HTTPPayload = null;
+        var replacement_plan: ?ReplacementPlan = null;
         var payload_len = record.payload.len;
 
-        if (eqlIgnoreCase(record.warc_type, "response")) {
+        if (indexed.flags & INDEXED_RECORD_IS_TEXT_HTML != 0) {
             if (parseHTTPPayload(record.payload)) |http| {
-                if (isTextHTMLContentType(http.content_type)) {
-                    if (findNextElement(http.body, 0) != null) {
-                        const body_len = bodyLenWithContentSizes(input, http.body);
-                        payload_len = computeHeaderRewriteLen(http, body_len) + body_len;
-                        payload_to_write = http;
-                    }
+                if (planReplacements(input, archive.resources, http.body)) |plan| {
+                    payload_len = computeHeaderRewriteLen(http, plan.body_len) + plan.body_len;
+                    payload_to_write = http;
+                    replacement_plan = plan;
                 }
             }
         }
 
         writeWARCRecordHeader(out, record, payload_len, payload_to_write != null);
         if (payload_to_write) |http| {
-            writeHTTPPayloadWithContentSizes(input, out, http);
+            writeHTTPPayloadWithContentSizes(out, http, replacement_plan.?);
         } else {
             out.writeSlice(record.payload);
         }
@@ -622,6 +734,49 @@ test "normalizes query and fragment in src paths" {
     try std.testing.expect(std.mem.indexOf(u8, transformed, ">1 byte</qip-content-size>") != null);
 }
 
+test "indexes resources on either side of an html page and plans all replacements once" {
+    var warc_buf: [16384]u8 = undefined;
+    var n: usize = 0;
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/before.bin",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\na",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/page",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" ++
+            "<qip-content-size src=\"/before.bin\">old</qip-content-size>" ++
+            "<qip-content-size src=\"/after.bin\">old</qip-content-size>",
+    );
+    try appendWARCRecord(
+        warc_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/after.bin",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\nlater",
+    );
+
+    const archive = indexArchive(warc_buf[0..n]);
+    try std.testing.expectEqual(@as(usize, 3), archive.records.len);
+    try std.testing.expect(archive.records[1].flags & INDEXED_RECORD_IS_TEXT_HTML != 0);
+    try std.testing.expectEqual(@as(?usize, 1), lookupBodySize(warc_buf[0..n], archive.resources, "/before.bin"));
+    try std.testing.expectEqual(@as(?usize, 5), lookupBodySize(warc_buf[0..n], archive.resources, "/after.bin"));
+
+    var out: [32768]u8 = undefined;
+    const transformed = try runTransform(warc_buf[0..n], out[0..]);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        transformed,
+        "<qip-content-size src=\"/before.bin\">1 byte</qip-content-size>" ++
+            "<qip-content-size src=\"/after.bin\">5 bytes</qip-content-size>",
+    ) != null);
+}
+
 test "missing and unsuccessful source paths do not resolve" {
     var warc_buf: [4096]u8 = undefined;
     var n: usize = 0;
@@ -632,8 +787,9 @@ test "missing and unsuccessful source paths do not resolve" {
         "http://qip.local/missing",
         "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nno",
     );
-    try std.testing.expectEqual(@as(?usize, null), lookupBodySize(warc_buf[0..n], "/absent"));
-    try std.testing.expectEqual(@as(?usize, null), lookupBodySize(warc_buf[0..n], "/missing"));
+    const archive = indexArchive(warc_buf[0..n]);
+    try std.testing.expectEqual(@as(?usize, null), lookupBodySize(warc_buf[0..n], archive.resources, "/absent"));
+    try std.testing.expectEqual(@as(?usize, null), lookupBodySize(warc_buf[0..n], archive.resources, "/missing"));
 }
 
 test "leaves non HTML responses unchanged" {

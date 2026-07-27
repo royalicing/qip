@@ -262,6 +262,36 @@ WARC recipes can synthesize or rewrite archive records, which means they can add
 - `components/application/warc/warc-to-sitemap.wasm` is the terminal
   `application/warc` to `application/xml` form when a standalone sitemap body,
   rather than an added route, is wanted.
+- `recipes/application/warc/35-add-search-index.wasm` runs after page recipes
+  have added stable `h2` fragment IDs. It appends a flat CSV target table and
+  first-character posting shards under `/search/v1/`.
+
+The search target table relates sections without storing a document tree:
+
+```csv
+target,url,label
+2-0,/docs/abc,ABC documentation
+2-3,/docs/abc#portable,ABC documentation — Portable
+```
+
+The part before `-` identifies the page and the part after it identifies a
+section. Search can therefore combine terms found in different sections of
+the same page. It links to a fragment when one section matches the whole
+query, or to the page when the matches are spread across sections.
+
+Posting shards keep the indexed term first and sort by that field:
+
+```csv
+term,target,weight
+component,2-3,4
+portable,2-3,12
+```
+
+The mandatory header means every posting begins after a newline. A browser can
+find a prefix with `"\n" + prefix`, scan the contiguous matching rows, and
+avoid parsing unrelated rows. The build step folds page-title, heading, and
+body importance into the integer weight; the browser only adds weights after
+grouping targets by page.
 
 ## Ordering
 
