@@ -527,13 +527,13 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 
 ## TODO
 
-- [x] Add `tar-to-zip.wasm`
-- [x] Add `zip-to-tar.wasm`
+- [ ] Add `warc-latency-estimator.wasm` that takes a WARC and then for each route calculates largest-contentful-paint and time-to-interaction and so forth.
 - [ ] Update to latest Zig
 - [ ] Consider making `qip comply --declarative-checkers` the default after all supported Compliance components satisfy it; keep the explicit flag available for reproducible older workflows.
 - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
   - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
-- [ ] Add support for nested `<qip-render component="bytes/base64">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
+  - [ ] Add WARC-time validation that the steps are compatible with each other.
+- [ ] Add support for nested `<qip-render component="/components/bytes/base64-encode.wasm">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
 - [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
 - [ ] Retire the web-shaped `Form` component contract.
   - [ ] Add `submit(input_size)` export

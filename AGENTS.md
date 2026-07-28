@@ -1,74 +1,63 @@
-# AGENTS Notes (Codex Sessions)
+# AGENTS Notes
 
-The project uses a `Makefile` for common tasks. Use that and remember to pass `-j` to run in parallel.
+Project docs are written for coding agents as well as people. Read the relevant
+page before changing a contract or workflow; do not repeat protocols here.
 
-## Project Context
+## Workflow
 
-- `qip` has two distinct execution paths:
-  - **Text/Binary**: runs WASM modules via `run` for text or raw byte processing.
-  - **Image**: runs RGBA tiling filters via `qip image` and `image.html`.
-- Notes below cover **Text/Binary** briefly, then **Image** in more detail.
+- Use the `Makefile`. Pass `-j` for builds and tests, but run benchmarks without
+  competing CPU-heavy work.
+- Source and compiled `.wasm` files are tracked together. Rebuild the artifact
+  after changing its source.
+- Use narrow test targets while iterating. Run `make -j test` after changing
+  shared code, build or test wiring, or multiple components.
+- Run `make -j site-static` after changing docs navigation, routes, links, or
+  referenced modules. It checks for broken links and missing module imports.
 
-## Text/Binary
+## Project References
 
-- Entry point: modules export `run(input_size)` and read input from `input_ptr`.
-- Capacity comes from `input_utf8_cap` or `input_bytes_cap` (global or function).
-- Outputs are read from `output_ptr` with one of `output_utf8_cap` or `output_bytes_cap`.
-
-## Image
-
-- `image.html` is a browser demo for RGBA filters.
-- RGBA filters live in `components/rgba/*.wat` with compiled `*.wasm`.
-
-### Tiling + Halo
-
-- Tile size is **64x64**.
-- Filters may export `calculate_halo_px()` for halo padding.
-- Host-side behavior:
-  - If any stage returns halo > 0, the pipeline switches to a float32 full-image buffer for all stages.
-  - Halo tiles use edge clamping and pass `x - halo`, `y - halo` to the module.
-- See `IMAGE.md` for the full protocol.
-
-### image.html State Management
-
-- There is a **working state** (`workingState`) kept in memory.
-- UI changes update `workingState` and **commit** to the URL hash (history replace).
-- Hash parsing only happens on `hashchange` (back/forward/manual edits).
-- Filters are not removed when unchecked; enabled flag is stored in the hash.
-
-### Recent Filters Added
-
-- `find-edges`, `cutout`, `color-halftone`, `gaussian-blur`, `unsharp-mask`
-- `gaussian-blur` and `unsharp-mask` are halo-aware and use dynamic tile spans.
-
-### Gotchas
-
-- If a filter exports `calculate_halo_px`, its WAT must handle tile spans > 64 (row stride changes).
-- `input_bytes_cap` must cover expanded tiles and scratch buffers.
-- Make sure new filters are added to `image.html`:
-  - menu button
-  - template
-  - `FILTER_DEFS`
-
-## Tests
-
-We have snapshots in `test/latest.txt` that are matched against `test/expected.txt`. When updating the tests within `Makefile` please run `make -j test` and verify all the tests pass.
-
-## Optimization
-
-When implementing a common algorithm, benchmark against other implementations. For example Go stdlib has many, so does Python, and Zig has a few. Or use what CLIs are installed. When looking at making a performance improvement, be sure to benchmark before and after to measure what the improvement was. You can use `qip bench` to benchmark the module. For big changes I’m ok with cloning the module, this way we can compare the before and after more easily.
+- [QIP Component Contracts](docs/component-contract.md) is the contract index.
+- Read [Hard Limits](docs/hard-limits.md) before changing memory, loop,
+  division, import, or execution policy.
+- Read [Formats and Encodings](docs/formats.md) before choosing MIME metadata or
+  interchange formats.
+- Use [IMAGE.md](IMAGE.md) for Tile filters. Register new filters in the
+  `image.html` menu, template, and `FILTER_DEFS`.
+- Use [Writing QIP Components In Zig](docs/zig-components.md) for Zig.
+- Use [Building C Libraries As QIP Components](docs/c-wasm-toolchains.md) for
+  C. Vendor source, license, version, archive checksum, and target configuration
+  so developers do not need system libraries.
+- Follow [Benchmarking Components](docs/benchmarking-components.md) for
+  performance work.
 
 ## Docs Style Guide
 
-Write docs for software engineers and technical decision-makers who are short on time and skeptical of hype. Treat readers as capable of making their own tradeoff decisions. We want to feel engaging, informed, opinionated, and friendly. Avoid rants and avoid dry spec-only prose.
+Write for software engineers and technical decision-makers who are short on
+time and skeptical of hype. Treat readers as capable of making tradeoffs. Be
+engaging, informed, opinionated, and friendly without becoming promotional or
+dry.
 
 - Lead with what the thing does and how it works, not a slogan.
-- Prefer mechanics over claims: inputs, outputs, boundaries, commands, files, failure modes.
+- Prefer mechanics over claims: inputs, outputs, boundaries, commands, files,
+  and failure modes.
 - Explain tradeoffs directly. Say what QIP gives up as well as what it buys.
-- Keep pages short enough to scan. Use tight sections, short paragraphs, and bullets only when they reduce reading time.
-- Use practical examples from this repo: commands, module paths, recipes, ABI calls, and component pipelines.
-- Use `claim -> reason -> example` as an internal drafting tool, but do not label prose with `Claim:`, `Reason:`, or `Example:` in reader-facing docs.
-- Avoid sales language and fake confidence: no hype, no "X matters" filler, no "the important part is..." unless it is genuinely precise.
-- Avoid absolutist language unless it is a hard contract requirement.
-- Include "when not to use this" guidance for adoption, architecture, and workflow pages.
-- Keep normal application concerns normal. Docs should be clear when QIP belongs inside an existing app rather than replacing the whole app architecture.
+- Keep pages easy to scan. Use tight sections, short paragraphs, and bullets
+  only when they save time.
+- Use practical examples from this repository: commands, module paths, recipes,
+  ABI calls, and component pipelines.
+- Use `claim -> reason -> example` when drafting, but do not expose those labels
+  in reader-facing prose.
+- Avoid sales language and fake confidence. Do not write "X matters" or "the
+  important part is" without naming a precise consequence.
+- Avoid absolute claims unless they describe a hard contract requirement.
+- Include "when not to use this" guidance for adoption, architecture, and
+  workflow pages.
+- Keep normal application concerns normal. Explain when QIP belongs inside an
+  existing app rather than replacing the application's architecture.
+- Do not use an unnamed abstraction to make a conclusion sound authoritative.
+  If prose says a result is wrong, a question is wrong, or something matters,
+  name the criterion, the failure, and what the reader should do next. For
+  example: "Compare speed only if the decoded images match pixel for pixel.
+  Otherwise, you are making incorrect output faster." Avoid phrases such as
+  "the wrong question", "what matters", or "the result" when the sentence does
+  not identify them.

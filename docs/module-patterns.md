@@ -1,220 +1,196 @@
-# QIP Component Patterns
+# QIP Content Component Patterns
 
-This is a practical cookbook for writing QIP components.
+A Content component receives one bounded input, calls `render`, and produces
+one bounded output. Start by deciding what the output means. That choice
+determines whether rejection should trap, whether empty output is valid, and
+whether the component belongs in the middle or at the end of a pipeline.
 
-It also includes the error semantics for deciding whether to return a value, return empty output, or trap.
-Default recommendation: trap on invalid input or overflow for transformation components.
-For validator-style components that should compose in pipelines, prefer assertion pass-through: return input unchanged on success, trap on failure.
+This page covers implementation patterns. The
+[Content Component Contract](/docs/content-component) defines the ABI and host
+call flow.
 
-## Tailored solutions
+## Choose By Purpose
 
-A Content component receives its whole input in memory and writes its whole output in memory. Implementations get to exploit that: flat loops over slices, with no streaming state machines, reader/writer abstractions, or suspend points. For example, our zlib inflater is a quarter the size of the one in the Zig standard library and decodes twice as fast — not through cleverness but by not needing to be general-purpose. The strict input -> output contract lets us make more assumptions and optimizations. Generality is expensive. The component contract often lends us to needing less.
+| Purpose | Successful output | Reject with | Repository example |
+| --- | --- | --- | --- |
+| Assertion gate | Original input unchanged | Trap | [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) |
+| Transformer | Replacement content | Trap | [`json-prettify.wasm`](/components/text/json/json-prettify.wasm) |
+| Converter | Content in a different format | Trap | [`svg-to-data-uri.wasm`](/components/image/svg+xml/svg-to-data-uri.wasm) |
+| Reporter | Counts, scores, or diagnostics | Trap | [`wasm-counts.wasm`](/components/application/wasm/wasm-counts.wasm) |
+| Extractor or filter | Matching content, which may be empty | Trap | [`wasm-read-input-content-type.wasm`](/components/application/wasm/wasm-read-input-content-type.wasm) |
 
-## Choose A Pattern
+These purposes describe data flow. UTF-8 versus arbitrary bytes is a separate
+ABI choice, covered under [Choose The Byte Contract](#choose-the-byte-contract).
 
-Use this quick mapping:
+## Assertion Gate
 
-- Validate and keep data flowing (preferred): assertion pass-through (`render` validates, returns input unchanged, traps on failure).
-- Validate and emit only pass/fail (terminal): return a small UTF-8 or byte status payload.
-- Normalize text: UTF-8 input/output buffers.
-- Transform binary: bytes input/output buffers.
-- Preferred: hard reject invalid input/overflow with trap.
-- Optional: soft reject invalid input by returning `0` output length when empty output is explicitly meaningful.
+Use an assertion gate to enforce an invariant without changing the payload. On
+success, return the original bytes and byte count. On failure, trap so the
+pipeline stops before an unsafe value reaches another component.
 
-## Pattern 1: Assertion Pass-through Validator (Preferred)
+[`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) checks
+every UTF-8 sequence and preserves valid input. The
+[`warc-check-broken-links.wasm`](/components/application/warc/warc-check-broken-links.wasm)
+assertion uses the same shape: it returns the archive unchanged when every
+internal link resolves and traps when one does not.
 
-Use when you want to assert invariants in a chain without changing payload bytes.
+An assertion may use the input region as its output region when no rewrite is
+needed. Otherwise, copy the input to a separate output buffer. In either case,
+downstream components must receive exactly the bytes that were checked.
 
-Exports:
+Use [`qip comply`](/docs/comply) when the assertion has reusable pass, equality,
+and must-trap cases.
 
-- `input_ptr`
-- `input_utf8_cap` or `input_bytes_cap`
-- `output_ptr`
-- matching output cap (`output_utf8_cap` for UTF-8, `output_bytes_cap` for bytes)
-- `render(input_size) -> output_size`
+## Transformer
 
-Semantics:
+Use a transformer when every successful input produces replacement content.
+Examples include trimming text, normalizing case, formatting currency,
+prettifying JSON, and compressing bytes.
 
-- On success, return input unchanged and set `output_size == input_size`.
-- On validation failure, trap.
-- Prefer `output_ptr == input_ptr` if no rewrite is needed.
+The output may be shorter, the same size, or larger than the input. Choose an
+output capacity from the largest supported result, not from a typical fixture.
+Trap if the result does not fit. Never return a truncated prefix.
 
-Host behavior:
+A transformer may write in place only when the algorithm is proven safe for
+overlapping input and output. Separate buffers are easier to review when output
+can expand or when the parser still needs earlier input bytes.
 
-- Downstream components receive the original data when validation passes.
-- Pipeline aborts on trap when validation fails.
+## Converter
 
-Good for:
+A converter changes the content format. It has the same buffer and failure
+rules as a transformer, plus exact input and output MIME metadata.
 
-- broken-link checks over WARC/HTML
-- schema/assertion checks that must preserve input for later stages
-- safety gates before expensive transforms
+For example,
+[`svg-to-data-uri.wasm`](/components/image/svg+xml/svg-to-data-uri.wasm)
+declares `image/svg+xml -> text/uri-list`. It writes in place from the end of
+the shared buffer towards the beginning so percent-encoding cannot overwrite
+unread input.
 
-## Pattern 2: Status Validator (Terminal Output)
+Declare only the format the component actually accepts and emits. Do not use a
+broad MIME type to hide unsupported variants. See
+[Formats and Encodings](/docs/formats) for repository conventions.
 
-Use when you only need a small pass/fail or status value and do not intend to keep piping the original payload.
+## Reporter
 
-Exports:
+A reporter replaces the input with facts about it. Counts, scores, indexes,
+diagnostics, and status records are ordinary successful output.
 
-- `input_ptr`
-- `input_utf8_cap` or `input_bytes_cap`
-- `output_ptr`
-- `output_utf8_cap` or `output_bytes_cap`
-- `render(input_size) -> output_size`
+[`wasm-counts.wasm`](/components/application/wasm/wasm-counts.wasm) accepts
+`application/wasm` and returns deterministic `text/csv`. It reports
+measurements without deciding whether the module should pass a policy.
 
-Host behavior:
+Reporters are normally terminal. If another component follows, it receives the
+report, not the original input. Use an assertion gate when the original payload
+must continue through the pipeline.
 
-- The returned status is ordinary UTF-8 text or bytes.
-- In a chain, downstream modules receive the status payload, not the original input. Treat this pattern as terminal unless that is intentional.
+Do not call a reporter a validator merely because it emits `valid` or
+`invalid`. Returning `invalid` is still successful execution. Trap when invalid
+input must abort the operation.
 
-Good for:
+## Extractor Or Filter
 
-- checks like "valid/invalid", "count", "score", "bitmask".
+An extractor selects part of a valid input. A filter selects zero or more
+matching records. Empty output is correct when the input contains no match.
 
-## Pattern 3: Normalizer (UTF-8 -> UTF-8)
+[`wasm-read-input-content-type.wasm`](/components/application/wasm/wasm-read-input-content-type.wasm)
+returns zero bytes when a valid module omits optional input content-type
+metadata. Malformed Wasm and invalid metadata trap.
 
-Use when you rewrite text and return text.
+No match does not always mean a zero-byte file.
+[`warc-extract-broken-links.wasm`](/components/application/warc/warc-extract-broken-links.wasm)
+returns a valid archive containing no response records when it finds no broken
+internal links; the archive still contains its required `warcinfo` record.
 
-Exports:
+Malformed input and output overflow are not “no match”. Trap for those
+conditions so callers can distinguish failure from a successful empty result.
 
-- `input_ptr`
-- `input_utf8_cap`
-- `output_ptr`
-- `output_utf8_cap`
-- `render(input_size) -> output_size`
+## A Trap Is The Emergency Stop
 
-Host behavior:
+Use a trap when continuing could corrupt, truncate, mislabel, or discard data.
+The pipeline stops and reports failure instead of passing damaged output to the
+next component.
 
-- Input is bounded by `input_utf8_cap`.
-- Return value is interpreted as output byte length.
-- A valid component guarantees `output_size <= output_utf8_cap`; a generic host
-  accepting arbitrary Wasm verifies that guarantee at its module boundary.
+Trap on:
 
-Good for:
+- malformed input;
+- input or output outside the component's supported limits;
+- violated safety or format invariants;
+- allocation or cleanup failure; and
+- any condition that would otherwise produce partial or misleading output.
 
-- e164 canonicalization
-- trimming
-- case conversion
+Returning zero is different. It tells the host that the component succeeded
+and produced an empty result. Return zero only when empty output is correct.
 
-## Pattern 4: Binary Transformer (Bytes -> Bytes)
+Some existing components return zero on parse errors or overflow. Do not copy
+that behavior into new components: it makes failure indistinguishable from a
+successful empty result. When changing such a component, preserve zero only if
+its documented output can legitimately be empty; otherwise, change the failure
+path to trap and update its tests.
 
-Use for non-text payloads.
-
-Exports:
-
-- `input_ptr`
-- `input_bytes_cap`
-- `output_ptr`
-- `output_bytes_cap`
-- `render(input_size) -> output_size`
-
-Host behavior matches Pattern 3, but no UTF-8 assumptions.
-
-Good for:
-
-- image/container transforms
-- compression/decompression steps
-
-## Error Semantics (Merged)
-
-These are the current semantics in `qip`.
-
-### Contract Errors (Host-side)
-
-Execution fails if required exports are missing for the chosen pattern.
-
-Examples:
-
-- missing `input_ptr`
-- missing input cap export
-- `output_ptr` present but no matching output cap export
-
-### Capacity Errors (Host-side)
-
-Execution fails if:
-
-- input length exceeds declared input capacity
-- returned output count exceeds declared output capacity
-
-### Runtime Trap / Call Error (Module-side)
-
-If module execution traps (or function call fails), the stage fails.
-
-- `qip run`: command exits with error
-- `qip router dev`: request fails with error response (`500`)
-
-Use trap when invalid input should be a hard failure.
-
-### How To Trap
-
-Use these language-specific forms when you want hard failure semantics.
-
-Zig:
+Language forms:
 
 ```zig
-if (invalid_input) @trap();
+if (invalid_input or output_overflow) @trap();
 ```
-
-C (Clang/zig cc targeting wasm):
 
 ```c
-if (invalid_input) __builtin_trap();
+if (invalid_input || output_overflow) __builtin_trap();
 ```
 
-WAT:
-
-```wasm
-;; inside a function
+```wat
 (if (local.get $invalid_input)
-  (then
-    unreachable
-  )
-)
+  (then unreachable))
 ```
 
-### Soft Failure (Module-side)
+## Choose The Byte Contract
 
-Use return values to signal non-fatal failure when that behavior is intentional.
+Use `input_utf8_cap` or `output_utf8_cap` only when the corresponding bytes
+must be valid UTF-8. Use the `bytes` capacity exports for arbitrary binary
+data. Capacity values are byte counts in both cases.
 
-Common options:
+Add exact MIME metadata when a component requires or guarantees a specific
+format. Omit it for intentionally generic UTF-8 or bytes. The
+[Content Component Contract](/docs/content-component#optional-content-type-metadata)
+defines composition and metadata inheritance.
 
-- return `0` bytes
-- return a small status payload such as `ok`, `invalid`, or an error code
+## Design For Repeated Renders
 
-Host treats this as successful execution unless a bound/contract check failed.
+Hosts may reuse an instance. A trap stops one call; it does not reset WebAssembly
+memory or globals.
 
-### Empty Output Semantics
+Reset cursors, overflow flags, parser state, and allocator telemetry at the
+start of each render. Once allocation begins, release temporary allocations
+before returning or trapping.
 
-If output buffers are exported and `render` returns `0`, output is empty.
+Test an invalid render followed by a valid render on the same instance. This
+catches stale output lengths, poisoned parser state, and arenas that were not
+reset after rejection.
 
-- In chains, downstream stage receives empty input bytes.
-- This is often useful for filter/drop behavior.
+## Test The Contract Boundary
 
-### Choosing Trap vs Soft Failure
+For each component, cover:
 
-Default to trap, especially for normalizers/transformers where silent drops risk data loss.
+- one representative successful input and exact output;
+- malformed input that must trap;
+- empty input and no-match input, when either is valid;
+- the largest supported input or a focused capacity-boundary case;
+- output overflow;
+- a rejected render followed by a valid render on the same instance; and
+- exact MIME metadata for converters and format-specific components.
 
-Prefer trap when:
+Use [Bounded Output Proofs](/docs/hard-limits#bounded-output-proofs) when the
+compiled component should carry a statically checkable output bound. Follow
+[Benchmarking Components](/docs/benchmarking-components) only after behavior
+and limits are stable.
 
-- input is malformed and should abort the pipeline
-- a safety invariant is violated
-- partial output would be misleading
-- preserving source data is more important than availability
-- output would otherwise be silently truncated
-- validator modules are intended to compose with downstream stages (use assertion pass-through)
+## When Not To Use A Content Component
 
-Prefer soft failure when:
+Use [Interactive](/docs/interactive-component) when state must remain live
+across events and scheduled ticks. Use Tile for host-managed image regions and
+Form for prompt-driven multi-step input; both are indexed from
+[QIP Component Contracts](/docs/component-contract).
 
-- invalid input is expected and non-exceptional
-- you want to continue pipeline execution
-- empty output or status code is meaningful
-
-## Implementation Checklist
-
-- Pick one pattern first; do not mix semantics accidentally.
-- Keep pointer/cap units consistent; content input and output capacities are byte counts.
-- Validate input length and trap on overflow.
-- Ensure `render` returns the number of output bytes.
-- For validator modules in chains, default to assertion pass-through (`output_ptr == input_ptr`, return unchanged size, trap on failure).
-- Add tests for malformed input and oversized input.
-- Reuse one instance in tests for an invalid render followed by a valid render. A trap does not reset Wasm memory or globals, so this catches components that leave persistent state poisoned after rejecting bad input.
+Content components require the complete input and maximum output to fit their
+declared memory. If the workload requires unbounded streaming or data larger
+than a practical fixed memory limit, change the boundary rather than hiding the
+stream inside an oversized component.
