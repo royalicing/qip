@@ -116,7 +116,18 @@ qip run -i component.wasm -- \
   components/application/wasm/wasm-read-input-content-type.wasm
 ```
 
-Do not export `text/plain` merely to describe generic UTF-8. The `input_utf8_cap` and `output_utf8_cap` exports already express that constraint. Export a content type when the component requires or guarantees a specific format. Generic raw bytes normally omit it.
+Do not export catch-all MIME types for data whose generic shape is already
+declared by the capacity ABI:
+
+- Omit `text/plain` for generic UTF-8. The `input_utf8_cap` and
+  `output_utf8_cap` exports already express that constraint.
+- Omit `application/octet-stream` for generic raw bytes. The `input_bytes_cap`
+  and `output_bytes_cap` exports already express that constraint.
+
+Adding either MIME type has no descriptive benefit and unnecessarily
+constrains recipe composition through exact content-type matching. Export
+content-type metadata only when the component requires or guarantees a more
+specific format.
 
 ## Pipeline Composition
 
