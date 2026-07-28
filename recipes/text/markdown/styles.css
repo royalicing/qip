@@ -122,39 +122,52 @@ qip-search {
 }
 qip-search input[type="search"] {
     width: 12em;
-    padding: 0.25lh 0.5em;
+    padding: 0.0lh 0.5em;
     color: var(--text);
     background: var(--bg);
     border: 1px solid currentColor;
     border-radius: 0;
+
+    &:focus {
+        border-color: var(--link);
+    }
 }
 qip-search .qip-search-results {
     position: absolute;
     z-index: 10;
-    top: calc(100% + 0.25lh);
     right: 0;
     width: min(32em, calc(100vw - 2em));
     max-height: min(32em, 70vh);
     overflow: auto;
-    padding: 0.5lh 0.75em;
+    /*padding: 0.5lh 0.75em;*/
     color: var(--text);
     background: var(--bg);
     border: 1px solid currentColor;
+}
+qip-search .qip-search-results:is(
+    [data-state="loading"],
+    [data-state="empty"],
+    [data-state="error"]
+) {
+    padding: 0.5lh 0.5em;
 }
 qip-search .qip-search-results ol {
     display: block;
     list-style: none;
 }
-qip-search .qip-search-results li + li {
-    margin-top: 0.5lh;
-}
 qip-search .qip-search-results a {
     display: block;
+    padding: 0.5lh 0.5em;
     text-decoration: none;
 }
-qip-search .qip-search-results a:hover,
-qip-search .qip-search-results a:focus-visible {
+qip-search .qip-search-results a:hover {
     text-decoration: underline;
+}
+qip-search .qip-search-results a:focus-visible {
+    color: var(--bg);
+    background: var(--link);
+    outline: 2px solid var(--link);
+    outline-offset: 0;
 }
 
 main,

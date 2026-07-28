@@ -12,6 +12,12 @@ export function shardName(term) {
   return "_";
 }
 
+export function nextSuggestionIndex(currentIndex, count, direction) {
+  if (count <= 0) return -1;
+  if (currentIndex < 0) return direction < 0 ? count - 1 : 0;
+  return (currentIndex + direction + count) % count;
+}
+
 export function parseCSV(text) {
   const rows = [];
   let row = [];
@@ -186,12 +192,21 @@ export class QIPSearchElement extends HTMLElementBase {
       if (event.key === "Escape") {
         this.input.value = "";
         this.hideResults();
-      } else if (event.key === "ArrowDown") {
-        const first = this.results.querySelector("a");
-        if (first) {
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (this.focusSuggestion(event.key === "ArrowDown" ? 1 : -1)) {
           event.preventDefault();
-          first.focus();
         }
+      }
+    });
+    this.results.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (this.focusSuggestion(event.key === "ArrowDown" ? 1 : -1, event.target)) {
+          event.preventDefault();
+        }
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        this.hideResults();
+        this.input.focus();
       }
     });
     this.form.addEventListener("submit", (event) => {
@@ -205,8 +220,24 @@ export class QIPSearchElement extends HTMLElementBase {
     });
   }
 
+  focusSuggestion(direction, currentTarget = null) {
+    const links = [...this.results.querySelectorAll("a")];
+    const currentIndex = currentTarget ? links.indexOf(currentTarget) : -1;
+    const nextIndex = nextSuggestionIndex(currentIndex, links.length, direction);
+    if (nextIndex < 0) return false;
+    links[nextIndex].focus();
+    return true;
+  }
+
+  setResultsState(state, busy = false) {
+    this.results.dataset.state = state;
+    this.results.setAttribute("aria-busy", String(busy));
+  }
+
   hideResults() {
     this.results.hidden = true;
+    delete this.results.dataset.state;
+    this.results.removeAttribute("aria-busy");
     this.results.replaceChildren();
   }
 
@@ -239,6 +270,7 @@ export class QIPSearchElement extends HTMLElementBase {
     }
 
     this.results.hidden = false;
+    this.setResultsState("loading", true);
     this.results.textContent = "Searching…";
     try {
       const [targets, ...shardTexts] = await Promise.all([
@@ -250,6 +282,7 @@ export class QIPSearchElement extends HTMLElementBase {
       this.renderResults(rankSearchResults(postings, targets));
     } catch (error) {
       if (generation !== this.searchGeneration) return;
+      this.setResultsState("error");
       this.results.textContent = "Search is unavailable.";
       console.error(error);
     }
@@ -258,9 +291,11 @@ export class QIPSearchElement extends HTMLElementBase {
   renderResults(results) {
     this.results.replaceChildren();
     if (results.length === 0) {
+      this.setResultsState("empty");
       this.results.textContent = "No matching pages.";
       return;
     }
+    this.setResultsState("results");
     const list = document.createElement("ol");
     for (const result of results) {
       const item = document.createElement("li");

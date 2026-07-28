@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   QIPSearchElement,
   findPrefixPostings,
+  nextSuggestionIndex,
   parseTargets,
   rankSearchResults,
   shardName,
@@ -20,12 +21,46 @@ test("a first character selects and can fetch its shard", () => {
   assert.equal(shardName(terms[0]), "c");
 });
 
+test("up and down cycle through suggestions", () => {
+  assert.equal(nextSuggestionIndex(-1, 3, 1), 0);
+  assert.equal(nextSuggestionIndex(-1, 3, -1), 2);
+  assert.equal(nextSuggestionIndex(0, 3, 1), 1);
+  assert.equal(nextSuggestionIndex(2, 3, 1), 0);
+  assert.equal(nextSuggestionIndex(0, 3, -1), 2);
+  assert.equal(nextSuggestionIndex(-1, 0, 1), -1);
+});
+
+test("focusSuggestion moves focus through rendered links", () => {
+  const element = new QIPSearchElement();
+  let focused = null;
+  const links = Array.from({ length: 3 }, (_, index) => ({
+    focus() {
+      focused = index;
+    },
+  }));
+  element.results = { querySelectorAll: () => links };
+
+  assert.equal(element.focusSuggestion(1), true);
+  assert.equal(focused, 0);
+  assert.equal(element.focusSuggestion(1, links[0]), true);
+  assert.equal(focused, 1);
+  assert.equal(element.focusSuggestion(-1, links[0]), true);
+  assert.equal(focused, 2);
+});
+
 test("search fetches and presents results after the first character", async () => {
   const element = new QIPSearchElement();
   const loadedShards = [];
   let rendered = [];
   element.input = { value: "C" };
-  element.results = { hidden: true, textContent: "" };
+  element.results = {
+    dataset: {},
+    hidden: true,
+    textContent: "",
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+  };
   element.searchGeneration = 0;
   element.loadTargets = async () => parseTargets("target,url,label\n1-0,/languages/c,C\n");
   element.loadShard = async (name) => {
@@ -40,6 +75,26 @@ test("search fetches and presents results after the first character", async () =
 
   assert.deepEqual(loadedShards, ["c"]);
   assert.equal(rendered[0].url, "/languages/c");
+  assert.equal(element.results.dataset.state, "loading");
+  assert.equal(element.results["aria-busy"], "true");
+});
+
+test("result states distinguish messages from a result list", () => {
+  const element = new QIPSearchElement();
+  element.results = {
+    dataset: {},
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+  };
+
+  element.setResultsState("loading", true);
+  assert.deepEqual(element.results.dataset, { state: "loading" });
+  assert.equal(element.results["aria-busy"], "true");
+
+  element.setResultsState("results");
+  assert.deepEqual(element.results.dataset, { state: "results" });
+  assert.equal(element.results["aria-busy"], "false");
 });
 
 test("finds contiguous prefix postings from the first CSV column", () => {

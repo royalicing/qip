@@ -113,7 +113,7 @@ module: markdown-basic.wasm | html-page-wrap.wasm
                             />
                         </label>
                     </form>
-                    <div class="qip-search-results" hidden></div>
+                    <div class="qip-search-results" aria-live="polite" hidden></div>
                 </qip-search>
             </li>
             <li><a href="/docs">Docs</a></li>
