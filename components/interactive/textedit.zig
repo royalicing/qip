@@ -188,7 +188,16 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32
         const extend_selection = shift_down and in_text;
         const near_last = absI32(@as(i32, @intCast(idx)) - @as(i32, @intCast(last_primary_click_idx))) <= 1;
         const is_double = !extend_selection and in_text and (now_ms - last_primary_click_ms) >= 0 and (now_ms - last_primary_click_ms) <= DOUBLE_CLICK_MS and near_last;
-        if (extend_selection) {
+        const checkbox_mark = if (!extend_selection and in_text) markdownCheckboxMarkAt(doc[0..doc_len], idx) else null;
+        if (checkbox_mark) |mark_idx| {
+            pushUndo();
+            doc[mark_idx] = if (doc[mark_idx] == ' ') 'x' else ' ';
+            mouse_selecting = false;
+            last_primary_click_ms = -1000000;
+            blink_on = true;
+            next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
+            needs_redraw = true;
+        } else if (extend_selection) {
             caret = idx;
             preferred_col = -1;
             mouse_selecting = true;
@@ -811,6 +820,84 @@ fn textIndexAtPoint(x: i32, y: i32) usize {
     const line = scroll_line + @divTrunc(clamped_y - TEXT_Y, LINE_H);
     const col = scroll_col + @divTrunc(clamped_x - TEXT_X, CHAR_W);
     return indexAtLineCol(line, col);
+}
+
+fn markdownCheckboxMarkAt(text: []const u8, clicked_idx: usize) ?usize {
+    if (clicked_idx >= text.len) return null;
+
+    var line_start = clicked_idx;
+    while (line_start > 0 and text[line_start - 1] != '\n') : (line_start -= 1) {}
+
+    var marker = line_start;
+    while (marker < text.len and (text[marker] == ' ' or text[marker] == '\t')) : (marker += 1) {}
+    if (marker + 4 >= text.len) return null;
+    if (text[marker] != '-' and text[marker] != '*' and text[marker] != '+') return null;
+    if (text[marker + 1] != ' ' or text[marker + 2] != '[' or text[marker + 4] != ']') return null;
+    if (text[marker + 3] != ' ' and text[marker + 3] != 'x' and text[marker + 3] != 'X') return null;
+    if (clicked_idx != marker + 3) return null;
+    return marker + 3;
+}
+
+test "Markdown checkbox hit target covers only the mark" {
+    const unchecked = "- [ ] first\n";
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt(unchecked, 2));
+    try std.testing.expectEqual(@as(?usize, 3), markdownCheckboxMarkAt(unchecked, 3));
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt(unchecked, 4));
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt(unchecked, 5));
+
+    const checked = "  * [X] second\n";
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt(checked, 4));
+    try std.testing.expectEqual(@as(?usize, 5), markdownCheckboxMarkAt(checked, 5));
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt(checked, 6));
+}
+
+test "Markdown checkbox hit target rejects non-task syntax" {
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt("text [ ] inline\n", 6));
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt("- [y] invalid\n", 3));
+    try std.testing.expectEqual(@as(?usize, null), markdownCheckboxMarkAt("-  [ ] extra space\n", 4));
+}
+
+test "clicking a Markdown checkbox toggles it" {
+    const line = "- [ ] task\n";
+    initialized = true;
+    doc_len = line.len;
+    @memcpy(doc[0..doc_len], line);
+    caret = 8;
+    anchor = 7;
+    scroll_line = 0;
+    scroll_col = 0;
+    preferred_col = 6;
+    primary_down = false;
+    secondary_down = false;
+    shift_down = false;
+    has_undo = false;
+    defer initialized = false;
+
+    const left_bracket_x = TEXT_X + 2 * CHAR_W + 1;
+    const checkbox_x = TEXT_X + 3 * CHAR_W + 1;
+    const checkbox_y = TEXT_Y + 1;
+
+    _ = pointer_event(BTN_PRIMARY, left_bracket_x, checkbox_y, 10);
+    try std.testing.expectEqual(@as(u8, ' '), doc[3]);
+    try std.testing.expectEqual(@as(usize, 2), caret);
+    try std.testing.expectEqual(@as(usize, 2), anchor);
+    _ = pointer_event(0, left_bracket_x, checkbox_y, 11);
+
+    caret = 8;
+    anchor = 7;
+    preferred_col = 6;
+    _ = pointer_event(BTN_PRIMARY, checkbox_x, checkbox_y, 100);
+    try std.testing.expectEqual(@as(u8, 'x'), doc[3]);
+    try std.testing.expectEqual(@as(usize, 8), caret);
+    try std.testing.expectEqual(@as(usize, 7), anchor);
+    try std.testing.expectEqual(@as(i32, 6), preferred_col);
+
+    _ = pointer_event(0, checkbox_x, checkbox_y, 101);
+    _ = pointer_event(BTN_PRIMARY, checkbox_x, checkbox_y, 200);
+    try std.testing.expectEqual(@as(u8, ' '), doc[3]);
+    try std.testing.expectEqual(@as(usize, 8), caret);
+    try std.testing.expectEqual(@as(usize, 7), anchor);
+    try std.testing.expectEqual(@as(i32, 6), preferred_col);
 }
 
 fn selectWordAt(idx: usize) void {

@@ -6,6 +6,7 @@ Supported:
 
 - Typing plain ASCII text
 - Mouse caret placement and drag selection
+- Click Markdown task-list boxes such as `- [ ]` and `- [x]` to toggle them
 - Double-click word selection
 - Arrow/Home/End/PageUp/PageDown navigation
 - `Shift` + navigation for selection extension
