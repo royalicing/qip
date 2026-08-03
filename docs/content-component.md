@@ -16,6 +16,8 @@ Every Content component exports:
 - Either `output_utf8_cap() -> i32` or `output_bytes_cap() -> i32`: maximum output bytes.
 
 Every pointer and capacity export is a zero-argument function returning `i32`.
+An exported global is rejected. A getter function may read an immutable
+internal global when its value is module-constant.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
 

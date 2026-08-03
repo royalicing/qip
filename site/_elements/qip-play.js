@@ -524,10 +524,7 @@ function qipPlayReadI32Export(exportsObj, exportName) {
   if (typeof value === "function") {
     return qipPlayToI32(value(), exportName);
   }
-  if (value instanceof WebAssembly.Global) {
-    return qipPlayToI32(value.value, exportName);
-  }
-  throw new Error("qip-play module missing export " + exportName);
+  throw new Error("qip-play module must export " + exportName + "() -> i32");
 }
 
 function qipPlayReadSlice(memory, ptr, len, label) {

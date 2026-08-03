@@ -67,6 +67,7 @@ For example, a module exporting `tile_rgba32float_64x64` is treated as Tile duri
 
 QIP pointer, size, and capacity values are exported as zero-argument functions
 returning `i32`.
+An exported WebAssembly global with the same name does not satisfy the contract.
 
 Components may expose optional `uniform_set_<key>` functions for numeric configuration. Uniforms are shared configuration machinery rather than a separate component type. See [Uniforms](/docs/uniforms) for setter signatures, host ordering, parsing, and CLI syntax.
 

@@ -492,10 +492,7 @@ function qipEditReadI32Export(exportsObj, exportName) {
   if (typeof value === "function") {
     return qipEditToI32(value(), exportName);
   }
-  if (value instanceof WebAssembly.Global) {
-    return qipEditToI32(value.value, exportName);
-  }
-  throw new Error("edit module missing export " + exportName);
+  throw new Error("edit module must export " + exportName + "() -> i32");
 }
 
 function qipEditReadSlice(memory, ptr, len, label) {
