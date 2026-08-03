@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -101,50 +100,32 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 				return qinternal.RoutedResponse{}, err
 			}
 			sourceDigest := sha256.Sum256(inputBytes)
-			isRedirectRoute := route.SourceMIME == "text/uri-list"
 
-			var (
-				response    qinternal.InProcessHTTPResponse
-				contentType string
-			)
 			hasRecipes := shouldApplyRecipesForRequestPath(r.URL.Path, route, current.recipeChains)
-			if isRedirectRoute {
-				location, ok := firstURIListTarget(inputBytes)
-				if !ok {
-					stateSlot.mu.RUnlock()
-					return qinternal.RoutedResponse{}, fmt.Errorf("%s: text/uri-list missing redirect target", route.FilePath)
-				}
-				response = qinternal.InProcessHTTPResponse{
-					StatusCode: http.StatusFound,
-					Header:     http.Header{"Location": []string{location}},
-				}
-				hasRecipes = false
-			} else {
-				var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
-				if hasRecipes {
-					pipeline := current.recipeChains[route.SourceMIME]
-					ctx := r.Context()
-					ctx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
-					defer cancel()
-					result, err = pipeline.Process(ctx, result, reqID)
-					if err != nil {
-						stateSlot.mu.RUnlock()
-						return qinternal.RoutedResponse{}, err
-					}
-				}
-
-				result, body, err := ensureRawContent(result)
+			var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
+			if hasRecipes {
+				pipeline := current.recipeChains[route.SourceMIME]
+				ctx := r.Context()
+				ctx, cancel := withExecutionTimeout(ctx, timeouts.contentRecipe)
+				defer cancel()
+				result, err = pipeline.Process(ctx, result, reqID)
 				if err != nil {
 					stateSlot.mu.RUnlock()
 					return qinternal.RoutedResponse{}, err
 				}
+			}
 
-				contentType = routerResponseContentType(route.SourceMIME, hasRecipes, result, body)
-				response = qinternal.InProcessHTTPResponse{
-					StatusCode: http.StatusOK,
-					Header:     http.Header{"Content-Type": []string{contentType}},
-					Body:       body,
-				}
+			result, body, err := ensureRawContent(result)
+			if err != nil {
+				stateSlot.mu.RUnlock()
+				return qinternal.RoutedResponse{}, err
+			}
+
+			contentType := routerResponseContentType(route.SourceMIME, hasRecipes, result, body)
+			response := qinternal.InProcessHTTPResponse{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{contentType}},
+				Body:       body,
 			}
 			applicationWARCPipeline := current.recipeChains[applicationWARCRecipeMIME]
 			if applicationWARCPipeline != nil {
@@ -168,9 +149,6 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 			if headers == nil {
 				headers = make(http.Header)
 			}
-			if !isRedirectRoute && headers.Get("Content-Type") == "" {
-				headers.Set("Content-Type", contentType)
-			}
 			headers.Del("Content-Length")
 			var recipeDigests [][32]byte
 			if hasRecipes {
@@ -179,7 +157,12 @@ func newRouterRequestHandler(logPrefix string, stateSlot *routerServerStateSlot,
 			if applicationRecipeDigests := current.recipeDigests[applicationWARCRecipeMIME]; len(applicationRecipeDigests) > 0 {
 				recipeDigests = append(recipeDigests, applicationRecipeDigests...)
 			}
-			if !isRedirectRoute {
+			responseMediaType := mediaTypeOnly(headers.Get("Content-Type"))
+			canUseDevETag := response.StatusCode >= http.StatusOK &&
+				response.StatusCode < http.StatusMultipleChoices &&
+				responseMediaType != "text/html" &&
+				responseMediaType != "application/xhtml+xml"
+			if canUseDevETag {
 				etag := buildDevETag(sourceDigest, recipeDigests)
 				if etag != "" {
 					headers.Set("ETag", etag)

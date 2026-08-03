@@ -30,16 +30,6 @@ func resolveRouterBaseResponse(ctx context.Context, current *RouterServerState, 
 	if err != nil {
 		return qinternal.InProcessHTTPResponse{}, false, err
 	}
-	if route.SourceMIME == "text/uri-list" {
-		location, ok := firstURIListTarget(inputBytes)
-		if !ok {
-			return qinternal.InProcessHTTPResponse{}, false, fmt.Errorf("%s: text/uri-list missing redirect target", route.FilePath)
-		}
-		return qinternal.InProcessHTTPResponse{
-			StatusCode: http.StatusFound,
-			Header:     http.Header{"Location": []string{location}},
-		}, true, nil
-	}
 
 	hasRecipes := shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains)
 	var result qinternal.Content = qinternal.NewRawBytesContentWithType(inputBytes, route.SourceMIME)
@@ -114,7 +104,7 @@ func resolveKindredStaticRoute(ctx context.Context, current *RouterServerState, 
 		return qinternal.InProcessHTTPResponse{}, false, nil
 	}
 	sourceMIME := mediaTypeOnly(route.SourceMIME)
-	if route.SourceMIME == "text/uri-list" || sourceMIME == "text/html" || sourceMIME == "application/xhtml+xml" || shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains) {
+	if sourceMIME == "text/html" || sourceMIME == "application/xhtml+xml" || shouldApplyRecipesForRequestPath(requestPath, route, current.recipeChains) {
 		return qinternal.InProcessHTTPResponse{}, false, nil
 	}
 	contentRead := current.contentRead

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -61,54 +62,37 @@ func TestBuildRouteListEntriesIncludesURIListRedirect(t *testing.T) {
 	}
 }
 
-func TestFirstURIListTarget(t *testing.T) {
-	t.Run("first non-comment line", func(t *testing.T) {
-		body := []byte("# old route\n\n/docs/how-it-works\nhttps://example.com/ignored\n")
-		got, ok := firstURIListTarget(body)
-		if !ok {
-			t.Fatal("expected redirect target")
-		}
-		if got != "/docs/how-it-works" {
-			t.Fatalf("target=%q, want %q", got, "/docs/how-it-works")
-		}
-	})
-
-	t.Run("supports crlf and bom", func(t *testing.T) {
-		body := []byte("\xEF\xBB\xBF#comment\r\n  /docs/how-it-works  \r\n")
-		got, ok := firstURIListTarget(body)
-		if !ok {
-			t.Fatal("expected redirect target")
-		}
-		if got != "/docs/how-it-works" {
-			t.Fatalf("target=%q, want %q", got, "/docs/how-it-works")
-		}
-	})
-
-	t.Run("missing target", func(t *testing.T) {
-		if _, ok := firstURIListTarget([]byte("#comment\n \n")); ok {
-			t.Fatal("expected no redirect target")
-		}
-	})
-}
-
 func TestDevHandlerServesURIListRedirect(t *testing.T) {
 	contentRoot := t.TempDir()
 	redirectPath := filepath.Join(contentRoot, "how-it-works.uri")
 	if err := os.WriteFile(redirectPath, []byte("# move\n/docs/how-it-works\n"), 0o644); err != nil {
 		t.Fatalf("write redirect file: %v", err)
 	}
-
-	state := &RouterServerState{
-		RouterFileState: &RouterFileState{
-			contentRoutes: map[string]qinternal.ContentRoute{
-				"/how-it-works":     {FilePath: redirectPath, SourceMIME: "text/uri-list"},
-				"/how-it-works.uri": {FilePath: redirectPath, SourceMIME: "text/uri-list"},
-			},
-			routeOptions:  qinternal.DefaultRouteOptions(),
-			recipeDigests: map[string][][32]byte{},
-		},
-		recipeChains: map[string]*qinternal.Pipeline{},
+	redirectWASM, err := os.ReadFile("components/application/warc/warc-text-uri-list-to-redirect.wasm")
+	if err != nil {
+		t.Fatalf("read redirect recipe: %v", err)
 	}
+
+	state, err := buildRouterServerState(context.Background(), &RouterFileState{
+		contentRoutes: map[string]qinternal.ContentRoute{
+			"/how-it-works":     {FilePath: redirectPath, SourceMIME: "text/uri-list"},
+			"/how-it-works.uri": {FilePath: redirectPath, SourceMIME: "text/uri-list"},
+		},
+		routeOptions:  qinternal.DefaultRouteOptions(),
+		recipeDigests: map[string][][32]byte{},
+		recipeFiles: recipeFileSet{
+			applicationWARCRecipeMIME: {{
+				path:     "recipes/application/warc/05-text-uri-list-to-redirect.wasm",
+				filename: "05-text-uri-list-to-redirect.wasm",
+				order:    5,
+				body:     redirectWASM,
+			}},
+		},
+	}, newQIPRuntime(options{}))
+	if err != nil {
+		t.Fatalf("buildRouterServerState: %v", err)
+	}
+	defer state.close(context.Background())
 	stateSlot := newRouterServerStateSlot(state)
 	handler := newRouterRequestHandler("test", stateSlot, nil, nil, qinternal.DefaultRouteOptions(), RouterServerTimeouts{})
 
@@ -121,6 +105,70 @@ func TestDevHandlerServesURIListRedirect(t *testing.T) {
 	}
 	if got := resp.Header.Get("Location"); got != "/docs/how-it-works" {
 		t.Fatalf("Location=%q, want %q", got, "/docs/how-it-works")
+	}
+	if got := resp.Header.Get("ETag"); got != "" {
+		t.Fatalf("ETag=%q, want empty", got)
+	}
+}
+
+func TestDevHandlerServesURIListAsContentWithoutRedirectRecipe(t *testing.T) {
+	state := &RouterServerState{
+		RouterFileState: &RouterFileState{
+			contentRoutes: map[string]qinternal.ContentRoute{
+				"/old": {FilePath: "old.uri", SourceMIME: "text/uri-list"},
+			},
+			contentRead: func(context.Context, qinternal.ContentRoute) ([]byte, error) {
+				return []byte("/new\n"), nil
+			},
+			routeOptions:  qinternal.DefaultRouteOptions(),
+			recipeDigests: map[string][][32]byte{},
+		},
+		recipeChains: map[string]*qinternal.Pipeline{},
+	}
+	stateSlot := newRouterServerStateSlot(state)
+	handler := newRouterRequestHandler("test", stateSlot, nil, nil, qinternal.DefaultRouteOptions(), RouterServerTimeouts{})
+
+	resp, err := qinternal.ServeInProcessHTTP(handler, http.MethodGet, "/old", nil)
+	if err != nil {
+		t.Fatalf("ServeInProcessHTTP: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/uri-list; charset=utf-8" {
+		t.Fatalf("Content-Type=%q", got)
+	}
+	if got := string(resp.Body); got != "/new\n" {
+		t.Fatalf("body=%q", got)
+	}
+	if got := resp.Header.Get("ETag"); got == "" {
+		t.Fatal("ETag is empty for non-HTML content")
+	}
+}
+
+func TestDevHandlerDoesNotAddETagToHTML(t *testing.T) {
+	state := &RouterServerState{
+		RouterFileState: &RouterFileState{
+			contentRoutes: map[string]qinternal.ContentRoute{
+				"/page.html": {FilePath: "page.html", SourceMIME: "text/html"},
+			},
+			contentRead: func(context.Context, qinternal.ContentRoute) ([]byte, error) {
+				return []byte("<h1>Page</h1>"), nil
+			},
+			routeOptions:  qinternal.DefaultRouteOptions(),
+			recipeDigests: map[string][][32]byte{},
+		},
+		recipeChains: map[string]*qinternal.Pipeline{},
+	}
+	stateSlot := newRouterServerStateSlot(state)
+	handler := newRouterRequestHandler("test", stateSlot, nil, nil, qinternal.DefaultRouteOptions(), RouterServerTimeouts{})
+
+	resp, err := qinternal.ServeInProcessHTTP(handler, http.MethodGet, "/page.html", nil)
+	if err != nil {
+		t.Fatalf("ServeInProcessHTTP: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusOK)
 	}
 	if got := resp.Header.Get("ETag"); got != "" {
 		t.Fatalf("ETag=%q, want empty", got)

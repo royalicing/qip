@@ -82,6 +82,19 @@ The router validates the final archive after the full recipe chain. This keeps
 the trust boundary at export: malformed output traps or fails the command
 instead of being written to disk.
 
+### Turning URI lists into redirects
+
+`components/application/warc/warc-text-uri-list-to-redirect.wasm` rewrites
+each `text/uri-list` HTTP response in a WARC into `302 Found`. The first
+non-empty, non-comment line becomes the `Location` header; a UTF-8 BOM on the
+first line and surrounding whitespace are ignored. A URI list without a target
+traps.
+
+The standard recipe list runs this component before the other WARC transforms.
+The router itself does not parse URI lists: it builds an ordinary WARC response
+and runs the configured recipe chain. Other HTTP hosts can use the same
+component without reproducing redirect behavior in host code.
+
 ### Loading custom elements selectively
 
 `components/application/warc/warc-add-custom-element-scripts.wasm` connects element routes to the pages that use them. It discovers top-level `/elements/<tag-name>.js` responses in the archive, detects matching custom-element tags in each HTML response, and inserts one external module script per used element:

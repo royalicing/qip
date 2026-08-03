@@ -30,13 +30,13 @@ func TestResolveKindredStaticRouteOnlyReturnsRawNonHTMLFiles(t *testing.T) {
 		},
 	}
 
-	for _, requestPath := range []string{"/raw.txt", "/components/tool.wasm"} {
+	for _, requestPath := range []string{"/raw.txt", "/redirect", "/components/tool.wasm"} {
 		response, ok, err := resolveKindredStaticRoute(context.Background(), state, requestPath)
 		if err != nil || !ok || response.StatusCode != http.StatusOK {
 			t.Fatalf("resolve %q: ok=%v status=%d err=%v", requestPath, ok, response.StatusCode, err)
 		}
 	}
-	for _, requestPath := range []string{"/page.html", "/generated", "/redirect", "/missing"} {
+	for _, requestPath := range []string{"/page.html", "/generated", "/missing"} {
 		_, ok, err := resolveKindredStaticRoute(context.Background(), state, requestPath)
 		if err != nil || ok {
 			t.Fatalf("resolve %q: ok=%v err=%v, want excluded", requestPath, ok, err)

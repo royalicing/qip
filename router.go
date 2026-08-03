@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -374,22 +373,6 @@ func mediaTypeOnly(value string) string {
 		return "application/octet-stream"
 	}
 	return value
-}
-
-func firstURIListTarget(body []byte) (string, bool) {
-	seenFirstLine := false
-	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
-		line := strings.TrimSpace(strings.TrimSuffix(string(rawLine), "\r"))
-		if !seenFirstLine {
-			seenFirstLine = true
-			line = strings.TrimPrefix(line, "\uFEFF")
-		}
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		return line, true
-	}
-	return "", false
 }
 
 func routerCmd(args []string) {

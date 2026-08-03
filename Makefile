@@ -262,7 +262,8 @@ components/application/zip/zip-list-entries-csv.wasm components/application/zip/
 	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
 components/application/warc/warc-add-open-graph-image-meta.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/application/warc/warc-add-custom-element-scripts.wasm: ZIG_WASM_MAX_MEMORY = 671088640
-components/application/warc/warc-add-open-graph-image-meta.wasm components/application/warc/warc-add-custom-element-scripts.wasm components/application/warc/warc-extract-broken-links.wasm: components/application/warc/lib/warc.zig
+components/application/warc/warc-text-uri-list-to-redirect.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+components/application/warc/warc-add-open-graph-image-meta.wasm components/application/warc/warc-add-custom-element-scripts.wasm components/application/warc/warc-extract-broken-links.wasm components/application/warc/warc-text-uri-list-to-redirect.wasm: components/application/warc/lib/warc.zig
 recipes/application/warc/15-add-html-data-path.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/20-add-docs-sidebar.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 recipes/application/warc/25-add-content-size.wasm: ZIG_WASM_MAX_MEMORY = 671088640
@@ -408,6 +409,10 @@ recipes/application/warc/10-add-open-graph-image-meta.wasm: components/applicati
 	@mkdir -p $(dir $@)
 	ln -sf ../../../components/application/warc/warc-add-open-graph-image-meta.wasm $@
 
+recipes/application/warc/05-text-uri-list-to-redirect.wasm: components/application/warc/warc-text-uri-list-to-redirect.wasm
+	@mkdir -p $(dir $@)
+	ln -sf ../../../components/application/warc/warc-text-uri-list-to-redirect.wasm $@
+
 recipes/application/warc/99-add-custom-element-scripts.wasm: components/application/warc/warc-add-custom-element-scripts.wasm
 	ln -sf ../../../components/application/warc/warc-add-custom-element-scripts.wasm $@
 
@@ -421,6 +426,7 @@ components-zig-wasm: recipes/text/markdown/80-html-page-wrap.wasm
 
 recipes: $(patsubst recipes/text/markdown/%.zig,recipes/text/markdown/%.wasm,$(wildcard recipes/text/markdown/*.zig))
 recipes: $(patsubst recipes/application/warc/%.zig,recipes/application/warc/%.wasm,$(wildcard recipes/application/warc/*.zig))
+recipes: recipes/application/warc/05-text-uri-list-to-redirect.wasm
 recipes: recipes/application/warc/10-add-open-graph-image-meta.wasm
 recipes: recipes/application/warc/99-add-custom-element-scripts.wasm
 recipes: recipes/text/markdown/17-html-code-syntax-highlight-go.wasm
@@ -468,6 +474,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/svg-data-uri-comply.mjs
 	node --test test/mermaid-to-unicode-html.mjs
 	node --test test/warc-content-size.mjs
+	node --test test/warc-text-uri-list-to-redirect.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
 	node --test test/qip-wasm-policy.mjs
