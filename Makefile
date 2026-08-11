@@ -1,4 +1,4 @@
-.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs site-static install score wasm-safety-report
+.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs site-static site-checks install score wasm-safety-report
 
 default: qip compliance components recipes
 
@@ -81,6 +81,7 @@ components/text/uri-list/data-uri-to-css-url.wasm: ZIG_WASM_FLAGS += --stack 102
 components/text/html/html-code-syntax-highlight-css.wasm: components/text/html/lib/syntax-highlight-css.zig
 components/text/html/html-code-syntax-highlight-tsx.wasm: components/text/html/lib/syntax-highlight-javascript.zig
 components/text/html/html-code-syntax-highlight-html.wasm: components/text/html/lib/syntax-highlight-css.zig components/text/html/lib/syntax-highlight-javascript.zig
+components/text/html/html-to-accessibility-tree.wasm components/text/html/html-accessible-name-unique-validator.wasm: components/text/html/lib/html-accessibility.zig
 
 compliance/iso-4217-alpha-to-numeric.comply.wasm: compliance/iso-4217-alpha-to-numeric.comply.zig compliance/iso-4217-alpha-numeric-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -697,12 +698,29 @@ wasm-safety-report: qip components
 	total=$$((pass + fail)); \
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
-site-static: qip
+SITE_HTML_VALIDATORS := components/text/html/html-unique-id-validator.wasm components/text/html/html-id-reference-validator.wasm components/text/html/html-accessible-name-unique-validator.wasm
+
+site-static: qip $(SITE_HTML_VALIDATORS)
 	$(QIP_BIN) router warc ./site --host https://qip.dev --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
+	@failed=0; \
+	html_entries="$$(tar -tf site-static.tar | LC_ALL=C sort | awk '/\.html$$/')"; \
+	for validator in $(SITE_HTML_VALIDATORS); do \
+		validator_failed=0; \
+		for entry in $$html_entries; do \
+			page="site-static/$$entry"; \
+			if ! $(QIP_BIN) run -i "$$page" -- "$$validator" >/dev/null 2>&1; then \
+				printf "FAIL %s %s\n" "$${validator##*/}" "$$page"; \
+				validator_failed=$$((validator_failed + 1)); \
+			fi; \
+		done; \
+		printf "%s: %d failure(s)\n" "$${validator##*/}" "$$validator_failed"; \
+		failed=$$((failed + validator_failed)); \
+	done; \
+	test "$$failed" -eq 0
 
 site-static-with-og: site/_og recipes/application/warc/10-add-open-graph-image-meta.wasm site-static
 
-site-checks:
+site-checks: site-static
 	$(QIP_BIN) router get site / | $(QIP_BIN) run components/text/html/html-wcag-contrast-aa.wasm
 
 dev:
