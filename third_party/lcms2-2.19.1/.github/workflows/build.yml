@@ -1,0 +1,240 @@
+name: Build
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.job }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+jobs:
+
+  Ubuntu:
+    strategy:
+      matrix:
+        runner: [ ubuntu-latest ]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Build Ubuntu
+        run: |
+          ./configure --with-fastfloat --with-threaded
+          make 
+          make check
+
+  macOS:
+    strategy:
+      matrix:
+        runner: [ macos-14, macos-latest ]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Build macOS
+        run: |
+          ./configure --with-fastfloat --with-threaded
+          make 
+          make check        
+    
+  Windows:
+    strategy:
+      matrix:
+        include:
+          - arch: win32
+            runner: windows-latest
+          - arch: x64
+            runner: windows-latest
+          # - arch: arm64
+          #   runner: windows-11-arm  
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6.0.2
+      
+      - name: Setup MSVC Build Environment
+        uses: ilammy/msvc-dev-cmd@v1   
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Build Windows
+        run: devenv .\Projects\VC2019\lcms2.sln /Rebuild "Release|${{ matrix.arch }}" /Project testbed  
+
+      - name: Run tests               
+        run: testbed\testbed.exe --chdir testbed
+
+  Ubuntu-meson:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install packages
+        run: |
+          sudo apt-get -y install build-essential python3-pip ninja-build
+          pip install meson==0.52.0
+
+      - name: Build Ubuntu
+        run: |
+          meson setup build -Dfastfloat=true -Dthreaded=true
+          cd build
+          ninja
+          meson test
+
+  VisualStudio-meson:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install packages
+        run: |
+          pip install meson==0.52.0
+
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build Windows
+        run: |
+          meson setup build
+          cd build
+          ninja
+          meson test
+
+  Ubuntu-cmake:
+    strategy:
+      matrix:
+        runner: [ ubuntu-latest ]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install packages
+        run: sudo apt-get -y install build-essential cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLCMS2_WITH_FASTFLOAT=ON \
+            -DLCMS2_WITH_THREADS=ON \
+            -DLCMS2_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  macOS-cmake:
+    strategy:
+      matrix:
+        runner: [ macos-14, macos-latest ]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLCMS2_WITH_FASTFLOAT=ON \
+            -DLCMS2_WITH_THREADS=ON \
+            -DLCMS2_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  Windows-cmake:
+    strategy:
+      matrix:
+        include:
+          - arch: Win32
+            runner: windows-latest
+          - arch: x64
+            runner: windows-latest
+          # - arch: ARM64
+          #   runner: windows-11-arm
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Configure
+        run: |
+          cmake -B build -A ${{ matrix.arch }} `
+            -DLCMS2_WITH_FASTFLOAT=ON `
+            -DLCMS2_WITH_THREADS=ON `
+            -DLCMS2_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  MSYS2-cmake:
+    strategy:
+      matrix:
+        sys: [ MINGW64, UCRT64 ]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.sys }}
+          update: true
+          pacboy: cmake:p gcc:p ninja:p
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLCMS2_WITH_FASTFLOAT=ON \
+            -DLCMS2_WITH_THREADS=ON \
+            -DLCMS2_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  Cygwin-cmake:
+    runs-on: windows-latest
+    env:
+      CHERE_INVOKING: "1"
+    defaults:
+      run:
+        shell: C:\cygwin64\bin\bash.exe --login -eo pipefail -o igncr '{0}'
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: cygwin/cygwin-install-action@v6
+        with:
+          install-dir: 'C:\cygwin64'
+          packages: cmake ninja gcc-core gcc-g++
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLCMS2_WITH_FASTFLOAT=ON \
+            -DLCMS2_WITH_THREADS=ON \
+            -DLCMS2_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+

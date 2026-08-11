@@ -1,0 +1,113 @@
+# This is a copy of ci-unix-static.yml for Windows. It differs from ci-unix-static.yml as follows:
+#
+#   * The os matrix consists of windows-latest only.
+#   * Installs Visual Studio in the os image.
+#   * Runs ext/*.cmd as Windows batch files rather than using bash. This is
+#     important for ext/svt.cmd, to prevent it from running ext/svt.sh.
+#   * Builds with local libjpeg (-DAVIF_JPEG=LOCAL).
+#   * Builds with local zlib and libpng (-DAVIF_ZLIBPNG=LOCAL).
+
+name: CI Windows
+on:
+  push:
+  pull_request:
+    paths:
+      - ".github/actions/**"
+      - ".github/workflows/ci-windows.yml"
+      - "**CMakeLists.txt"
+      - "cmake/**"
+      - "ext/**"
+
+permissions:
+  contents: read
+
+# Cancel the workflow if a new one is triggered from the same PR, branch, or tag, except on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-windows:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        generator: [Ninja, "Visual Studio 17 2022"]
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-windows
+        id: setup
+        with:
+          codec-aom: "LOCAL"
+          codec-dav1d: "LOCAL"
+          codec-rav1e: "LOCAL"
+          codec-svt: "LOCAL"
+          extra-cache-key: ${{ matrix.generator }}
+          libjpeg-turbo: "LOCAL"
+          libxml2: "LOCAL"
+          libyuv: "LOCAL"
+          zlibpng: "LOCAL"
+
+      - name: Prepare libavif (cmake)
+        run: >
+          cmake -G "${{ matrix.generator }}" -S . -B build
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          -DAVIF_CODEC_AOM=LOCAL -DAVIF_CODEC_DAV1D=LOCAL
+          -DAVIF_CODEC_RAV1E=LOCAL -DAVIF_CODEC_SVT=LOCAL
+          -DAVIF_CODEC_LIBGAV1=LOCAL -DAVIF_OPTIMIZE_RAV1E_FOR_SIZE=ON
+          -DAVIF_JPEG=LOCAL -DAVIF_LIBSHARPYUV=LOCAL -DAVIF_LIBXML2=LOCAL
+          -DAVIF_LIBYUV=LOCAL -DAVIF_ZLIBPNG=LOCAL
+          -DAVIF_BUILD_EXAMPLES=ON -DAVIF_BUILD_APPS=ON
+          -DAVIF_BUILD_TESTS=ON -DAVIF_GTEST=LOCAL
+          -DAVIF_ENABLE_EXPERIMENTAL_MINI=ON
+          -DAVIF_ENABLE_EXPERIMENTAL_EXTENDED_PIXI=ON
+          -DAVIF_ENABLE_WERROR=ON
+          -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+      - name: Build libavif
+        run: cmake --build build --config Release --parallel 4
+      - name: Run AVIF Tests
+        working-directory: ./build
+        run: ctest -C Release -j $Env:NUMBER_OF_PROCESSORS --output-on-failure
+      - name: Set the config folder for Ninja
+        if: ${{ matrix.generator == 'Ninja' }}
+        run:
+          echo "CONFIG_DIR=" >> $env:GITHUB_ENV
+      - name: Set the config folder for multi-config MSVC
+        if: ${{ matrix.generator != 'Ninja' }}
+        run:
+          echo "CONFIG_DIR=Release\" >> $env:GITHUB_ENV
+      - name: Check static link bundling
+        run: >
+          cl .\apps\avifenc.c .\apps\shared\*.c .\third_party\iccjpeg\iccjpeg.c /nologo
+          /DWIN32 /D_WINDOWS /MD /O2 /Ob2
+          -I.\apps\shared -I.\include -I.\third_party\iccjpeg
+          -external:W0
+          -external:I.\build\_deps\libpng-src
+          -external:I.\build\_deps\libpng-build
+          -external:I.\build\libjpeg\src\libjpeg\src
+          -external:I.\build\libjpeg\src\libjpeg-build
+          -external:I.\build\_deps\zlib-src
+          -external:I.\build\_deps\zlib-build
+          /link
+          build\libjpeg\src\libjpeg-build\${env:CONFIG_DIR}jpeg-static.lib
+          build\_deps\libpng-build\${env:CONFIG_DIR}libpng16_static.lib
+          build\_deps\zlib-build\${env:CONFIG_DIR}zs.lib
+          build\${env:CONFIG_DIR}avif.lib
+          ws2_32.lib ntdll.lib userenv.lib bcrypt.lib advapi32.lib
+          /out:avifenc.exe
+
+          mt.exe -manifest apps\utf8.manifest -outputresource:avifenc.exe;1
+
+          .\avifenc.exe --help
+      - name: Verify longPathAware
+        run: >
+          New-Item -ItemType "Directory" -Name "verylongpath 000000010 000000020 000000030 000000040
+          000000050\000000060 000000070 000000080 000000090 000000100\000000110 000000120 000000130
+          000000140 000000150\000000160 000000170 000000180 000000190\000000200 000000210 000000220"
+          
+          & ".\build\${env:CONFIG_DIR}avifenc.exe" tests\data\abc.png ".\verylongpath 000000010 000000020 000000030 000000040
+          000000050\000000060 000000070 000000080 000000090 000000100\000000110 000000120 000000130
+          000000140 000000150\000000160 000000170 000000180 000000190\000000200 000000210
+          000000220\000000230 000000240 000000250 000000260.avif"

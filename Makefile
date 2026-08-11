@@ -98,6 +98,9 @@ compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-ht
 compliance/jpeg-to-bmp-bgra32.comply.wasm: compliance/jpeg-to-bmp-bgra32.comply.zig $(wildcard compliance/jpeg-to-bmp-bgra32-fixtures/*)
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/bmp-bgra32-icc-to-srgb.comply.wasm: compliance/bmp-bgra32-icc-to-srgb.comply.zig $(wildcard compliance/bmp-bgra32-icc-to-srgb-fixtures/*)
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-javascript.comply.wasm compliance/syntax-highlight-html.comply.wasm compliance/syntax-highlight-css.comply.wasm compliance/syntax-highlight-python.comply.wasm compliance/syntax-highlight-java.comply.wasm compliance/syntax-highlight-csharp.comply.wasm compliance/syntax-highlight-swift.comply.wasm compliance/syntax-highlight-ruby.comply.wasm compliance/syntax-highlight-go.comply.wasm compliance/syntax-highlight-c.comply.wasm compliance/syntax-highlight-bash.comply.wasm compliance/syntax-highlight-wasm.comply.wasm compliance/syntax-highlight-zig.comply.wasm
 
 compliance/syntax-highlight-%.comply.wasm: compliance/syntax-highlight-%.comply.zig compliance/syntax-highlight-%.fixtures.txt compliance/lib/syntax-highlight-comply.zig
@@ -129,6 +132,7 @@ compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
 compliance: compliance/mermaid-to-unicode-html.comply.wasm
 compliance: compliance/jpeg-to-bmp-bgra32.comply.wasm
+compliance: compliance/bmp-bgra32-icc-to-srgb.comply.wasm
 compliance: $(SYNTAX_HIGHLIGHT_COMPLY_TARGETS)
 compliance: $(COMMONMARK_COMPLY_TARGETS)
 
@@ -276,18 +280,23 @@ components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 369098752
 # Full 25 MP level-9 VP8L encoding needs a 1.25 GiB reclaiming arena in
 # addition to its input and worst-case output buffers.
-components/image/bmp/bmp-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
+components/image/bmp/bmp-bgra32-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
 # The module has no memory.grow instruction, so its maximum matches its initial
 # memory. Transparent images exercise libwebp's VP8L alpha compressor.
-components/image/bmp/bmp-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
+components/image/bmp/bmp-bgra32-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
 # The opaque build has no VP8L alpha path and needs only the measured lossy VP8
 # arena plus input, output, row scratch, stack, and code.
-components/image/bmp/bmp-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762048
+components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762048
+components/image/bmp/bmp-bgra32-to-avif-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
+# MozJPEG's trellis pass stores image-wide coefficient arrays. The 336 MiB
+# arena supports the measured 25 MP 4:4:4 peak within 512 MiB fixed memory.
+components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm: ZIG_WASM_MAX_MEMORY = 536870912
 components/image/webp/webp-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 469762048
 components/image/jp2/jp2-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 671088640
 components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 201326592
 components/image/png/png-to-bmp-bgra32-simd.wasm: ZIG_WASM_MAX_MEMORY = 201326592
 components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/bmp/bmp-bgra32-icc-to-srgb.wasm: LCMS_WASM_MAX_MEMORY = 536870912
 components/image/svg+xml/svg-rasterize.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/application/pdf/pdf-extract-images.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/pdf/pdf-extract-text.wasm: ZIG_WASM_MAX_MEMORY = 335544320
@@ -325,6 +334,15 @@ OPENJPEG_LIB_ROOT := $(OPENJPEG_ROOT)/src/lib/openjp2
 OPENJPEG_DEC_NAMES := thread bio cio dwt event ht_dec image invert j2k jp2 mct mqc openjpeg opj_clock pi t1 t2 tcd tgt function_list opj_malloc sparse_array
 OPENJPEG_DEC_C_SOURCES := $(addprefix $(OPENJPEG_LIB_ROOT)/,$(addsuffix .c,$(OPENJPEG_DEC_NAMES)))
 
+LIBAVIF_ROOT := third_party/libavif-1.4.1
+LIBAOM_ROOT := third_party/libaom-3.13.0
+MOZJPEG_ROOT := third_party/mozjpeg-4.1.1
+AVIF_COMPAT_ROOT := third_party/qip-avif-compat
+LCMS_ROOT := third_party/lcms2-2.19.1
+LCMS_C_SOURCES := $(addprefix $(LCMS_ROOT)/src/,cmsalpha.c cmscam02.c cmscgats.c cmscnvrt.c cmserr.c cmsgamma.c cmsgmt.c cmsintrp.c cmsio0.c cmsio1.c cmslut.c cmsplugin.c cmssm.c cmsmd5.c cmsmtrx.c cmspack.c cmspcs.c cmswtpnt.c cmsxform.c cmssamp.c cmsnamed.c cmsvirt.c cmstypes.c cmsps2.c cmsopt.c cmshalf.c)
+AVIF_AOM_SOURCE_FILES := $(shell find $(LIBAOM_ROOT) -type f)
+AVIF_LIBAVIF_SOURCE_FILES := $(shell find $(LIBAVIF_ROOT) -type f)
+
 EMSDK_VERSION ?= 2.0.34
 EMCC_CACHE ?= $(if $(filter Darwin,$(HOST_OS)),/private/tmp/qip-emcc-2.0.34-cache,/tmp/qip-emcc-2.0.34-cache)
 EMSDK_ROOT ?= $(shell mise where emsdk@$(EMSDK_VERSION) 2>/dev/null)
@@ -335,11 +353,21 @@ EMSDK_LTO_STAMP := $(EMCC_CACHE)/qip-lto-system-libs.stamp
 EMSDK_CLANG := $(EMSDK_UPSTREAM)/bin/clang
 EMSDK_WASM_OPT := $(EMSDK_UPSTREAM)/bin/wasm-opt
 EMSDK_EMBUILDER := env EM_CACHE=$(EMCC_CACHE) $(EMSDK_UPSTREAM)/emscripten/embuilder.py
-LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy.raw.wasm
-LIBWEBP_OPAQUE_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossy-opaque.raw.wasm
-LIBWEBP_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-to-webp-lossless.raw.wasm
+EMSDK_EMCMAKE := env EM_CACHE=$(EMCC_CACHE) $(EMSDK_UPSTREAM)/emscripten/emcmake
+LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-webp-lossy.raw.wasm
+LIBWEBP_OPAQUE_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-webp-lossy-opaque.raw.wasm
+LIBWEBP_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-webp-lossless.raw.wasm
 LIBWEBP_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/webp-to-bmp-bgra32.raw.wasm
 OPENJPEG_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/jp2-to-bmp-bgra32.raw.wasm
+AVIF_AOM_BUILD := $(EMCC_CACHE)/libaom-3.13.0-qip
+AVIF_LIBAVIF_BUILD := $(EMCC_CACHE)/libavif-1.4.1-qip
+AVIF_AOM_STAMP := $(EMCC_CACHE)/qip-libaom-3.13.0.stamp
+AVIF_LIBAVIF_STAMP := $(EMCC_CACHE)/qip-libavif-1.4.1.stamp
+AVIF_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-avif-lossy.raw.wasm
+MOZJPEG_BUILD := $(EMCC_CACHE)/mozjpeg-4.1.1-qip
+MOZJPEG_STAMP := $(EMCC_CACHE)/qip-mozjpeg-4.1.1.stamp
+MOZJPEG_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-jpeg-lossy.raw.wasm
+LCMS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-icc-to-srgb.raw.wasm
 LIBWEBP_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_method uniform_set_sharp_yuv uniform_set_low_memory arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_allocation_size arena_allocation_event arena_allocation_free_event
 LIBWEBP_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_CLANG_EXPORTS),-Xlinker --export=$(name))
 LIBWEBP_OPAQUE_CLANG_EXPORTS := $(LIBWEBP_CLANG_EXPORTS) uniform_set_background_color
@@ -353,28 +381,42 @@ OPENJPEG_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(OPENJPEG_DEC_CLANG_EXPORTS),
 OPENJPEG_CLANG_FEATURE_FLAGS = $(LIBWEBP_CLANG_FEATURE_FLAGS)
 LIBWEBP_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DEMSCRIPTEN=1 -D__SSE__=1 -D__SSE2__=1 -D__SSE3__=1 -D__SSSE3__=1 -D__SSE4_1__=1
 
+AVIF_CMAKE_C_FLAGS := -I$(AVIF_COMPAT_ROOT) -O3 -DNDEBUG -flto -ffunction-sections -fdata-sections -msimd128 -mbulk-memory -fno-builtin-setjmp -fno-builtin-longjmp -sSUPPORT_LONGJMP=0
+AVIF_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_quality_alpha uniform_set_speed uniform_set_subsample arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_matched_count arena_free_unmatched_count
+AVIF_CLANG_EXPORT_FLAGS := $(foreach name,$(AVIF_CLANG_EXPORTS),-Xlinker --export=$(name))
+MOZJPEG_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_subsample uniform_set_background_color arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count
+MOZJPEG_CLANG_EXPORT_FLAGS := $(foreach name,$(MOZJPEG_CLANG_EXPORTS),-Xlinker --export=$(name))
+MOZJPEG_CMAKE_C_FLAGS := -O3 -DNDEBUG -DQIP_FREESTANDING=1 -flto -ffunction-sections -fdata-sections -mbulk-memory -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
+AVIF_CLANG_WRAP_NAMES := fopen fclose fread fwrite fseek feof fputc fscanf fiprintf __small_fprintf
+AVIF_CLANG_WRAP_FLAGS := $(foreach name,$(AVIF_CLANG_WRAP_NAMES),-Xlinker --wrap=$(name))
+LCMS_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_matched_count arena_free_unmatched_count
+LCMS_CLANG_EXPORT_FLAGS := $(foreach name,$(LCMS_CLANG_EXPORTS),-Xlinker --export=$(name))
+LCMS_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DCMS_NO_PTHREADS=1
+LCMS_CLANG_WRAP_NAMES := fopen fclose fread fwrite fseek ftell feof ferror fflush remove
+LCMS_CLANG_WRAP_FLAGS := $(foreach name,$(LCMS_CLANG_WRAP_NAMES),-Xlinker --wrap=$(name))
+
 $(EMSDK_LTO_STAMP):
 	mkdir -p $(EMCC_CACHE)
 	$(EMSDK_EMBUILDER) build sysroot
 	$(EMSDK_EMBUILDER) --lto build libc libcompiler_rt libc_rt_wasm libstandalonewasm
 	touch $@
 
-$(LIBWEBP_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossy.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-webp-lossy.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-to-webp-lossy.wasm: $(LIBWEBP_CLANG_RAW_WASM)
+components/image/bmp/bmp-bgra32-to-webp-lossy.wasm: $(LIBWEBP_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(LIBWEBP_OPAQUE_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossy-opaque.c $(LIBWEBP_OPAQUE_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_OPAQUE_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.c $(LIBWEBP_OPAQUE_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DWEBP_OPAQUE_ONLY=1 -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_OPAQUE_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-to-webp-lossy-opaque.wasm: $(LIBWEBP_OPAQUE_CLANG_RAW_WASM)
+components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm: $(LIBWEBP_OPAQUE_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(LIBWEBP_LOSSLESS_CLANG_RAW_WASM): components/image/bmp/bmp-to-webp-lossless.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_LOSSLESS_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-webp-lossless.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_LOSSLESS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-to-webp-lossless.wasm: $(LIBWEBP_LOSSLESS_CLANG_RAW_WASM)
+components/image/bmp/bmp-bgra32-to-webp-lossless.wasm: $(LIBWEBP_LOSSLESS_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 $(LIBWEBP_DEC_CLANG_RAW_WASM): components/image/webp/webp-to-bmp-bgra32.c $(LIBWEBP_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
@@ -387,6 +429,42 @@ $(OPENJPEG_DEC_CLANG_RAW_WASM): components/image/jp2/jp2-to-bmp-bgra32.c $(OPENJ
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(OPENJPEG_LIB_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(OPENJPEG_CLANG_FEATURE_FLAGS) -DOPJ_STATIC -DMUTEX_stub -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(OPENJPEG_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
 components/image/jp2/jp2-to-bmp-bgra32.wasm: $(OPENJPEG_DEC_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(AVIF_AOM_STAMP): $(AVIF_AOM_SOURCE_FILES) $(AVIF_COMPAT_ROOT)/setjmp.h
+	rm -rf $(AVIF_AOM_BUILD)
+	$(EMSDK_EMCMAKE) cmake -S $(LIBAOM_ROOT) -B $(AVIF_AOM_BUILD) -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DAOM_TARGET_CPU=generic -DENABLE_TESTS=OFF -DENABLE_DOCS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_NASM=OFF -DCONFIG_AV1_DECODER=0 -DCONFIG_AV1_ENCODER=1 -DCONFIG_MULTITHREAD=0 -DCONFIG_RUNTIME_CPU_DETECT=0 -DCONFIG_WEBM_IO=0 -DCONFIG_ACCOUNTING=0 -DCONFIG_INSPECTION=0 -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS='$(AVIF_CMAKE_C_FLAGS)'
+	env EM_CACHE=$(EMCC_CACHE) cmake --build $(AVIF_AOM_BUILD) --target aom
+	touch $@
+
+$(AVIF_LIBAVIF_STAMP): $(AVIF_LIBAVIF_SOURCE_FILES) $(AVIF_AOM_STAMP) $(AVIF_COMPAT_ROOT)/setjmp.h
+	rm -rf $(AVIF_LIBAVIF_BUILD)
+	$(EMSDK_EMCMAKE) cmake -S $(LIBAVIF_ROOT) -B $(AVIF_LIBAVIF_BUILD) -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DAVIF_CODEC_AOM=SYSTEM -DAVIF_CODEC_AOM_DECODE=OFF -DAVIF_CODEC_AOM_ENCODE=ON -DAVIF_LIBYUV=OFF -DAVIF_LIBSHARPYUV=OFF -DAVIF_BUILD_APPS=OFF -DAVIF_BUILD_TESTS=OFF -DAVIF_JPEG=OFF -DAVIF_ZLIBPNG=OFF -DAOM_INCLUDE_DIR=$(LIBAOM_ROOT) -DAOM_LIBRARY=$(AVIF_AOM_BUILD)/libaom.a -DCMAKE_C_FLAGS='$(AVIF_CMAKE_C_FLAGS)'
+	env EM_CACHE=$(EMCC_CACHE) cmake --build $(AVIF_LIBAVIF_BUILD) --target avif_static
+	touch $@
+
+$(AVIF_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-avif-lossy.c $(AVIF_LIBAVIF_STAMP) $(AVIF_AOM_STAMP) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(AVIF_COMPAT_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBAVIF_ROOT)/include -I$(LIBAOM_ROOT) -I$(AVIF_AOM_BUILD) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fno-builtin-setjmp -fno-builtin-longjmp -DNDEBUG -nostdlib -Wl,--gc-sections $(AVIF_CLANG_WRAP_FLAGS) $< $(AVIF_LIBAVIF_BUILD)/libavif_internal.a $(AVIF_AOM_BUILD)/libaom.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(AVIF_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/bmp/bmp-bgra32-to-avif-lossy.wasm: $(AVIF_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(MOZJPEG_STAMP): $(shell find $(MOZJPEG_ROOT) -type f) $(EMSDK_LTO_STAMP)
+	rm -rf $(MOZJPEG_BUILD)
+	$(EMSDK_EMCMAKE) cmake -S $(MOZJPEG_ROOT) -B $(MOZJPEG_BUILD) -G 'Unix Makefiles' -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DENABLE_SHARED=OFF -DENABLE_STATIC=ON -DWITH_SIMD=OFF -DWITH_TURBOJPEG=OFF -DWITH_JAVA=OFF -DWITH_12BIT=OFF -DWITH_ARITH_ENC=OFF -DWITH_ARITH_DEC=OFF -DPNG_SUPPORTED=OFF -DCMAKE_C_FLAGS='$(MOZJPEG_CMAKE_C_FLAGS)'
+	env EM_CACHE=$(EMCC_CACHE) cmake --build $(MOZJPEG_BUILD) --target jpeg-static
+	touch $@
+
+$(MOZJPEG_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-jpeg-lossy.c $(MOZJPEG_STAMP) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(MOZJPEG_BUILD) -I$(MOZJPEG_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -mbulk-memory -DNDEBUG -nostdlib -Wl,--gc-sections $< $(MOZJPEG_BUILD)/libjpeg.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(MOZJPEG_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm: $(MOZJPEG_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(LCMS_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-icc-to-srgb.c $(LCMS_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(LCMS_ROOT)/include -I$(LCMS_ROOT)/src -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(LCMS_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib -Wl,--gc-sections $(LCMS_CLANG_WRAP_FLAGS) $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(LCMS_WASM_MAX_MEMORY) -Wl,--max-memory=$(LCMS_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LCMS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/bmp/bmp-bgra32-icc-to-srgb.wasm: $(LCMS_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
@@ -488,9 +566,13 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/zip-to-tar.mjs
 	node --test test/zip-list-extract.mjs
 	node --test test/bmp-png.mjs
-	node --test test/bmp-webp.mjs
-	node --test test/bmp-webp-lossy-opaque.mjs
-	node --test test/bmp-webp-lossless.mjs
+	node --test test/bmp-bgra32-webp-lossy.mjs
+	node --test test/bmp-bgra32-avif-lossy.mjs
+	node --test test/bmp-bgra32-jpeg-lossy.mjs
+	node --test test/image-compress-jpeg.mjs
+	node --test test/bmp-bgra32-webp-lossy-opaque.mjs
+	node --test test/bmp-bgra32-webp-lossless.mjs
+	node --test test/bmp-bgra32-icc-to-srgb.mjs
 	node --test test/webp-bmp.mjs
 	node --test test/bmp-rgb-metrics.mjs
 	node --test test/wasm-trap-instance-continues.mjs
@@ -538,6 +620,7 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 	$(QIP_BIN) comply components/image/svg+xml/svg-to-data-uri.wasm --with compliance/svg-to-data-uri.comply.wasm
 	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-bgra32.wasm --with compliance/jpeg-to-bmp-bgra32.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/image/bmp/bmp-bgra32-icc-to-srgb.wasm --with compliance/bmp-bgra32-icc-to-srgb.comply.wasm --declarative-checkers
 	$(QIP_BIN) comply components/text/uri-list/data-uri-to-css-url.wasm --with compliance/data-uri-to-css-url.comply.wasm
 
 test-snapshot: qip components

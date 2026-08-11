@@ -9,11 +9,11 @@ const decoderPath = fileURLToPath(new URL(
   import.meta.url,
 ));
 const lossyEncoderPath = fileURLToPath(new URL(
-  "../components/image/bmp/bmp-to-webp-lossy-opaque.wasm",
+  "../components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm",
   import.meta.url,
 ));
 const losslessEncoderPath = fileURLToPath(new URL(
-  "../components/image/bmp/bmp-to-webp-lossless.wasm",
+  "../components/image/bmp/bmp-bgra32-to-webp-lossless.wasm",
   import.meta.url,
 ));
 

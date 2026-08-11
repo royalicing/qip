@@ -1,14 +1,15 @@
-//! Compares two concatenated, uncompressed BGRA32 BMP files and emits RGB
+//! Compares reference.bmp and candidate.bmp from a ustar archive and emits RGB
 //! PSNR/SSIM as JSON. SSIM matches FFmpeg's 8-bit approximation: overlapping
 //! 8x8 windows at four-pixel intervals with uniform rather than Gaussian
-//! weights. Invoke with: cat reference.bmp candidate.bmp | qip run <module>.
+//! weights.
 
 const std = @import("std");
 
 const INPUT_CAP: usize = 128 * 1024 * 1024;
 const OUTPUT_CAP: usize = 1024;
-const INPUT_CONTENT_TYPE = "application/vnd.qip.bmp-pair";
+const INPUT_CONTENT_TYPE = "application/x-tar";
 const OUTPUT_CONTENT_TYPE = "application/json";
+const TAR_BLOCK: usize = 512;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -68,6 +69,92 @@ fn readU32LE(bytes: []const u8, offset: usize) u32 {
     return std.mem.readInt(u32, bytes[offset..][0..4], .little);
 }
 
+fn allZero(bytes: []const u8) bool {
+    for (bytes) |byte| if (byte != 0) return false;
+    return true;
+}
+
+fn parseTarOctal(field: []const u8) ?usize {
+    var value: usize = 0;
+    var saw_digit = false;
+    var ended = false;
+    for (field) |byte| {
+        if (byte == 0 or byte == ' ') {
+            if (saw_digit) ended = true;
+            continue;
+        }
+        if (ended or byte < '0' or byte > '7') return null;
+        saw_digit = true;
+        value = std.math.mul(usize, value, 8) catch return null;
+        value = std.math.add(usize, value, byte - '0') catch return null;
+    }
+    return if (saw_digit) value else 0;
+}
+
+fn tarField(field: []const u8) ?[]const u8 {
+    const end = std.mem.indexOfScalar(u8, field, 0) orelse field.len;
+    if (!allZero(field[end..])) return null;
+    return field[0..end];
+}
+
+fn validTarChecksum(header: []const u8) bool {
+    const expected = parseTarOctal(header[148..156]) orelse return false;
+    var actual: usize = 0;
+    for (header, 0..) |byte, index| {
+        actual += if (index >= 148 and index < 156) ' ' else byte;
+    }
+    return actual == expected;
+}
+
+const BmpPair = struct {
+    reference: []const u8,
+    candidate: []const u8,
+};
+
+fn parseTarPair(input: []const u8) ?BmpPair {
+    var reference: ?[]const u8 = null;
+    var candidate: ?[]const u8 = null;
+    var cursor: usize = 0;
+
+    while (cursor + TAR_BLOCK <= input.len) {
+        const header = input[cursor .. cursor + TAR_BLOCK];
+        if (allZero(header)) {
+            if (cursor + TAR_BLOCK * 2 > input.len or
+                !allZero(input[cursor + TAR_BLOCK .. cursor + TAR_BLOCK * 2]) or
+                !allZero(input[cursor + TAR_BLOCK * 2 ..])) return null;
+            if (reference == null or candidate == null) return null;
+            return .{ .reference = reference.?, .candidate = candidate.? };
+        }
+
+        if (!validTarChecksum(header) or
+            !std.mem.eql(u8, header[257..263], "ustar\x00") or
+            !std.mem.eql(u8, header[263..265], "00") or
+            !allZero(header[345..500])) return null;
+        const kind = header[156];
+        if (kind != 0 and kind != '0') return null;
+        const name = tarField(header[0..100]) orelse return null;
+        const size = parseTarOctal(header[124..136]) orelse return null;
+        const data_start = cursor + TAR_BLOCK;
+        const padded_size = std.math.add(usize, size, TAR_BLOCK - 1) catch return null;
+        const padded_end = std.math.mul(usize, padded_size / TAR_BLOCK, TAR_BLOCK) catch return null;
+        if (padded_end > input.len - data_start) return null;
+        const data = input[data_start .. data_start + size];
+        if (!allZero(input[data_start + size .. data_start + padded_end])) return null;
+
+        if (std.mem.eql(u8, name, "reference.bmp")) {
+            if (reference != null) return null;
+            reference = data;
+        } else if (std.mem.eql(u8, name, "candidate.bmp")) {
+            if (candidate != null) return null;
+            candidate = data;
+        } else {
+            return null;
+        }
+        cursor = data_start + padded_end;
+    }
+    return null;
+}
+
 fn parseBmp(bytes: []const u8) ?Bmp {
     if (bytes.len < 54 or bytes[0] != 'B' or bytes[1] != 'M') return null;
     const file_size: usize = readU32LE(bytes, 2);
@@ -75,7 +162,7 @@ fn parseBmp(bytes: []const u8) ?Bmp {
     const dib_size = readU32LE(bytes, 14);
     const width_signed: i32 = @bitCast(readU32LE(bytes, 18));
     const height_signed: i32 = @bitCast(readU32LE(bytes, 22));
-    if (file_size < 54 or file_size > bytes.len or dib_size < 40 or pixel_offset < 54 or
+    if (file_size < 54 or file_size != bytes.len or dib_size < 40 or pixel_offset < 54 or
         readU16LE(bytes, 26) != 1 or readU16LE(bytes, 28) != 32 or
         readU32LE(bytes, 30) != 0 or width_signed <= 0 or height_signed == 0 or
         height_signed == std.math.minInt(i32)) return null;
@@ -132,11 +219,9 @@ fn psnrFromSse(sse: u64, samples: u64) f64 {
 
 export fn render(input_size_value: u32) u32 {
     const input_size: usize = @min(@as(usize, input_size_value), INPUT_CAP);
-    if (input_size < 108) return 0;
-    const first_size: usize = readU32LE(input_buf[0..input_size], 2);
-    if (first_size < 54 or first_size > input_size - 54) return 0;
-    const first = parseBmp(input_buf[0..first_size]) orelse return 0;
-    const second = parseBmp(input_buf[first_size..input_size]) orelse return 0;
+    const pair = parseTarPair(input_buf[0..input_size]) orelse return 0;
+    const first = parseBmp(pair.reference) orelse return 0;
+    const second = parseBmp(pair.candidate) orelse return 0;
     if (first.width != second.width or first.height != second.height or
         first.width < 8 or first.height < 8) return 0;
 
@@ -187,12 +272,14 @@ export fn render(input_size_value: u32) u32 {
     const ssim_rgb = (ssim_r + ssim_g + ssim_b) / 3.0;
 
     const output = if (sse_rgb == 0)
-        std.fmt.bufPrint(&output_buf,
+        std.fmt.bufPrint(
+            &output_buf,
             "{{\"width\":{d},\"height\":{d},\"identical\":true,\"mse_rgb\":{d:.6},\"psnr_rgb_db\":null,\"ssim_r\":{d:.6},\"ssim_g\":{d:.6},\"ssim_b\":{d:.6},\"ssim_rgb\":{d:.6}}}\n",
             .{ first.width, first.height, mse_rgb, ssim_r, ssim_g, ssim_b, ssim_rgb },
         ) catch return 0
     else
-        std.fmt.bufPrint(&output_buf,
+        std.fmt.bufPrint(
+            &output_buf,
             "{{\"width\":{d},\"height\":{d},\"identical\":false,\"mse_rgb\":{d:.6},\"psnr_rgb_db\":{d:.6},\"ssim_r\":{d:.6},\"ssim_g\":{d:.6},\"ssim_b\":{d:.6},\"ssim_rgb\":{d:.6}}}\n",
             .{ first.width, first.height, mse_rgb, psnr_rgb, ssim_r, ssim_g, ssim_b, ssim_rgb },
         ) catch return 0;

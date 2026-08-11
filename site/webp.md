@@ -362,21 +362,21 @@ to the page.
 
 ## Components
 
-- <a href="/components/image/bmp/bmp-to-webp-lossy.wasm" download>bmp-to-webp-lossy.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-webp-lossy.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-to-webp-lossy-opaque.wasm" download>bmp-to-webp-lossy-opaque.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-webp-lossy-opaque.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-to-webp-lossless.wasm" download>bmp-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-webp-lossless.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossy.wasm" download>bmp-bgra32-to-webp-lossy.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossy.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm" download>bmp-bgra32-to-webp-lossy-opaque.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm" download>bmp-bgra32-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm"></qip-content-size>
 
 ## CLI equivalent
 
 ```bash
-qip run components/image/bmp/bmp-to-webp-lossy-opaque.wasm \
+qip run components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm \
   '?quality=95&method=4&sharp_yuv=1&low_memory=1&background_color=0xffffff' \
   < input.bmp > output.webp
 
-qip run components/image/bmp/bmp-to-webp-lossy.wasm \
+qip run components/image/bmp/bmp-bgra32-to-webp-lossy.wasm \
   '?quality=95&method=4&sharp_yuv=1&low_memory=1' \
   < input.bmp > output.webp
 
-qip run components/image/bmp/bmp-to-webp-lossless.wasm '?level=6' \
+qip run components/image/bmp/bmp-bgra32-to-webp-lossless.wasm '?level=6' \
   < input.bmp > output.webp
 ```

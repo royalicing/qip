@@ -1,0 +1,258 @@
+// Copyright 2023 Google LLC
+// SPDX-License-Identifier: BSD-2-Clause
+
+#include "imageio.h"
+
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <vector>
+
+#include "avif/avif_cxx.h"
+#include "avifjpeg.h"
+#include "avifpng.h"
+#include "avifutil.h"
+#include "y4m.h"
+
+namespace avif {
+
+template <typename T>
+inline T Clamp(T x, T low, T high) {  // Only exists in C++17.
+  return (x < low) ? low : (high < x) ? high : x;
+}
+
+avifResult WriteImage(const avifImage* image, int grid_cols, int grid_rows,
+                      const std::string& output_filename, int quality,
+                      int speed) {
+  quality = Clamp(quality, 0, 100);
+  speed = Clamp(speed, 0, 10);
+  const avifAppFileFormat output_format =
+      avifGuessFileFormat(output_filename.c_str());
+  if (output_format == AVIF_APP_FILE_FORMAT_UNKNOWN) {
+    std::cerr << "Cannot determine output file extension: " << output_filename
+              << "\n";
+    return AVIF_RESULT_INVALID_ARGUMENT;
+  } else if (output_format == AVIF_APP_FILE_FORMAT_Y4M) {
+    if (!y4mWrite(output_filename.c_str(), image)) {
+      return AVIF_RESULT_UNKNOWN_ERROR;
+    }
+  } else if (output_format == AVIF_APP_FILE_FORMAT_JPEG) {
+    if (!avifJPEGWrite(output_filename.c_str(), image, quality,
+                       AVIF_CHROMA_UPSAMPLING_AUTOMATIC)) {
+      return AVIF_RESULT_UNKNOWN_ERROR;
+    }
+  } else if (output_format == AVIF_APP_FILE_FORMAT_PNG) {
+    const int compression_level = Clamp(10 - speed, 0, 9);
+    if (!avifPNGWrite(output_filename.c_str(), image, /*requestedDepth=*/0,
+                      AVIF_CHROMA_UPSAMPLING_AUTOMATIC, compression_level)) {
+      return AVIF_RESULT_UNKNOWN_ERROR;
+    }
+  } else if (output_format == AVIF_APP_FILE_FORMAT_AVIF) {
+    EncoderPtr encoder(avifEncoderCreate());
+    if (encoder == nullptr) {
+      return AVIF_RESULT_OUT_OF_MEMORY;
+    }
+    encoder->quality = quality;
+    encoder->speed = speed;
+    return WriteAvifGrid(image, grid_cols, grid_rows, encoder.get(),
+                         output_filename);
+  } else {
+    std::cerr << "Unsupported output file extension: " << output_filename
+              << "\n";
+    return AVIF_RESULT_INVALID_ARGUMENT;
+  }
+  return AVIF_RESULT_OK;
+}
+
+avifResult WriteAvif(const avifImage* image, avifEncoder* encoder,
+                     const std::string& output_filename) {
+  avifRWData encoded = AVIF_DATA_EMPTY;
+  std::cout << "AVIF to be written:\n";
+  avifImageDump(image,
+                /*gridCols=*/1,
+                /*gridRows=*/1, AVIF_PROGRESSIVE_STATE_UNAVAILABLE);
+  std::cout << "Encoding AVIF at quality " << encoder->quality << " speed "
+            << encoder->speed << ", please wait...\n";
+  avifResult result = avifEncoderWrite(encoder, image, &encoded);
+  if (result != AVIF_RESULT_OK) {
+    std::cerr << "Failed to encode image: " << avifResultToString(result)
+              << " (" << encoder->diag.error << ")\n";
+    return result;
+  }
+  std::ofstream f(output_filename, std::ios::binary);
+  f.write(reinterpret_cast<char*>(encoded.data), encoded.size);
+  avifRWDataFree(&encoded);
+  if (f.fail()) {
+    std::cerr << "Failed to write image " << output_filename << ": "
+              << std::strerror(errno) << "\n";
+    return AVIF_RESULT_IO_ERROR;
+  }
+  std::cout << "Wrote AVIF: " << output_filename << "\n";
+  return AVIF_RESULT_OK;
+}
+
+avifResult WriteAvifGrid(const avifImage* image, int grid_cols, int grid_rows,
+                         avifEncoder* encoder, const std::string& filename) {
+  if (grid_cols == 1 && grid_rows == 1) {
+    return WriteAvif(image, encoder, filename);
+  }
+
+  const uint32_t grid_cell_count = grid_cols * grid_rows;
+  std::cout << "Preparing to encode a " << grid_cols << "x" << grid_rows
+            << " grid (" << grid_cell_count << " cells)...\n";
+
+  std::vector<avifImage*> grid_cells_ptrs(grid_cell_count);
+  if (!avifImageSplitGrid(image, grid_cols, grid_rows,
+                          grid_cells_ptrs.data())) {
+    for (avifImage* img : grid_cells_ptrs) {
+      if (img) {
+        avifImageDestroy(img);
+      }
+    }
+    return AVIF_RESULT_UNKNOWN_ERROR;
+  }
+  // Take ownership of the pointers returned by avifImageSplitGrid.
+  std::vector<ImagePtr> grid_cells(grid_cell_count);
+  for (uint32_t i = 0; i < grid_cell_count; i++) {
+    grid_cells[i].reset(grid_cells_ptrs[i]);
+  }
+
+  avifRWData encoded = AVIF_DATA_EMPTY;
+  std::cout << "AVIF to be written:\n";
+  avifImageDump(image, grid_cols, grid_rows,
+                AVIF_PROGRESSIVE_STATE_UNAVAILABLE);
+  std::cout << "Encoding AVIF at quality " << encoder->quality << " speed "
+            << encoder->speed << ", please wait...\n";
+  avifResult result = avifEncoderAddImageGrid(
+      encoder, grid_cols, grid_rows,
+      const_cast<const avifImage* const*>(grid_cells_ptrs.data()),
+      AVIF_ADD_IMAGE_FLAG_SINGLE);
+  if (result != AVIF_RESULT_OK) {
+    std::cerr << "Failed to encode image grid: " << avifResultToString(result)
+              << " (" << encoder->diag.error << ")\n";
+    return result;
+  }
+  result = avifEncoderFinish(encoder, &encoded);
+  if (result != AVIF_RESULT_OK) {
+    std::cerr << "Failed to finish encoding image grid: "
+              << avifResultToString(result) << " (" << encoder->diag.error
+              << ")\n";
+    return result;
+  }
+
+  std::ofstream f(filename, std::ios::binary);
+  f.write(reinterpret_cast<char*>(encoded.data), encoded.size);
+  avifRWDataFree(&encoded);
+  if (f.fail()) {
+    std::cerr << "Failed to write image " << filename << ": "
+              << std::strerror(errno) << "\n";
+    return AVIF_RESULT_IO_ERROR;
+  }
+  std::cout << "Wrote AVIF: " << filename << "\n";
+  return AVIF_RESULT_OK;
+}
+
+avifResult ReadImage(avifImage* image, const std::string& input_filename,
+                     avifPixelFormat requested_format, uint32_t requested_depth,
+                     bool ignore_profile, bool ignore_gain_map) {
+  avifAppFileFormat input_format = avifGuessFileFormat(input_filename.c_str());
+  if (input_format == AVIF_APP_FILE_FORMAT_UNKNOWN) {
+    std::cerr << "Cannot determine input format: " << input_filename;
+    return AVIF_RESULT_INVALID_ARGUMENT;
+  } else if (input_format == AVIF_APP_FILE_FORMAT_AVIF) {
+    DecoderPtr decoder(avifDecoderCreate());
+    if (decoder == nullptr) {
+      return AVIF_RESULT_OUT_OF_MEMORY;
+    }
+    if (!ignore_gain_map) {
+      decoder->imageContentToDecode |= AVIF_IMAGE_CONTENT_GAIN_MAP;
+    }
+    avifResult result = ReadAvif(decoder.get(), input_filename, ignore_profile);
+    if (result != AVIF_RESULT_OK) {
+      return result;
+    }
+    if (ignore_gain_map && decoder->image->gainMap) {
+      avifGainMapDestroy(decoder->image->gainMap);
+      decoder->image->gainMap = nullptr;
+    }
+    const avifColorPrimaries in_primaries = image->colorPrimaries;
+    const avifTransferCharacteristics in_transfer =
+        image->transferCharacteristics;
+    const avifMatrixCoefficients in_matrix = image->matrixCoefficients;
+    if (decoder->image->imageOwnsYUVPlanes &&
+        (decoder->image->alphaPlane == nullptr ||
+         decoder->image->imageOwnsAlphaPlane)) {
+      std::swap(*image, *decoder->image);
+    } else {
+      result = avifImageCopy(image, decoder->image, AVIF_PLANES_ALL);
+      if (result != AVIF_RESULT_OK) {
+        return result;
+      }
+    }
+    if (in_primaries != AVIF_COLOR_PRIMARIES_UNSPECIFIED ||
+        in_transfer != AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED ||
+        in_matrix != AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED) {
+      image->colorPrimaries = in_primaries;
+      image->transferCharacteristics = in_transfer;
+      image->matrixCoefficients = in_matrix;
+    }
+  } else {
+    const avifAppFileFormat file_format = avifReadImage(
+        input_filename.c_str(), AVIF_APP_FILE_FORMAT_UNKNOWN /* guess format */,
+        requested_format, static_cast<int>(requested_depth),
+        AVIF_CHROMA_DOWNSAMPLING_AUTOMATIC, ignore_profile,
+        /*ignoreExif=*/false, /*ignoreXMP=*/false, ignore_gain_map,
+        AVIF_DEFAULT_IMAGE_SIZE_LIMIT, image,
+        /*outDepth=*/nullptr,
+        /*sourceTiming=*/nullptr, /*frameIter=*/nullptr);
+    if (file_format == AVIF_APP_FILE_FORMAT_UNKNOWN) {
+      std::cout << "Failed to decode image: " << input_filename;
+      return AVIF_RESULT_INVALID_ARGUMENT;
+    }
+    // Assume sRGB by default.
+    if (image->icc.size == 0 &&
+        image->colorPrimaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED &&
+        image->transferCharacteristics == AVIF_COLOR_PRIMARIES_UNSPECIFIED) {
+      image->colorPrimaries = AVIF_COLOR_PRIMARIES_SRGB;
+      image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
+    }
+    if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED) {
+      // Explicitly set the default matrix coefficient, see
+      // avifCalcYUVCoefficients().
+      image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
+    }
+  }
+  return AVIF_RESULT_OK;
+}
+
+avifResult ReadAvif(avifDecoder* decoder, const std::string& input_filename,
+                    bool ignore_profile) {
+  avifResult result = avifDecoderSetIOFile(decoder, input_filename.c_str());
+  if (result != AVIF_RESULT_OK) {
+    std::cerr << "Cannot open file for read: " << input_filename << "\n";
+    return result;
+  }
+  result = avifDecoderParse(decoder);
+  if (result != AVIF_RESULT_OK) {
+    std::cerr << "Failed to parse image: " << avifResultToString(result) << " ("
+              << decoder->diag.error << ")\n";
+    return result;
+  }
+  result = avifDecoderNextImage(decoder);
+  if (result != AVIF_RESULT_OK) {
+    std::cerr << "Failed to decode image: " << avifResultToString(result)
+              << " (" << decoder->diag.error << ")\n";
+    return result;
+  }
+  if (ignore_profile) {
+    avifRWDataFree(&decoder->image->icc);
+    if (decoder->image->gainMap) {
+      avifRWDataFree(&decoder->image->gainMap->altICC);
+    }
+  }
+
+  return AVIF_RESULT_OK;
+}
+
+}  // namespace avif

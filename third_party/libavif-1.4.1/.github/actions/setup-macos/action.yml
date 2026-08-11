@@ -1,0 +1,106 @@
+name: "Setup on macOS"
+description: "Installs dependencies specific to macOS"
+inputs:
+  codec-aom:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  codec-avm:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  codec-dav1d:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  codec-rav1e:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  codec-svt:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  extra-cache-key:
+    description: "Extra cache key to use in the cache name. Useful when several caches are used in one workflow."
+    default: ""
+  gtest:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  libjpeg-turbo:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  libxml2:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+  zlibpng:
+    description: "Can take the values: OFF, LOCAL, SYSTEM"
+    default: "OFF"
+outputs:
+  ext-cache-hit:
+    value: ${{ steps.cache.outputs.ext-cache-hit }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install AOM library
+      if: ${{ inputs.codec-aom == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=aom" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install dav1d library
+      if: ${{ inputs.codec-dav1d == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} dav1d" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install rav1e library
+      if: ${{ inputs.codec-rav1e == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} rav1e" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install SVT-AV1 library
+      if: ${{ inputs.codec-svt == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} svt-av1" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install meson
+      if: ${{ inputs.codec-dav1d == 'LOCAL' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} meson" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install imagemagick
+      # imagemagick is used in sh tests (not gtest tests) but we assume that no tests are run by the CI
+      # if gtest is off
+      if: ${{ inputs.gtest != 'OFF' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} imagemagick" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install gtest
+      if: ${{ inputs.gtest == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} googletest" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install libjpeg-turbo
+      if: ${{ inputs.libjpeg-turbo == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} libjpeg-turbo" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install libxml2
+      if: ${{ inputs.libxml2 == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} libxml2" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install nasm
+      if: ${{ inputs.codec-aom == 'LOCAL' || inputs.codec-avm == 'LOCAL' || inputs.codec-dav1d == 'LOCAL' || inputs.codec-svt == 'LOCAL' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} nasm" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Install zlibpng
+      if: ${{ inputs.zlibpng == 'SYSTEM' }}
+      run: echo "AVIF_MAC_LIBRARIES=${{ env.AVIF_MAC_LIBRARIES }} libpng" >> "$GITHUB_ENV"
+      shell: bash
+
+    - name: Install libraries
+      if: env.AVIF_MAC_LIBRARIES != ''
+      run: |
+        brew update
+        brew cleanup
+        brew install ${{ env.AVIF_MAC_LIBRARIES }}
+      shell: bash
+
+    - uses: ./.github/actions/cache
+      id: cache
+      with:
+        extra-key: ${{ inputs.extra-cache-key }}
+        use-meson: ${{ inputs.codec-dav1d == 'LOCAL' }}
+        use-rust: ${{ inputs.codec-rav1e == 'LOCAL' }}
+    - uses: ./.github/actions/setup-common
+      with:
+        codec-aom: ${{ inputs.codec-aom }}
+        codec-dav1d: ${{ inputs.codec-dav1d }}
+        codec-rav1e: ${{ inputs.codec-rav1e }}
+        codec-svt: ${{ inputs.codec-svt }}

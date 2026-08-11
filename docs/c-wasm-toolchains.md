@@ -19,7 +19,7 @@ loaded library.
 | `emcc` standalone | The simplest way to activate libwebp's translated SSE SIMD and select compatible system libraries | Emscripten 2.0.34 also exported its function table, `errno` accessor, and three stack helpers |
 | Clang + `wasm-ld` | Explicit imports, exports, memory, libraries, and post-link passes | The recipe must supply the SIMD compatibility flags, sysroot libraries, linker limits, exports, and Binaryen features itself |
 
-The direct Clang build was selected for `bmp-to-webp-lossy.wasm`. On the 12 MP
+The direct Clang build was selected for `bmp-bgra32-to-webp-lossy.wasm`. On the 12 MP
 photograph used during development it had the same encoding speed and produced
 byte-identical WebP output as the standalone `emcc` build. It was about 362 KB
 instead of 353 KB, but reduced the export surface from 31 entries to the 26
@@ -222,8 +222,8 @@ work.
 
 ```sh
 mise install emsdk@2.0.34
-make -j components/image/bmp/bmp-to-webp-lossy.wasm
-make -j components/image/bmp/bmp-to-webp-lossy-opaque.wasm
+make -j components/image/bmp/bmp-bgra32-to-webp-lossy.wasm
+make -j components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm
 ```
 
 The Makefile locates the SDK through `mise`, prepares the LTO sysroot libraries,
@@ -234,9 +234,9 @@ subsequent builds reuse it.
 Inspect the artifact and exercise its runtime policy:
 
 ```sh
-./qip comply components/image/bmp/bmp-to-webp-lossy.wasm
-wasm-objdump -x components/image/bmp/bmp-to-webp-lossy.wasm
-node --test test/bmp-webp.mjs test/qip-wasm-policy.mjs
+./qip comply components/image/bmp/bmp-bgra32-to-webp-lossy.wasm
+wasm-objdump -x components/image/bmp/bmp-bgra32-to-webp-lossy.wasm
+node --test test/bmp-bgra32-webp-lossy.mjs test/qip-wasm-policy.mjs
 ```
 
 For the OpenJPEG decoder:
@@ -246,6 +246,18 @@ make -j components/image/jp2/jp2-to-bmp-bgra32.wasm
 ./qip comply components/image/jp2/jp2-to-bmp-bgra32.wasm
 wasm-objdump -x components/image/jp2/jp2-to-bmp-bgra32.wasm
 node --test test/jp2-bmp.mjs
+```
+
+For the MozJPEG encoder, CMake generates wasm32 configuration headers and a
+static `jpeg-static` library in the same temporary Emscripten cache. The QIP
+wrapper replaces allocation, destination I/O, environment lookup, and error
+reporting; its output is a fixed memory slice rather than a `FILE` or an
+Emscripten filesystem stream.
+
+```sh
+make -j components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm
+./qip comply components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm
+node --test test/bmp-bgra32-jpeg-lossy.mjs test/qip-wasm-policy.mjs
 ```
 
 For a freestanding algorithm that does not need Emscripten's translated SIMD

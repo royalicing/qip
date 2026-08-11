@@ -27,6 +27,37 @@ function buildBMP(width, height, changed = false) {
   return bmp;
 }
 
+function writeTarOctal(header, offset, length, value) {
+  const encoded = value.toString(8).padStart(length - 1, "0") + "\0";
+  header.write(encoded, offset, length, "ascii");
+}
+
+function tarEntry(name, body) {
+  const header = Buffer.alloc(512);
+  header.write(name, 0, 100, "ascii");
+  writeTarOctal(header, 100, 8, 0o644);
+  writeTarOctal(header, 108, 8, 0);
+  writeTarOctal(header, 116, 8, 0);
+  writeTarOctal(header, 124, 12, body.length);
+  writeTarOctal(header, 136, 12, 0);
+  header.fill(0x20, 148, 156);
+  header[156] = 0x30;
+  header.write("ustar\0", 257, 6, "ascii");
+  header.write("00", 263, 2, "ascii");
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  const checksumText = checksum.toString(8).padStart(6, "0") + "\0 ";
+  header.write(checksumText, 148, 8, "ascii");
+  const padding = Buffer.alloc((512 - body.length % 512) % 512);
+  return Buffer.concat([header, body, padding]);
+}
+
+function buildTar(entries) {
+  return Buffer.concat([
+    ...entries.map(([name, body]) => tarEntry(name, body)),
+    Buffer.alloc(1024),
+  ]);
+}
+
 async function loadComponent(t) {
   try {
     await access(modulePath, constants.R_OK);
@@ -38,12 +69,22 @@ async function loadComponent(t) {
   return (await WebAssembly.instantiate(wasm, {})).instance.exports;
 }
 
-function compare(exports, first, second) {
-  const input = Buffer.concat([first, second]);
+function render(exports, input) {
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), input.length).set(input);
   const size = exports.render(input.length);
+  return Buffer.from(exports.memory.buffer, exports.output_ptr(), size).toString("utf8");
+}
+
+function compare(exports, first, second, reversed = false) {
+  const entries = [
+    ["reference.bmp", first],
+    ["candidate.bmp", second],
+  ];
+  if (reversed) entries.reverse();
+  const result = render(exports, buildTar(entries));
+  const size = Buffer.byteLength(result);
   assert.ok(size > 0);
-  return JSON.parse(Buffer.from(exports.memory.buffer, exports.output_ptr(), size).toString("utf8"));
+  return JSON.parse(result);
 }
 
 test("bmp RGB metrics report exact identity and finite differences", async (t) => {
@@ -62,4 +103,38 @@ test("bmp RGB metrics report exact identity and finite differences", async (t) =
   assert.ok(changed.mse_rgb > 0);
   assert.ok(Number.isFinite(changed.psnr_rgb_db));
   assert.ok(changed.ssim_rgb > 0 && changed.ssim_rgb < 1);
+
+  const reversed = compare(exports, reference, reference, true);
+  assert.equal(reversed.identical, true);
+});
+
+test("bmp RGB metrics requires the named two-file ustar profile", async (t) => {
+  const exports = await loadComponent(t);
+  if (!exports) return;
+  const bmp = buildBMP(16, 16);
+
+  assert.equal(render(exports, buildTar([["reference.bmp", bmp]])), "");
+  assert.equal(render(exports, buildTar([
+    ["reference.bmp", bmp],
+    ["reference.bmp", bmp],
+    ["candidate.bmp", bmp],
+  ])), "");
+  assert.equal(render(exports, buildTar([
+    ["reference.bmp", bmp],
+    ["candidate.bmp", bmp],
+    ["notes.txt", Buffer.from("unexpected")],
+  ])), "");
+  const damagedChecksum = buildTar([
+    ["reference.bmp", bmp],
+    ["candidate.bmp", bmp],
+  ]);
+  damagedChecksum[148] ^= 1;
+  assert.equal(render(exports, damagedChecksum), "");
+
+  const typePointer = exports.input_content_type_ptr();
+  const typeLength = exports.input_content_type_size();
+  assert.equal(
+    Buffer.from(exports.memory.buffer, typePointer, typeLength).toString("ascii"),
+    "application/x-tar",
+  );
 });
