@@ -289,7 +289,8 @@ components/image/png/png-to-bmp-bgra32-simd.wasm: ZIG_WASM_MAX_MEMORY = 20132659
 components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 268435456
 components/image/svg+xml/svg-rasterize.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/application/pdf/pdf-extract-images.wasm: ZIG_WASM_MAX_MEMORY = 335544320
-components/application/pdf/pdf-extract-images.wasm: components/application/pdf/pdf-extract-images.zig components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
+components/application/pdf/pdf-extract-text.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+components/application/pdf/pdf-extract-images.wasm components/application/pdf/pdf-extract-text.wasm: components/application/pdf/%.wasm: components/application/pdf/%.zig components/bytes/lib/inflate.zig
 	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseSmall -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
 
 LIBWEBP_ROOT := third_party/libwebp-1.6.0
@@ -480,6 +481,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/qip-wasm-policy.mjs
 	node --test test/sqlite-modules.mjs
 	node --test test/pdf-extract-images.mjs
+	node --test test/pdf-extract-text.mjs
 	node --test test/jp2-bmp.mjs
 	node --test test/tar-to-zip.mjs
 	node --test test/zip-to-tar.mjs
@@ -617,7 +619,7 @@ test-zig: $(ZIG_TEST_FILES)
 	@status=0; \
 	for f in $^; do \
 		echo "zig test $$f"; \
-		if [ "$$f" = "components/application/pdf/pdf-extract-images.zig" ]; then \
+		if [ "$$f" = "components/application/pdf/pdf-extract-images.zig" ] || [ "$$f" = "components/application/pdf/pdf-extract-text.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
 		elif [ "$$f" = "components/application/x-tar/tar-to-zip.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep deflate -Mroot="$$f" -Mdeflate=components/bytes/lib/deflate.zig || status=1; \
