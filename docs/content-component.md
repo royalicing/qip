@@ -21,6 +21,28 @@ internal global when its value is module-constant.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
 
+## Static Buffer Metadata
+
+The input location and both capacities are module constants. Their exported
+getters must contain exactly one `i32.const`, or one `global.get` of an
+immutable constant `i32` global, followed by `end`:
+
+- `input_ptr()`
+- the selected `input_utf8_cap()` or `input_bytes_cap()`
+- the selected `output_utf8_cap()` or `output_bytes_cap()`
+
+Their values must not depend on input, uniforms, previous renders, or other
+mutable state. This lets a host inspect buffer requirements without executing
+component code and lets native translations publish the values as constants.
+
+The complete input range, from `input_ptr` through the selected input capacity,
+must be within initial memory and must not overlap any active data segment.
+Instantiation therefore never writes into bytes owned by the caller as input.
+
+`output_ptr()` is deliberately different. Its value may depend on the completed
+render, so the host calls it only after `render` succeeds. The output capacity
+is static even when the output location is dynamic.
+
 ## Host Call Flow
 
 For each render request using a known-valid QIP component, the host:

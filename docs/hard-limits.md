@@ -95,6 +95,8 @@ a stricter subset of WebAssembly:
 - no start function
 - no indirect calls
 - an acyclic direct call graph, which excludes recursion
+- statically readable constant input pointer and input/output capacity getters
+- no active data segment overlapping the declared input range
 
 Recognizable loop bounds are a separate check. They depend on conservative
 proof patterns in compiler output rather than only on structural facts in the

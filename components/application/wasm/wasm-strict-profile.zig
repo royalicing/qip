@@ -8,6 +8,8 @@
 //! - no atomic instructions
 //! - no indirect calls (`call_indirect`, `return_call_indirect`, `call_ref`)
 //! - no recursion (the direct call graph must be acyclic)
+//! - input pointer and input/output capacity getters are static constants
+//! - active data segments do not overlap the complete input buffer
 //! - content-type metadata, when exported, is statically readable from the
 //!   module's initial memory image without instantiation
 //!
@@ -113,6 +115,14 @@ const ContentTypeMetadata = struct {
     output_size: MetadataExport = .missing,
 };
 
+const BufferMetadata = struct {
+    input_ptr: MetadataExport = .missing,
+    input_utf8_cap: MetadataExport = .missing,
+    input_bytes_cap: MetadataExport = .missing,
+    output_utf8_cap: MetadataExport = .missing,
+    output_bytes_cap: MetadataExport = .missing,
+};
+
 const CheckError = wasm_reader.Error || error{
     ImportNotAllowed,
     Memory64NotAllowed,
@@ -137,6 +147,14 @@ const CheckError = wasm_reader.Error || error{
     ContentTypeGlobalNotStatic,
     ContentTypeOutOfBounds,
     ContentTypeNotPreinitialized,
+    BufferExportRequired,
+    BufferExportInvalid,
+    BufferSignatureInvalid,
+    BufferGetterNotStatic,
+    BufferGlobalNotStatic,
+    BufferCapacityAmbiguous,
+    BufferOutOfBounds,
+    InputDataOverlap,
 };
 
 export fn input_ptr() u32 {
@@ -365,7 +383,20 @@ fn metadataSlot(metadata: *ContentTypeMetadata, name: []const u8) ?*MetadataExpo
     return null;
 }
 
-fn parseExportSection(payload: []const u8, metadata: *ContentTypeMetadata) CheckError!void {
+fn bufferSlot(metadata: *BufferMetadata, name: []const u8) ?*MetadataExport {
+    if (std.mem.eql(u8, name, "input_ptr")) return &metadata.input_ptr;
+    if (std.mem.eql(u8, name, "input_utf8_cap")) return &metadata.input_utf8_cap;
+    if (std.mem.eql(u8, name, "input_bytes_cap")) return &metadata.input_bytes_cap;
+    if (std.mem.eql(u8, name, "output_utf8_cap")) return &metadata.output_utf8_cap;
+    if (std.mem.eql(u8, name, "output_bytes_cap")) return &metadata.output_bytes_cap;
+    return null;
+}
+
+fn parseExportSection(
+    payload: []const u8,
+    content_type_metadata: *ContentTypeMetadata,
+    buffer_metadata: *BufferMetadata,
+) CheckError!void {
     var r = Reader.init(payload);
     const n = try r.readVarU32();
     var i: u32 = 0;
@@ -374,11 +405,18 @@ fn parseExportSection(payload: []const u8, metadata: *ContentTypeMetadata) Check
         const name = try r.readN(name_len);
         const kind = try r.readByte();
         const index = try r.readVarU32();
-        const slot = metadataSlot(metadata, name) orelse continue;
-        slot.* = switch (kind) {
-            0x00 => .{ .function = index },
-            else => .invalid,
-        };
+        if (metadataSlot(content_type_metadata, name)) |slot| {
+            slot.* = switch (kind) {
+                0x00 => .{ .function = index },
+                else => .invalid,
+            };
+        }
+        if (bufferSlot(buffer_metadata, name)) |slot| {
+            slot.* = switch (kind) {
+                0x00 => .{ .function = index },
+                else => .invalid,
+            };
+        }
     }
     if (r.remaining() != 0) return CheckError.TrailingBytes;
 }
@@ -526,6 +564,111 @@ fn validateContentTypePair(
     try validateContentTypeRegion(ptr, size, memory_min_bytes);
 }
 
+fn resolveBufferGetterBody(body: []const u8, global_count: u32) CheckError!u32 {
+    var r = Reader.init(body);
+    if (try r.readVarU32() != 0) return CheckError.BufferGetterNotStatic;
+    const op = try r.readByte();
+    const value: u32 = switch (op) {
+        0x41 => @bitCast(try r.readVarS32()),
+        0x23 => blk: {
+            const idx = try r.readVarU32();
+            if (idx >= global_count or !global_buf[idx].is_static_i32) {
+                return CheckError.BufferGlobalNotStatic;
+            }
+            break :blk global_buf[idx].value;
+        },
+        else => return CheckError.BufferGetterNotStatic,
+    };
+    if (try r.readByte() != 0x0b or r.remaining() != 0) {
+        return CheckError.BufferGetterNotStatic;
+    }
+    return value;
+}
+
+fn resolveBufferExport(
+    target: MetadataExport,
+    function_bodies: []const []const u8,
+    type_count: u32,
+    global_count: u32,
+) CheckError!u32 {
+    return switch (target) {
+        .missing => CheckError.BufferExportRequired,
+        .invalid => CheckError.BufferExportInvalid,
+        .function => |idx| blk: {
+            if (idx >= function_bodies.len) return CheckError.BufferExportInvalid;
+            const type_idx = func_type_buf[idx];
+            if (type_idx >= type_count) return CheckError.BufferSignatureInvalid;
+            const func_type = type_buf[type_idx];
+            if (func_type.param_count != 0 or func_type.result_count != 1 or func_type.result_type != 0x7f) {
+                return CheckError.BufferSignatureInvalid;
+            }
+            break :blk try resolveBufferGetterBody(function_bodies[idx], global_count);
+        },
+    };
+}
+
+fn selectCapacity(
+    utf8: MetadataExport,
+    bytes: MetadataExport,
+    function_bodies: []const []const u8,
+    type_count: u32,
+    global_count: u32,
+) CheckError!u32 {
+    if (utf8 != .missing and bytes != .missing) return CheckError.BufferCapacityAmbiguous;
+    const selected = if (utf8 != .missing) utf8 else bytes;
+    return resolveBufferExport(selected, function_bodies, type_count, global_count);
+}
+
+fn validateBufferMetadata(
+    metadata: BufferMetadata,
+    function_bodies: []const []const u8,
+    type_count: u32,
+    global_count: u32,
+    memory_min_bytes: u64,
+) CheckError!void {
+    const any_present =
+        metadata.input_ptr != .missing or
+        metadata.input_utf8_cap != .missing or
+        metadata.input_bytes_cap != .missing or
+        metadata.output_utf8_cap != .missing or
+        metadata.output_bytes_cap != .missing;
+    if (!any_present) return;
+
+    const static_input_ptr = try resolveBufferExport(
+        metadata.input_ptr,
+        function_bodies,
+        type_count,
+        global_count,
+    );
+    const input_cap = try selectCapacity(
+        metadata.input_utf8_cap,
+        metadata.input_bytes_cap,
+        function_bodies,
+        type_count,
+        global_count,
+    );
+    const output_cap = try selectCapacity(
+        metadata.output_utf8_cap,
+        metadata.output_bytes_cap,
+        function_bodies,
+        type_count,
+        global_count,
+    );
+
+    const input_start: u64 = static_input_ptr;
+    const input_end = input_start + input_cap;
+    if (input_end > memory_min_bytes or output_cap > memory_min_bytes) {
+        return CheckError.BufferOutOfBounds;
+    }
+    var i: usize = 0;
+    while (i < data_range_count) : (i += 1) {
+        const range = data_range_buf[i];
+        if (range.start < input_end and range.end > input_start) {
+            return CheckError.InputDataOverlap;
+        }
+    }
+}
+
 fn parseCodeSection(payload: []const u8, defined_func_count: u32, function_bodies: *[MAX_DEFINED_FUNCS][]const u8) CheckError!void {
     if (defined_func_count > MAX_DEFINED_FUNCS) return CheckError.TooManyFunctions;
     initEdgeGraph(defined_func_count);
@@ -557,6 +700,7 @@ fn checkModule(wasm: []const u8) CheckError!void {
     var have_memory = false;
     var memory_min_bytes: u64 = 0;
     var metadata = ContentTypeMetadata{};
+    var buffer_metadata = BufferMetadata{};
     data_range_count = 0;
 
     while (r.remaining() > 0) {
@@ -581,7 +725,7 @@ fn checkModule(wasm: []const u8) CheckError!void {
                 }
             },
             6 => global_count = try parseGlobalSection(payload),
-            7 => try parseExportSection(payload, &metadata),
+            7 => try parseExportSection(payload, &metadata, &buffer_metadata),
             8 => return CheckError.StartFunctionNotAllowed,
             10 => {
                 try parseCodeSection(payload, defined_func_count, &function_body_buf);
@@ -594,6 +738,13 @@ fn checkModule(wasm: []const u8) CheckError!void {
 
     if (have_function_section and !have_code_section) return CheckError.InvalidWasm;
     if (hasCallCycle(defined_func_count)) return CheckError.RecursionNotAllowed;
+    try validateBufferMetadata(
+        buffer_metadata,
+        function_body_buf[0..defined_func_count],
+        type_count,
+        global_count,
+        memory_min_bytes,
+    );
     try validateContentTypePair(metadata.input_ptr, metadata.input_size, function_body_buf[0..defined_func_count], type_count, global_count, memory_min_bytes);
     try validateContentTypePair(metadata.output_ptr, metadata.output_size, function_body_buf[0..defined_func_count], type_count, global_count, memory_min_bytes);
 }
@@ -722,8 +873,50 @@ const import_module = hexBytes(
         "0201010504010101010a08010600410110000b",
 );
 
+// Static input_ptr via immutable global, static capacities, disjoint data.
+const static_buffers_module = hexBytes(
+    "0061736d010000000105016000017f0304030000000504010102020608017f00" ++
+        "418080040b07320309696e7075745f70747200000f696e7075745f6279746573" ++
+        "5f6361700001106f75747075745f62797465735f63617000020a120304002300" ++
+        "0b05004180080b05004180100b0b07010041000b0178",
+);
+
+// The active data byte overlaps [input_ptr, input_ptr + input_bytes_cap).
+const overlapping_input_data_module = hexBytes(
+    "0061736d010000000105016000017f0304030000000504010102020732030969" ++
+        "6e7075745f70747200000f696e7075745f62797465735f6361700001106f7574" ++
+        "7075745f62797465735f63617000020a14030600418080040b05004180080b05" ++
+        "004180100b0b090100418080040b0178",
+);
+
+// input_ptr reads a mutable global rather than a static constant.
+const dynamic_input_ptr_module = hexBytes(
+    "0061736d010000000105016000017f0304030000000504010102020608017f01" ++
+        "418080040b07320309696e7075745f70747200000f696e7075745f6279746573" ++
+        "5f6361700001106f75747075745f62797465735f63617000020a120304002300" ++
+        "0b05004180080b05004180100b",
+);
+
 test "accepts a module with fixed memory and no calls" {
     try checkModule(&ok_module);
+}
+
+test "accepts static Content buffer metadata with disjoint active data" {
+    try checkModule(&static_buffers_module);
+}
+
+test "rejects active data overlapping the complete input buffer" {
+    try std.testing.expectError(
+        CheckError.InputDataOverlap,
+        checkModule(&overlapping_input_data_module),
+    );
+}
+
+test "rejects a state-dependent input pointer" {
+    try std.testing.expectError(
+        CheckError.BufferGlobalNotStatic,
+        checkModule(&dynamic_input_ptr_module),
+    );
 }
 
 test "accepts an unbounded loop: loop bounds are wasm-bounded-loops' job" {
