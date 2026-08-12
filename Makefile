@@ -1,4 +1,4 @@
-.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs site-static site-checks install score wasm-safety-report
+.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs test-wasm-to-c site-static site-checks install score wasm-safety-report
 
 default: qip compliance components recipes
 
@@ -7,15 +7,19 @@ include ./fixtures/sqlite3/sqlite.mk
 WASM_STACK_SIZE ?= 65536
 WASM_STACK_FLAG := -Wl,-z,stack-size=$(WASM_STACK_SIZE)
 ZIG_WASM_FLAGS := -target wasm32-freestanding -O ReleaseSmall -fno-entry -rdynamic
-GO_FIX_PKGS := ./cmd/... ./internal/... ./tools/...
-GO_FMT_PKGS := . ./cmd/... ./internal/... ./tools/...
-GO_TEST_PKGS := . ./cmd/... ./internal/... ./tools/...
+GO_TOOL_PKGS := ./tools/bench-content-wazero-recipe
+GO_TOOL_FILES := ./tools/zlib-go-compress.go
+GO_FIX_PKGS := ./cmd/... ./internal/... $(GO_TOOL_PKGS)
+GO_FMT_PKGS := . ./cmd/... ./internal/... $(GO_TOOL_PKGS)
+GO_TEST_PKGS := . ./cmd/... ./internal/... $(GO_TOOL_PKGS)
 QIP_BIN ?= ./qip
 QIP_GO_DEPS := $(filter-out %_test.go,$(wildcard *.go)) $(wildcard cmd/*.go) $(wildcard internal/*.go) $(wildcard internal/*/*.go)
 
 qip: go.mod go.sum $(QIP_GO_DEPS)
 	go fix $(GO_FIX_PKGS)
+	go fix $(GO_TOOL_FILES)
 	go fmt $(GO_FMT_PKGS)
+	go fmt $(GO_TOOL_FILES)
 	go build -ldflags="-s -w" -trimpath
 
 compliance/%.wasm: compliance/%.wat
@@ -727,6 +731,7 @@ test-zig: $(ZIG_TEST_FILES)
 
 test-go:
 	go test $(GO_TEST_PKGS)
+	go test $(GO_TOOL_FILES)
 
 site/favicon.ico: qip-logo.svg
 	$(QIP_BIN) run -i qip-logo.svg -- components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > $@
