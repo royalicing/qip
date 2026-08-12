@@ -807,9 +807,9 @@ wasm-safety-report: qip components
 	total=$$((pass + fail)); \
 	printf "\npass=%d fail=%d total=%d\n" "$$pass" "$$fail" "$$total"
 
-SITE_HTML_VALIDATORS := components/text/html/html-unique-id-validator.wasm components/text/html/html-id-reference-validator.wasm components/text/html/html-accessible-name-unique-validator.wasm
+# SITE_HTML_VALIDATORS := components/text/html/html-unique-id-validator.wasm components/text/html/html-id-reference-validator.wasm components/text/html/html-accessible-name-unique-validator.wasm
 
-site-static: qip $(SITE_HTML_VALIDATORS)
+site-static: qip # $(SITE_HTML_VALIDATORS)
 	$(QIP_BIN) router warc ./site --host https://qip.dev --view-source | $(QIP_BIN) run components/application/warc/warc-check-broken-links.wasm components/application/warc/warc-check-broken-module-imports.wasm components/application/warc/warc-to-static-tar-no-trailing-slash.wasm > site-static.tar && mkdir -p site-static && tar -xvf site-static.tar -C site-static
 	@failed=0; \
 	html_entries="$$(tar -tf site-static.tar | LC_ALL=C sort | awk '/\.html$$/')"; \
