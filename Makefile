@@ -577,6 +577,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/pdf-extract-images.mjs
 	node --test test/pdf-extract-text.mjs
 	node --test test/jp2-bmp.mjs
+	node --test test/qip-router-node.mjs
 	node --test test/tar-to-zip.mjs
 	node --test test/zip-to-tar.mjs
 	node --test test/zip-list-extract.mjs

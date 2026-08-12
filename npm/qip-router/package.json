@@ -1,0 +1,17 @@
+{
+  "name": "qip-router",
+  "version": "0.0.0",
+  "description": "Dependency-free QIP development router for Node.js",
+  "type": "module",
+  "bin": {
+    "qip-router": "./qip-router.mjs"
+  },
+  "exports": "./qip-router.mjs",
+  "files": [
+    "qip-router.mjs"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0"
+}
