@@ -17,6 +17,7 @@ entirely in the browser. You can run the same `.wasm` files in your shell via th
 - [JSON prettifier](/json-prettify) validates and indents JSON.
 - [Base64 encoder and decoder](/base64) converts text or bytes to and from
   Base64.
+- [PDF to text](/pdf) extracts positioned text from born-digital PDFs locally.
 - [Favicon generator](/favicon) converts a PNG or BMP into a `favicon.ico`.
 - [BMP to WebP encoder](/webp) produces lossy or exact lossless WebP locally.
 - [Image compressor](/image-compress) compares lossy WebP, AVIF, and JPEG
