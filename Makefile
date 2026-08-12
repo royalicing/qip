@@ -225,6 +225,8 @@ components/application/wasm/wasm-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040
 components/application/wasm/wasm-to-c.wasm: components/application/wasm/wasm-to-c.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+components/bytes/bytes-to-sha256.wasm: ZIG_WASM_MAX_MEMORY = 20971520
+
 components/text/javascript/js-to-bmp.wasm: components/text/javascript/js-to-bmp.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
@@ -539,6 +541,7 @@ test-warc-libs:
 test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
+	node --test test/bytes-to-sha256.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/qip-edit-stats.mjs
 	node --test test/qip-form-element.mjs
