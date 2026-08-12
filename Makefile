@@ -217,6 +217,10 @@ components/application/wasm/wasm-nontrapping-divides.wasm: components/applicatio
 components/application/wasm/wasm-to-js.wasm: components/application/wasm/wasm-to-js.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+components/application/wasm/wasm-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040
+components/application/wasm/wasm-to-c.wasm: components/application/wasm/wasm-to-c.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 components/text/javascript/js-to-bmp.wasm: components/text/javascript/js-to-bmp.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_bytes_cap -Oz -o $@
 
@@ -519,7 +523,11 @@ recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 components: components-wat-wasm components-c-wasm components-zig-wasm
 
-test: qip components test-go test-node test-zig test-snapshot test-comply test-warc-libs
+test: qip components test-go test-node test-zig test-snapshot test-comply test-warc-libs test-wasm-to-c
+
+test-wasm-to-c: qip components/application/wasm/wasm-to-c.wasm
+	wat2wasm test/fixtures/wasm-to-c-traps.wat -o test/fixtures/wasm-to-c-traps.wasm
+	QIP_BIN=$(QIP_BIN) sh test/wasm-to-c.sh
 
 test-warc-libs:
 	cmp components/application/warc/lib/warc.zig recipes/application/warc/lib/warc.zig

@@ -420,6 +420,7 @@ ls ./site
 - [QIP Component Patterns](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
 - [Building C Libraries as QIP Components](docs/c-wasm-toolchains.md)
+- [Translating QIP Components To C](docs/wasm-to-c.md)
 - [Hard Limits](docs/hard-limits.md)
 - [Provable Loops](docs/provable-loops.md)
 - [Running In JavaScript](docs/running-in-javascript.md)
@@ -523,6 +524,10 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
 # Benchmark three components against each other and verify identical output
 echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf8/hello-c.wasm components/utf8/hello-zig.wasm
 # bench: outputs match
+
+# Also measure warmed, reused instances in an installed Node.js/V8
+echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
+# bench: outputs match across wazero and Node.js/V8
 ```
 
 ## TODO
