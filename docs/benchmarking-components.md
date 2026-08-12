@@ -39,6 +39,48 @@ QIP hosts do not promise that instances will be reused. The execution breakdown
 helps distinguish a slow algorithm from a large module that is expensive to
 instantiate.
 
+## Compare A Reused Instance In Node.js
+
+Pass `--node` to add an opt-in V8 measurement for Content components:
+
+```sh
+./qip bench \
+  -i README.md \
+  --benchtime=3s \
+  --node \
+  components/text/markdown/commonmark.0.31.2.wasm
+```
+
+Node.js is required only when the flag is present. QIP finds `node` on `PATH`,
+starts one child process without a shell, and sends the already-validated Wasm
+bytes and input through a pipe. It does not create a temporary script, copy the
+component to another file, or maintain a compiled-artifact cache.
+
+The Node process compiles and instantiates each module once, performs one
+unmeasured correctness render, then reuses that instance for every measured
+request. With `-r`, Node runs the requested number of samples. With
+`--benchtime`, wazero first determines how many samples meet the duration
+target and Node runs that same count. Multiple candidate modules are alternated
+inside the process. Every repeated Node output must match its first output, and
+the final output must match the wazero baseline byte for byte.
+
+Read the two reports as different lifecycle boundaries:
+
+- The normal wazero total creates and closes a fresh instance for each sample.
+- The Node total copies input, calls `render`, and copies output on one reused
+  instance. Compilation and the one instantiation are reported separately.
+
+The displayed ratio retains those labels because it is not an engine-only
+speedup. It answers how a warmed V8 host compares with QIP's default
+fresh-instance boundary. Node's memory line is allocated WebAssembly linear
+memory, not process RSS.
+
+`--node` currently supports the Content contract, not Tile or Interactive
+components. Synchronous V8 execution cannot receive a JavaScript timer while a
+render is running, so QIP supervises the Node process with an aggregate
+deadline rather than claiming an exact per-render Node timeout. The normal
+wazero samples still enforce `--timeout-ms` individually.
+
 Prefer `--benchtime` for quick components. It gathers as many samples as fit in
 the requested measured time:
 
@@ -110,8 +152,9 @@ repository. A benchmark without its input is not reproducible.
 
 ## When To Write A Node.js Harness
 
-Use Node when the intended host is a browser or V8-based application, or when
-`qip bench` cannot isolate the operation you need to time. Common cases are:
+Start with `qip bench --node` for an ordinary Content transform. Write a
+separate Node harness when the browser/V8 host needs a different execution
+boundary or component-specific behavior. Common cases are:
 
 - measuring a reused instance after V8 has warmed and optimized it;
 - driving interactive events or a particular renderer state;
@@ -159,6 +202,45 @@ Match boundaries before comparing numbers. If `qip bench` includes
 instantiation and output copying, a native command that times only its inner
 codec loop is not an equivalent end-to-end measurement. Either align the
 boundaries or label the difference plainly.
+
+For a component whose source exposes the direct-native benchmark adapter, run
+the complete source, generated-C, wasm2c, V8, and wazero matrix with:
+
+```sh
+tools/bench-wasm-to-c-source.sh \
+  --input README.md \
+  components/text/markdown/commonmark.0.31.2.zig
+```
+
+See [Wasm-To-C Runtime Benchmarks](/docs/wasm-to-c-benchmarks#reproducing) for
+the adapter contract and the table's lifecycle boundaries.
+
+For a pipeline of Content components, use the recipe variant:
+
+```sh
+tools/bench-wasm-to-c-recipe.sh \
+  --input qip-logo.svg \
+  components/image/svg+xml/svg-recolor-current-color.wasm \
+  components/image/svg+xml/svg-rasterize.wasm \
+  components/image/bmp/bmp-to-png.wasm
+```
+
+It first delegates content-type and encoding validation to `qip dry run`, then
+uses `qip run` to produce the canonical output. QIP-generated C with shared and
+dedicated workspaces, wasm2c, Node/V8, and warmed wazero must reproduce those
+bytes. The table reports whole-recipe time, RSS checkpoints, linear-memory
+commitments, and executable or Wasm payload sizes.
+
+This generic comparison does not produce an expertly integrated native row.
+Such a row needs a recipe-specific adapter that configures every native library
+and gives it equivalent ownership and reuse rules. Keep that adapter beside
+the fixture when studying a particular codec pipeline; otherwise the generic
+script would hide exactly the per-library integration work the comparison is
+intended to measure.
+
+The initial recipe driver accepts ordinary Content module paths without uniform
+arguments. A future recipe description can add typed uniforms without relying
+on shell-specific query-string parsing.
 
 For image and codec work, compare decoded bytes as well as timing. In the JPEG
 2000 component work, the QIP output was checked pixel-for-pixel against FFmpeg
@@ -213,8 +295,8 @@ Use this sequence for most component work:
 2. Save the current `.wasm` artifact as the baseline.
 3. Run `qip bench` against baseline and candidate on several inputs.
 4. Inspect execution, instantiation, memory, and binary size—not only the mean.
-5. Add a Node harness only for V8, warm-instance, stateful, or telemetry
-   measurements.
+5. Add `--node` for a normal warmed V8 comparison; write a Node harness only
+   for stateful, browser-specific, or telemetry measurements.
 6. Compare with a mature native implementation that accepts the same input and
    produces equivalent output.
 7. Run `make -j test`, then repeat the timing commands without parallel work.

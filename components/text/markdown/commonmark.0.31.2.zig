@@ -568,14 +568,15 @@ fn matchesType1Start(s: []const u8) bool {
 
 fn isType6TagName(name: []const u8) bool {
     const tags = [_][]const u8{
-        "address", "article", "aside", "base", "basefont", "blockquote", "body",
-        "caption", "center", "col", "colgroup", "dd", "details", "dialog", "dir",
-        "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
-        "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header",
-        "hr", "html", "iframe", "legend", "li", "link", "main", "menu", "menuitem",
-        "nav", "noframes", "ol", "optgroup", "option", "p", "param", "search",
-        "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead",
-        "title", "tr", "track", "ul",
+        "address", "article",  "aside",   "base",     "basefont", "blockquote", "body",
+        "caption", "center",   "col",     "colgroup", "dd",       "details",    "dialog",
+        "dir",     "div",      "dl",      "dt",       "fieldset", "figcaption", "figure",
+        "footer",  "form",     "frame",   "frameset", "h1",       "h2",         "h3",
+        "h4",      "h5",       "h6",      "head",     "header",   "hr",         "html",
+        "iframe",  "legend",   "li",      "link",     "main",     "menu",       "menuitem",
+        "nav",     "noframes", "ol",      "optgroup", "option",   "p",          "param",
+        "search",  "section",  "summary", "table",    "tbody",    "td",         "tfoot",
+        "th",      "thead",    "title",   "tr",       "track",    "ul",
     };
     for (tags) |tag| {
         if (std.ascii.eqlIgnoreCase(name, tag)) return true;
@@ -2336,7 +2337,7 @@ fn writeInline(out: *Writer, s: []const u8) void {
                     var lead_strong = i;
                     while (lead_strong < strong_open) : (lead_strong += 1) out.writeEscapedByte(b);
                     out.writeSlice("<strong>");
-                    writeInline(out, s[strong_from .. end2]);
+                    writeInline(out, s[strong_from..end2]);
                     out.writeSlice("</strong>");
                     i = end2 + 2;
                     continue;
@@ -2364,7 +2365,7 @@ fn writeInline(out: *Writer, s: []const u8) void {
                     var lead_strong = i;
                     while (lead_strong < strong_open) : (lead_strong += 1) out.writeEscapedByte(b);
                     out.writeSlice("<strong>");
-                    writeInline(out, s[strong_from .. end2]);
+                    writeInline(out, s[strong_from..end2]);
                     out.writeSlice("</strong>");
                     i = end2 + 2;
                     continue;
@@ -2380,7 +2381,7 @@ fn writeInline(out: *Writer, s: []const u8) void {
                     var lead_strong = i;
                     while (lead_strong < strong_open) : (lead_strong += 1) out.writeEscapedByte(b);
                     out.writeSlice("<strong>");
-                    writeInline(out, s[strong_from .. end2]);
+                    writeInline(out, s[strong_from..end2]);
                     out.writeSlice("</strong>");
                     i = end2 + 2;
                     continue;
@@ -2589,7 +2590,7 @@ fn nextTmpLine(text: []const u8, cursor: *usize) ?[]const u8 {
     while (end < text.len and text[end] != '\n') : (end += 1) {}
     if (end < text.len and text[end] == '\n') end += 1;
     cursor.* = end;
-    return trimRightCR(text[start .. if (end > start and text[end - 1] == '\n') end - 1 else end]);
+    return trimRightCR(text[start..if (end > start and text[end - 1] == '\n') end - 1 else end]);
 }
 
 fn renderTmpList(out: *Writer, text: []const u8, cursor: *usize, first_line: []const u8) void {
@@ -3469,4 +3470,15 @@ export fn render(input_size_in: u32) u32 {
 
     const in = input_buf[0..@as(usize, @intCast(input_size))];
     return renderMarkdown(in, output_buf[0..]);
+}
+
+pub const native_output_capacity: usize = OUTPUT_CAP;
+
+pub fn nativeRender(input: []const u8, output: []u8) u32 {
+    if (input.len > INPUT_CAP) @trap();
+    @memcpy(input_buf[0..input.len], input);
+    const output_size = render(@intCast(input.len));
+    if (output_size > output.len) @trap();
+    @memcpy(output[0..output_size], output_buf[0..output_size]);
+    return output_size;
 }

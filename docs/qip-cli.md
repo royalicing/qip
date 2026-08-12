@@ -67,6 +67,10 @@ Current host behavior:
 
 - `qip` does not provide WASI to components.
 - Normal execution commands do not register custom host functions for module imports.
+- `qip bench --node` optionally starts an installed Node.js executable, sends
+  Content component and input bytes through a pipe, and instantiates the module
+  with an empty import object. The child inherits the CLI process's operating
+  system permissions, but the Wasm component receives no Node.js APIs.
 - `qip comply` registers the `qip` oracle imports only for the Compliance component; the implementation under test remains separately instantiated without those imports.
 - Components that depend on imports outside their contract fail instantiation.
 

@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -107,7 +108,7 @@ func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGro
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageDry = "Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
-const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
+const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--node] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [--legacy] [-v|--verbose]"
@@ -562,12 +563,14 @@ func benchCmd(args []string) {
 	timeoutMS := 250
 	var maxMemoryBytes uint64
 	var allowMemoryGrow bool
+	var compareNode bool
 
 	fs.BoolVar(&benchVerbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&benchVerbose, "verbose", false, "enable verbose logging")
 	fs.StringVar(&inputPath, "i", "", "input file path ('-' for stdin)")
 	fs.IntVar(&benchRuns, "r", benchRuns, "benchmark runs per module")
 	fs.StringVar(&benchtimeStr, "benchtime", benchtimeStr, "target measured time per module (e.g. 3s)")
+	fs.BoolVar(&compareNode, "node", false, "also benchmark reused Content instances with Node.js/V8")
 	fs.IntVar(&timeoutMS, "timeout-ms", timeoutMS, "per-run timeout in milliseconds")
 	fs.Uint64Var(&maxMemoryBytes, "max-memory", 0, "reject modules whose declared memory exceeds this byte cap")
 	fs.BoolVar(&allowMemoryGrow, "allow-memory-grow", false, "allow memory.grow; requires --max-memory")
@@ -631,11 +634,13 @@ func benchCmd(args []string) {
 	compileDur := make([]time.Duration, moduleCount)
 	moduleSizes := make([]uint64, moduleCount)
 	moduleGzipSizes := make([]uint64, moduleCount)
+	moduleBodies := make([][]byte, moduleCount)
 	for i, modulePath := range modules {
 		body, err := readModulePath(modulePath, opts)
 		if err != nil {
 			gameOver("%v", err)
 		}
+		moduleBodies[i] = body
 		moduleSizes[i] = uint64(len(body))
 		gzipSize, err := gzipSizeBytes(body)
 		if err != nil {
@@ -670,6 +675,13 @@ func benchCmd(args []string) {
 		}
 		compiled[i] = cm
 		defer compiled[i].Close(ctx)
+	}
+	if compareNode {
+		for i, kind := range moduleKinds {
+			if kind != benchModuleKindRun {
+				gameOver("--node currently supports Content components only; %s uses another component contract", modules[i])
+			}
+		}
 	}
 
 	perRunTimeout := time.Duration(timeoutMS) * time.Millisecond
@@ -734,8 +746,41 @@ func benchCmd(args []string) {
 		summaries[i] = summarizeBench(samples[i])
 	}
 
+	var nodeResponse nodeBenchResponse
+	if compareNode {
+		var wazeroMeasured time.Duration
+		for i := range samples {
+			for _, sample := range samples[i] {
+				wazeroMeasured += sample.total
+			}
+		}
+		nodeTimeout := 10*time.Second + 10*wazeroMeasured
+		if nodeTimeout < 30*time.Second {
+			nodeTimeout = 30 * time.Second
+		}
+		nodeResponse, err = runNodeBench(ctx, moduleBodies, inputBytes, len(samples[0]), nodeTimeout)
+		if err != nil {
+			gameOver("%v", err)
+		}
+		for i, result := range nodeResponse.results {
+			if result.sampleCount != len(samples[i]) {
+				gameOver(
+					"Node benchmark returned %d samples for %s, expected %d",
+					result.sampleCount,
+					modules[i],
+					len(samples[i]),
+				)
+			}
+			if mismatch := describeContentMismatch(expected, result.output); mismatch != "" {
+				gameOver("Node benchmark output mismatch for %s: %s", modules[i], mismatch)
+			}
+		}
+	}
+
 	digest := sha256.Sum256(expected.bytes)
-	if moduleCount == 1 {
+	if compareNode {
+		fmt.Printf("bench: outputs match across wazero and Node.js/V8\n")
+	} else if moduleCount == 1 {
 		fmt.Printf("bench: baseline output captured\n")
 	} else {
 		fmt.Printf("bench: outputs match\n")
@@ -760,6 +805,16 @@ func benchCmd(args []string) {
 			compileDur[i],
 			summaries[i],
 		)
+		if compareNode {
+			printNodeBenchBenchmarkReport(
+				i+1,
+				modules[i],
+				nodeResponse.nodeVersion,
+				nodeResponse.v8Version,
+				nodeResponse.results[i],
+				summaries[i],
+			)
+		}
 	}
 
 	if moduleCount > 1 {
@@ -1119,7 +1174,7 @@ func formatBytesIEC(bytes uint64) string {
 }
 
 func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, gzipSize uint64, inputCapBytes uint64, outputCapBytes uint64, compileDuration time.Duration, summary benchSummary) {
-	fmt.Printf("Benchmark %d: %s\n", index, modulePath)
+	fmt.Printf("QIP/wazero %d: %s\n", index, modulePath)
 	fmt.Printf("  Time (mean ± stddev): %s ± %s [min: %s, p95: %s, max: %s]\n",
 		summary.total.mean,
 		summary.total.stddev,
@@ -1127,6 +1182,13 @@ func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, 
 		summary.total.p95,
 		summary.total.max,
 	)
+	wazeroVersion := buildDependencyVersion("github.com/tetratelabs/wazero")
+	if wazeroVersion == "" {
+		fmt.Printf("  Runtime: wazero\n")
+	} else {
+		fmt.Printf("  Runtime: wazero %s\n", wazeroVersion)
+	}
+	fmt.Printf("  Boundary: fresh instance, contract checks, input/output copies, and render\n")
 	fmt.Printf("  Breakdown: run mean %s, instantiation mean %s, compile %s\n",
 		summary.run.mean,
 		summary.inst.mean,
@@ -1136,6 +1198,26 @@ func printBenchBenchmarkReport(index int, modulePath string, binarySize uint64, 
 	fmt.Printf("  Capacity: input %s, output %s\n", formatBytesIEC(inputCapBytes), formatBytesIEC(outputCapBytes))
 	fmt.Printf("  Binary size: %d bytes, gzip %d bytes\n", binarySize, gzipSize)
 	fmt.Printf("\n")
+}
+
+func buildDependencyVersion(modulePath string) string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, dependency := range info.Deps {
+		if dependency.Path != modulePath {
+			continue
+		}
+		if dependency.Replace != nil {
+			dependency = dependency.Replace
+		}
+		if dependency.Version == "(devel)" {
+			return ""
+		}
+		return dependency.Version
+	}
+	return ""
 }
 
 func parseComponentInvocations(args []string, commandName string) ([]ComponentInvocation, error) {

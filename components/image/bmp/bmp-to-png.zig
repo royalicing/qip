@@ -257,6 +257,17 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(iend_start + 12));
 }
 
+pub const native_output_capacity: usize = OUTPUT_CAP;
+
+pub fn nativeRender(input: []const u8, output: []u8) u32 {
+    if (input.len > INPUT_CAP) @trap();
+    @memcpy(input_buf[0..input.len], input);
+    const output_size = render(@intCast(input.len));
+    if (output_size > output.len) @trap();
+    @memcpy(output[0..output_size], output_buf[0..output_size]);
+    return output_size;
+}
+
 test "crc32 matches the PNG check value" {
     try std.testing.expectEqual(@as(u32, 0xCBF43926), crc32("123456789"));
 }

@@ -1459,7 +1459,7 @@ fn parseElements(ctx: *ParserCtx, idx: *usize, root_transform: Mat, root_fill: C
         idx.* += 1;
         if (idx.* >= input.len) return;
 
-        if (input[idx.*] == '/' ) {
+        if (input[idx.*] == '/') {
             idx.* += 1;
             skipWs(input, idx);
             const name = readName(input, idx);
@@ -1660,6 +1660,15 @@ pub fn renderForTest(input: []const u8) []const u8 {
     @memcpy(input_buf[0..size], input[0..size]);
     const out_len = render(@as(u32, @intCast(size)));
     return output_buf[0..@as(usize, @intCast(out_len))];
+}
+
+pub const native_output_capacity: usize = OUTPUT_CAP;
+
+pub fn nativeRender(input: []const u8, output: []u8) u32 {
+    const rendered = renderForTest(input);
+    if (rendered.len > output.len) @trap();
+    @memcpy(output[0..rendered.len], rendered);
+    return @intCast(rendered.len);
 }
 
 pub fn renderForTestWithBackground(input: []const u8, bg_rgba: u32) []const u8 {

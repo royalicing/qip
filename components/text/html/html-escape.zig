@@ -83,6 +83,17 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(escapeHtml(input_buf[0..input_size], output_buf[0..])));
 }
 
+pub const native_output_capacity: usize = OUTPUT_CAP;
+
+pub fn nativeRender(input: []const u8, output: []u8) u32 {
+    if (input.len > INPUT_CAP) @trap();
+    @memcpy(input_buf[0..input.len], input);
+    const output_size = render(@intCast(input.len));
+    if (output_size > output.len) @trap();
+    @memcpy(output[0..output_size], output_buf[0..output_size]);
+    return output_size;
+}
+
 test "escapes text node and quoted attribute characters" {
     var out: [128]u8 = undefined;
     const len = escapeHtml("<input value=\"Tom & 'QIP'\">", out[0..]);
