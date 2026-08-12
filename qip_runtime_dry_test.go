@@ -38,7 +38,20 @@ func TestValidateDeclaredContentTypeRequiresCanonicalMIME(t *testing.T) {
 	if got, err := validateDeclaredContentType("text/html"); err != nil || got != "text/html" {
 		t.Fatalf("canonical MIME result=%q error=%v", got, err)
 	}
-	for _, value := range []string{"Text/HTML", " text/html", "text/html ", "text/html; charset=utf-8"} {
+	multipart := "multipart/form-data;boundary=uuid-12345678-90ab-cdef-1234-567890abcdef"
+	if got, err := validateDeclaredContentType(multipart); err != nil || got != multipart {
+		t.Fatalf("canonical multipart result=%q error=%v", got, err)
+	}
+	if got := normalizeIncomingContentType(multipart); got != multipart {
+		t.Fatalf("normalized multipart=%q, want %q", got, multipart)
+	}
+	for _, value := range []string{
+		"Text/HTML", " text/html", "text/html ", "text/html; charset=utf-8",
+		"multipart/form-data; boundary=uuid-12345678-90ab-cdef-1234-567890abcdef",
+		"multipart/form-data;boundary=qip-12345678-90ab-cdef-1234-567890abcdef",
+		"multipart/form-data;boundary=uuid-12345678-90AB-cdef-1234-567890abcdef",
+		"multipart/form-data;boundary=uuid-12345678-90ab-cdef-1234-567890abcde",
+	} {
 		if _, err := validateDeclaredContentType(value); err == nil {
 			t.Fatalf("validateDeclaredContentType(%q) succeeded, want canonical-form error", value)
 		}

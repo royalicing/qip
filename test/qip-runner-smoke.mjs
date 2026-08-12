@@ -11,13 +11,17 @@ const markdown = contentTypeUTF8("text/markdown");
 const html = contentTypeUTF8("text/html");
 const bytes = contentTypeBytes();
 const bmp = contentTypeBytes("image/bmp");
+const multipart = contentTypeBytes(
+  "multipart/form-data;boundary=uuid-12345678-90ab-cdef-1234-567890abcdef",
+);
 
 if (!Object.isFrozen(text) || !Object.isFrozen(bmp)) {
   throw new Error("content type constructors must return frozen objects");
 }
 if (
   text.contentType !== undefined ||
-  bmp.contentType !== "image/bmp"
+  bmp.contentType !== "image/bmp" ||
+  multipart.contentType !== "multipart/form-data;boundary=uuid-12345678-90ab-cdef-1234-567890abcdef"
 ) {
   throw new Error("content type constructors returned incorrect contracts");
 }
@@ -90,7 +94,14 @@ if (!rejectedForgedComponent) {
 }
 
 for (const constructor of [contentTypeUTF8, contentTypeBytes]) {
-  for (const contentType of ["Text/HTML", "text/html; charset=utf-8", " text/html"]) {
+  for (const contentType of [
+    "Text/HTML",
+    "text/html; charset=utf-8",
+    " text/html",
+    "multipart/form-data; boundary=uuid-12345678-90ab-cdef-1234-567890abcdef",
+    "multipart/form-data;boundary=qip-12345678-90ab-cdef-1234-567890abcdef",
+    "multipart/form-data;boundary=uuid-12345678-90AB-cdef-1234-567890abcdef",
+  ]) {
     let rejectedBadContentType = false;
     try {
       constructor(contentType);
@@ -108,6 +119,14 @@ const markdownModule = await WebAssembly.compile(
 );
 const pageModule = await WebAssembly.compile(
   await readFile("components/text/html/html-page-wrap.wasm"),
+);
+const formDataToTarModule = await WebAssembly.compile(
+  await readFile("components/multipart/form-data/form-data-to-tar.wasm"),
+);
+contentComponent(
+  contentTypeBytes("multipart/form-data;boundary=uuid-00000000-0000-0000-0000-000000000000"),
+  formDataToTarModule,
+  contentTypeBytes("application/x-tar"),
 );
 
 const markdownToHtml = contentComponent(markdown, markdownModule, html);

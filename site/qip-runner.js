@@ -2,6 +2,8 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const mimeTypePattern =
   /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
+const multipartFormDataPattern =
+  /^multipart\/form-data;boundary=uuid-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function toI32(value, label) {
   const n = typeof value === "bigint" ? Number(value) : value;
@@ -18,9 +20,9 @@ function optionalContractContentType(value) {
   if (typeof value !== "string") {
     throw Error("contentType must be a string");
   }
-  if (!mimeTypePattern.test(value)) {
+  if (!mimeTypePattern.test(value) && !multipartFormDataPattern.test(value)) {
     throw Error(
-      "contentType must be a lowercase MIME type without parameters e.g. 'text/html'",
+      "contentType must be a lowercase MIME type without parameters, except for the canonical multipart/form-data UUID boundary",
     );
   }
   return value;

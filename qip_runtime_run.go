@@ -45,6 +45,9 @@ func normalizeIncomingContentType(value string) string {
 	if value == "" {
 		return ""
 	}
+	if isCanonicalMultipartFormDataContentType(value) {
+		return value
+	}
 	mediaType, _, err := mime.ParseMediaType(value)
 	if err == nil && mediaType != "" {
 		return strings.ToLower(mediaType)
@@ -53,6 +56,27 @@ func normalizeIncomingContentType(value string) string {
 		value = strings.TrimSpace(value[:cut])
 	}
 	return strings.ToLower(value)
+}
+
+const multipartFormDataContentTypePrefix = "multipart/form-data;boundary=uuid-"
+
+func isCanonicalMultipartFormDataContentType(value string) bool {
+	if len(value) != len(multipartFormDataContentTypePrefix)+36 || !strings.HasPrefix(value, multipartFormDataContentTypePrefix) {
+		return false
+	}
+	uuid := value[len(multipartFormDataContentTypePrefix):]
+	for i := range uuid {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if uuid[i] != '-' {
+				return false
+			}
+			continue
+		}
+		if !((uuid[i] >= '0' && uuid[i] <= '9') || (uuid[i] >= 'a' && uuid[i] <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func validateDeclaredContentType(value string) (string, error) {
@@ -68,6 +92,9 @@ func validateDeclaredContentType(value string) (string, error) {
 	if strings.Contains(value, ",") {
 		return "", errors.New("content type must contain exactly one MIME type")
 	}
+	if isCanonicalMultipartFormDataContentType(value) {
+		return value, nil
+	}
 	mediaType, params, err := mime.ParseMediaType(value)
 	if err != nil {
 		return "", fmt.Errorf("invalid content type %q: %w", value, err)
@@ -76,7 +103,7 @@ func validateDeclaredContentType(value string) (string, error) {
 		return "", errors.New("content type is empty")
 	}
 	if len(params) > 0 {
-		return "", fmt.Errorf("content type %q must not include parameters", value)
+		return "", fmt.Errorf("content type %q has parameters outside the canonical multipart/form-data boundary exception", value)
 	}
 	if strings.Contains(mediaType, "*") {
 		return "", fmt.Errorf("content type %q must not include media ranges", value)

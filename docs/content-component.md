@@ -92,11 +92,17 @@ A component may declare an exact input or output MIME type with:
 
 Both exports in a pointer/size pair must be present. Omit a pair when the content type is unknown or intentionally generic.
 
-When present, the value must be one lowercase MIME media type, such as `text/markdown`, `text/html`, or `image/bmp`. Do not include whitespace, media ranges, comma-separated lists, or parameters such as `charset=utf-8`. Hosts compare these strings exactly; they do not trim, lowercase, or remove parameters.
+When present, the value must normally be one lowercase MIME media type, such
+as `text/markdown`, `text/html`, or `image/bmp`. Do not include whitespace,
+media ranges, comma-separated lists, or parameters such as `charset=utf-8`.
+The multipart boundary slot defined below is the only parameter exception.
+Hosts otherwise compare these strings exactly; they do not trim, lowercase,
+or remove parameters.
 
 Content type is module metadata, not render state. Its pointer, size, and bytes
-must not vary with input, uniforms, previous calls, or other runtime state.
-Modules in the strict artifact profile make that invariant statically readable:
+must not vary with input, uniforms, previous calls, or other runtime state,
+except for a host-written multipart boundary UUID as defined below. Modules in
+the strict artifact profile make the initial metadata statically readable:
 
 - each pointer and size export is a zero-argument `i32` getter containing
   exactly one `i32.const` or one `global.get` of an immutable constant `i32`
@@ -108,6 +114,64 @@ Modules in the strict artifact profile make that invariant statically readable:
 
 This lets tooling read the declared type directly from Wasm sections without
 allocating memory or instantiating and executing the module.
+
+### Multipart Form Data
+
+QIP allow-lists parameterized multipart media types rather than accepting
+arbitrary MIME parameters. The initial allow-list contains only
+`multipart/form-data`. Other `multipart/*` types and all other parameters
+remain invalid until this contract defines their byte layout and host rules.
+
+A component that consumes or produces multipart form data declares exactly
+this shape:
+
+```text
+multipart/form-data;boundary=uuid-00000000-0000-0000-0000-000000000000
+```
+
+The boundary is the five immutable ASCII bytes `uuid-` followed by a mutable
+36-byte canonical lowercase UUID. It is unquoted and has no surrounding
+whitespace. No other parameters are permitted. The content-type pointer and
+size remain module constants; the initial UUID bytes must be present in the
+active data segment so static tooling can read a complete valid default.
+
+Before `render`, a host may replace exactly those 36 UUID bytes in exported
+memory. It must not change `multipart/form-data;boundary=uuid-`, the pointer,
+the size, or any other byte. The replacement must have the canonical UUID
+shape `8-4-4-4-12` using lowercase ASCII hexadecimal digits and hyphens. A
+host that does not need a distinct boundary leaves the declared default in
+place.
+
+This exception is symmetric. A multipart producer reads its current output
+boundary slot when rendering delimiters. A multipart consumer reads its
+current input boundary slot when parsing them. To connect the two, the host
+copies the producer's 36 UUID bytes into the consumer's input slot before
+calling the consumer. The host also updates the content type it tracks for the
+pipeline, so the producer's output and consumer's input still match exactly.
+An exact-length slot does not accept an external multipart boundary of a
+different shape or length; an ingress adapter must normalize such a body or
+use a component contract designed for the complete external message.
+
+The boundary parameter does not include the two structural hyphens used by
+multipart delimiters. For boundary `uuid-<uuid>`, a producer emits:
+
+```text
+--uuid-<uuid>\r\n
+--uuid-<uuid>--\r\n
+```
+
+Component authors must keep the declared slot as the single source of truth.
+Code that renders or parses multipart bytes must load the current UUID from
+that mutable memory for every request; it must not use an inlined or duplicate
+constant. Output components must reject a part body containing a delimiter
+line for the current boundary rather than emit ambiguous multipart. Tests must
+replace the default UUID and prove that the exported content type and every
+rendered or accepted delimiter use the replacement.
+
+The pointer, size, media type, parameter name, `uuid-` prefix, and initial UUID
+remain statically inspectable. Only the UUID slot is host-configurable. This
+narrow exception preserves ordinary content-type metadata as immutable module
+metadata and does not create a general string-uniform mechanism.
 
 The repository includes such a reader as a QIP component. It prints the input
 content type, prints an empty line when the pair is omitted, and traps when any

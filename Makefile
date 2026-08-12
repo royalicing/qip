@@ -291,6 +291,7 @@ recipes/application/warc/35-add-search-index.wasm: ZIG_WASM_MAX_MEMORY = 6710886
 recipes/application/warc/15-add-html-data-path.wasm recipes/application/warc/20-add-docs-sidebar.wasm recipes/application/warc/25-add-content-size.wasm recipes/application/warc/30-add-sitemap-xml.wasm recipes/application/warc/35-add-search-index.wasm: recipes/application/warc/lib/warc.zig
 components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
+components/multipart/form-data/form-data-to-tar.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 369098752
 # Full 25 MP level-9 VP8L encoding needs a 1.25 GiB reclaiming arena in
 # addition to its input and worst-case output buffers.
@@ -596,6 +597,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/bmp-bgra32-icc-to-srgb.mjs
 	node --test test/webp-bmp.mjs
 	node --test test/bmp-rgb-metrics.mjs
+	node --test test/form-data-to-tar.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
 fuzz-zlib: components/bytes/zlib-compress.wasm components/bytes/zlib-compress-fixed-huffman.wasm components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-compress-dynamic-huffman-opt.wasm components/bytes/zlib-decompress.wasm
