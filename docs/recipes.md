@@ -127,6 +127,56 @@ qip router get ./site /docs/router
 qip router warc ./site
 ```
 
+## Content Recipe CSV
+
+Content Recipe CSV is the canonical machine-readable description of an
+ordered Content component pipeline. It uses the ordinary `text/csv` media
+type. Each row records the component path and the effective contract on both
+sides of that step:
+
+```csv
+path,input_encoding,input_mime,input_capacity_bytes,output_encoding,output_mime,output_capacity_bytes
+/components/text/markdown/commonmark.0.31.2.wasm,utf8,text/markdown,2097152,utf8,text/html,2097152
+/components/text/html/html-to-accessibility-tree.wasm,utf8,text/html,262144,utf8,text/markdown,1048576
+```
+
+Rows execute in file order. The first data row is step 1; a separate step
+column would duplicate the record order and create another value that could
+disagree with it. A recipe contains at least one data row.
+
+The canonical serialization is UTF-8 without a byte-order mark, uses LF line
+endings, and ends with one LF. Fields cannot contain CR or LF. A field is
+quoted only when it contains a comma or double quote, and a double quote in a
+quoted field is written twice. The header and column order are exact.
+
+The columns have these meanings:
+
+- `path` is the component reference passed to the generated or executing host.
+- `input_encoding` and `output_encoding` are exactly `utf8` or `bytes`. They
+  select the corresponding `*_utf8_cap` or `*_bytes_cap` ABI exports.
+- `input_mime` and `output_mime` are canonical lowercase MIME types. They are
+  the effective types at that step after generic-component inheritance has
+  been planned.
+- `input_capacity_bytes` and `output_capacity_bytes` are unsigned decimal
+  `u32` byte counts without grouping separators or leading zeroes.
+
+Adjacent rows follow the normal Content composition rules: output and input
+MIME types match exactly, equal encodings connect, and UTF-8 output may widen
+to a bytes input. A bytes output cannot narrow implicitly to UTF-8.
+
+Capacity metadata does not make a recipe invalid when one output maximum is
+larger than the next input maximum. The actual intermediate value may fit.
+Tools may report that comparison as a warning or enforce it with semantics
+equivalent to `--capacities-must-fit`. At execution time, the loaded Wasm
+module's capacity exports remain authoritative if an artifact at a recorded
+path has changed.
+
+The component finder catalog uses the same header and row schema. It is a
+curated graph of format converters, not an inventory of every Content
+component. Generic transforms, same-type transforms, and infrastructure such
+as Content Recipe CSV source generators stay out of the finder by remaining
+absent from that catalog.
+
 ## Planning And Dry Runs
 
 `qip dry run` resolves and validates the same ordered component pipeline as
