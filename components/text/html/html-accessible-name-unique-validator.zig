@@ -61,3 +61,17 @@ test "rejects duplicate names from different naming mechanisms" {
 test "ignores empty names and hidden accessible objects" {
     try std.testing.expect(validate("<main><p>One</p><p>Two</p><button></button><button hidden>Save</button><button>Save</button></main>"));
 }
+
+test "scopes link name uniqueness to the nearest navigation landmark" {
+    try std.testing.expect(!validate("<nav><a href=/one>Docs</a><a href=/two aria-label=Docs>Other</a></nav>"));
+    try std.testing.expect(validate("<nav aria-label=Primary><a href=/one>Docs</a></nav><nav aria-label=Footer><a href=/two>Docs</a></nav><a href=/three>Docs</a><a href=/four>Docs</a>"));
+}
+
+test "allows structural content to share accessible names" {
+    try std.testing.expect(validate("<h2>Status</h2><h3>Status</h3><table><tr><td>Ready</td><td>Ready</td></tr></table>"));
+}
+
+test "requires unique h2 accessible names" {
+    try std.testing.expect(!validate("<h2>Install</h2><h2 aria-label=Install>Setup</h2>"));
+    try std.testing.expect(validate("<h2>Install</h2><h3>Install</h3><button>Install</button>"));
+}

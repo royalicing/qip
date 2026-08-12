@@ -1178,10 +1178,34 @@ noinline fn buildNodes(input: []const u8, element_count: usize) usize {
     return node_count;
 }
 
+fn roleRequiresUniqueAccessibleName(role: RoleInfo) bool {
+    const name = role.label[0..role.label_len];
+    return bytesEqual(name, "button") or bytesEqual(name, "checkbox") or bytesEqual(name, "combobox") or
+        bytesEqual(name, "listbox") or bytesEqual(name, "menu") or bytesEqual(name, "menubar") or
+        bytesEqual(name, "menuitem") or bytesEqual(name, "menuitemcheckbox") or bytesEqual(name, "menuitemradio") or
+        bytesEqual(name, "option") or bytesEqual(name, "radio") or bytesEqual(name, "scrollbar") or
+        bytesEqual(name, "searchbox") or bytesEqual(name, "slider") or bytesEqual(name, "spinbutton") or
+        bytesEqual(name, "switch") or bytesEqual(name, "tab") or bytesEqual(name, "textbox") or
+        bytesEqual(name, "treeitem");
+}
+
+fn nearestNavigationAncestor(element_index: usize, input: []const u8) ?usize {
+    var current = elements_buf[element_index].parent;
+    var steps: usize = 0;
+    while (current >= 0 and steps < MAX_ELEMENTS) : (steps += 1) {
+        const index: usize = @intCast(current);
+        const role = resolveRole(index, input);
+        if (role.present and !role.suppressed and bytesEqual(role.label[0..role.label_len], "navigation")) return index;
+        current = elements_buf[index].parent;
+    }
+    return null;
+}
+
 /// Uses the same HTML tree construction and accessible-name calculation as
-/// this renderer, but checks only non-empty names on exposed accessibility
-/// nodes. Global name uniqueness is a repository policy, not an ARIA
-/// conformance requirement.
+/// this renderer, but checks only non-empty names on exposed interactive
+/// controls, page-level h2 headings, plus links within the same navigation
+/// landmark. Name uniqueness is a repository policy, not an ARIA conformance
+/// requirement.
 pub noinline fn accessibleNamesAreUnique(input: []const u8) bool {
     if (input.len > INPUT_CAP) return false;
     var element_count: usize = 0;
@@ -1194,6 +1218,15 @@ pub noinline fn accessibleNamesAreUnique(input: []const u8) bool {
         if (isHidden(i, input)) continue;
         const role = resolveRole(i, input);
         if (!role.present or role.suppressed) continue;
+        const role_name = role.label[0..role.label_len];
+        const scope: i32 = if (roleRequiresUniqueAccessibleName(role))
+            -1
+        else if (elementIs(i, input, "h2"))
+            -2
+        else if (bytesEqual(role_name, "link"))
+            @intCast(nearestNavigationAncestor(i, input) orelse continue)
+        else
+            continue;
 
         var name = NameBuffer{};
         computeName(i, role, &name, input, element_count);
@@ -1202,12 +1235,14 @@ pub noinline fn accessibleNamesAreUnique(input: []const u8) bool {
 
         var previous: usize = 0;
         while (previous < named_count) : (previous += 1) {
+            if (work_buf[previous] != scope) continue;
             const previous_len: usize = @intCast(nodes_buf[previous].name_len);
             if (previous_len != name.len) continue;
             if (bytesEqual(nodes_buf[previous].name[0..previous_len], name.bytes[0..name.len])) return false;
         }
         nodes_buf[named_count].name_len = @intCast(name.len);
         @memcpy(nodes_buf[named_count].name[0..name.len], name.bytes[0..name.len]);
+        work_buf[named_count] = scope;
         named_count += 1;
     }
     return true;
@@ -1307,7 +1342,11 @@ test "ARIA tokens, aria-hidden, contextual landmarks, and markdown escaping" {
 test "accessible-name uniqueness uses computed names and ignores empty names" {
     try std.testing.expect(accessibleNamesAreUnique("<main><p>Unnamed paragraph</p><button>Save</button><button>Cancel</button></main>"));
     try std.testing.expect(!accessibleNamesAreUnique("<main><button>Save</button><button aria-label='Save'>Icon</button></main>"));
-    try std.testing.expect(!accessibleNamesAreUnique("<span id=label>Open</span><button aria-labelledby=label></button><a href=# aria-label=Open></a>"));
+    try std.testing.expect(accessibleNamesAreUnique("<h2>Open</h2><table><tr><td>Open</td><td>Open</td></tr></table><a href=#>Open</a><a href=/other>Open</a>"));
+    try std.testing.expect(!accessibleNamesAreUnique("<nav><a href=/one>Docs</a><a href=/two aria-label=Docs>Other</a></nav>"));
+    try std.testing.expect(accessibleNamesAreUnique("<nav aria-label=Primary><a href=/one>Docs</a></nav><nav aria-label=Footer><a href=/two>Docs</a></nav>"));
+    try std.testing.expect(!accessibleNamesAreUnique("<h2>API</h2><h2 aria-label=API>Reference</h2>"));
+    try std.testing.expect(accessibleNamesAreUnique("<h2>Save</h2><h3>Save</h3><button>Save</button>"));
 }
 
 test "current HTML-AAM native roles and labelable elements contribute names" {
@@ -1315,5 +1354,5 @@ test "current HTML-AAM native roles and labelable elements contribute names" {
         "<search aria-label=Products></search><label for=m>Usage</label><meter id=m></meter><label for=p>Loading</label><progress id=p></progress><label for=o>Total</label><output id=o></output>",
         "- `search` **Products**\n- `meter` **Usage**\n- `progressbar` **Loading**\n- `status` **Total**\n",
     );
-    try std.testing.expect(!accessibleNamesAreUnique("<label for=m>Status</label><meter id=m></meter><output aria-label=Status></output>"));
+    try std.testing.expect(accessibleNamesAreUnique("<label for=m>Status</label><meter id=m></meter><output aria-label=Status></output>"));
 }
