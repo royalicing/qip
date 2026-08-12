@@ -269,6 +269,10 @@ components/application/warc/warc-to-static-tar-no-trailing-slash.wasm: ZIG_WASM_
 components/application/x-tar/tar-to-zip.wasm: ZIG_WASM_MAX_MEMORY = 402653184
 components/application/x-tar/tar-to-zip.wasm: components/application/x-tar/tar-to-zip.zig components/bytes/lib/deflate.zig
 	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep deflate -Mroot=$< -Mdeflate=components/bytes/lib/deflate.zig -femit-bin=$@
+components/application/x-tar/recipes-tar-to-csv.wasm: ZIG_WASM_MAX_MEMORY = 150994944
+components/application/x-tar/recipes-tar-to-node-tar.wasm: ZIG_WASM_MAX_MEMORY = 335544320
+components/application/x-tar/recipes-tar-to-csv.wasm components/application/x-tar/recipes-tar-to-node-tar.wasm: components/application/x-tar/%.wasm: components/application/x-tar/%.zig components/application/x-tar/lib/recipe-book.zig components/application/wasm/lib/wasm-reader.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep wasm_reader -Mroot=$< -Mwasm_reader=components/application/wasm/lib/wasm-reader.zig -femit-bin=$@
 components/application/zip/zip-to-tar.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/zip/zip-to-tar.wasm: components/application/zip/zip-to-tar.zig components/application/zip/lib/zip.zig components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
 	$(ZIG_ENV) zig build-exe -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inflate -Mroot=$< -Minflate=components/bytes/lib/inflate.zig -femit-bin=$@
@@ -577,6 +581,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/pdf-extract-images.mjs
 	node --test test/pdf-extract-text.mjs
 	node --test test/jp2-bmp.mjs
+	node --test test/recipe-book-tar.mjs
 	node --test test/qip-router-node.mjs
 	node --test test/tar-to-zip.mjs
 	node --test test/zip-to-tar.mjs
@@ -723,6 +728,8 @@ test-zig: $(ZIG_TEST_FILES)
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
 		elif [ "$$f" = "components/application/x-tar/tar-to-zip.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep deflate -Mroot="$$f" -Mdeflate=components/bytes/lib/deflate.zig || status=1; \
+		elif [ "$$f" = "components/application/x-tar/recipes-tar-to-csv.zig" ] || [ "$$f" = "components/application/x-tar/recipes-tar-to-node-tar.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep wasm_reader -Mroot="$$f" -Mwasm_reader=components/application/wasm/lib/wasm-reader.zig || status=1; \
 		elif [ "$$f" = "components/application/zip/zip-to-tar.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
 		elif [ "$$f" = "components/application/zip/zip-list-entries-csv.zig" ] || [ "$$f" = "components/application/zip/zip-list-files-csv.zig" ] || [ "$$f" = "components/application/zip/zip-extract-file.zig" ]; then \
