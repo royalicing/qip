@@ -2,9 +2,10 @@
 
 import { createHash } from "node:crypto";
 import { createServer, STATUS_CODES } from "node:http";
+import { realpathSync } from "node:fs";
 import { readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
@@ -655,6 +656,12 @@ export async function createQIPRouter(options = {}) {
     async resolve(method, requestTarget) {
       return resolveRequest(method.toUpperCase(), requestTarget);
     },
+    async get(requestTarget) {
+      return resolveRequest("GET", requestTarget);
+    },
+    async head(requestTarget) {
+      return resolveRequest("HEAD", requestTarget);
+    },
     list() {
       const current = generation;
       const entries = new Map();
@@ -687,6 +694,20 @@ export async function createQIPRouter(options = {}) {
       const archive = concat(records);
       if (!current.recipes.has("application/warc")) return archive;
       return (await current.recipes.render("application/warc", archive)).bytes;
+    },
+    async fetch(request) {
+      const cacheControl = request.headers.get("cache-control")?.toLowerCase() ?? "";
+      const pragma = request.headers.get("pragma")?.toLowerCase() ?? "";
+      const accept = request.headers.get("accept")?.toLowerCase() ?? "";
+      const hardReload = (cacheControl.includes("no-cache") || cacheControl.includes("max-age=0") || pragma.includes("no-cache")) &&
+        accept.includes("text/html");
+      if (hardReload) await api.reload();
+      const url = new URL(request.url);
+      const result = await resolveRequest(request.method, `${url.pathname}${url.search}`);
+      return new Response(request.method === "HEAD" ? null : result.body, {
+        status: result.status,
+        headers: result.headers,
+      });
     },
     async handler(request, response) {
       try {
@@ -787,8 +808,9 @@ export async function main(argv = process.argv.slice(2)) {
   throw new Error(`unknown command ${command}\n\n${usage()}`);
 }
 
-const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
-if (invokedPath === import.meta.url) {
+const invokedPath = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
+const modulePath = realpathSync(fileURLToPath(import.meta.url));
+if (invokedPath === modulePath) {
   main().catch((error) => {
     console.error(error.message ?? error);
     process.exitCode = 1;

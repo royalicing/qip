@@ -1,13 +1,25 @@
 {
   "name": "qip-router",
-  "version": "0.0.0",
+  "version": "0.1.1",
   "description": "Dependency-free QIP development router for Node.js",
-  "type": "module",
-  "bin": {
-    "qip-router": "./qip-router.mjs"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/royalicing/qip.git",
+    "directory": "npm/qip-router"
   },
-  "exports": "./qip-router.mjs",
+  "type": "module",
+  "types": "./qip-router.d.ts",
+  "bin": {
+    "qip-router": "qip-router.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./qip-router.d.ts",
+      "import": "./qip-router.mjs"
+    }
+  },
   "files": [
+    "qip-router.d.ts",
     "qip-router.mjs"
   ],
   "engines": {
