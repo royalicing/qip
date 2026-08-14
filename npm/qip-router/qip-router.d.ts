@@ -25,6 +25,11 @@ export interface QIPRouteEntry {
   contentType: string;
 }
 
+export interface QIPKindredRouteEntry {
+  method: "GET";
+  path: string;
+}
+
 export interface QIPRouter {
   readonly contentRoot: string;
   readonly recipesRoot: string;
@@ -33,6 +38,7 @@ export interface QIPRouter {
   get(requestTarget: string): Promise<QIPResponse>;
   /** Returns response headers with an empty Uint8Array body. */
   head(requestTarget: string): Promise<QIPResponse>;
+  kindred(requestTarget: string): Promise<QIPKindredRouteEntry[]>;
   list(): QIPRouteEntry[];
   warc(): Promise<Uint8Array>;
   fetch(request: Request): Promise<Response>;

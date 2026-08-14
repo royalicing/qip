@@ -219,6 +219,105 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	}
 }
 
+func routeKindredCmd(args []string) {
+	routePathCmdWithState(args, usageRouteKindred, func(ctx context.Context, state *RouterServerState, requestPath string, routeOptions qinternal.RouteOptions, timeouts RouterServerTimeouts) error {
+		canonical, redirect := qinternal.CanonicalRequestPath(requestPath, routeOptions)
+		if redirect {
+			requestPath = canonical
+		}
+		response, ok, err := resolveRouterBaseResponse(ctx, state, requestPath, 0, timeouts)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("route not found: %s", requestPath)
+		}
+		routes, err := qinternal.KindredRoutes(requestPath, response, func(parentPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+			return resolveRouterBaseResponse(ctx, state, parentPath, 0, timeouts)
+		}, func(staticPath string) (qinternal.InProcessHTTPResponse, bool, error) {
+			return resolveKindredStaticRoute(ctx, state, staticPath)
+		})
+		if err != nil {
+			return err
+		}
+		for _, route := range routes {
+			if route.RequestPath == requestPath {
+				continue
+			}
+			fmt.Printf("GET %s\n", route.RequestPath)
+		}
+		return nil
+	})
+}
+
+func routePathCmdWithState(args []string, usage string, run func(context.Context, *RouterServerState, string, qinternal.RouteOptions, RouterServerTimeouts) error) {
+	opts := options{
+		contentTypeChecking: ContentTypeCheckingStrong,
+	}
+	var recipesRoot string
+	var componentsRoot string
+	var modeRaw string
+
+	fs := flag.NewFlagSet("router kindred", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var routeVerbose bool
+	fs.BoolVar(&routeVerbose, "v", false, "enable verbose logging")
+	fs.BoolVar(&routeVerbose, "verbose", false, "enable verbose logging")
+	fs.StringVar(&recipesRoot, "recipes", "", "recipe QIP components root directory")
+	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
+	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
+	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Println(usage)
+			return
+		}
+		gameOver("%s %v", usage, err)
+	}
+
+	mode, err := parseRuntimeMode(modeRaw)
+	if err != nil {
+		gameOver("%v", err)
+	}
+	opts.verbose = routeVerbose
+	opts.mode = mode
+
+	rest := fs.Args()
+	if len(rest) != 2 {
+		gameOver("%s", usage)
+	}
+	contentRoot := rest[0]
+	requestPath := rest[1]
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	if err := validateContentRootArg(contentRoot); err != nil {
+		gameOver("%v", err)
+	}
+	projectConfig, err := resolveRouteProjectConfig(contentRoot, recipesRoot, componentsRoot)
+	if err != nil {
+		gameOver("%v", err)
+	}
+
+	routeOptions := qinternal.DefaultRouteOptions()
+	timeouts := RouterServerTimeouts{
+		contentRecipe:   defaultRouteRecipeTimeout,
+		applicationWARC: defaultRouteWARCTransformTimeout,
+	}
+	state, err := loadRouterServerState(context.Background(), RouterFileLayout{
+		ContentRoot:    contentRoot,
+		RecipesRoot:    projectConfig.RecipesRoot,
+		ComponentsRoot: projectConfig.ComponentsRoot,
+		ElementsRoot:   projectConfig.ElementsRoot,
+	}, newQIPRuntime(opts), routeOptions)
+	if err != nil {
+		gameOver("%v", err)
+	}
+	defer state.close(context.Background())
+	if err := run(context.Background(), state, requestPath, routeOptions, timeouts); err != nil {
+		gameOver("%v", err)
+	}
+}
+
 func routeListCmd(args []string) {
 	opts := options{
 		contentTypeChecking: ContentTypeCheckingStrong,
@@ -400,6 +499,9 @@ func routerCmd(args []string) {
 		return
 	case "head":
 		routePathCmd(args[1:], http.MethodHead, usageRouteHead, "router head")
+		return
+	case "kindred":
+		routeKindredCmd(args[1:])
 		return
 	case "list":
 		routeListCmd(args[1:])

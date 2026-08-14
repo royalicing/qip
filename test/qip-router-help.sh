@@ -5,7 +5,7 @@ QIP_BIN=${QIP_BIN:-./qip}
 NODE_BIN=${NODE_BIN:-node}
 NODE_ROUTER=${NODE_ROUTER:-npm/qip-router/qip-router.mjs}
 DOC_URL="https://qip.dev/docs/router"
-EXPECTED_COMMANDS="dev get head list warc"
+EXPECTED_COMMANDS="dev get head kindred list warc"
 
 GO_HELP=$($QIP_BIN router --help)
 NODE_HELP=$($NODE_BIN "$NODE_ROUTER" --help)

@@ -662,6 +662,35 @@ export async function createQIPRouter(options = {}) {
     async head(requestTarget) {
       return resolveRequest("HEAD", requestTarget);
     },
+    async kindred(requestTarget) {
+      const current = generation;
+      const url = new URL(requestTarget, "http://qip.local");
+      const canonical = canonicalPath(url.pathname);
+      if (canonical === null) throw new Error(`invalid request path ${requestTarget}`);
+      const target = await baseResponseForGeneration(canonical, current);
+      if (!target) throw new Error(`route not found: ${canonical}`);
+      const entries = [];
+      const seen = new Set([canonical]);
+      for (const parent of parentPaths(canonical)) {
+        if (seen.has(parent)) continue;
+        seen.add(parent);
+        const response = await baseResponseForGeneration(parent, current);
+        if (response?.status === 200 && response.headers.get("content-type")?.startsWith("text/html")) {
+          entries.push({ method: "GET", path: parent });
+        }
+      }
+      if (target.status === 200 && target.headers.get("content-type")?.startsWith("text/html")) {
+        for (const sourcePath of htmlSourcePaths(target.body, canonical)) {
+          if (seen.has(sourcePath)) continue;
+          seen.add(sourcePath);
+          const response = await baseResponseForGeneration(sourcePath, current);
+          if (response?.status === 200 && !response.headers.get("content-type")?.startsWith("text/html")) {
+            entries.push({ method: "GET", path: sourcePath });
+          }
+        }
+      }
+      return entries;
+    },
     list() {
       const current = generation;
       const entries = new Map();
@@ -749,8 +778,9 @@ function usage() {
     `Commands:\n` +
     `  dev   Serve the content directory\n` +
     `  get   Render one request path\n` +
-    `  head  Print headers for one request path\n` +
-    `  list  List routed paths\n` +
+    `  head     Print headers for one request path\n` +
+    `  kindred  List Kindred Route context for one path\n` +
+    `  list     List routed paths\n` +
     `  warc  Write the transformed site WARC\n\n` +
     `Documentation: https://qip.dev/docs/router\n`;
 }
@@ -791,6 +821,12 @@ export async function main(argv = process.argv.slice(2)) {
     const archive = await router.warc();
     if (!options.output || options.output === "-") process.stdout.write(archive);
     else await writeFile(options.output, archive);
+    return;
+  }
+  if (command === "kindred") {
+    const requestPath = positional[0];
+    if (!requestPath) throw new Error("kindred requires a request path");
+    for (const entry of await router.kindred(requestPath)) console.log(`${entry.method} ${entry.path}`);
     return;
   }
   if (command === "list") {

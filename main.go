@@ -114,9 +114,10 @@ const usageImage = "Usage: qip image -i <input image path or -> -o <output image
 const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [--legacy] [-v|--verbose]"
 const usageRouteDocs = "\n\nDocumentation: https://qip.dev/docs/router"
 const usageDev = "Usage: qip router dev <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]" + usageRouteDocs
-const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  dev      Start a dev server for a content directory with optional recipes\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  list     List routed paths and content types\n  warc     Archive the routed site as WARC 1.1" + usageRouteDocs
+const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  dev      Start a dev server for a content directory with optional recipes\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  kindred  List routes supplied as Kindred Route context for one path\n  list     List routed paths and content types\n  warc     Archive the routed site as WARC 1.1" + usageRouteDocs
 const usageRouteGet = "Usage: qip router get <content_dir> <path> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]" + usageRouteDocs
 const usageRouteHead = "Usage: qip router head <content_dir> <path> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]" + usageRouteDocs
+const usageRouteKindred = "Usage: qip router kindred <content_dir> <path> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]" + usageRouteDocs
 const usageRouteList = "Usage: qip router list <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [-v|--verbose]" + usageRouteDocs
 const usageRouteWarc = "Usage: qip router warc <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--host <host>] [--view-source] [-o <warc file or ->] [-v|--verbose]" + usageRouteDocs
 const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or file>"
@@ -318,6 +319,8 @@ func helpCmd(args []string) {
 		fmt.Println(usageRouteGet)
 		fmt.Println()
 		fmt.Println(usageRouteHead)
+		fmt.Println()
+		fmt.Println(usageRouteKindred)
 		fmt.Println()
 		fmt.Println(usageRouteList)
 		fmt.Println()

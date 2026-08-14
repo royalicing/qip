@@ -18,6 +18,7 @@ The package has no runtime dependencies. It requires Node.js 22 or newer.
 qip-router dev ./site
 qip-router get ./site /docs/router
 qip-router head ./site /docs/router
+qip-router kindred ./site /docs/router
 qip-router list ./site
 qip-router warc ./site -o site.warc
 ```
@@ -62,7 +63,9 @@ Router mount inside Hono, Workers-style runtimes, and other Fetch-native hosts.
 `router.get(path)` and `router.head(path)` resolve requests without opening a
 network socket and return `{ status, headers, body }`. `router.head(path)` sets
 HEAD headers such as `content-length`, but its `body` is an empty `Uint8Array`.
-`router.resolve(method, path)` is available when the method is dynamic.
+`router.kindred(path)` lists the GET routes supplied as Kindred Route context
+for one path. `router.resolve(method, path)` is available when the method is
+dynamic.
 `router.warc()` returns the transformed full-site WARC as a `Uint8Array`.
 
 ```js

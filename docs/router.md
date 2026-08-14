@@ -319,6 +319,7 @@ Use `npx qip-router` when you only need the router. It downloads and runs the ze
 npx qip-router dev ./site
 npx qip-router get ./site /docs/router
 npx qip-router head ./site /docs/router
+npx qip-router kindred ./site /docs/router
 npx qip-router list ./site
 npx qip-router warc ./site -o site.warc
 ```
@@ -336,6 +337,8 @@ qip router warc ./site --view-source
 `get <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write the response body.
 
 `head <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write headers/log output without a response body.
+
+`kindred <content_dir> <path> ...` must list the GET request paths that the router supplies as Kindred Route context before the target response. For `/docs/router`, this includes parent pages such as `/` and `/docs` when they resolve to HTML. HTML targets can also contribute direct site-relative non-HTML `src` dependencies.
 
 `list <content_dir> ...` must print the base route table.
 
