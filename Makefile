@@ -144,6 +144,7 @@ ZIG_CACHE_DIR ?= /tmp/zig-cache
 ZIG_GLOBAL_CACHE_DIR ?= /tmp/zig-global-cache
 ZIG_ENV := ZIG_CACHE_DIR=$(ZIG_CACHE_DIR) ZIG_GLOBAL_CACHE_DIR=$(ZIG_GLOBAL_CACHE_DIR)
 ZIG_WASM_MAX_MEMORY ?= 67108864
+ODIN_WASM_MAX_MEMORY ?= 2097152
 
 HOST_OS ?= $(shell uname -s)
 ifeq ($(HOST_OS),Darwin)
@@ -496,6 +497,16 @@ components/%.wasm: components/%.c
 
 components/%.wasm: components/%.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+components/utf8/hello-odin.wasm: components/utf8/hello-odin.odin
+	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
+
+components/utf8/wc-odin.wasm: ODIN_WASM_MAX_MEMORY = 6291456
+components/utf8/wc-odin.wasm: components/utf8/wc-odin.odin
+	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
+
+components/utf8/shortcode-to-emoji-odin.wasm: components/utf8/shortcode-to-emoji-odin.odin
+	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
 
 recipes/%.wasm: recipes/%.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
