@@ -532,6 +532,7 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
 
 ## TODO
 
+- [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
 - [ ] Add `warc-latency-estimator.wasm` that takes a WARC and then for each route calculates largest-contentful-paint and time-to-interaction and so forth.
 - [ ] Investigate lighter router `HEAD` handling. Today `HEAD` follows the full `GET` path so WARC recipes can add derived routes, change headers, and set the final content length correctly. Many WARC recipes need the full site to understand links, but usually do not change status or headers other than `content-length`. Find a safe way for `HEAD` to avoid unnecessary body work when recipes can declare that behavior.
 - [ ] Update to latest Zig

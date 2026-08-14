@@ -119,6 +119,10 @@ func routePathCmd(args []string, method string, usage string, logPrefix string) 
 	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
 	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Println(usage)
+			return
+		}
 		gameOver("%s %v", usage, err)
 	}
 
@@ -232,6 +236,10 @@ func routeListCmd(args []string) {
 	fs.StringVar(&componentsRoot, "components", "", "browser-loadable QIP components root directory")
 	fs.StringVar(&modeRaw, "mode", string(modeDev), "runtime mode: dev or prod")
 	if err := fs.Parse(normalizeRouteArgs(args)); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Println(usageRouteList)
+			return
+		}
 		gameOver("%s %v", usageRouteList, err)
 	}
 
@@ -378,6 +386,10 @@ func mediaTypeOnly(value string) string {
 func routerCmd(args []string) {
 	if len(args) == 0 {
 		gameOver(usageRoute)
+	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Println(usageRoute)
+		return
 	}
 	switch args[0] {
 	case "dev":

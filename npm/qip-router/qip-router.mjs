@@ -751,7 +751,8 @@ function usage() {
     `  get   Render one request path\n` +
     `  head  Print headers for one request path\n` +
     `  list  List routed paths\n` +
-    `  warc  Write the transformed site WARC\n`;
+    `  warc  Write the transformed site WARC\n\n` +
+    `Documentation: https://qip.dev/docs/router\n`;
 }
 
 function parseCLI(argv) {
@@ -774,6 +775,10 @@ function parseCLI(argv) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
+    console.log(usage());
+    return;
+  }
   const { command, options, positional } = parseCLI(argv);
   const router = await createQIPRouter(options);
   if (command === "dev") {

@@ -41,6 +41,10 @@ func devCmd(args []string) {
 	fs.BoolVar(&opts.viewSource, "view-source", false, "serve /view-source plus recipe source files from --recipes")
 	fs.IntVar(&port, "p", 4000, "port")
 	if err := fs.Parse(normalizeDevArgs(args)); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Println(usageDev)
+			return
+		}
 		gameOver("%s %v", usageDev, err)
 	}
 

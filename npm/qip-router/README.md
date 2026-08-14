@@ -4,6 +4,8 @@
 recipes, component assets, and custom-element modules directly from the
 filesystem, and runs QIP components with Node's WebAssembly runtime.
 
+Documentation: <https://qip.dev/docs/router>
+
 ```sh
 npx qip-router dev ./site
 ```

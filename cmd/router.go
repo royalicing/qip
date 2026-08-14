@@ -90,6 +90,10 @@ func runRouteWARC(args []string, config RouteConfig) error {
 	fs.StringVar(&outputPath, "output", "-", "output WARC path ('-' for stdout)")
 	fs.BoolVar(&viewSource, "view-source", false, "include /view-source plus recipe source files from --recipes")
 	if err := fs.Parse(normalizeRouteWarcArgs(args)); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Println(config.UsageRouteWarc)
+			return nil
+		}
 		return fmt.Errorf("%s %w", config.UsageRouteWarc, err)
 	}
 

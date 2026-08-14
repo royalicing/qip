@@ -1,28 +1,59 @@
 # Router Specification
 
-The qip router is a deterministic specification for turning a content tree into HTTP responses. We prefer a small set of explicit routing rules because site authors, recipe authors, and export tooling should all be able to predict the same response for the same input files.
+The qip router is a deterministic specification for turning a content tree into HTTP responses. It reads a directory of Markdown, HTML, images, scripts, WebAssembly components, and recipe modules, then produces the same responses in local development, CLI rendering, and WARC export.
 
-This document is normative for `qip router`, including `qip router dev`.
+Use the dependency-free Node package for normal site work:
+
+```sh
+npx qip-router dev ./site
+```
+
+The Go CLI implements the same router and remains useful when you already have `qip` installed or need the broader component tooling:
+
+```sh
+qip router dev ./site
+```
+
+We prefer a small set of explicit routing rules because site authors, recipe authors, and export tooling should all be able to predict the same response for the same input files.
+
+This document is normative for `qip-router` and `qip router`, including development servers, single-route rendering, route listing, and WARC export.
 
 ## Site Root
 
 `qip router dev` and the other `qip router` subcommands take one site root. The site root is the directory or remote snapshot qip routes from.
 
-The preferred local layout is:
+A typical site root contains Markdown pages, static files, browser assets, and optional project directories:
 
 ```txt
 site/
   index.md
-  docs/router.md
+  about.md
+  docs/
+    router.md
+  images/
+    logo.png
+    open-graph-card.png
+  data/
+    component-catalog.csv
+  robots.txt
+  favicon.ico
+  styles.css
+  app.js
   _recipes/
     text/markdown/10-markdown-basic.wasm
+    text/markdown/80-html-page-wrap.wasm
     application/warc/20-check-links.wasm
   _components/
     form/contact.wasm
     interactive/side-scroller-platformer.wasm
   _elements/
     qip-edit.js
+    qip-search.js
 ```
+
+`index.md` becomes `/`. Markdown pages also get extensionless pretty routes, such as `about.md` becoming `/about`. Static assets keep their file paths, such as `/images/logo.png`, `/robots.txt`, and `/styles.css`.
+
+This repository's site is a working reference: <https://github.com/royalicing/qip/tree/main/site>.
 
 The site root may also be a GitHub locator such as `github:owner/repo/subdir`. GitHub content roots must resolve to one repository snapshot, and a single runtime load must read all content from that snapshot.
 
@@ -282,15 +313,33 @@ Each listed route must include:
 
 ## Commands
 
-`qip router dev <content_dir> ...` must serve the same route resolution pipeline used by other router subcommands. In dev mode, it should reload recipe chains on recipe file changes, SIGHUP, or browser hard reload.
+Use `npx qip-router` when you only need the router. It downloads and runs the zero-dependency Node package without installing the Go CLI:
 
-`qip router get <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write the response body.
+```sh
+npx qip-router dev ./site
+npx qip-router get ./site /docs/router
+npx qip-router head ./site /docs/router
+npx qip-router list ./site
+npx qip-router warc ./site -o site.warc
+```
 
-`qip router head <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write headers/log output without a response body.
+Use `qip router` when you are already working with the Go CLI or need adjacent commands such as `qip run`, `qip bench`, or `qip comply`:
 
-`qip router list <content_dir> ...` must print the base route table.
+```sh
+qip router dev ./site
+qip router get ./site /docs/router
+qip router warc ./site --view-source
+```
 
-`qip router warc <content_dir> ...` must emit a WARC archive. If `--view-source` is set, qip must also add recipe source and view-source records so downstream tools can inspect the transformation inputs.
+`qip-router dev <content_dir> ...` and `qip router dev <content_dir> ...` must serve the same route resolution pipeline used by other router subcommands. In dev mode, they should reload recipe chains on recipe file changes, SIGHUP, or browser hard reload.
+
+`get <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write the response body.
+
+`head <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write headers/log output without a response body.
+
+`list <content_dir> ...` must print the base route table.
+
+`warc <content_dir> ...` must emit a WARC archive. If `--view-source` is set, qip must also add recipe source and view-source records so downstream tools can inspect the transformation inputs.
 
 The archive conforms to [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/).
 This command is intended for deterministic application builds rather than
