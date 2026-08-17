@@ -55,7 +55,7 @@ export interface QIPRunStageSpec {
   uniforms?: Array<[key: string, value: string | number]>;
 }
 
-export type QIPRunRecipeStep = QIPRunStageSpec | QIPRunRecipe;
+export type QIPRunRecipeStep = QIPRunComponent | QIPRunStageSpec | QIPRunRecipe;
 
 export interface QIPRunResult {
   readonly bytes: Uint8Array;

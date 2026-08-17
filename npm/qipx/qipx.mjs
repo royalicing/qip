@@ -771,6 +771,10 @@ export function createRecipe(steps, options = {}) {
       stages.push(...step.stages);
       continue;
     }
+    if (step && step.instance instanceof WebAssembly.Instance) {
+      stages.push(makeStage({ component: step }, step));
+      continue;
+    }
     if (!step?.component) throw new Error("recipe step requires component or recipe");
     stages.push(makeStage(step, step.component));
   }

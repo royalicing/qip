@@ -150,7 +150,7 @@ wasmMustComplyWithComponentContract(wasm, contract);
 const { instance } = await WebAssembly.instantiate(wasm);
 const markdown = newComponent(instance, contract);
 
-const recipe = createRecipe([{ component: markdown }]);
+const recipe = createRecipe([markdown]);
 const result = render(recipe, "# Hello\n");
 
 console.log(result.text);
@@ -161,7 +161,7 @@ A recipe can include existing recipes:
 ```js
 const pageRecipe = createRecipe([
   markdownRecipe,
-  { component: pageWrap },
+  pageWrap,
 ]);
 ```
 
