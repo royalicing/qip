@@ -79,9 +79,7 @@ export interface QIPRunPlan {
   outputEncoding: "bytes" | "utf8";
 }
 
-export interface QIPRunPipeline extends QIPRunPlan {
-  run(input: Uint8Array | ArrayBuffer | string): QIPRunResult;
-}
+export interface QIPRunPipeline extends QIPRunPlan {}
 
 export function contentTypeUTF8(optionalMIMEType?: string): ContentContract;
 export function contentTypeBytes(optionalMIMEType?: string): ContentContract;
@@ -89,5 +87,6 @@ export function newContentComponentContract(options?: ContentComponentContractOp
 export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuffer, options?: ComponentContractOptions | ContentComponentContract): void;
 export function newComponent(instance: WebAssembly.Instance, options?: NewComponentOptions | ContentComponentContract): QIPRunComponent;
 export function createPipeline(componentSpecs: QIPRunStageSpec[], options?: PipelineOptions): QIPRunPipeline;
+export function render(target: QIPRunComponent | QIPRunPipeline, input: Uint8Array | ArrayBuffer | string): QIPRunResult;
 
 export function main(argv?: string[]): Promise<void>;

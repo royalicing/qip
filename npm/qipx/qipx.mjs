@@ -770,13 +770,13 @@ export function createPipeline(componentSpecs, options = {}) {
     if (!spec.component) throw new Error("stage requires component");
     stages.push(makeStage(spec, spec.component));
   }
-  const plan = validatePipeline(stages, options);
-  return Object.freeze({
-    ...plan,
-    run(input) {
-      return runPreparedPipeline(input, plan);
-    },
-  });
+  return validatePipeline(stages, options);
+}
+
+export function render(target, input) {
+  if (target && Array.isArray(target.stages)) return runPreparedPipeline(input, target);
+  if (target && target.instance instanceof WebAssembly.Instance) return runPreparedPipeline(input, createPipeline([{ component: target }]));
+  throw new Error("render target must be a component or pipeline");
 }
 
 async function walkWasmFiles(path) {
@@ -1241,7 +1241,7 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   const input = options.input === "-" ? await readStdin() : await readFile(options.input);
-  const result = pipeline.run(input);
+  const result = render(pipeline, input);
   if (options.output === "-") {
     process.stdout.write(result.bytes);
     if (result.outputEncoding === "utf8") process.stdout.write("\n");
