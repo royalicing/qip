@@ -1,4 +1,4 @@
-// Content Compliance component: en-US USD currency formatting.
+// Content Compliance oracle: en-US USD currency formatting.
 //
 // Input is one canonical ASCII decimal:
 //
@@ -12,14 +12,14 @@
 //
 // This executable specification deliberately owns its parser and formatter;
 // it does not import or share code with the implementation under test.
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     expected_ptr: u32,
     expected_len: u32,
 ) i32;
-extern "qip" fn render_must_trap(ordinal: u64, input_ptr: u32, input_len: u32) i32;
+extern "qip" fn must_trap(ordinal: u64, input_ptr: u32, input_len: u32) i32;
 
 const MAX_INTEGER_DIGITS: usize = 96;
 const FUZZ_CASES: u32 = 64;
@@ -127,7 +127,7 @@ fn oracle(input: []const u8, output: []u8) ?usize {
 
 fn declareValid(input: []const u8) void {
     const expected_len = oracle(input, expected_buf[0..]) orelse unreachable;
-    _ = render_must_equal(
+    _ = must_render_exactly(
         ordinal,
         @intCast(@intFromPtr(input.ptr)),
         @intCast(input.len),
@@ -138,7 +138,7 @@ fn declareValid(input: []const u8) void {
 }
 
 fn declareInvalid(input: []const u8) void {
-    _ = render_must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
+    _ = must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
     ordinal += 1;
 }
 

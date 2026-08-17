@@ -402,52 +402,57 @@ func TestParseUniformInt(t *testing.T) {
 	})
 }
 
-func TestParseUniformHexUint(t *testing.T) {
-	t.Run("parses u32 hex with 0x prefix", func(t *testing.T) {
-		got, isHex, err := parseUniformHexUint("0xff4511ff", 32)
-		if err != nil {
-			t.Fatalf("parseUniformHexUint error: %v", err)
+func TestValidUniformKey(t *testing.T) {
+	valid := []string{"currency", "font_size", "a0", "x_y_z", strings.Repeat("a", 63)}
+	for _, key := range valid {
+		if !validUniformKey(key) {
+			t.Fatalf("validUniformKey(%q)=false", key)
 		}
-		if !isHex {
-			t.Fatal("expected hex prefix detection")
+	}
+	invalid := []string{"", "Currency", "0currency", "_currency", "currency_", "font__size", "font-size", strings.Repeat("a", 64)}
+	for _, key := range invalid {
+		if validUniformKey(key) {
+			t.Fatalf("validUniformKey(%q)=true", key)
+		}
+	}
+}
+
+func TestParseUniformUint(t *testing.T) {
+	t.Run("parses u32 decimal", func(t *testing.T) {
+		got, err := parseUniformUint("4294967295", 32)
+		if err != nil {
+			t.Fatalf("parseUniformUint error: %v", err)
+		}
+		if got != 4294967295 {
+			t.Fatalf("got %d, want 4294967295", got)
+		}
+	})
+
+	t.Run("parses u32 hex with 0x prefix", func(t *testing.T) {
+		got, err := parseUniformUint("0xff4511ff", 32)
+		if err != nil {
+			t.Fatalf("parseUniformUint error: %v", err)
 		}
 		if got != 4282716671 {
 			t.Fatalf("got %d, want 4282716671", got)
 		}
 	})
 
-	t.Run("parses u64 max hex with 0x prefix", func(t *testing.T) {
-		got, isHex, err := parseUniformHexUint("0xffffffffffffffff", 64)
-		if err != nil {
-			t.Fatalf("parseUniformHexUint error: %v", err)
-		}
-		if !isHex {
-			t.Fatal("expected hex prefix detection")
-		}
-		if got != ^uint64(0) {
-			t.Fatalf("got %d, want %d", got, ^uint64(0))
-		}
-	})
-
-	t.Run("ignores non-hex input", func(t *testing.T) {
-		_, isHex, err := parseUniformHexUint("123", 32)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if isHex {
-			t.Fatal("expected non-hex input to be ignored")
+	t.Run("rejects negative u32", func(t *testing.T) {
+		if _, err := parseUniformUint("-1", 32); err == nil {
+			t.Fatal("expected parse error")
 		}
 	})
 
 	t.Run("rejects invalid hex", func(t *testing.T) {
-		if _, isHex, err := parseUniformHexUint("0xgg", 32); err == nil || !isHex {
-			t.Fatal("expected parse error with detected hex prefix")
+		if _, err := parseUniformUint("0xgg", 32); err == nil {
+			t.Fatal("expected parse error")
 		}
 	})
 
 	t.Run("rejects u32 overflow", func(t *testing.T) {
-		if _, isHex, err := parseUniformHexUint("0x100000000", 32); err == nil || !isHex {
-			t.Fatal("expected overflow parse error with detected hex prefix")
+		if _, err := parseUniformUint("0x100000000", 32); err == nil {
+			t.Fatal("expected overflow parse error")
 		}
 	})
 }

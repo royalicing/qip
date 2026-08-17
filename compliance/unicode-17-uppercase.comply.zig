@@ -1,4 +1,4 @@
-// Content Compliance component: Unicode 17.0.0 default uppercase.
+// Content Compliance oracle: Unicode 17.0.0 default uppercase.
 //
 // This component *declares* conformance cases through the host bridge and
 // owns its own memory — no impl imports, no shared linear memory, no
@@ -26,32 +26,32 @@ const fixtures = @import("unicode-17-uppercase-fixtures.zig");
 // own counter, so both sides continuously verify they agree on "which case
 // is this?". Ordinals are u64: deterministic fuzz campaigns can run past
 // 2^32 cases. Two kinds of case:
-//   - Requirements the host checks: render_must_equal (exact bytes) and
-//     render_must_trap (negative phase, for validator contracts; uppercase
+//   - Requirements the host checks: must_render_exactly (exact bytes) and
+//     must_trap (negative phase, for validator contracts; uppercase
 //     has no rejecting inputs so it is unused here).
-//   - Examinations the component judges: the first render_examine at a new
-//     ordinal opens the case, further render_examine calls at the same
-//     ordinal continue it (multi-render properties like idempotence), and
-//     render_examine_pass / render_examine_fail closes it with the verdict.
-//     render_examine runs the impl and copies output into this component's
-//     memory for inspection; it returns the output size, negative on trap
-//     or overflow.
-extern "qip" fn render_must_equal(
+//   - must_render_into cases the component judges: must_render_into opens one case,
+//     copies output into this component's memory, optional
+//     must_render_into_emit_error calls attach diagnostics, and
+//     must_render_into_finish closes it with the error count.
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     expected_ptr: u32,
     expected_len: u32,
 ) i32;
-extern "qip" fn render_examine(
+extern "qip" fn must_render_into(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     out_ptr: u32,
     out_cap: u32,
 ) i32;
-extern "qip" fn render_examine_pass(ordinal: u64) i32;
-extern "qip" fn render_examine_fail(ordinal: u64) i32;
+extern "qip" fn must_render_into_emit_error(ordinal: u64, message_ptr: u32, message_len: u32) i32;
+extern "qip" fn must_render_into_finish(ordinal: u64, error_count: u32) i32;
+
+const render_into_failed_message = "render failed or output did not fit";
+const property_failed_message = "rendered output failed property check";
 
 const FUZZ_CASES: u32 = 64;
 const IDEMPOTENCE_CASES: u32 = 12;
@@ -196,7 +196,7 @@ fn oracleUpper(input: []const u8, out: []u8) usize {
 
 fn declare(input: []const u8) i32 {
     const expected_len = oracleUpper(input, expected_buf[0..]);
-    const status = render_must_equal(
+    const status = must_render_exactly(
         ordinal,
         @intCast(@intFromPtr(input.ptr)),
         @intCast(input.len),
@@ -207,8 +207,8 @@ fn declare(input: []const u8) i32 {
     return status;
 }
 
-fn renderExamine(input: []const u8, out: []u8) i32 {
-    return render_examine(
+fn renderInto(input: []const u8, out: []u8) i32 {
+    return must_render_into(
         ordinal,
         @intCast(@intFromPtr(input.ptr)),
         @intCast(input.len),
@@ -217,11 +217,12 @@ fn renderExamine(input: []const u8, out: []u8) i32 {
     );
 }
 
-fn examineVerdict(ok: bool) void {
+fn renderIntoVerdict(ok: bool) void {
     if (ok) {
-        _ = render_examine_pass(ordinal);
+        _ = must_render_into_finish(ordinal, 0);
     } else {
-        _ = render_examine_fail(ordinal);
+        _ = must_render_into_emit_error(ordinal, @intCast(@intFromPtr(property_failed_message.ptr)), property_failed_message.len);
+        _ = must_render_into_finish(ordinal, 1);
     }
     ordinal += 1;
 }
@@ -284,23 +285,18 @@ export fn comply() i32 {
     i = 0;
     while (i < IDEMPOTENCE_CASES) : (i += 1) {
         const input = buildFuzzInput(&rng);
-        const n1 = renderExamine(input, out1_buf[0..]);
+        const n1 = renderInto(input, out1_buf[0..]);
         if (n1 < 0) {
-            examineVerdict(false);
+            _ = must_render_into_emit_error(ordinal, @intCast(@intFromPtr(render_into_failed_message.ptr)), render_into_failed_message.len);
+            _ = must_render_into_finish(ordinal, 1);
+            ordinal += 1;
             continue;
         }
         const len1: usize = @intCast(n1);
-        const n2 = renderExamine(out1_buf[0..len1], out2_buf[0..]);
-        var ok = n2 == n1;
-        if (ok) {
-            for (out1_buf[0..len1], out2_buf[0..len1]) |a, b| {
-                if (a != b) {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        examineVerdict(ok);
+        _ = must_render_into_finish(ordinal, 0);
+        ordinal += 1;
+        _ = must_render_exactly(ordinal, @intCast(@intFromPtr(&out1_buf)), @intCast(len1), @intCast(@intFromPtr(&out1_buf)), @intCast(len1));
+        ordinal += 1;
     }
 
     // Property: ASCII input must produce ASCII output.
@@ -311,7 +307,7 @@ export fn comply() i32 {
         while (len < target) : (len += 1) {
             input_buf[len] = @intCast(0x20 + (nextRandom(&rng) % 0x5F));
         }
-        const n = renderExamine(input_buf[0..len], out1_buf[0..]);
+        const n = renderInto(input_buf[0..len], out1_buf[0..]);
         var ok = n >= 0;
         if (ok) {
             for (out1_buf[0..@intCast(n)]) |b| {
@@ -321,7 +317,7 @@ export fn comply() i32 {
                 }
             }
         }
-        examineVerdict(ok);
+        renderIntoVerdict(ok);
     }
 
     return @intCast(ordinal & 0x7FFFFFFF);

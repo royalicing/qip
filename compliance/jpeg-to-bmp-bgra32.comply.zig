@@ -1,4 +1,4 @@
-//! Conformance checker for baseline JPEG -> BMP (32-bit BGRA) decoders.
+//! Conformance oracle for baseline JPEG -> BMP (32-bit BGRA) decoders.
 //!
 //! Fixture JPEGs live in jpeg-to-bmp-bgra32-fixtures/ beside this file,
 //! encoded with cjpeg (libjpeg-turbo). Each expected BMP was produced by
@@ -15,7 +15,7 @@
 //! that a rejected input leaves no state behind on the reused implementation
 //! instance.
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -48,7 +48,7 @@ const truncated = @embedFile("jpeg-to-bmp-bgra32-fixtures/invalid-truncated.bin"
 const progressive = @embedFile("jpeg-to-bmp-bgra32-fixtures/invalid-progressive.jpg");
 
 inline fn expectDecode(comptime ordinal: u64, comptime jpg: []const u8, comptime bmp: []const u8) void {
-    _ = render_must_equal(
+    _ = must_render_exactly(
         ordinal,
         @intCast(@intFromPtr(jpg.ptr)),
         @intCast(jpg.len),
@@ -58,7 +58,7 @@ inline fn expectDecode(comptime ordinal: u64, comptime jpg: []const u8, comptime
 }
 
 inline fn expectEmpty(comptime ordinal: u64, comptime input: []const u8) void {
-    _ = render_must_equal(
+    _ = must_render_exactly(
         ordinal,
         @intCast(@intFromPtr(input.ptr)),
         @intCast(input.len),

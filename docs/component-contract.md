@@ -10,7 +10,7 @@ The contracts are at different stages of development. The Content and Interactiv
 | --- | --- | --- | --- |
 | [`Content`](/docs/content-component) | Text, binary data, documents, archives, validators, and finite renderers | The host writes one input, calls `render`, and reads one output | Mostly stable |
 | [`Interactive`](/docs/interactive-component) | Games, simulations, and persistent interfaces | The host delivers events, advances time with `tick`, and pulls framebuffer pixels | Mostly stable |
-| [`Compliance`](/docs/comply) | Reusable executable specifications for Content components | The checker declares ordered cases through the host bridge; the host runs them against an implementation | Evolving |
+| [`Compliance`](/docs/comply) | Reusable executable specifications for Content components | The oracle declares ordered cases through the host bridge; the host runs them against an implementation | Evolving |
 | `Tile` | RGBA image filters | The host runs a filter over 64×64 pixel tiles, with optional halo pixels | Evolving |
 | `Form` | Prompt-driven, multi-step input | The host exchanges one field value at a time until the component reports completion | Evolving |
 
@@ -22,7 +22,7 @@ Interactive is for state that remains live between events. Compliance is for ind
 
 - [Content Component Contract](/docs/content-component) defines the memory buffers, `render` lifecycle, content-type metadata, composition rules, and failure behavior for finite transforms.
 - [Interactive Component Contract](/docs/interactive-component) defines framebuffer output, keyboard and pointer events, timing, sizing, and the host loop for persistent interactive modules.
-- [`qip comply`](/docs/comply) defines Compliance-component memory ownership, oracle imports, ordered case declarations, and checker authoring patterns.
+- [`qip comply`](/docs/comply) defines Compliance oracle memory ownership, oracle imports, ordered case declarations, and oracle authoring patterns.
 - [Uniforms](/docs/uniforms) defines the optional numeric configuration setters that hosts can apply to components.
 
 All component types also operate within [Hard Limits](/docs/hard-limits). [Formats and Encodings](/docs/formats) defines the byte-format and MIME conventions used when components exchange content.
@@ -58,7 +58,7 @@ Hosts classify a module from its exports and the command being run:
 3. During pipeline building, a module exporting `tile_rgba32float_64x64` is classified as Tile.
 4. Other pipeline modules are classified as Content.
 5. `qip form` uses the Form contract path.
-6. `qip comply --with` treats each checker as Compliance and requires its
+6. `qip comply --with` treats each oracle as Compliance and requires its
    exported `memory` and `comply() -> i32` entry point.
 
 For example, a module exporting `tile_rgba32float_64x64` is treated as Tile during pipeline composition even when it also exports `render`.
@@ -71,7 +71,7 @@ An exported WebAssembly global with the same name does not satisfy the contract.
 
 Components may expose optional `uniform_set_<key>` functions for numeric configuration. Uniforms are shared configuration machinery rather than a separate component type. See [Uniforms](/docs/uniforms) for setter signatures, host ordering, parsing, and CLI syntax.
 
-Compliance components are the exception to the normal no-import rule. They may
+Compliance oracles are the exception to the normal no-import rule. They may
 import the documented oracle functions from the `qip` host module. They own
 their memory; they do not import or share the implementation's memory. The host
 copies each declared input into a separate implementation instance and records
@@ -83,7 +83,7 @@ Content and Interactive share `render` and some output exports, but have differe
 
 Content and Tile can also share exports. The presence of `tile_rgba32float_64x64` wins during pipeline classification, so combine the two interfaces only when Tile behavior is intentional.
 
-Compliance components target Content implementations because their bridge
+Compliance oracles target Content implementations because their bridge
 drives `render(i32) -> i32`. They are test artifacts rather than Content
 pipeline stages and should be passed with `qip comply --with`, not `qip run`.
 

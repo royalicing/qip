@@ -1,6 +1,23 @@
+// This oracle is a pure spec mirror: the 655 embedded examples, nothing else.
+// The spec areas the examples under-exercise are covered by sibling oracles:
+// compliance/html5-entities.comply.wasm (all HTML5 named references + numeric
+// edge cases) and compliance/unicode-17-casefold-labels.comply.wasm (full
+// Unicode 17 label folding) — both must_render_into-based so they assert only the
+// behavior under test. Pathological-input time budgets live in
+// tools/test-markdown-pathological.sh (wired into make test), and
+// tools/fuzz-markdown-vs-cmark.py differentially fuzzes the component against
+// cmark 0.31.2 as oracle, and its minimized findings are frozen (by
+// tools/freeze-markdown-divergences.py) into
+// compliance/commonmark-differential-corpus.comply.wasm — expected to fail
+// until the delimiter-stack rewrite (see the TODO block in
+// components/text/markdown/lib/commonmark.zig) lands, then wired into
+// test-comply and regrown from fresh fuzz runs.
+// TODO(testing): Property fuzzing via the --seed/Luhn generative-oracle pattern
+// (docs/comply.md): arbitrary bytes (including invalid UTF-8) must never trap, and
+// output must always be valid UTF-8, as the utf8 cap exports promise.
 const std = @import("std");
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -106,15 +123,15 @@ inline fn declareCase(comptime ordinal: usize, comptime input_raw: []const u8, c
         const input = comptime normalize(input_raw);
         if (comptime containsTabArrow(expected_raw)) {
             const expected = comptime normalize(expected_raw);
-            _ = render_must_equal(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(&expected)), expected.len);
+            _ = must_render_exactly(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(&expected)), expected.len);
         } else {
-            _ = render_must_equal(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
+            _ = must_render_exactly(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
         }
     } else if (comptime containsTabArrow(expected_raw)) {
         const expected = comptime normalize(expected_raw);
-        _ = render_must_equal(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(&expected)), expected.len);
+        _ = must_render_exactly(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(&expected)), expected.len);
     } else {
-        _ = render_must_equal(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
+        _ = must_render_exactly(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
     }
 }
 

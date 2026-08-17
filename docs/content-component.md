@@ -21,27 +21,35 @@ internal global when its value is module-constant.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
 
-## Static Buffer Metadata
+## Static ABI Exports
 
-The input location and both capacities are module constants. Their exported
-getters must contain exactly one `i32.const`, or one `global.get` of an
-immutable constant `i32` global, followed by `end`:
+The QIP ABI getters are static exports. When one of these exports is present,
+it must be a small, mechanically inspectable function:
 
 - `input_ptr()`
-- the selected `input_utf8_cap()` or `input_bytes_cap()`
-- the selected `output_utf8_cap()` or `output_bytes_cap()`
+- `input_utf8_cap()`
+- `input_bytes_cap()`
+- `output_ptr()`
+- `output_utf8_cap()`
+- `output_bytes_cap()`
+- `input_content_type_ptr()`
+- `input_content_type_size()`
+- `output_content_type_ptr()`
+- `output_content_type_size()`
 
-Their values must not depend on input, uniforms, previous renders, or other
-mutable state. This lets a host inspect buffer requirements without executing
-component code and lets native translations publish the values as constants.
+The function body must have no calls, loops, branch control flow, local
+operations, or memory/table operations. In practice this means a constant getter
+such as `i32.const ...; end`, or `global.get` of an immutable module-constant
+global followed by `end`.
+
+These values must not depend on input, uniforms, previous renders, or other
+mutable state. This lets a host inspect buffer requirements and content-type
+metadata without executing component logic. Native translations can also publish
+these values as constants.
 
 The complete input range, from `input_ptr` through the selected input capacity,
 must be within initial memory and must not overlap any active data segment.
 Instantiation therefore never writes into bytes owned by the caller as input.
-
-`output_ptr()` is deliberately different. Its value may depend on the completed
-render, so the host calls it only after `render` succeeds. The output capacity
-is static even when the output location is dynamic.
 
 ## Host Call Flow
 

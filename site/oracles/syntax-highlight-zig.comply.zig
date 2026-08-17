@@ -1,0 +1,1 @@
+../../compliance/syntax-highlight-zig.comply.zig

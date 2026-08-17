@@ -61,7 +61,7 @@ is unrelated to `--max-memory`.
 
 The CLI is designed to run untrusted QIP components with a narrow host interface.
 
-Components execute inside `wazero` and interact with the CLI through their documented exports and linear memory. Compliance components additionally use the narrow host bridge described in [`qip comply`](/docs/comply).
+Components execute inside `wazero` and interact with the CLI through their documented exports and linear memory. Compliance oracles additionally use the narrow host bridge described in [`qip comply`](/docs/comply).
 
 Current host behavior:
 
@@ -71,12 +71,12 @@ Current host behavior:
   Content component and input bytes through a pipe, and instantiates the module
   with an empty import object. The child inherits the CLI process's operating
   system permissions, but the Wasm component receives no Node.js APIs.
-- `qip comply` registers the `qip` oracle imports only for the Compliance component; the implementation under test remains separately instantiated without those imports.
+- `qip comply` registers the `qip` oracle imports only for the Compliance oracle; the implementation under test remains separately instantiated without those imports.
 - Components that depend on imports outside their contract fail instantiation.
 
 Practical effect:
 
-- Module code has no direct API to read files, open sockets, or make HTTP requests. The Compliance bridge can only submit inputs, expected results, trap expectations, examinations, and uniform values to the host.
+- Module code has no direct API to read files, open sockets, or make HTTP requests. The Compliance bridge can only submit inputs, expected results, trap expectations, must_render_into cases, and uniform values to the host.
 
 ## What The Host Process Can Do
 

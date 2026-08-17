@@ -1,4 +1,4 @@
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -32,7 +32,7 @@ export fn uniform_set_seed(_: i32) void {}
 export fn comply() i32 {
     ordinal = 0;
     for (cases) |case| {
-        _ = render_must_equal(
+        _ = must_render_exactly(
             ordinal,
             @intCast(@intFromPtr(case.input.ptr)),
             @intCast(case.input.len),

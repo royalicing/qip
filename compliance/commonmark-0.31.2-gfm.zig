@@ -1,6 +1,19 @@
+// TODO(testing): Only 22 GFM extension examples are covered, and the extension spec's
+// under-specified areas are exactly where implementations drift from cmark-gfm:
+// extended-autolink trimming (trailing punctuation, entity truncation, paren
+// balancing), strikethrough flanking rules, and table edge cases (escaped pipes in
+// code spans, rows with more/fewer cells than the header). Hand-write a 100+ case
+// extension fixture validated against cmark-gfm (installed; note its base is
+// CommonMark 0.29, so only extension-construct cases transfer), in the same
+// fixture format, and embed it here alongside the existing two. gfm-spec-0.29.txt
+// (650 examples) in compliance/ is raw material for those cases.
+// The cross-cutting gaps are already covered by sibling oracles — see the header
+// of compliance/commonmark-spec-0.31.2.zig for the map (entities, case folding,
+// pathological budgets, differential fuzzing); all of them run against the GFM
+// component too.
 const std = @import("std");
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -113,15 +126,15 @@ inline fn declareCase(comptime ordinal: usize, comptime input_raw: []const u8, c
         const input = comptime normalize(input_raw);
         if (comptime containsTabArrow(expected_raw)) {
             const expected = comptime normalize(expected_raw);
-            _ = render_must_equal(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(&expected)), expected.len);
+            _ = must_render_exactly(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(&expected)), expected.len);
         } else {
-            _ = render_must_equal(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
+            _ = must_render_exactly(ordinal, @intCast(@intFromPtr(&input)), input.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
         }
     } else if (comptime containsTabArrow(expected_raw)) {
         const expected = comptime normalize(expected_raw);
-        _ = render_must_equal(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(&expected)), expected.len);
+        _ = must_render_exactly(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(&expected)), expected.len);
     } else {
-        _ = render_must_equal(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
+        _ = must_render_exactly(ordinal, @intCast(@intFromPtr(input_raw.ptr)), input_raw.len, @intCast(@intFromPtr(expected_raw.ptr)), expected_raw.len);
     }
 }
 

@@ -318,7 +318,7 @@ WebAssembly is not HTML and it is not JavaScript. A Wasm module gets linear memo
 +----------------------------------------------------------+
 ```
 
-QIP narrows this further. A normal execution component is not given WASI or custom host imports. Its interface is input bytes, optional uniforms/events, `render(input_size)`, and output bytes. Compliance components receive only the `qip` oracle bridge used to declare conformance cases; the implementation under test remains separately instantiated. Instead of assuming global context, QIP makes context an explicit input.
+QIP narrows this further. A normal execution component is not given WASI or custom host imports. Its interface is input bytes, optional uniforms/events, `render(input_size)`, and output bytes. Compliance oracles receive only the `qip` oracle bridge used to declare conformance cases; the implementation under test remains separately instantiated. Instead of assuming global context, QIP makes context an explicit input.
 
 That means QIP is a useful place to run code you want to review as a transform instead of trusting as application code. It is especially useful for AI-generated components, content transforms, validators, and renderers that should not inherit the app's filesystem, network, database, or secret access.
 

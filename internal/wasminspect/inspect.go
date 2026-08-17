@@ -394,9 +394,9 @@ func AnalyzeModule(wasm []byte) (Analysis, error) {
 	return analyzeWASMModule(wasm)
 }
 
-// ValidateDeclarativeComplyChecker accepts only a single comply function made
+// ValidateStraightLineComplyOracle accepts only a single comply function made
 // from constants, direct imported oracle calls, drops, and its final end.
-func ValidateDeclarativeComplyChecker(wasm []byte) error {
+func ValidateStraightLineComplyOracle(wasm []byte) error {
 	analysis, err := AnalyzeModule(wasm)
 	if err != nil {
 		return err
@@ -452,7 +452,7 @@ func ValidateDeclarativeComplyChecker(wasm []byte) error {
 	}
 
 	if len(failures) > 0 {
-		return errors.New("declarative comply checker: " + strings.Join(failures, "; "))
+		return errors.New("straight-line comply oracle: " + strings.Join(failures, "; "))
 	}
 	return nil
 }

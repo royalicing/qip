@@ -1,6 +1,6 @@
 (module
-  (import "qip" "render_must_equal"
-    (func $render_must_equal (param i64 i32 i32 i32 i32) (result i32)))
+  (import "qip" "must_render_exactly"
+    (func $must_render_exactly (param i64 i32 i32 i32 i32) (result i32)))
 
   (memory (export "memory") 1)
   (data (i32.const 0) "hello")
@@ -9,7 +9,7 @@
 
   (func $expect_same (param $ordinal i64) (param $ptr i32) (param $size i32)
     (drop
-      (call $render_must_equal
+      (call $must_render_exactly
         (local.get $ordinal)
         (local.get $ptr)
         (local.get $size)

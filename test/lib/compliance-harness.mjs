@@ -1,10 +1,10 @@
-// Shared host harness for Content Compliance components.
+// Shared host harness for Content Compliance oracles.
 //
 // This is the JS reference for the future `qip comply` bridge. It provides
 // the qip.* imports, enforces the wire protocol on every run (sequential u64
-// ordinals, examination open/continue/close discipline — violations throw at
+// ordinals, must_render_into open/emit/finish discipline — violations throw at
 // the exact offending call), and registers the *generic* meta-contract tests
-// every Compliance component must satisfy: deterministic declarations and
+// every Compliance oracle must satisfy: deterministic declarations and
 // seed behavior. Per-component harnesses should only add component-specific
 // checks (curated-case spot checks, duels against real implementations).
 // Eventually the generic layer belongs in `qip comply` base validation, the
@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 
 // Drives the component with a given impl function (bytes -> bytes, or null
 // to echo input as a null impl). Records equality cases (the extractable
-// corpus) and examination verdicts separately.
+// corpus) and must_render_into verdicts separately.
 export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform } = {}) {
   const cases = [];
   const predicates = [];
@@ -22,7 +22,8 @@ export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform
   const bytes = (ptr, len) => Buffer.from(view(ptr, len));
   const applyImpl = (input) => (impl ? impl(input) : input);
   let hostOrdinal = 0n;
-  let openExamination = null;
+  let openRenderInto = null;
+  let openRenderIntoErrors = 0;
   const activeUniforms = {};
   const uniformNameDecoder = new TextDecoder("utf-8", { fatal: true });
   const uniformSnapshot = () => Object.freeze({ ...activeUniforms });
@@ -30,17 +31,19 @@ export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform
     assert.equal(declared, hostOrdinal, "component and host disagree on case ordinal");
     hostOrdinal++;
   };
-  const closeExamination = (declaredOrdinal, ok) => {
-    assert.equal(openExamination, declaredOrdinal, "verdict must close the open examination");
-    openExamination = null;
+  const finishRenderInto = (declaredOrdinal, errorCount) => {
+    assert.equal(openRenderInto, declaredOrdinal, "finish must close the open must_render_into case");
+    assert.equal(errorCount >>> 0, openRenderIntoErrors, "finish error count must match emitted errors");
+    openRenderInto = null;
+    openRenderIntoErrors = 0;
     checkOrdinal(declaredOrdinal);
-    predicates.push({ ordinal: Number(declaredOrdinal), ok });
+    predicates.push({ ordinal: Number(declaredOrdinal), ok: errorCount === 0 });
     return 1;
   };
   const { instance } = await WebAssembly.instantiate(wasmBytes, {
     qip: {
-      render_must_equal(declaredOrdinal, inputPtr, inputLen, expectedPtr, expectedLen) {
-        assert.equal(openExamination, null, "requirement declared inside an open examination");
+      must_render_exactly(declaredOrdinal, inputPtr, inputLen, expectedPtr, expectedLen) {
+        assert.equal(openRenderInto, null, "requirement declared inside an open must_render_into case");
         checkOrdinal(declaredOrdinal);
         cases.push({
           ordinal: Number(declaredOrdinal),
@@ -50,8 +53,8 @@ export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform
         });
         return 1;
       },
-      render_must_trap(declaredOrdinal, inputPtr, inputLen) {
-        assert.equal(openExamination, null, "requirement declared inside an open examination");
+      must_trap(declaredOrdinal, inputPtr, inputLen) {
+        assert.equal(openRenderInto, null, "requirement declared inside an open must_render_into case");
         checkOrdinal(declaredOrdinal);
         cases.push({
           ordinal: Number(declaredOrdinal),
@@ -61,29 +64,31 @@ export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform
         });
         return 1;
       },
-      render_examine(declaredOrdinal, inputPtr, inputLen, outPtr, outCap) {
-        if (openExamination === null) {
-          assert.equal(declaredOrdinal, hostOrdinal, "render_examine should open the pending case");
-          openExamination = declaredOrdinal;
-        } else {
-          assert.equal(declaredOrdinal, openExamination, "render_examine ordinal changed mid-case");
-        }
+      must_render_into(declaredOrdinal, inputPtr, inputLen, outPtr, outCap) {
+        assert.equal(openRenderInto, null, "must_render_into cannot open while an must_render_into case is open");
+        assert.equal(declaredOrdinal, hostOrdinal, "must_render_into should open the pending case");
+        openRenderInto = declaredOrdinal;
+        openRenderIntoErrors = 0;
         const output = applyImpl(bytes(inputPtr, inputLen));
         if (output === null) return -1;
         if (output.length > outCap) return -2;
         view(outPtr, output.length).set(output);
         return output.length;
       },
-      render_examine_pass(declaredOrdinal) {
-        return closeExamination(declaredOrdinal, true);
+      must_render_into_emit_error(declaredOrdinal) {
+        assert.equal(openRenderInto, declaredOrdinal, "error must match the open must_render_into case");
+        openRenderIntoErrors++;
+        return 1;
       },
-      render_examine_fail(declaredOrdinal) {
-        return closeExamination(declaredOrdinal, false);
+      must_render_into_finish(declaredOrdinal, errorCount) {
+        return finishRenderInto(declaredOrdinal, errorCount >>> 0);
       },
       set_uniform_u32(namePtr, nameLen, value) {
-        assert.equal(openExamination, null, "uniform cannot change inside an examination");
+        assert.equal(openRenderInto, null, "uniform cannot change inside a must_render_into case");
         const name = uniformNameDecoder.decode(view(namePtr, nameLen));
-        assert.match(name, /^[a-z0-9_]{1,128}$/, "uniform name must be a lowercase key");
+        assert.match(name, /^[a-z][a-z0-9_]{0,62}$/, "uniform name must be a lowercase snake identifier");
+        assert.equal(name.endsWith("_"), false, "uniform name must not end with underscore");
+        assert.equal(name.includes("__"), false, "uniform name must not contain double underscore");
         const unsignedValue = value >>> 0;
         const applied = setUniform ? setUniform(name, unsignedValue) : unsignedValue;
         const unsignedApplied = applied >>> 0;
@@ -97,7 +102,7 @@ export async function runComplianceComponent(wasmBytes, { seed, impl, setUniform
     instance.exports.uniform_set_seed(seed);
   }
   const declared = instance.exports.comply();
-  assert.equal(openExamination, null, "comply() returned with an unclosed examination");
+  assert.equal(openRenderInto, null, "comply() returned with an unclosed must_render_into case");
   return { cases, predicates, declared };
 }
 
@@ -111,7 +116,7 @@ function assertSameDeclarations(a, b) {
   }
 }
 
-// The meta-contract every Content Compliance component must satisfy.
+// The meta-contract every Content Compliance oracle must satisfy.
 // `curatedCount` = declarations that must not vary with the seed;
 // set `expectSeedVariation: false` for components with no fuzz phase.
 export function registerGenericComplianceTests(

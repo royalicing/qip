@@ -1,8 +1,8 @@
-// Content Compliance component: canonical 32-bit BGRA BMP output.
+// Content Compliance oracle: canonical 32-bit BGRA BMP output.
 // The ICC conversion itself is exercised by the native/Node fixture tests;
-// this checker keeps the reusable byte-level interchange contract independent
-// of Little CMS so a future qcms implementation can use the same checker.
-extern "qip" fn render_must_equal(
+// this oracle keeps the reusable byte-level interchange contract independent
+// of Little CMS so a future qcms implementation can use the same oracle.
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -55,27 +55,27 @@ const expected = [_]u8{
 const malformed = [_]u8{ 'B', 'M' };
 
 export fn comply() i32 {
-    _ = render_must_equal(
+    _ = must_render_exactly(
         0,
         @intCast(@intFromPtr(&legacy_input)),
         legacy_input.len,
         @intCast(@intFromPtr(&expected)),
         expected.len,
     );
-    _ = render_must_equal(
+    _ = must_render_exactly(
         1,
         @intCast(@intFromPtr(&v5_input)),
         v5_input.len,
         @intCast(@intFromPtr(&expected)),
         expected.len,
     );
-    _ = render_must_equal(
+    _ = must_render_exactly(
         2,
         @intCast(@intFromPtr(&malformed)),
         malformed.len,
         @intCast(@intFromPtr(&malformed)),
         0,
     );
-    _ = render_must_equal(3, 0, 0, 0, 0);
+    _ = must_render_exactly(3, 0, 0, 0, 0);
     return 4;
 }

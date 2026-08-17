@@ -1,4 +1,4 @@
-// Content Compliance component: Unicode 17.0.0 default lowercase.
+// Content Compliance oracle: Unicode 17.0.0 default lowercase.
 //
 // This component *declares* conformance cases through the host bridge and
 // owns its own memory — no impl imports, no shared linear memory, no
@@ -15,28 +15,31 @@
 const tables = @import("unicode-17-lowercase-tables.zig");
 const fixtures = @import("unicode-17-lowercase-fixtures.zig");
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     expected_ptr: u32,
     expected_len: u32,
 ) i32;
-extern "qip" fn render_examine(
+extern "qip" fn must_render_into(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     out_ptr: u32,
     out_cap: u32,
 ) i32;
-extern "qip" fn render_examine_pass(ordinal: u64) i32;
-extern "qip" fn render_examine_fail(ordinal: u64) i32;
+extern "qip" fn must_render_into_emit_error(ordinal: u64, message_ptr: u32, message_len: u32) i32;
+extern "qip" fn must_render_into_finish(ordinal: u64, error_count: u32) i32;
+
+const render_into_failed_message = "render failed or output did not fit";
+const property_failed_message = "rendered output failed property check";
 
 const FUZZ_CASES: u32 = 64;
 const IDEMPOTENCE_CASES: u32 = 12;
 const ASCII_CASES: u32 = 8;
 const MAX_INPUT: usize = 256;
-// Worst-case growth is 1.5x; give the oracle and examine buffers 3x slack.
+// Worst-case growth is 1.5x; give the oracle and must_render_into buffers 3x slack.
 const MAX_EXPECTED: usize = MAX_INPUT * 3;
 
 var input_buf: [MAX_INPUT]u8 = undefined;
@@ -230,7 +233,7 @@ fn oracleLower(input: []const u8, out: []u8) usize {
 
 fn declare(input: []const u8) i32 {
     const expected_len = oracleLower(input, expected_buf[0..]);
-    const status = render_must_equal(
+    const status = must_render_exactly(
         ordinal,
         @intCast(@intFromPtr(input.ptr)),
         @intCast(input.len),
@@ -241,8 +244,8 @@ fn declare(input: []const u8) i32 {
     return status;
 }
 
-fn renderExamine(input: []const u8, out: []u8) i32 {
-    return render_examine(
+fn renderInto(input: []const u8, out: []u8) i32 {
+    return must_render_into(
         ordinal,
         @intCast(@intFromPtr(input.ptr)),
         @intCast(input.len),
@@ -251,11 +254,12 @@ fn renderExamine(input: []const u8, out: []u8) i32 {
     );
 }
 
-fn examineVerdict(ok: bool) void {
+fn renderIntoVerdict(ok: bool) void {
     if (ok) {
-        _ = render_examine_pass(ordinal);
+        _ = must_render_into_finish(ordinal, 0);
     } else {
-        _ = render_examine_fail(ordinal);
+        _ = must_render_into_emit_error(ordinal, @intCast(@intFromPtr(property_failed_message.ptr)), property_failed_message.len);
+        _ = must_render_into_finish(ordinal, 1);
     }
     ordinal += 1;
 }
@@ -325,23 +329,18 @@ export fn comply() i32 {
     i = 0;
     while (i < IDEMPOTENCE_CASES) : (i += 1) {
         const input = buildFuzzInput(&rng);
-        const n1 = renderExamine(input, out1_buf[0..]);
+        const n1 = renderInto(input, out1_buf[0..]);
         if (n1 < 0) {
-            examineVerdict(false);
+            _ = must_render_into_emit_error(ordinal, @intCast(@intFromPtr(render_into_failed_message.ptr)), render_into_failed_message.len);
+            _ = must_render_into_finish(ordinal, 1);
+            ordinal += 1;
             continue;
         }
         const len1: usize = @intCast(n1);
-        const n2 = renderExamine(out1_buf[0..len1], out2_buf[0..]);
-        var ok = n2 == n1;
-        if (ok) {
-            for (out1_buf[0..len1], out2_buf[0..len1]) |a, b| {
-                if (a != b) {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        examineVerdict(ok);
+        _ = must_render_into_finish(ordinal, 0);
+        ordinal += 1;
+        _ = must_render_exactly(ordinal, @intCast(@intFromPtr(&out1_buf)), @intCast(len1), @intCast(@intFromPtr(&out1_buf)), @intCast(len1));
+        ordinal += 1;
     }
 
     // Property: ASCII input must produce ASCII output.
@@ -352,7 +351,7 @@ export fn comply() i32 {
         while (len < target) : (len += 1) {
             input_buf[len] = @intCast(0x20 + (nextRandom(&rng) % 0x5F));
         }
-        const n = renderExamine(input_buf[0..len], out1_buf[0..]);
+        const n = renderInto(input_buf[0..len], out1_buf[0..]);
         var ok = n >= 0;
         if (ok) {
             for (out1_buf[0..@intCast(n)]) |b| {
@@ -362,7 +361,7 @@ export fn comply() i32 {
                 }
             }
         }
-        examineVerdict(ok);
+        renderIntoVerdict(ok);
     }
 
     return @intCast(ordinal & 0x7FFFFFFF);

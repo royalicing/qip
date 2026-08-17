@@ -14,7 +14,7 @@ qip favors explicit contracts and simple pipelines. QIP components are sandboxed
 - [Interactive component contract](/docs/interactive-component.md): Framebuffer, events, timing, sizing, and host-loop rules.
 - [Uniforms](/docs/uniforms.md): Optional numeric configuration exports and host behavior.
 - [Module patterns](/docs/module-patterns.md): Practical implementation patterns for QIP components.
-- [Comply](/docs/comply.md): Compliance checks and ABI verification guidance.
+- [Comply](/docs/comply.md): Compliance oracle bridge, reusable executable oracles, and ABI verification guidance.
 - [Running in JavaScript](/docs/running-in-javascript.md): Direct `.wasm` imports with allocation-free UTF-8 encoding into QIP component memory.
 - [Running QIP in Python](/docs/running-in-python.md): Load a QIP WebAssembly Core module from disk and call its UTF-8 content contract with Wasmtime.
 - [Running QIP in React](/docs/running-in-react.md): Run a QIP WebAssembly Core module in React Client Components or Next.js Server Components, with separate instance-lifetime guidance.
@@ -30,4 +30,5 @@ qip favors explicit contracts and simple pipelines. QIP components are sandboxed
 ## Project Entry Points
 
 - [Homepage source](/index.md): Project overview and examples.
+- [Oracle downloads](/oracles): Useful Compliance oracle `.wasm` files and source links.
 - [Docs index source](/docs/index.md): Top-level docs map.

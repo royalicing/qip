@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/royalicing/qip/internal/wasmruntime"
 	"github.com/tetratelabs/wazero/api"
@@ -25,16 +26,27 @@ func parseUniformInt(value string, bitSize int) (int64, error) {
 	return strconv.ParseInt(raw, base, bitSize)
 }
 
-func parseUniformHexUint(value string, bitSize int) (uint64, bool, error) {
-	if len(value) < 2 || value[0] != '0' || (value[1] != 'x' && value[1] != 'X') {
-		return 0, false, nil
+func validUniformKey(key string) bool {
+	if key == "" || len(key) > 63 || key[0] < 'a' || key[0] > 'z' || strings.HasSuffix(key, "_") || strings.Contains(key, "__") {
+		return false
 	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
-	parsed, err := strconv.ParseUint(value[2:], 16, bitSize)
-	if err != nil {
-		return 0, true, err
+func parseUniformUint(value string, bitSize int) (uint64, error) {
+	base := 10
+	raw := value
+	if len(value) >= 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X') {
+		base = 16
+		raw = value[2:]
 	}
-	return parsed, true, nil
+	return strconv.ParseUint(raw, base, bitSize)
 }
 
 func applyModuleUniforms(ctx context.Context, mod api.Module, uniforms map[string]string) error {
@@ -49,6 +61,9 @@ func applyModuleUniforms(ctx context.Context, mod api.Module, uniforms map[strin
 	sort.Strings(keys)
 
 	for _, key := range keys {
+		if !validUniformKey(key) {
+			return fmt.Errorf("invalid uniform key %q (must be 1..63 chars, start with [a-z], continue with [a-z0-9_], must not end with _, and must not contain __)", key)
+		}
 		fnName := "uniform_set_" + key
 		fn := mod.ExportedFunction(fnName)
 		if fn == nil {
@@ -79,28 +94,12 @@ func applyModuleUniforms(ctx context.Context, mod api.Module, uniforms map[strin
 			}
 			args[0] = api.EncodeF64(parsed)
 		case api.ValueTypeI32:
-			parsedHex, isHex, err := parseUniformHexUint(value, 32)
-			if isHex {
-				if err != nil {
-					return fmt.Errorf("invalid value %q for %s (expected i32)", value, fnName)
-				}
-				args[0] = uint64(uint32(parsedHex))
-				break
-			}
-			parsed, err := parseUniformInt(value, 32)
+			parsed, err := parseUniformUint(value, 32)
 			if err != nil {
-				return fmt.Errorf("invalid value %q for %s (expected i32)", value, fnName)
+				return fmt.Errorf("invalid value %q for %s (expected unsigned i32)", value, fnName)
 			}
-			args[0] = uint64(uint32(int32(parsed)))
+			args[0] = uint64(uint32(parsed))
 		case api.ValueTypeI64:
-			parsedHex, isHex, err := parseUniformHexUint(value, 64)
-			if isHex {
-				if err != nil {
-					return fmt.Errorf("invalid value %q for %s (expected i64)", value, fnName)
-				}
-				args[0] = parsedHex
-				break
-			}
 			parsed, err := parseUniformInt(value, 64)
 			if err != nil {
 				return fmt.Errorf("invalid value %q for %s (expected i64)", value, fnName)

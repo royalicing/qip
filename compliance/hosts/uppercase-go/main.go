@@ -1,11 +1,11 @@
 // Self-contained example: testing a Go-stdlib uppercase implementation
-// against the QIP Content Compliance component for Unicode 17 uppercase.
+// against the QIP Content Compliance oracle for Unicode 17 uppercase.
 //
 //	cd compliance/hosts/uppercase-go && go run .
 //
 // The implementation under test is strings.ToUpper-style per-rune mapping
 // from the Go standard library (unicode.ToUpper), wrapped so invalid UTF-8
-// bytes pass through unchanged. wazero hosts the compliance component (Go's
+// bytes pass through unchanged. wazero hosts the Compliance oracle (Go's
 // stdlib has no wasm runtime; the *implementation* is stdlib-only).
 // Exit code 0 = compliant, 1 = divergences found.
 package main
@@ -62,7 +62,7 @@ func main() {
 	defer runtime.Close(ctx)
 
 	var failures []failure
-	var equalityCases, examineCases int
+	var equalityCases, renderIntoCases int
 
 	read := func(mod api.Module, ptr, length uint32) []byte {
 		view, ok := mod.Memory().Read(ptr, length)
@@ -85,14 +85,14 @@ func main() {
 			}
 			return 1
 		}).
-		Export("render_must_equal").
+		Export("must_render_exactly").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, mod api.Module, ordinal uint64, inPtr, inLen uint32) int32 {
 			// A pure function cannot trap; any expect-trap case is a failure here.
 			failures = append(failures, failure{ordinal: ordinal, kind: "trap", input: read(mod, inPtr, inLen)})
 			return 0
 		}).
-		Export("render_must_trap").
+		Export("must_trap").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, mod api.Module, ordinal uint64, inPtr, inLen, outPtr, outCap uint32) int32 {
 			output := upperBytes(read(mod, inPtr, inLen))
@@ -104,20 +104,19 @@ func main() {
 			}
 			return int32(len(output))
 		}).
-		Export("render_examine").
+		Export("must_render_into").
 		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, ordinal uint64) int32 {
-			examineCases++
+		WithFunc(func(ctx context.Context, mod api.Module, ordinal uint64, msgPtr, msgLen uint32) int32 {
+			failures = append(failures, failure{ordinal: ordinal, kind: "must_render_into"})
 			return 1
 		}).
-		Export("render_examine_pass").
+		Export("must_render_into_emit_error").
 		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, ordinal uint64) int32 {
-			examineCases++
-			failures = append(failures, failure{ordinal: ordinal, kind: "examine"})
+		WithFunc(func(ctx context.Context, ordinal uint64, errorCount uint32) int32 {
+			renderIntoCases++
 			return 1
 		}).
-		Export("render_examine_fail").
+		Export("must_render_into_finish").
 		Instantiate(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -139,7 +138,7 @@ func main() {
 	// --- report ---------------------------------------------------------------
 
 	fmt.Printf("impl: Go stdlib unicode.ToUpper per rune (unicode.Version %s — simple mappings only)\n", unicode.Version)
-	fmt.Printf("cases: %d declared (%d equality, %d examination)\n", declared, equalityCases, examineCases)
+	fmt.Printf("cases: %d declared (%d equality, %d must_render_into)\n", declared, equalityCases, renderIntoCases)
 	if len(failures) == 0 {
 		fmt.Println("COMPLIANT: all cases pass")
 		return

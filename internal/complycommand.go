@@ -9,10 +9,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/royalicing/qip/internal/wasminspect"
@@ -21,7 +22,9 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [-v|--verbose]"
+const usageComply = "Usage: qip comply [options] <file-or-dir> [...]\n\nOptions:\n  --with <compliance.wasm>        Run a Compliance oracle (repeatable)\n  --seed <n>                      Call uniform_set_seed(u32) on each oracle\n  --max-memory <bytes>            Reject implementation memory above bytes\n  --straight-line-oracles         Require each --with oracle to use straight-line oracle calls\n  -v, --verbose                   Print detailed validation logs"
+
+var ErrComplyFailed = errors.New("compliance failed")
 
 const (
 	implModuleName              = "impl"
@@ -81,143 +84,210 @@ func RunComplyCommand(args []string) error {
 	fs.SetOutput(io.Discard)
 	var withCompliances stringListFlag
 	var verbose bool
-	var declarativeCheckers bool
-	var seedFlag int
+	var straightLineOracles bool
+	var seed uint32
 	var seedSet bool
-	fs.Var(&withCompliances, "with", "compliance component (repeatable)")
+	var maxMemory uint64
+	fs.Var(&withCompliances, "with", "Compliance oracle (repeatable)")
 	fs.BoolVar(&verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&verbose, "verbose", false, "enable verbose logging")
-	fs.BoolVar(&declarativeCheckers, "declarative-checkers", false, "require each --with checker to be an unconditional list of oracle calls")
-	fs.Func("seed", "fuzz seed passed to Content Compliance components via uniform_set_seed", func(v string) error {
-		n, err := strconv.Atoi(v)
+	fs.BoolVar(&straightLineOracles, "straight-line-oracles", false, "require each --with oracle to use straight-line oracle calls")
+	fs.Func("seed", "call uniform_set_seed(u32) on each oracle", func(v string) error {
+		n, err := strconv.ParseUint(v, 10, 32)
 		if err != nil {
 			return fmt.Errorf("invalid --seed: %q", v)
 		}
-		seedFlag = n
+		seed = uint32(n)
 		seedSet = true
+		return nil
+	})
+	fs.Func("max-memory", "reject implementation memory above bytes", func(v string) error {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || n == 0 {
+			return fmt.Errorf("invalid --max-memory: %q", v)
+		}
+		maxMemory = n
 		return nil
 	})
 	if err := fs.Parse(normalizeComplyArgs(args)); err != nil {
 		return fmt.Errorf("%s %w", usageComply, err)
 	}
-	rest := fs.Args()
-	if len(rest) != 1 {
+	paths := fs.Args()
+	if len(paths) == 0 {
 		return errors.New(usageComply)
 	}
 
-	implPath := rest[0]
-	implWasm, err := readComplyModulePath(implPath)
+	implPaths, err := discoverComplyWasmFiles(paths)
 	if err != nil {
 		return err
 	}
-
-	if verbose {
-		sum := sha256.Sum256(implWasm)
-		fmt.Fprintf(os.Stderr, "impl sha256: %x\n", sum)
-	}
-
-	base, err := validateBaseContract(implWasm)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "comply: module fulfills %s contract\n", base.kind)
-
-	analysis, err := wasminspect.AnalyzeModule(implWasm)
-	if err != nil {
-		return fmt.Errorf("comply: static analysis failed: %w", err)
-	}
-	contractChecks, contractFail := wasminspect.EvaluateQIPContractChecks(analysis)
-	if len(contractChecks) == 0 {
-		fmt.Fprintln(os.Stderr, "comply: static contract checks skipped (no qip contract exports found)")
-	} else {
-		status := "PASS"
-		if contractFail {
-			status = "FAIL"
-		}
-		fmt.Fprintf(os.Stderr, "comply: static contract checks %s (%d checked)\n", status, len(contractChecks))
-		for _, check := range contractChecks {
-			if check.Pass {
-				fmt.Fprintf(os.Stderr, "  - %s (%s): PASS\n", check.Export, check.Kind)
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "  - %s (%s): FAIL (%s)\n", check.Export, check.Kind, check.Reason)
-		}
-		if contractFail {
-			return errors.New("comply: static qip contract checks failed")
-		}
-	}
-
-	if len(withCompliances) == 0 {
-		return nil
+	if len(implPaths) == 0 {
+		return errors.New("No .wasm files found")
 	}
 
 	compliances := make([]complianceSpec, 0, len(withCompliances))
+	slices.Sort(withCompliances)
 	for i, path := range withCompliances {
 		body, err := readComplyModulePath(path)
 		if err != nil {
 			return fmt.Errorf("failed to read --with %q: %w", path, err)
 		}
+		if straightLineOracles {
+			if err := wasminspect.ValidateStraightLineComplyOracle(body); err != nil {
+				return fmt.Errorf("Compliance oracle %q: %w", path, err)
+			}
+			if verbose {
+				fmt.Fprintf(os.Stderr, "comply: straight-line oracle PASS --with %s\n", path)
+			}
+		}
 		if verbose {
 			sum := sha256.Sum256(body)
 			fmt.Fprintf(os.Stderr, "compliance[%d] %s sha256: %x\n", i+1, path, sum)
 		}
-		if declarativeCheckers {
-			if err := wasminspect.ValidateDeclarativeComplyChecker(body); err != nil {
-				return fmt.Errorf("compliance component %q: %w", path, err)
-			}
-			fmt.Fprintf(os.Stderr, "comply: declarative checker PASS --with %s\n", path)
-		}
 		compliances = append(compliances, complianceSpec{index: i, path: path, wasm: body})
 	}
 
-	outcomes := make(chan complianceOutcomes, len(compliances))
-	var wg sync.WaitGroup
-	var seed *int32
+	var seedPtr *int32
 	if seedSet {
-		s := int32(seedFlag)
-		seed = &s
+		s := int32(seed)
+		seedPtr = &s
 	}
-	for _, compliance := range compliances {
-		wg.Go(func() {
-			outcomes <- runComplianceModule(implWasm, compliance, seed)
-		})
+	pass, fail := 0, 0
+	for _, implPath := range implPaths {
+		implPass, implFail := runComplyForImplementation(implPath, compliances, seedPtr, maxMemory, verbose)
+		pass += implPass
+		fail += implFail
 	}
-	wg.Wait()
-	close(outcomes)
-
-	results := make([]complianceOutcomes, 0, len(compliances))
-	for out := range outcomes {
-		results = append(results, out)
-	}
-	sort.Slice(results, func(i, j int) bool { return results[i].index < results[j].index })
-
-	failCount := 0
-	for _, out := range results {
-		if out.passed {
-			if out.cases > 0 {
-				fmt.Fprintf(os.Stderr, "comply: PASS --with %s (%d cases, %dms)\n", out.path, out.cases, out.duration.Milliseconds())
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "comply: PASS --with %s (%dms)\n", out.path, out.duration.Milliseconds())
-			continue
-		}
-		failCount++
-		fmt.Fprintf(os.Stderr, "comply: FAIL --with %s (%dms): %v\n", out.path, out.duration.Milliseconds(), out.err)
-		if out.detail != "" {
-			fmt.Fprintf(os.Stderr, "%s\n", out.detail)
-		}
-	}
-
-	if failCount > 0 {
-		return fmt.Errorf("compliance failed: %d/%d compliance components failed", failCount, len(results))
+	fmt.Printf("\npass=%d fail=%d total=%d\n", pass, fail, pass+fail)
+	if fail > 0 {
+		return ErrComplyFailed
 	}
 	return nil
 }
 
+func discoverComplyWasmFiles(paths []string) ([]string, error) {
+	files := make([]string, 0)
+	seen := map[string]bool{}
+	for _, path := range paths {
+		if strings.HasPrefix(path, "https://") {
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			files = append(files, path)
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			if !strings.HasSuffix(path, ".wasm") {
+				return nil, fmt.Errorf("%s is not a .wasm file", path)
+			}
+			if !seen[path] {
+				seen[path] = true
+				files = append(files, path)
+			}
+			continue
+		}
+		err = filepath.WalkDir(path, func(child string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".wasm") {
+				return nil
+			}
+			if !seen[child] {
+				seen[child] = true
+				files = append(files, child)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func runComplyForImplementation(implPath string, compliances []complianceSpec, seed *int32, maxMemory uint64, verbose bool) (pass int, fail int) {
+	implWasm, err := readComplyModulePath(implPath)
+	if err != nil {
+		fmt.Printf("FAIL %s: %v\n", implPath, err)
+		return 0, 1
+	}
+	if verbose {
+		sum := sha256.Sum256(implWasm)
+		fmt.Fprintf(os.Stderr, "impl %s sha256: %x\n", implPath, sum)
+	}
+	if maxMemory > 0 {
+		if err := wasminspect.ValidateModulePolicy(implWasm, wasminspect.ModulePolicy{MaxMemoryBytes: maxMemory}); err != nil {
+			fmt.Printf("FAIL %s: %v\n", implPath, err)
+			return 0, 1
+		}
+	}
+	base, err := validateBaseContract(implPath, implWasm)
+	if err != nil {
+		fmt.Printf("FAIL %s: %v\n", implPath, err)
+		return 0, 1
+	}
+	if verbose {
+		fmt.Fprintf(os.Stderr, "comply: module fulfills %s contract\n", base.kind)
+	}
+	analysis, err := wasminspect.AnalyzeModule(implWasm)
+	if err != nil {
+		fmt.Printf("FAIL %s: comply: static analysis failed: %v\n", implPath, err)
+		return 0, 1
+	}
+	contractChecks, contractFail := wasminspect.EvaluateQIPContractChecks(analysis)
+	if verbose {
+		if len(contractChecks) == 0 {
+			fmt.Fprintln(os.Stderr, "comply: static contract checks skipped (no qip contract exports found)")
+		} else {
+			status := "PASS"
+			if contractFail {
+				status = "FAIL"
+			}
+			fmt.Fprintf(os.Stderr, "comply: static contract checks %s (%d checked)\n", status, len(contractChecks))
+			for _, check := range contractChecks {
+				if check.Pass {
+					fmt.Fprintf(os.Stderr, "  - %s (%s): PASS\n", check.Export, check.Kind)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "  - %s (%s): FAIL (%s)\n", check.Export, check.Kind, check.Reason)
+			}
+		}
+	}
+	if contractFail {
+		fmt.Printf("FAIL %s: comply: static qip contract checks failed\n", implPath)
+		return 0, 1
+	}
+	fmt.Printf("PASS %s\n", implPath)
+	pass++
+
+	for _, compliance := range compliances {
+		out := runComplianceModule(implWasm, compliance, seed)
+		if out.passed {
+			fmt.Printf("PASS %s --with %s (%d cases)\n", implPath, out.path, out.cases)
+			pass++
+			continue
+		}
+		fmt.Printf("FAIL %s --with %s: %v\n", implPath, out.path, out.err)
+		if verbose && out.detail != "" {
+			fmt.Fprintf(os.Stderr, "%s\n", out.detail)
+		}
+		fail++
+	}
+	return pass, fail
+}
+
 func normalizeComplyArgs(args []string) []string {
 	flagsWithValue := map[string]struct{}{
-		"--with": {},
-		"--seed": {},
+		"--with":       {},
+		"--seed":       {},
+		"--max-memory": {},
 	}
 	return NormalizeFlagArgs(args, flagsWithValue)
 }
@@ -242,7 +312,7 @@ func readComplyModulePath(path string) ([]byte, error) {
 	return body, nil
 }
 
-func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
+func validateBaseContract(label string, implWasm []byte) (baseValidationResult, error) {
 	ctx := context.Background()
 	r := wasmruntime.NewRunToCompletion(ctx)
 	defer r.Close(ctx)
@@ -260,61 +330,58 @@ func validateBaseContract(implWasm []byte) (baseValidationResult, error) {
 	defer mod.Close(ctx)
 
 	if mod.ExportedMemory(complyExportMemory) == nil {
-		return baseValidationResult{}, errors.New("Wasm module must export memory")
+		return baseValidationResult{}, fmt.Errorf("%s does not export memory", label)
 	}
 
 	funcs := compiled.ExportedFunctions()
-	hasRun := false
-	if runDef, ok := funcs[complyExportRun]; ok {
-		if err := requireSignature(runDef, []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}, complyExportRun); err != nil {
-			return baseValidationResult{}, err
-		}
-		if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
-			return baseValidationResult{}, err
-		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm render module must export input_ptr() -> i32")
-		}
-		if _, ok, err := getExportedI32(ctx, mod, complyExportInputUTF8Cap); err != nil {
-			return baseValidationResult{}, err
-		} else if ok {
-			hasRun = true
-		} else if _, ok, err := getExportedI32(ctx, mod, complyExportInputBytesCap); err != nil {
-			return baseValidationResult{}, err
-		} else if ok {
-			hasRun = true
-		} else {
-			return baseValidationResult{}, errors.New("Wasm render module must export input_utf8_cap() -> i32 or input_bytes_cap() -> i32")
-		}
+	runDef, ok := funcs[complyExportRun]
+	if !ok {
+		return baseValidationResult{}, fmt.Errorf("%s must export render", label)
 	}
-
-	hasTile := false
-	if tileDef, ok := funcs[complyExportTileRGBA32Float]; ok {
-		if err := requireSignature(tileDef, []api.ValueType{api.ValueTypeF32, api.ValueTypeF32}, []api.ValueType{}, complyExportTileRGBA32Float); err != nil {
-			return baseValidationResult{}, err
-		}
-		if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
-			return baseValidationResult{}, err
-		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm tile module must export input_ptr() -> i32")
-		}
-		if _, ok, err := getExportedI32(ctx, mod, complyExportInputBytesCap); err != nil {
-			return baseValidationResult{}, err
-		} else if !ok {
-			return baseValidationResult{}, errors.New("Wasm tile module must export input_bytes_cap() -> i32")
-		}
-		hasTile = true
+	if err := requireSignature(runDef, []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}, complyExportRun); err != nil {
+		return baseValidationResult{}, err
 	}
-
-	switch {
-	case hasRun && hasTile:
-		return baseValidationResult{kind: moduleKindRunAndTile}, nil
-	case hasRun:
-		return baseValidationResult{kind: moduleKindRun}, nil
-	case hasTile:
-		return baseValidationResult{kind: moduleKindTile}, nil
-	default:
-		return baseValidationResult{}, errors.New("Wasm module is neither a render module nor a tile module")
+	if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
+		return baseValidationResult{}, err
+	} else if !ok {
+		return baseValidationResult{}, fmt.Errorf("%s must export input_ptr", label)
 	}
+	hasInputUTF8 := false
+	if _, ok, err := getExportedI32(ctx, mod, complyExportInputUTF8Cap); err != nil {
+		return baseValidationResult{}, err
+	} else if ok {
+		hasInputUTF8 = true
+	}
+	hasInputBytes := false
+	if _, ok, err := getExportedI32(ctx, mod, complyExportInputBytesCap); err != nil {
+		return baseValidationResult{}, err
+	} else if ok {
+		hasInputBytes = true
+	}
+	if hasInputUTF8 == hasInputBytes {
+		return baseValidationResult{}, fmt.Errorf("%s must export exactly one input capacity: input_utf8_cap or input_bytes_cap", label)
+	}
+	if _, ok, err := getExportedI32(ctx, mod, "output_ptr"); err != nil {
+		return baseValidationResult{}, err
+	} else if !ok {
+		return baseValidationResult{}, fmt.Errorf("%s must export output_ptr", label)
+	}
+	hasOutputUTF8 := false
+	if _, ok, err := getExportedI32(ctx, mod, "output_utf8_cap"); err != nil {
+		return baseValidationResult{}, err
+	} else if ok {
+		hasOutputUTF8 = true
+	}
+	hasOutputBytes := false
+	if _, ok, err := getExportedI32(ctx, mod, "output_bytes_cap"); err != nil {
+		return baseValidationResult{}, err
+	} else if ok {
+		hasOutputBytes = true
+	}
+	if hasOutputUTF8 == hasOutputBytes {
+		return baseValidationResult{}, fmt.Errorf("%s must export exactly one output capacity: output_utf8_cap or output_bytes_cap", label)
+	}
+	return baseValidationResult{kind: moduleKindRun}, nil
 }
 
 func requireSignature(def api.FunctionDefinition, wantParams []api.ValueType, wantResults []api.ValueType, name string) error {

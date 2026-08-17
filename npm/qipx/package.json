@@ -1,0 +1,41 @@
+{
+  "name": "qipx",
+  "version": "0.1.0",
+  "description": "Dependency-free QIP Content component runner and Compliance oracle host for Node.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/royalicing/qip.git",
+    "directory": "npm/qipx"
+  },
+  "type": "module",
+  "types": "./qipx.d.ts",
+  "bin": {
+    "qipx": "qipx.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./qipx.d.ts",
+      "import": "./qipx.mjs"
+    }
+  },
+  "files": [
+    "qipx.d.ts",
+    "qipx.mjs"
+  ],
+  "keywords": [
+    "qip",
+    "webassembly",
+    "wasm",
+    "cli",
+    "components",
+    "compliance"
+  ],
+  "homepage": "https://qip.dev",
+  "bugs": {
+    "url": "https://github.com/royalicing/qip/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0"
+}

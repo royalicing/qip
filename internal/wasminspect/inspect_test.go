@@ -181,7 +181,7 @@ func TestValidateModulePolicyRejectsMemoryGrow(t *testing.T) {
 	}
 }
 
-func TestValidateDeclarativeComplyCheckerAcceptsOracleCalls(t *testing.T) {
+func TestValidateStraightLineComplyOracleAcceptsOracleCalls(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
@@ -202,12 +202,12 @@ func TestValidateDeclarativeComplyCheckerAcceptsOracleCalls(t *testing.T) {
 		},
 	})
 
-	if err := ValidateDeclarativeComplyChecker(module); err != nil {
-		t.Fatalf("ValidateDeclarativeComplyChecker: %v", err)
+	if err := ValidateStraightLineComplyOracle(module); err != nil {
+		t.Fatalf("ValidateStraightLineComplyOracle: %v", err)
 	}
 }
 
-func TestValidateDeclarativeComplyCheckerRejectsConditionalInstructions(t *testing.T) {
+func TestValidateStraightLineComplyOracleRejectsConditionalInstructions(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
@@ -224,7 +224,7 @@ func TestValidateDeclarativeComplyCheckerRejectsConditionalInstructions(t *testi
 		},
 	})
 
-	err := ValidateDeclarativeComplyChecker(module)
+	err := ValidateStraightLineComplyOracle(module)
 	if err == nil {
 		t.Fatal("expected strict profile rejection")
 	}
@@ -233,7 +233,7 @@ func TestValidateDeclarativeComplyCheckerRejectsConditionalInstructions(t *testi
 	}
 }
 
-func TestValidateDeclarativeComplyCheckerRejectsHelperFunctions(t *testing.T) {
+func TestValidateStraightLineComplyOracleRejectsHelperFunctions(t *testing.T) {
 	module := buildTestModule(testModuleConfig{
 		ImportFuncCount: 1,
 		Memories:        []testMemory{{MinPages: 1, HasMax: true, MaxPages: 1}},
@@ -247,7 +247,7 @@ func TestValidateDeclarativeComplyCheckerRejectsHelperFunctions(t *testing.T) {
 		},
 	})
 
-	err := ValidateDeclarativeComplyChecker(module)
+	err := ValidateStraightLineComplyOracle(module)
 	if err == nil {
 		t.Fatal("expected strict profile rejection")
 	}

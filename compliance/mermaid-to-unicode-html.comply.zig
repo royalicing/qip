@@ -1,4 +1,4 @@
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -6,7 +6,7 @@ extern "qip" fn render_must_equal(
     expected_len: u32,
 ) i32;
 
-extern "qip" fn render_must_trap(
+extern "qip" fn must_trap(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -130,7 +130,7 @@ const invalid = [_][]const u8{
 export fn comply() i32 {
     comptime var ordinal: u64 = 0;
     inline for (fixtures) |fixture| {
-        _ = render_must_equal(
+        _ = must_render_exactly(
             ordinal,
             @intCast(@intFromPtr(fixture.input.ptr)),
             @intCast(fixture.input.len),
@@ -140,7 +140,7 @@ export fn comply() i32 {
         ordinal += 1;
     }
     inline for (literal_fixtures) |fixture| {
-        _ = render_must_equal(
+        _ = must_render_exactly(
             ordinal,
             @intCast(@intFromPtr(fixture.input.ptr)),
             @intCast(fixture.input.len),
@@ -151,7 +151,7 @@ export fn comply() i32 {
     }
     inline for (variants) |variant| {
         const expected = fixtures[variant.expected_fixture].expected;
-        _ = render_must_equal(
+        _ = must_render_exactly(
             ordinal,
             @intCast(@intFromPtr(variant.input.ptr)),
             @intCast(variant.input.len),
@@ -161,7 +161,7 @@ export fn comply() i32 {
         ordinal += 1;
     }
     inline for (invalid) |input| {
-        _ = render_must_trap(
+        _ = must_trap(
             ordinal,
             @intCast(@intFromPtr(input.ptr)),
             @intCast(input.len),

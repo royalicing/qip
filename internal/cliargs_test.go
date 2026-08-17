@@ -12,7 +12,7 @@ func TestNormalizeComplyArgs(t *testing.T) {
 		"a.wasm",
 		"--with",
 		"b.wasm",
-		"--declarative-checkers",
+		"--straight-line-oracles",
 		"--seed",
 		"500",
 	}
@@ -22,7 +22,7 @@ func TestNormalizeComplyArgs(t *testing.T) {
 		"a.wasm",
 		"--with",
 		"b.wasm",
-		"--declarative-checkers",
+		"--straight-line-oracles",
 		"--seed",
 		"500",
 		"impl.wasm",

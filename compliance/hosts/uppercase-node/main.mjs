@@ -1,5 +1,5 @@
 // Self-contained example: testing a Node.js-stdlib uppercase implementation
-// against the QIP Content Compliance component for Unicode 17 uppercase.
+// against the QIP Content Compliance oracle for Unicode 17 uppercase.
 //
 //   node compliance/hosts/uppercase-node/main.mjs
 //
@@ -69,15 +69,16 @@ const wasmBytes = await readFile(new URL("../../unicode-17-uppercase.comply.wasm
 
 const failures = [];
 let equalityCases = 0;
-let examineCases = 0;
+let renderIntoCases = 0;
 let memory;
-let openExamination = null;
+let openRenderInto = null;
+let openRenderIntoErrors = 0;
 
 const bytes = (ptr, len) => Buffer.from(new Uint8Array(memory.buffer, ptr, len));
 
 const { instance } = await WebAssembly.instantiate(wasmBytes, {
   qip: {
-    render_must_equal(ordinal, inPtr, inLen, expectedPtr, expectedLen) {
+    must_render_exactly(ordinal, inPtr, inLen, expectedPtr, expectedLen) {
       equalityCases++;
       const input = bytes(inPtr, inLen);
       const expected = bytes(expectedPtr, expectedLen);
@@ -88,27 +89,29 @@ const { instance } = await WebAssembly.instantiate(wasmBytes, {
       }
       return 1;
     },
-    render_must_trap(ordinal, inPtr, inLen) {
+    must_trap(ordinal, inPtr, inLen) {
       // A pure function cannot trap; any expect-trap case is a failure here.
       failures.push({ ordinal, kind: "trap", input: bytes(inPtr, inLen) });
       return 0;
     },
-    render_examine(ordinal, inPtr, inLen, outPtr, outCap) {
-      openExamination = ordinal;
+    must_render_into(ordinal, inPtr, inLen, outPtr, outCap) {
+      openRenderInto = ordinal;
+      openRenderIntoErrors = 0;
       const output = uppercaseBytes(bytes(inPtr, inLen));
       if (output.length > outCap) return -2;
       new Uint8Array(memory.buffer, outPtr, output.length).set(output);
       return output.length;
     },
-    render_examine_pass() {
-      examineCases++;
-      openExamination = null;
+    must_render_into_emit_error(ordinal, messagePtr, messageSize) {
+      openRenderIntoErrors++;
+      failures.push({ ordinal, kind: "must_render_into", message: bytes(messagePtr, messageSize).toString("utf8") });
       return 1;
     },
-    render_examine_fail(ordinal) {
-      examineCases++;
-      failures.push({ ordinal, kind: "examine" });
-      openExamination = null;
+    must_render_into_finish(ordinal, errorCount) {
+      renderIntoCases++;
+      if (openRenderInto !== ordinal || (errorCount >>> 0) !== openRenderIntoErrors) failures.push({ ordinal, kind: "protocol" });
+      openRenderInto = null;
+      openRenderIntoErrors = 0;
       return 1;
     },
   },
@@ -119,7 +122,7 @@ const declared = instance.exports.comply();
 // --- report -----------------------------------------------------------------
 
 console.log(`impl: Node ${process.version} String.prototype.toUpperCase (ICU ${process.versions.icu}, Unicode ${process.versions.unicode})`);
-console.log(`cases: ${declared} declared (${equalityCases} equality, ${examineCases} examination)`);
+console.log(`cases: ${declared} declared (${equalityCases} equality, ${renderIntoCases} must_render_into)`);
 if (failures.length === 0) {
   console.log("COMPLIANT: all cases pass");
   process.exit(0);

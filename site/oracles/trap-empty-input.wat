@@ -1,0 +1,1 @@
+../../compliance/trap-empty-input.wat

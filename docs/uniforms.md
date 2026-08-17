@@ -9,6 +9,10 @@ Uniforms are a shared extension, not a component type. Content and Tile hosts cu
 ## Component Exports
 
 For a query key named `<key>`, export a setter named `uniform_set_<key>`.
+A uniform key is a lowercase snake identifier with 1 to 63 characters. It must
+start with `[a-z]`, continue with `[a-z0-9_]*`, must not end with `_`, and must
+not contain `__`. These limits keep keys portable in URLs, shells, archives,
+DNS-like names, and case-insensitive filesystems.
 
 Each setter:
 

@@ -1,14 +1,14 @@
 // Content Compliance bridge: the host side of the qip.* import ABI for
-// Compliance components that own their memory and declare cases by ordinal.
+// Compliance oracles that own their memory and declare cases by ordinal.
 //
 // Bridge ABI (module "qip"; every call carries the component's u64 case
 // ordinal so both sides continuously verify they agree on which case this is):
 //
-//	render_must_equal(ordinal, in_ptr, in_len, expected_ptr, expected_len) -> i32
-//	render_must_trap(ordinal, in_ptr, in_len) -> i32
-//	render_examine(ordinal, in_ptr, in_len, out_ptr, out_cap) -> i32
-//	render_examine_pass(ordinal) -> i32
-//	render_examine_fail(ordinal) -> i32
+//	must_render_exactly(ordinal, in_ptr, in_len, expected_ptr, expected_len) -> i32
+//	must_trap(ordinal, in_ptr, in_len) -> i32
+//	must_render_into(ordinal, in_ptr, in_len, out_ptr, out_cap) -> i32
+//	must_render_into_emit_error(ordinal, message_ptr, message_len) -> i32
+//	must_render_into_finish(ordinal, error_count) -> i32
 //	set_uniform_u32(name_ptr, name_len, value) -> i32
 //
 // The component exports comply() -> i32 (declared-case count) and optionally
@@ -37,6 +37,19 @@ const (
 	bridgeMaxFailureNotes = 5
 )
 
+func validUniformKey(key string) bool {
+	if key == "" || len(key) > 63 || key[0] < 'a' || key[0] > 'z' || strings.HasSuffix(key, "_") || strings.Contains(key, "__") {
+		return false
+	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 type bridgeFailure struct {
 	ordinal  uint64
 	kind     string
@@ -46,15 +59,17 @@ type bridgeFailure struct {
 }
 
 type bridgeState struct {
-	implMod     api.Module
-	renderFn    api.Function
-	implInPtr   uint32
-	implInCap   uint32
-	next        uint64
-	openExamine *uint64
-	failures    []bridgeFailure
-	failCount   int
-	protocolErr error
+	implMod                api.Module
+	renderFn               api.Function
+	implInPtr              uint32
+	implInCap              uint32
+	next                   uint64
+	openRenderInto         *uint64
+	openRenderIntoFailed   bool
+	openRenderIntoErrCount uint32
+	failures               []bridgeFailure
+	failCount              int
+	protocolErr            error
 }
 
 func (s *bridgeState) protocolViolation(format string, args ...any) {
@@ -65,6 +80,10 @@ func (s *bridgeState) protocolViolation(format string, args ...any) {
 
 func (s *bridgeState) recordFailure(f bridgeFailure) {
 	s.failCount++
+	s.recordFailureNote(f)
+}
+
+func (s *bridgeState) recordFailureNote(f bridgeFailure) {
 	if len(s.failures) < bridgeMaxFailureNotes {
 		s.failures = append(s.failures, f)
 	}
@@ -135,12 +154,12 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 	}
 	state.implInCap = uint32(inCap)
 
-	readChecker := func(m api.Module, ptr, length uint32) ([]byte, bool) {
+	readOracle := func(m api.Module, ptr, length uint32) ([]byte, bool) {
 		return m.Memory().Read(ptr, length)
 	}
 	caseOpen := func(ordinal uint64, kind string) bool {
-		if state.openExamine != nil {
-			state.protocolViolation("%s at ordinal %d inside open examination %d", kind, ordinal, *state.openExamine)
+		if state.openRenderInto != nil {
+			state.protocolViolation("%s at ordinal %d inside open must_render_into case %d", kind, ordinal, *state.openRenderInto)
 			return false
 		}
 		if ordinal != state.next {
@@ -150,27 +169,26 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 		return true
 	}
 	setUniformU32 := func(callCtx context.Context, m api.Module, namePtr, nameLen, value uint32) uint32 {
-		if state.openExamine != nil {
-			state.protocolViolation("set_uniform_u32 called inside open examination %d", *state.openExamine)
+		if state.openRenderInto != nil {
+			state.protocolViolation("set_uniform_u32 called inside open must_render_into case %d", *state.openRenderInto)
 			return 0
 		}
 		if nameLen == 0 || nameLen > 128 {
 			state.protocolViolation("set_uniform_u32 name length %d is outside 1..128", nameLen)
 			return 0
 		}
-		nameBytes, ok := readChecker(m, namePtr, nameLen)
+		nameBytes, ok := readOracle(m, namePtr, nameLen)
 		if !ok {
 			state.protocolViolation("set_uniform_u32 name pointer out of range")
 			return 0
 		}
-		for _, b := range nameBytes {
-			if !((b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '_') {
-				state.protocolViolation("set_uniform_u32 name %q is not a lowercase uniform key", string(nameBytes))
-				return 0
-			}
+		name := string(nameBytes)
+		if !validUniformKey(name) {
+			state.protocolViolation("set_uniform_u32 name %q is not a valid uniform key", name)
+			return 0
 		}
 
-		exportName := "uniform_set_" + string(nameBytes)
+		exportName := "uniform_set_" + name
 		setter := state.implMod.ExportedFunction(exportName)
 		if setter == nil {
 			state.protocolViolation("implementation does not export %s", exportName)
@@ -194,14 +212,14 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 		Export("set_uniform_u32").
 		NewFunctionBuilder().
 		WithFunc(func(callCtx context.Context, m api.Module, ordinal uint64, inPtr, inLen, expPtr, expLen uint32) int32 {
-			if !caseOpen(ordinal, "render_must_equal") {
+			if !caseOpen(ordinal, "must_render_exactly") {
 				return 0
 			}
 			state.next++
-			input, ok1 := readChecker(m, inPtr, inLen)
-			expected, ok2 := readChecker(m, expPtr, expLen)
+			input, ok1 := readOracle(m, inPtr, inLen)
+			expected, ok2 := readOracle(m, expPtr, expLen)
 			if !ok1 || !ok2 {
-				state.protocolViolation("render_must_equal pointers out of range at ordinal %d", ordinal)
+				state.protocolViolation("must_render_exactly pointers out of range at ordinal %d", ordinal)
 				return 0
 			}
 			actual, err := state.renderImpl(callCtx, input)
@@ -215,16 +233,16 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 			}
 			return 1
 		}).
-		Export("render_must_equal").
+		Export("must_render_exactly").
 		NewFunctionBuilder().
 		WithFunc(func(callCtx context.Context, m api.Module, ordinal uint64, inPtr, inLen uint32) int32 {
-			if !caseOpen(ordinal, "render_must_trap") {
+			if !caseOpen(ordinal, "must_trap") {
 				return 0
 			}
 			state.next++
-			input, ok := readChecker(m, inPtr, inLen)
+			input, ok := readOracle(m, inPtr, inLen)
 			if !ok {
-				state.protocolViolation("render_must_trap pointer out of range at ordinal %d", ordinal)
+				state.protocolViolation("must_trap pointer out of range at ordinal %d", ordinal)
 				return 0
 			}
 			actual, err := state.renderImpl(callCtx, input)
@@ -234,87 +252,101 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 			}
 			return 1
 		}).
-		Export("render_must_trap").
+		Export("must_trap").
 		NewFunctionBuilder().
 		WithFunc(func(callCtx context.Context, m api.Module, ordinal uint64, inPtr, inLen, outPtr, outCap uint32) int32 {
-			if state.openExamine == nil {
-				if ordinal != state.next {
-					state.protocolViolation("render_examine opened ordinal %d, host expected %d", ordinal, state.next)
-					return -1
-				}
-				o := ordinal
-				state.openExamine = &o
-			} else if ordinal != *state.openExamine {
-				state.protocolViolation("render_examine ordinal changed mid-case: %d then %d", *state.openExamine, ordinal)
+			if state.openRenderInto != nil {
+				state.protocolViolation("must_render_into opened ordinal %d while ordinal %d is still open", ordinal, *state.openRenderInto)
 				return -1
 			}
-			input, ok := readChecker(m, inPtr, inLen)
+			if ordinal != state.next {
+				state.protocolViolation("must_render_into opened ordinal %d, host expected %d", ordinal, state.next)
+				return -1
+			}
+			o := ordinal
+			state.openRenderInto = &o
+			state.openRenderIntoFailed = false
+			state.openRenderIntoErrCount = 0
+			input, ok := readOracle(m, inPtr, inLen)
 			if !ok {
-				state.protocolViolation("render_examine pointer out of range at ordinal %d", ordinal)
+				state.protocolViolation("must_render_into pointer out of range at ordinal %d", ordinal)
+				state.openRenderIntoFailed = true
 				return -1
 			}
 			output, err := state.renderImpl(callCtx, input)
 			if err != nil {
+				state.openRenderIntoFailed = true
 				return -1
 			}
 			if uint32(len(output)) > outCap {
+				state.openRenderIntoFailed = true
 				return -2
 			}
 			if !m.Memory().Write(outPtr, output) {
-				state.protocolViolation("render_examine out pointer out of range at ordinal %d", ordinal)
+				state.protocolViolation("must_render_into out pointer out of range at ordinal %d", ordinal)
+				state.openRenderIntoFailed = true
 				return -1
 			}
 			return int32(len(output))
 		}).
-		Export("render_examine").
+		Export("must_render_into").
 		NewFunctionBuilder().
-		WithFunc(func(callCtx context.Context, ordinal uint64) int32 {
-			if state.openExamine != nil && *state.openExamine != ordinal {
-				state.protocolViolation("render_examine_pass ordinal %d does not match open examination %d", ordinal, *state.openExamine)
+		WithFunc(func(callCtx context.Context, m api.Module, ordinal uint64, msgPtr, msgLen uint32) int32 {
+			if state.openRenderInto == nil || *state.openRenderInto != ordinal {
+				state.protocolViolation("must_render_into_emit_error ordinal %d does not match open must_render_into case", ordinal)
 				return 0
 			}
-			if ordinal != state.next {
-				state.protocolViolation("render_examine_pass ordinal %d, host expected %d", ordinal, state.next)
+			msg, ok := readOracle(m, msgPtr, msgLen)
+			if !ok {
+				state.protocolViolation("must_render_into_emit_error message pointer out of range at ordinal %d", ordinal)
 				return 0
 			}
-			state.openExamine = nil
+			state.openRenderIntoErrCount++
+			state.recordFailureNote(bridgeFailure{ordinal: ordinal, kind: "render_into error: " + string(msg)})
+			return 1
+		}).
+		Export("must_render_into_emit_error").
+		NewFunctionBuilder().
+		WithFunc(func(callCtx context.Context, ordinal uint64, errorCount uint32) int32 {
+			if state.openRenderInto == nil || *state.openRenderInto != ordinal {
+				state.protocolViolation("must_render_into_finish ordinal %d does not match open must_render_into case", ordinal)
+				return 0
+			}
+			if errorCount != state.openRenderIntoErrCount {
+				state.protocolViolation("must_render_into_finish ordinal %d reported %d errors, host observed %d", ordinal, errorCount, state.openRenderIntoErrCount)
+				return 0
+			}
+			if state.openRenderIntoFailed && errorCount == 0 {
+				state.protocolViolation("must_render_into_finish ordinal %d reported 0 errors after render failure", ordinal)
+				return 0
+			}
+			if errorCount > 0 {
+				state.failCount++
+			}
+			state.openRenderInto = nil
+			state.openRenderIntoFailed = false
+			state.openRenderIntoErrCount = 0
 			state.next++
 			return 1
 		}).
-		Export("render_examine_pass").
-		NewFunctionBuilder().
-		WithFunc(func(callCtx context.Context, ordinal uint64) int32 {
-			if state.openExamine != nil && *state.openExamine != ordinal {
-				state.protocolViolation("render_examine_fail ordinal %d does not match open examination %d", ordinal, *state.openExamine)
-				return 0
-			}
-			if ordinal != state.next {
-				state.protocolViolation("render_examine_fail ordinal %d, host expected %d", ordinal, state.next)
-				return 0
-			}
-			state.openExamine = nil
-			state.next++
-			state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "examination failed"})
-			return 1
-		}).
-		Export("render_examine_fail").
+		Export("must_render_into_finish").
 		Instantiate(ctx)
 	if err != nil {
 		out.err = fmt.Errorf("bridge host module could not be instantiated: %w", err)
 		return out
 	}
 
-	checkerMod, err := r.Instantiate(ctx, compliance.wasm)
+	oracleMod, err := r.Instantiate(ctx, compliance.wasm)
 	if err != nil {
-		out.err = fmt.Errorf("compliance component could not be instantiated (imports must bind to %q): %w", bridgeHostModuleName, err)
+		out.err = fmt.Errorf("Compliance oracle could not be instantiated (imports must bind to %q): %w", bridgeHostModuleName, err)
 		return out
 	}
-	defer checkerMod.Close(ctx)
+	defer oracleMod.Close(ctx)
 
 	if seed != nil {
-		setSeed := checkerMod.ExportedFunction(bridgeExportSetSeed)
+		setSeed := oracleMod.ExportedFunction(bridgeExportSetSeed)
 		if setSeed == nil {
-			out.err = fmt.Errorf("--seed given but compliance component does not export %s", bridgeExportSetSeed)
+			out.err = fmt.Errorf("--seed given but Compliance oracle does not export %s", bridgeExportSetSeed)
 			return out
 		}
 		if _, err := setSeed.Call(ctx, uint64(uint32(*seed))); err != nil {
@@ -323,9 +355,9 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 		}
 	}
 
-	complyFn := checkerMod.ExportedFunction(bridgeExportComply)
+	complyFn := oracleMod.ExportedFunction(bridgeExportComply)
 	if complyFn == nil {
-		out.err = errors.New("compliance component must export comply() -> i32")
+		out.err = errors.New("Compliance oracle must export comply() -> i32")
 		return out
 	}
 	if err := requireSignature(complyFn.Definition(), nil, []api.ValueType{api.ValueTypeI32}, bridgeExportComply); err != nil {
@@ -341,8 +373,8 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 		out.err = fmt.Errorf("comply() trapped: %w", err)
 		return out
 	}
-	if state.openExamine != nil {
-		out.err = fmt.Errorf("comply() returned with examination %d still open", *state.openExamine)
+	if state.openRenderInto != nil {
+		out.err = fmt.Errorf("comply() returned with must_render_into case %d still open", *state.openRenderInto)
 		return out
 	}
 	declared := api.DecodeI32(res[0])

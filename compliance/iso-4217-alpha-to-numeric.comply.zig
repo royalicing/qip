@@ -1,16 +1,16 @@
-// Content Compliance component: ISO 4217 alphabetic code to numeric code.
+// Content Compliance oracle: ISO 4217 alphabetic code to numeric code.
 // Every current List One mapping is declared. Input must be exactly three
 // uppercase ASCII letters; output is exactly three ASCII digits.
 const table = @import("iso-4217-alpha-numeric-table.zig");
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     expected_ptr: u32,
     expected_len: u32,
 ) i32;
-extern "qip" fn render_must_trap(ordinal: u64, input_ptr: u32, input_len: u32) i32;
+extern "qip" fn must_trap(ordinal: u64, input_ptr: u32, input_len: u32) i32;
 
 var input_buf: [3]u8 = undefined;
 var expected_buf: [3]u8 = undefined;
@@ -34,7 +34,7 @@ fn unpackNumeric(numeric: u16) void {
 fn declareMapping(entry: table.Entry) void {
     unpackAlpha(entry.alpha);
     unpackNumeric(entry.numeric);
-    _ = render_must_equal(
+    _ = must_render_exactly(
         ordinal,
         @intCast(@intFromPtr(&input_buf)),
         input_buf.len,
@@ -45,7 +45,7 @@ fn declareMapping(entry: table.Entry) void {
 }
 
 fn declareInvalid(input: []const u8) void {
-    _ = render_must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
+    _ = must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
     ordinal += 1;
 }
 

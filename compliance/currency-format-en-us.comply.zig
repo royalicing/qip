@@ -1,4 +1,4 @@
-// Content Compliance component: en-US currency formatting selected by ISO
+// Content Compliance oracle: en-US currency formatting selected by ISO
 // 4217 numeric code. The component drives the implementation's currency
 // uniform through qip.set_uniform_u32 and checks every supported currency in
 // one comply() run; it does not expose a currency uniform of its own.
@@ -9,14 +9,14 @@
 // input traps.
 const currency_data = @import("currency-format-en-us-table.zig");
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
     expected_ptr: u32,
     expected_len: u32,
 ) i32;
-extern "qip" fn render_must_trap(ordinal: u64, input_ptr: u32, input_len: u32) i32;
+extern "qip" fn must_trap(ordinal: u64, input_ptr: u32, input_len: u32) i32;
 extern "qip" fn set_uniform_u32(name_ptr: u32, name_len: u32, value: u32) u32;
 
 const MAX_INTEGER_DIGITS: usize = 96;
@@ -157,12 +157,12 @@ fn oracle(input: []const u8, output: []u8) ?usize {
 
 fn declareValid(input: []const u8) void {
     const expected_len = oracle(input, expected_buf[0..]) orelse unreachable;
-    _ = render_must_equal(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len), @intCast(@intFromPtr(&expected_buf)), @intCast(expected_len));
+    _ = must_render_exactly(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len), @intCast(@intFromPtr(&expected_buf)), @intCast(expected_len));
     ordinal += 1;
 }
 
 fn declareInvalid(input: []const u8) void {
-    _ = render_must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
+    _ = must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
     ordinal += 1;
 }
 

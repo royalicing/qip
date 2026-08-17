@@ -1,0 +1,1 @@
+../../compliance/preserve-ascii.wat

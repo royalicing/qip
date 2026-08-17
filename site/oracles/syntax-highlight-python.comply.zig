@@ -1,0 +1,1 @@
+../../compliance/syntax-highlight-python.comply.zig

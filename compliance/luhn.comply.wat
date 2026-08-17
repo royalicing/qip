@@ -1,12 +1,12 @@
 (module
-  (import "qip" "render_must_equal"
-    (func $render_must_equal (param i64 i32 i32 i32 i32) (result i32)))
-  (import "qip" "render_must_trap"
-    (func $render_must_trap (param i64 i32 i32) (result i32)))
+  (import "qip" "must_render_exactly"
+    (func $must_render_exactly (param i64 i32 i32 i32 i32) (result i32)))
+  (import "qip" "must_trap"
+    (func $must_trap (param i64 i32 i32) (result i32)))
 
   (memory (export "memory") 1)
 
-  ;; The checker owns this scratch memory. Inputs start at 0 and expected
+  ;; The oracle owns this scratch memory. Inputs start at 0 and expected
   ;; normalized digits start at 256.
   (global $case_input_size (mut i32) (i32.const 0))
   (global $case_expected_size (mut i32) (i32.const 0))
@@ -118,7 +118,7 @@
 
   (func $expect_current_case (param $in_ptr i32) (param $expected_ptr i32)
     (drop
-      (call $render_must_equal
+      (call $must_render_exactly
         (global.get $ordinal)
         (local.get $in_ptr)
         (global.get $case_input_size)
@@ -128,7 +128,7 @@
 
   (func $expect_trap (param $in_ptr i32) (param $input_size i32)
     (drop
-      (call $render_must_trap
+      (call $must_trap
         (global.get $ordinal)
         (local.get $in_ptr)
         (local.get $input_size)))

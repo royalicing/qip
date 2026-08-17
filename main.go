@@ -105,13 +105,13 @@ func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGro
 	return nil
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate component ABI and run compliance components\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
+const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate Content components and run Compliance oracles\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
 const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageDry = "Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--node] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
-const usageComply = "Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [--legacy] [-v|--verbose]"
+const usageComply = "Usage: qip comply [options] <file-or-dir> [...]"
 const usageRouteDocs = "\n\nDocumentation: https://qip.dev/docs/router"
 const usageDev = "Usage: qip router dev <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]" + usageRouteDocs
 const usageRoute = "Usage: qip router <subcommand> [args]\n\nSubcommands:\n  dev      Start a dev server for a content directory with optional recipes\n  get      Resolve one GET path through the dev router and print the result\n  head     Resolve one HEAD path through the dev router and print headers\n  kindred  List routes supplied as Kindred Route context for one path\n  list     List routed paths and content types\n  warc     Archive the routed site as WARC 1.1" + usageRouteDocs
@@ -124,7 +124,7 @@ const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or fil
 const usageHelp = "Usage: qip help [command]"
 const legacyDevNotice = "qip: `qip dev` has moved to `qip router dev`; please update your command. `qip dev` will continue to work for now."
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  Example: components/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  i32 uniforms are unsigned; use i64 for signed integers.\n  Example: components/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
 const helpDryRun = `Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...
 
 Validates and describes the same prepared pipeline as qip run without reading
@@ -160,89 +160,58 @@ Output:
      Note: step 2 (components/text/html/html-page-wrap.wasm): previous output capacity 2.0 MiB (2097152 bytes) exceeds this input capacity 256.0 KiB (262144 bytes); qip run remains valid when the actual intermediate output fits
   Total declared buffer capacity: 4.8 MiB (4980736 bytes)
   Warnings: 1`
-const helpComply = `Usage: qip comply <impl.wasm> [--with <compliance.wasm> ...] [--declarative-checkers] [--seed <n>] [--legacy] [-v|--verbose]
+const helpComply = `Usage: qip comply [options] <file-or-dir> [...]
+
+Options:
+  --with <compliance.wasm>        Run a Compliance oracle (repeatable)
+  --seed <n>                      Call uniform_set_seed(u32) on each oracle
+  --max-memory <bytes>            Reject implementation memory above bytes
+  --straight-line-oracles         Require each --with oracle to use straight-line oracle calls
+  -v, --verbose                   Print detailed validation logs
 
 What qip comply does:
-  1) Base ABI validation on impl.wasm (always):
+  1) Base Content ABI validation on impl.wasm (always):
      - impl must export memory
-     - detects component kind: render, tile, or render+tile
-     - render kind requires:
-         render(i32) -> i32
-         input_ptr() -> i32
-         input_utf8_cap() -> i32 or input_bytes_cap() -> i32
-     - tile kind requires:
-         tile_rgba32float_64x64(f32, f32) -> ()
-         input_ptr() -> i32
-         input_bytes_cap() -> i32
+     - impl must export render(i32) -> i32
+     - impl must export input_ptr() -> i32
+     - impl must export input_utf8_cap() -> i32 or input_bytes_cap() -> i32
+     - impl must export output_ptr() -> i32
+     - impl must export output_utf8_cap() -> i32 or output_bytes_cap() -> i32
 
   2) Static qip contract checks (always, when qip exports are present):
      - qip contract functions (for example input_ptr/output_ptr/caps) must be
        vanilla instruction sequences with no calls, loops, or dynamic control flow
 
-  3) Executes each --with compliance component:
-     - qip instantiates impl as WebAssembly module name "impl"
-     - all compliance components run in parallel
-     - all must pass
+  3) Executes each --with Compliance oracle:
+     - oracle imports only the qip oracle bridge
+     - implementation and oracle memory remain separate
+     - all oracles must pass
 
-Checker structure:
-  --declarative-checkers requires every --with component to define one comply
+Oracle structure:
+  --straight-line-oracles requires every --with component to define one comply
   function containing only constants, direct oracle calls, drops, and its final
-  end. These checkers declare cases without runtime control flow.
+  end. These oracles declare cases without runtime control flow.
 
-Compliance component contract (what to implement):
-  Required imports/exports:
-    - must import impl.memory
-    - must export positive() -> i32
-  Optional:
-    - export negative() -> i32
-    - import qip.render_must_trap(i32) -> i32 for negative tests that expect trap
+Compliance oracle contract:
+  An oracle owns its memory, exports memory and comply() -> i32, and declares
+  cases through imports from the qip module:
+    - must_render_exactly(ordinal, input_ptr, input_size, expected_ptr, expected_size) -> i32
+    - must_trap(ordinal, input_ptr, input_size) -> i32
+    - must_render_into(ordinal, input_ptr, input_size, output_ptr, output_capacity) -> i32
+    - must_render_into_emit_error(ordinal, message_ptr, message_size) -> i32
+    - must_render_into_finish(ordinal, error_count) -> i32
+    - set_uniform_u32(name_ptr, name_size, value) -> i32
 
-Status convention:
-  - return > 0 to pass
-  - return <= 0 to fail
-  - positive() trap always fails
-  - if negative() exists, it runs on a fresh impl instance
-  - negative() returning <= 0 fails (use render_must_trap when trap is expected)
+Case rules:
+  - oracle calls use sequential u64 ordinals starting at 0
+  - comply() returns the number of declared cases
+  - must_render_into must be closed with must_render_into_finish
+  - must_render_into_finish error_count must match emitted errors
 
-Memory model for compliance components:
-  - compliance imports impl.memory, so both components see the same linear memory
-  - to test a render component, compliance usually:
-      - calls impl.input_ptr() and impl.input_utf8_cap()/input_bytes_cap()
-      - writes test input bytes into impl.memory at input_ptr
-      - calls impl.render(input_size)
-      - reads output from impl.output_ptr() and returned output size
-
-Failure detail exports (optional but recommended):
-  Export pointer/size pairs so qip can print reproducible context:
-    - failure_message_ptr / failure_message_size
-    - failure_input_ptr / failure_input_size
-    - failure_expected_output_ptr / failure_expected_output_size
-    - failure_actual_output_ptr / failure_actual_output_size
-  Legacy output fallback also supported:
-    - failure_output_ptr / failure_output_size
-  Aliases with fail_* prefix are also accepted.
-
-Minimal WAT template (render component checker):
-  (module
-    (import "impl" "memory" (memory 1))
-    (import "impl" "input_ptr" (func $input_ptr (result i32)))
-    (import "impl" "render" (func $render (param i32) (result i32)))
-    (import "impl" "output_ptr" (func $output_ptr (result i32)))
-
-    (func (export "positive") (result i32)
-      ;; write input at (call $input_ptr), call $render, compare output, return >0 on pass
-      i32.const 1)
-
-    ;; optional negative phase:
-    ;; (import "qip" "render_must_trap" (func $render_must_trap (param i32) (result i32)))
-    ;; (func (export "negative") (result i32) ...)
-  )
-
-Authoring workflow for agents:
-  1) Build impl wasm.
-  2) Run: qip comply impl.wasm --with compliance.wasm
-  3) On failure, inspect printed message/input/expected/actual previews.
-  4) Update impl or compliance component and repeat until PASS.`
+Example:
+  qip comply components/utf8/utf8-must-be-valid.wasm \
+    --with compliance/preserve-empty.wasm \
+    --with compliance/trap-invalid-utf8.wasm`
 
 func main() {
 	args := os.Args[1:]
@@ -340,6 +309,9 @@ func formCmd(args []string) {
 
 func complyCmd(args []string) {
 	if err := qinternal.RunComplyCommand(args); err != nil {
+		if errors.Is(err, qinternal.ErrComplyFailed) {
+			os.Exit(1)
+		}
 		gameOver("%v", err)
 	}
 }

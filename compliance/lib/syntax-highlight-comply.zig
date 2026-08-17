@@ -1,6 +1,6 @@
 const std = @import("std");
 
-extern "qip" fn render_must_equal(
+extern "qip" fn must_render_exactly(
     ordinal: u64,
     input_ptr: u32,
     input_len: u32,
@@ -59,7 +59,7 @@ fn countFixtures(comptime source: []const u8) usize {
 pub fn runFixtures(comptime fixtures: anytype) i32 {
     comptime var ordinal: u64 = 0;
     inline for (fixtures) |fixture| {
-        _ = render_must_equal(
+        _ = must_render_exactly(
             ordinal,
             @intCast(@intFromPtr(fixture.input.ptr)),
             @intCast(fixture.input.len),

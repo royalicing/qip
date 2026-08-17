@@ -32,7 +32,7 @@ If you want to send someone the current QIP spec, send them these pages:
 - [QIP Component Contracts](/docs/component-contract): the component types, their execution models, maturity, and how hosts distinguish them.
 - [Content Component Contract](/docs/content-component): the memory ABI, render lifecycle, content types, and composition rules for finite transforms.
 - [Interactive Component Contract](/docs/interactive-component): the framebuffer, event codes, timing, sizing, and host loop for interactive components.
-- [`qip comply`](/docs/comply): the Compliance-component bridge, ordered oracle calls, memory ownership, and executable conformance checks.
+- [`qip comply`](/docs/comply): the Compliance oracle bridge, ordered oracle calls, memory ownership, and executable conformance checks.
 - [Uniforms](/docs/uniforms): optional numeric component configuration and host application rules.
 - [Hard Limits](/docs/hard-limits): the constrained WebAssembly subset QIP components should stay inside.
 - [Formats and Encodings](/docs/formats): the MIME type and byte-format conventions that let components compose cleanly.
@@ -48,7 +48,7 @@ The current Tile and Form interfaces are evolving:
 
 WebAssembly gives QIP a compact execution target with wide runtime support.
 
-A normal execution component is a WebAssembly binary with explicit exports and no imports. By default, QIP gives it no filesystem, network, environment, clock, or secrets. The host writes input bytes into component memory, calls a known export such as `render(input_size)`, then reads output bytes back. Compliance components use only the narrow `qip` oracle bridge documented in [`qip comply`](/docs/comply); that bridge does not expose general host capabilities.
+A normal execution component is a WebAssembly binary with explicit exports and no imports. By default, QIP gives it no filesystem, network, environment, clock, or secrets. The host writes input bytes into component memory, calls a known export such as `render(input_size)`, then reads output bytes back. Compliance oracles use only the narrow `qip` oracle bridge documented in [`qip comply`](/docs/comply); that bridge does not expose general host capabilities.
 
 That shape gives the host a deterministic execution boundary: the same component bytes and input bytes are guaranteed produce the same output bytes. Components stay small enough to test, benchmark, and replace when better code appears.
 
@@ -126,7 +126,9 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/benchmarking-components">Benchmarking Components</a></li>
 <li><a href="/docs/tracing">Tracing</a></li>
 <li><a href="/docs/wasm-counts">Counting A WebAssembly Module</a></li>
-<li><a href="/docs/wasm-to-c">Translating QIP Components To C</a></li>
+<li><a href="/docs/qip-component-to-c">Translating QIP Components To C</a></li>
+<li><a href="/docs/qip-component-to-zig">Translating QIP Components To Zig</a></li>
+<li><a href="/docs/qip-component-to-swift">Translating QIP Components To Swift</a></li>
 <li><a href="/docs/nontrapping-divides">Proving Non-Trapping Divides</a></li>
 <li><a href="/docs/interactive-rendering-performance">Interactive Rendering Performance</a></li>
 <li><a href="/docs/testing-interactive-components">Testing Interactive Components</a></li>

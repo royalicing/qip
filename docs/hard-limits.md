@@ -33,7 +33,7 @@ This page is the canonical map of Wasm validation in the CLI:
 | Strict Wasm artifact structure | Only when `wasm-strict-profile.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
 | Recognizable bounded loops | Only when `wasm-bounded-loops.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
 | Recognizable bounded render output | Only when `wasm-bounded-output.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
-| Declarative Compliance checker | Not applicable | Not applicable | With `--declarative-checkers`, applied to every `--with` checker |
+| Straight-line Compliance oracle | Not applicable | Not applicable | With `--straight-line-oracles`, applied to every `--with` oracle |
 
 `qip run` and `qip dry run` share the Go module-policy validator. The strict
 artifact and bounded-loop checks are currently executable QIP components, not
@@ -92,6 +92,7 @@ a stricter subset of WebAssembly:
 - no imports, including WASI and custom host callbacks
 - a declared memory maximum and no `memory.grow`
 - no shared memory or atomic instructions
+- SIMD instructions are allowed
 - no start function
 - no indirect calls
 - an acyclic direct call graph, which excludes recursion
@@ -138,11 +139,11 @@ The policy reader still fails closed if it cannot safely decode an instruction
 body, but that is not a substitute for the specification's validation
 algorithm.
 
-Compliance components use a separate declarative checker rule, enabled with
-`qip comply --declarative-checkers`. They may import only the
+Compliance oracles use a separate straight-line oracle rule, enabled with
+`qip comply --straight-line-oracles`. They may import only the
 documented oracle functions from the `qip` host module. The implementation
 under test remains a separate instance and is not imported or memory-linked
-into the checker. Ordinary QIP components still use the import-free artifact
+into the oracle. Ordinary QIP components still use the import-free artifact
 profile above.
 
 Run the artifact checkers as a two-stage pipeline:

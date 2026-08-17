@@ -420,7 +420,9 @@ ls ./site
 - [QIP Component Patterns](docs/module-patterns.md)
 - [Writing QIP Components in Zig](docs/zig-components.md)
 - [Building C Libraries as QIP Components](docs/c-wasm-toolchains.md)
-- [Translating QIP Components To C](docs/wasm-to-c.md)
+- [Translating QIP Components To C](docs/qip-component-to-c.md)
+- [Translating QIP Components To Zig](docs/qip-component-to-zig.md)
+- [Translating QIP Components To Swift](docs/qip-component-to-swift.md)
 - [Hard Limits](docs/hard-limits.md)
 - [Provable Loops](docs/provable-loops.md)
 - [Running In JavaScript](docs/running-in-javascript.md)
@@ -532,16 +534,36 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
 
 ## TODO
 
+- [ ] Ensure we always `new TextDecoder("utf-8", { fatal: true })`
 - [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
+- [ ] Recipes page: interactive upload and text entry
+- [x] Recipes page: copy recipe as source code (e.g. as JavaScript)
+- [ ] Extend `content-recipe-to-browser-javascript` with per-stage uniforms: add an optional recipe CSV query column, apply `uniform_set_<key>` functions in sorted order before each render, parse `i32`, `i64`, `f32`, and `f64` values, reject duplicate keys, missing setters, and host-managed multi-parameter hooks, and support optional runtime overrides. Consider stable stage IDs before exposing overrides for multi-stage recipes.
+- [ ] Recipes page: prune useless recipes
+- [ ] Complete the common image conversion paths through `image/bmp`:
+  - [ ] Add `image/avif/avif-to-bmp-bgra32.wasm` so AVIF can feed the existing PNG, WebP, AVIF, ICO, and image-analysis components.
+  - [x] Add `image/bmp/bmp-bgra32-to-jpeg-lossy.wasm`, with an explicit quality uniform, so every format that decodes to BMP can produce JPEG.
+  - [ ] Add `image/gif/gif-first-frame-to-bmp-bgra32.wasm`. Keep the first-frame policy in the name rather than implying that one BMP preserves an animation; add a separate GIF-frames-to-TAR component if all frames are needed. Or we could pass the frame as a uniform?
+  - [ ] Add `image/x-icon/ico-to-bmp-bgra32.wasm`, with a deterministic default image choice and uniforms for selecting an embedded size when needed.
+- [ ] Add `php-to-c` that converts a subset of PHP to a standalone C program. `text/x-php`
+  - [ ] Support `SQLite3`: <https://www.php.net/manual/en/sqlite3.prepare.php>
+- [ ] Add SQLite prepared statement example that takes SQLite database and a query, and produces a new optimized component that accepts query parameters as its input.
+  - [ ] Curried component: input content type `application/vnd.sqlite3` output content type `application/sql -> application/x-www-form-urlencoded -> text/csv`
+- [ ] Work through the [QIP component-to-C code-generation performance experiments](components/application/wasm/qip-component-to-c.zig), measuring each lowering change independently against the current translator and WABT `wasm2c`.
+- [ ] How does our `qip-component-to-c.wasm` compare with RLBox? https://rlbox.dev/
 - [ ] Add `warc-latency-estimator.wasm` that takes a WARC and then for each route calculates largest-contentful-paint and time-to-interaction and so forth.
 - [ ] Investigate lighter router `HEAD` handling. Today `HEAD` follows the full `GET` path so WARC recipes can add derived routes, change headers, and set the final content length correctly. Many WARC recipes need the full site to understand links, but usually do not change status or headers other than `content-length`. Find a safe way for `HEAD` to avoid unnecessary body work when recipes can declare that behavior.
 - [ ] Update to latest Zig
-- [ ] Consider making `qip comply --declarative-checkers` the default after all supported Compliance components satisfy it; keep the explicit flag available for reproducible older workflows.
-- [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
-  - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
-  - [ ] Add WARC-time validation that the steps are compatible with each other.
-- [ ] Add support for nested `<qip-render component="/components/bytes/base64-encode.wasm">` that can be substituted at compile-time. This would allow something akin to React or Astro components doing server (or static) rendering.
-- [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
+- [ ] Add TAR fixture archives for straight-line Content Compliance cases. Accept them through `qip comply --with fixtures.tar` and `qipx comply --with fixtures.tar`; support `must_render_exactly`, `must_trap`, explicit per-case uniforms in the case directory name, deterministic path sorting, duplicate-key rejection, and unknown-entry failures.
+- [ ] Add Compliance sidecar recording for Wasm oracles. Start with `--record-failures failures.tar` for fuzz/debug repro cases, then consider `--record-cases cases.tar` for exporting all observed `must_render_exactly` and `must_trap` oracle calls into the TAR fixture archive format. Include a record limit so fuzzers cannot produce unbounded archives.
+- [ ] Retire `qip comply --straight-line-oracles` after TAR fixture archives cover the audit use case. Procedural Wasm Compliance oracles can keep normal control flow; fixture archives provide the no-branching format.
+- [ ] Design `<qip-step>`, `<qip-connect-search-params>`, `<qip-render>`, and pre-rendered `<qip-view>` together as the finite-rendering markup.
+  - [ ] Wrap `<source>` with `<qip-step>` as multiple `<source>` elements are meant to be alternatives to each other.
+    - [ ] Add conditional sources with a step, such as to support bmp or png or jpeg upload with `<input type="file">`.
+    - [ ] Add WARC-time validation that the steps are compatible with each other.
+  - [ ] Add `<qip-connect-search-params>` for explicitly allowing URL search parameters into a render without exposing every parameter, like Rails strong parameters. Each direct `<input type="hidden" name="language" value="en">` child declares one permitted key and uses its initial value as the fallback. Rendering replaces current values from matching search parameters, and the successful controls combine with ordinary user inputs as one form-encoded input for the steps of an enclosing `<qip-view>` or `<qip-render>`.
+  - [ ] Add support for nested `<qip-render component="/components/bytes/base64-encode.wasm">` that can be substituted at build time or serving time. This would allow something akin to React, Astro, or PHP rendering while keeping the executable components fixed by the page.
+  - [ ] Add a signal for `<qip-view>` marking pre-rendered output as authoritative so activation can skip the initial render (perhaps a `rendered` attribute). It must be an explicit marker, never inferred from non-empty output, since empty output is a valid result.
 - [ ] Retire the web-shaped `Form` component contract.
   - [ ] Add `submit(input_size)` export
     - [ ] Input is either `application/x-www-form-urlencoded` or `multipart/form-data`
@@ -615,11 +637,11 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
 - [ ] Add `--postcondition` or `--outmust` flag to `qip run` that verifies the final output conforms to a particular module e.g. `--postcondition valid-xml-1.0.wasm`.
 - [ ] Add first-stage content-type guards: either lightweight ingress sniffing (check initial bytes against expected type) or validator modules (for example `validate-html.wasm`) that accept untrusted input and re-emit it with asserted MIME type on success.
 - [ ] Add `qip photocopy` command that observes an existing tool’s input/output behavior and generates a behaviorally similar QIP module implementation in wasm, then validates it with duel/fuzz tests and reports divergences.
-- [ ] Finish **Compliance components** as a first-class component type alongside `Content`, `Interactive`, `Tile`, and `Form`. The host bridge streams one case at a time, supports procedurally generated oracles and mutation loops, and keeps checker memory separate from implementation memory.
-  - [ ] Case identity = bridge-call ordinal. Checkers are deterministic, so "case 987 of the CommonMark suite" is reproducible by re-running the checker and skipping the first 986 interactions (host returns pass without executing the impl until the target ordinal). `qip comply --case 987` prints that case's name/input/expected without needing any failure ABI; `--continue` counts all divergences instead of stopping.
-  - [ ] Corpus extraction for non-QIP implementations: run the checker against a null impl (host records every declared case instead of executing anything) and export the ordered corpus as a tar archive (simple, streaming, ordered, arbitrary binary entries; the repo already speaks tar). Any external harness — a Go test dueling x/text, a Node script dueling `toLocaleLowerCase`, a CLI duel over stdin/stdout — consumes the tar. This makes the emit-a-corpus design a *host feature* of the bridge design rather than a separate module shape.
-  - [x] Migrate all repository checkers, including Luhn, E.164, `preserve-*`, and `trap-*`, to the bridge.
-  - [ ] Move the Compliance-component meta-contract checks into `qip comply` base validation (the way static contract checks already run for render components): deterministic declarations across a double null-impl run, sequential u64 ordinals, examination open/continue/close discipline, and seed-varies-fuzz-only. Per-component harnesses must not each re-verify these; `test/lib/compliance-harness.mjs` is the interim JS reference implementation of both the bridge and the generic checks.
+- [ ] Finish **Compliance oracles** as a first-class component type alongside `Content`, `Interactive`, `Tile`, and `Form`. The host bridge streams one case at a time, supports procedurally generated oracles and mutation loops, and keeps oracle memory separate from implementation memory.
+  - [ ] Case identity = bridge-call ordinal. Oracles are deterministic, so "case 987 of the CommonMark suite" is reproducible by re-running the oracle and skipping the first 986 interactions (host returns pass without executing the impl until the target ordinal). `qip comply --case 987` prints that case's name/input/expected without needing any failure ABI; `--continue` counts all divergences instead of stopping.
+  - [ ] Corpus extraction for non-QIP implementations: run the oracle against a null impl (host records every declared case instead of executing anything) and export the ordered corpus as a tar archive (simple, streaming, ordered, arbitrary binary entries; the repo already speaks tar). Any external harness — a Go test dueling x/text, a Node script dueling `toLocaleLowerCase`, a CLI duel over stdin/stdout — consumes the tar. This makes the emit-a-corpus design a *host feature* of the bridge design rather than a separate module shape.
+  - [x] Migrate all repository oracles, including Luhn, E.164, `preserve-*`, and `trap-*`, to the bridge.
+  - [ ] Move the Compliance oracle meta-contract checks into `qip comply` base validation (the way static contract checks already run for render components): deterministic declarations across a double null-impl run, sequential u64 ordinals, must_render_into open/emit/finish discipline, and seed-varies-fuzz-only. Per-component harnesses must not each re-verify these; `test/lib/compliance-harness.mjs` is the interim JS reference implementation of both the bridge and the generic checks.
 - [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/component-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
 - [ ] Revisit numeric outputs as SIMD-aware tensors instead of restoring the old `output_i32_cap` directly. Useful proof cases are batched CRC, histograms, offset arrays, masks, and matrices. Keep element type, logical shape, and physical layout separate; Mojo's scalar-as-one-lane-SIMD and explicit layout model is pertinent prior art.
 
