@@ -743,7 +743,25 @@ function runPreparedPipeline(input, pipeline) {
     output = runStage(stage, output);
     currentType = nextContentType(stage, effectiveType);
   }
-  return { bytes: output, contentType: currentType, outputEncoding: pipeline.outputEncoding };
+  return pipelineResult(output, currentType, pipeline.outputEncoding);
+}
+
+function pipelineResult(bytesOut, contentType, outputEncoding) {
+  let decoded;
+  let hasDecoded = false;
+  return Object.freeze({
+    bytes: bytesOut,
+    contentType,
+    outputEncoding,
+    get text() {
+      if (outputEncoding !== "utf8") throw new Error("pipeline output is bytes, not UTF-8");
+      if (!hasDecoded) {
+        decoded = decoder.decode(bytesOut);
+        hasDecoded = true;
+      }
+      return decoded;
+    },
+  });
 }
 
 export function createPipeline(componentSpecs, options = {}) {

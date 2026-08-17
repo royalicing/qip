@@ -152,7 +152,7 @@ const markdown = newComponent(instance, contract);
 const pipeline = createPipeline([{ component: markdown }]);
 const result = pipeline.run("# Hello\n");
 
-console.log(new TextDecoder().decode(result.bytes));
+console.log(result.text);
 ```
 
 The library keeps WebAssembly instantiation outside its contract so callers can
@@ -176,7 +176,8 @@ choose async or sync setup. It provides QIP-specific validation and execution:
   `capacitiesMustFit` failures are reported.
 - `pipeline.run(input)` executes synchronously against instantiated components.
   This is where runtime traps, input-too-large errors, and invalid output length
-  errors are reported.
+  errors are reported. The result includes `bytes`; use the lazy `text` getter
+  when `outputEncoding` is `"utf8"`.
 
 `qipx` does not include a cache. If two recipes share a `.wasm` file, keep
 the component yourself and pass it to each pipeline that needs it.

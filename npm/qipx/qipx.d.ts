@@ -56,9 +56,10 @@ export interface QIPRunStageSpec {
 }
 
 export interface QIPRunResult {
-  bytes: Uint8Array;
-  contentType: string;
-  outputEncoding: "bytes" | "utf8";
+  readonly bytes: Uint8Array;
+  readonly contentType: string;
+  readonly outputEncoding: "bytes" | "utf8";
+  readonly text: string;
 }
 
 export interface QIPRunStage {
