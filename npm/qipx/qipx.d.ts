@@ -1,94 +1,76 @@
-declare const contentContractBrand: unique symbol;
+declare const contentTypeBrand: unique symbol;
 declare const contentComponentContractBrand: unique symbol;
 
-export interface ContentContract {
-  readonly [contentContractBrand]: true;
+export interface ContentType {
+  readonly [contentTypeBrand]: true;
   readonly encoding: "bytes" | "utf8";
-  readonly contentType?: string;
+  readonly mediaType?: string;
 }
 
 export interface ContentComponentContractOptions {
   label?: string;
   maxMemory?: number | string;
-  input?: ContentContract;
-  output?: ContentContract;
+  inputType?: ContentType;
+  outputType?: ContentType;
 }
 
 export interface ContentComponentContract {
   readonly [contentComponentContractBrand]: true;
   readonly label?: string;
   readonly maxMemory?: number;
-  readonly input?: ContentContract;
-  readonly output?: ContentContract;
-}
-
-export interface ComponentContractOptions {
-  label?: string;
-  maxMemory?: number | string;
-}
-
-export interface NewComponentOptions {
-  label?: string;
-  input?: ContentContract;
-  output?: ContentContract;
+  readonly inputType?: ContentType;
+  readonly outputType?: ContentType;
 }
 
 export interface RecipeOptions {
-  inputContentType?: string;
   capacitiesMustFit?: boolean;
 }
 
-export interface QIPRunComponent {
+export interface ContentComponent {
   label: string;
-  module?: WebAssembly.Module;
   instance: WebAssembly.Instance;
   exports: WebAssembly.Exports;
-  input: ContentContract;
-  output: ContentContract;
+  inputType: ContentType;
+  outputType: ContentType;
   inputCapacity: number;
   outputCapacity: number;
 }
 
-export interface QIPRunStageSpec {
-  component: QIPRunComponent;
+export interface RecipeStageSpec {
+  component: ContentComponent;
   label?: string;
   uniforms?: Array<[key: string, value: string | number]>;
 }
 
-export type QIPRunRecipeStep = QIPRunComponent | QIPRunStageSpec | QIPRunRecipe;
+export type RecipeStep = ContentComponent | RecipeStageSpec | Recipe;
 
-export interface QIPRunResult {
-  readonly bytes: Uint8Array;
-  readonly contentType: string;
-  readonly outputEncoding: "bytes" | "utf8";
-  readonly text: string;
+export interface RenderResult {
+  readonly outputBytes: Uint8Array;
+  readonly outputString?: string;
+  readonly outputType: ContentType;
 }
 
-export interface QIPRunStage {
+export interface RecipeStage {
   label: string;
   uniforms: Array<[key: string, value: string | number]>;
-  component: QIPRunComponent;
-  input: ContentContract;
-  output: ContentContract;
+  component: ContentComponent;
+  inputType: ContentType;
+  outputType: ContentType;
   inputCapacity: number;
   outputCapacity: number;
 }
 
-export interface QIPRunPlan {
-  stages: readonly QIPRunStage[];
-  inputContentType: string;
-  outputContentType: string;
-  outputEncoding: "bytes" | "utf8";
+export interface Recipe {
+  stages: readonly RecipeStage[];
+  outputType: ContentType;
 }
 
-export interface QIPRunRecipe extends QIPRunPlan {}
-
-export function contentTypeUTF8(optionalMIMEType?: string): ContentContract;
-export function contentTypeBytes(optionalMIMEType?: string): ContentContract;
+export function contentTypeUTF8(optionalMIMEType?: string): ContentType;
+export function contentTypeBytes(optionalMIMEType?: string): ContentType;
 export function newContentComponentContract(options?: ContentComponentContractOptions): ContentComponentContract;
-export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuffer, options?: ComponentContractOptions | ContentComponentContract): void;
-export function newComponent(instance: WebAssembly.Instance, options?: NewComponentOptions | ContentComponentContract): QIPRunComponent;
-export function createRecipe(steps: QIPRunRecipeStep[], options?: RecipeOptions): QIPRunRecipe;
-export function render(target: QIPRunComponent | QIPRunRecipe, input: Uint8Array | ArrayBuffer | string): QIPRunResult;
+export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuffer, contract?: ContentComponentContract): void;
+export function newComponent(instance: WebAssembly.Instance, contract?: ContentComponentContract): ContentComponent;
+export function createRecipe(steps: RecipeStep[], options?: RecipeOptions): Recipe;
+export function render(target: ContentComponent | Recipe, input: Uint8Array | ArrayBuffer | string): RenderResult;
 
 export function main(argv?: string[]): Promise<void>;

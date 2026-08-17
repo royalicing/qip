@@ -80,20 +80,20 @@ function optionalContentType(type, label = "contentType") {
   return type;
 }
 
-class ContentContract {
+class ContentType {
   constructor(encoding, optionalMIMEType) {
     this.encoding = encoding;
-    this.contentType = optionalContentType(optionalMIMEType);
+    this.mediaType = optionalContentType(optionalMIMEType, "mediaType");
     Object.freeze(this);
   }
 }
 
 export function contentTypeUTF8(optionalMIMEType) {
-  return new ContentContract("utf8", optionalMIMEType);
+  return new ContentType("utf8", optionalMIMEType);
 }
 
 export function contentTypeBytes(optionalMIMEType) {
-  return new ContentContract("bytes", optionalMIMEType);
+  return new ContentType("bytes", optionalMIMEType);
 }
 
 const contentComponentContractBrand = Symbol("qipx.contentComponentContract");
@@ -103,10 +103,10 @@ class ContentComponentContractSpec {
     this[contentComponentContractBrand] = true;
     this.label = options.label;
     this.maxMemory = options.maxMemory === undefined ? undefined : parseMaxMemory(options.maxMemory);
-    this.input = options.input;
-    this.output = options.output;
-    if (this.input !== undefined && !isContentContract(this.input)) throw new Error("input must be contentTypeUTF8(...) or contentTypeBytes(...)");
-    if (this.output !== undefined && !isContentContract(this.output)) throw new Error("output must be contentTypeUTF8(...) or contentTypeBytes(...)");
+    this.inputType = options.inputType;
+    this.outputType = options.outputType;
+    if (this.inputType !== undefined && !isContentType(this.inputType)) throw new Error("inputType must be contentTypeUTF8(...) or contentTypeBytes(...)");
+    if (this.outputType !== undefined && !isContentType(this.outputType)) throw new Error("outputType must be contentTypeUTF8(...) or contentTypeBytes(...)");
     Object.freeze(this);
   }
 }
@@ -119,20 +119,20 @@ function componentContractOptions(options = {}) {
   return options?.[contentComponentContractBrand] ? options : options;
 }
 
-function isContentContract(value) {
-  return value instanceof ContentContract;
+function isContentType(value) {
+  return value instanceof ContentType;
 }
 
-function describeContentContract(contract) {
-  return `${contract.encoding}${contract.contentType ? ` ${contract.contentType}` : ""}`;
+function describeContentType(type) {
+  return `${type.encoding}${type.mediaType ? ` ${type.mediaType}` : ""}`;
 }
 
 function assertComponentContract(component, field, expected) {
   if (expected === undefined) return;
-  if (!isContentContract(expected)) throw new Error(`${field} must be contentTypeUTF8(...) or contentTypeBytes(...)`);
+  if (!isContentType(expected)) throw new Error(`${field} must be contentTypeUTF8(...) or contentTypeBytes(...)`);
   const actual = component[field];
-  if (actual.encoding !== expected.encoding || (expected.contentType !== undefined && actual.contentType !== expected.contentType)) {
-    throw new Error(`${component.label} ${field} contract mismatch: expected ${describeContentContract(expected)}, got ${describeContentContract(actual)}`);
+  if (actual.encoding !== expected.encoding || (expected.mediaType !== undefined && actual.mediaType !== expected.mediaType)) {
+    throw new Error(`${component.label} ${field} contract mismatch: expected ${describeContentType(expected)}, got ${describeContentType(actual)}`);
   }
 }
 
@@ -633,16 +633,16 @@ export function newComponent(instance, options = {}) {
     label,
     instance,
     exports,
-    input: new ContentContract(hasInputUTF8 ? "utf8" : "bytes", declaredType(exports, "input", label) || undefined),
-    output: new ContentContract(hasOutputUTF8 ? "utf8" : "bytes", declaredType(exports, "output", label) || undefined),
+    inputType: new ContentType(hasInputUTF8 ? "utf8" : "bytes", declaredType(exports, "input", label) || undefined),
+    outputType: new ContentType(hasOutputUTF8 ? "utf8" : "bytes", declaredType(exports, "output", label) || undefined),
     inputCapName,
     outputCapName,
     clearsContentType: hasOutputUTF8 && hasInputBytes,
     inputCapacity: exportedValue(exports, inputCapName, label),
     outputCapacity: exportedValue(exports, outputCapName, label),
   });
-  assertComponentContract(component, "input", contract.input);
-  assertComponentContract(component, "output", contract.output);
+  assertComponentContract(component, "inputType", contract.inputType);
+  assertComponentContract(component, "outputType", contract.outputType);
   return component;
 }
 
@@ -651,8 +651,8 @@ function makeStage(spec, component) {
     label: spec.label ?? spec.filePath ?? component.label,
     uniforms: spec.uniforms ?? [],
     component,
-    input: component.input,
-    output: component.output,
+    inputType: component.inputType,
+    outputType: component.outputType,
     inputCapName: component.inputCapName,
     outputCapName: component.outputCapName,
     clearsContentType: component.clearsContentType,
@@ -683,16 +683,16 @@ function runStage(stage, input) {
 
 function resolveStageInputType(stage, currentType, allowMissingInputContentType) {
   let effectiveType = currentType;
-  if (!effectiveType && stage.input.contentType && allowMissingInputContentType) effectiveType = stage.input.contentType;
-  if (stage.input.contentType && effectiveType !== stage.input.contentType) {
-    if (!effectiveType) throw new Error(`${stage.label} expects ${stage.input.contentType}, but pipeline content type is unspecified`);
-    throw new Error(`${stage.label} expects ${stage.input.contentType}, got ${effectiveType}`);
+  if (!effectiveType && stage.inputType.mediaType && allowMissingInputContentType) effectiveType = stage.inputType.mediaType;
+  if (stage.inputType.mediaType && effectiveType !== stage.inputType.mediaType) {
+    if (!effectiveType) throw new Error(`${stage.label} expects ${stage.inputType.mediaType}, but pipeline content type is unspecified`);
+    throw new Error(`${stage.label} expects ${stage.inputType.mediaType}, got ${effectiveType}`);
   }
   return effectiveType;
 }
 
 function nextContentType(stage, effectiveInputType) {
-  if (stage.output.contentType) return stage.output.contentType;
+  if (stage.outputType.mediaType) return stage.outputType.mediaType;
   if (stage.clearsContentType) return "";
   return effectiveInputType;
 }
@@ -713,10 +713,9 @@ function parseU32Flag(name, value) {
 
 function validatePipeline(stages, options = {}) {
   if (!Array.isArray(stages) || stages.length === 0) throw new Error("at least one component is required");
-  let currentType = options.inputContentType ?? "";
-  if (currentType) validateContentType(currentType, "input content type");
+  let currentType = "";
   stages.forEach((stage, index) => {
-    const effectiveType = resolveStageInputType(stage, currentType, index === 0 && !options.inputContentType);
+    const effectiveType = resolveStageInputType(stage, currentType, index === 0);
     currentType = nextContentType(stage, effectiveType);
     if (options.capacitiesMustFit && index + 1 < stages.length) {
       const nextStage = stages[index + 1];
@@ -728,40 +727,38 @@ function validatePipeline(stages, options = {}) {
   const last = stages.at(-1);
   return Object.freeze({
     stages,
-    inputContentType: options.inputContentType ?? "",
-    outputContentType: currentType,
-    outputEncoding: last.output.encoding,
+    outputType: new ContentType(last.outputType.encoding, currentType || undefined),
   });
 }
 
 function runPreparedPipeline(input, pipeline) {
   let output = bytes(input);
-  let currentType = pipeline.inputContentType;
+  let currentType = "";
   for (let index = 0; index < pipeline.stages.length; index += 1) {
     const stage = pipeline.stages[index];
-    const effectiveType = resolveStageInputType(stage, currentType, index === 0 && !pipeline.inputContentType);
+    const effectiveType = resolveStageInputType(stage, currentType, index === 0);
     output = runStage(stage, output);
     currentType = nextContentType(stage, effectiveType);
   }
-  return pipelineResult(output, currentType, pipeline.outputEncoding);
+  return pipelineResult(output, pipeline.outputType);
 }
 
-function pipelineResult(bytesOut, contentType, outputEncoding) {
-  let decoded;
-  let hasDecoded = false;
-  return Object.freeze({
-    bytes: bytesOut,
-    contentType,
-    outputEncoding,
-    get text() {
-      if (outputEncoding !== "utf8") throw new Error("pipeline output is bytes, not UTF-8");
-      if (!hasDecoded) {
-        decoded = decoder.decode(bytesOut);
-        hasDecoded = true;
-      }
-      return decoded;
-    },
-  });
+function pipelineResult(outputBytes, outputType) {
+  const result = {
+    outputBytes,
+    outputType,
+  };
+  if (outputType.encoding === "utf8") {
+    let outputString;
+    Object.defineProperty(result, "outputString", {
+      enumerable: true,
+      get() {
+        if (outputString === undefined) outputString = decoder.decode(outputBytes);
+        return outputString;
+      },
+    });
+  }
+  return Object.freeze(result);
 }
 
 export function createRecipe(steps, options = {}) {
@@ -1158,10 +1155,11 @@ async function loadStages(componentSpecs, options) {
   const stages = [];
   for (const spec of componentSpecs) {
     const wasm = await readFile(spec.filePath);
-    wasmMustComplyWithComponentContract(wasm, { maxMemory: options.maxMemory, label: spec.label });
+    const contract = newContentComponentContract({ maxMemory: options.maxMemory, label: spec.label });
+    wasmMustComplyWithComponentContract(wasm, contract);
     const module = new WebAssembly.Module(wasm);
     const instance = new WebAssembly.Instance(module);
-    const component = newComponent(instance, { label: spec.label });
+    const component = newComponent(instance, contract);
     stages.push({ component, label: spec.label, uniforms: spec.uniforms });
   }
   return stages;
@@ -1200,8 +1198,8 @@ function printDryRunPlan(plan) {
     const buffers = stage.inputCapacity + stage.outputCapacity;
     total += buffers;
     console.log(`${index + 1}. ${stage.label} — Content`);
-    console.log(`   Input:  encoding=${stage.input.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.input.contentType || "unspecified"}, capacity=${formatBytes(stage.inputCapacity)}`);
-    console.log(`   Output: encoding=${stage.output.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.output.contentType || "unspecified"}, capacity=${formatBytes(stage.outputCapacity)}`);
+    console.log(`   Input:  encoding=${stage.inputType.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.inputType.mediaType || "unspecified"}, capacity=${formatBytes(stage.inputCapacity)}`);
+    console.log(`   Output: encoding=${stage.outputType.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.outputType.mediaType || "unspecified"}, capacity=${formatBytes(stage.outputCapacity)}`);
     console.log(`   Buffers: ${formatBytes(buffers)}`);
   });
   console.log(`Total declared buffer capacity: ${formatBytes(total)}`);
@@ -1251,10 +1249,10 @@ export async function main(argv = process.argv.slice(2)) {
   const input = options.input === "-" ? await readStdin() : await readFile(options.input);
   const result = render(pipeline, input);
   if (options.output === "-") {
-    process.stdout.write(result.bytes);
-    if (result.outputEncoding === "utf8") process.stdout.write("\n");
+    process.stdout.write(result.outputBytes);
+    if (result.outputType.encoding === "utf8") process.stdout.write("\n");
   } else {
-    await writeFile(options.output, result.bytes);
+    await writeFile(options.output, result.outputBytes);
   }
 }
 

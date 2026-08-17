@@ -140,8 +140,8 @@ const wasm = await readFile("gfm-commonmark.0.31.2.wasm");
 const contract = newContentComponentContract({
   label,
   maxMemory: 67108864,
-  input: contentTypeUTF8("text/markdown"),
-  output: contentTypeUTF8("text/html"),
+  inputType: contentTypeUTF8("text/markdown"),
+  outputType: contentTypeUTF8("text/html"),
 });
 
 wasmMustComplyWithComponentContract(wasm, contract);
@@ -153,7 +153,7 @@ const markdown = newComponent(instance, contract);
 const recipe = createRecipe([markdown]);
 const result = render(recipe, "# Hello\n");
 
-console.log(result.text);
+if ("outputString" in result) console.log(result.outputString);
 ```
 
 A recipe can include existing recipes:
@@ -168,7 +168,7 @@ const pageRecipe = createRecipe([
 The library keeps WebAssembly instantiation outside its contract so callers can
 choose async or sync setup. It provides QIP-specific validation and execution:
 
-- `wasmMustComplyWithComponentContract(bytes, options)` checks the byte-level
+- `wasmMustComplyWithComponentContract(bytes, contract)` checks the byte-level
   QIP Content contract before compilation and instantiation. It enforces the
   Strict Wasm Profile subset, `maxMemory`, no imports, no start function, no
   `memory.grow`, no atomics, the required Content exports, complete
@@ -177,8 +177,8 @@ choose async or sync setup. It provides QIP-specific validation and execution:
   byte-level checks and instantiated component checks.
 - `newComponent(instance, contract)` validates the instantiated QIP Content ABI
   and reads callable getter values and content-type metadata bytes. The
-  contract can include `input: contentTypeUTF8(...)`, `input:
-  contentTypeBytes(...)`, `output: contentTypeUTF8(...)`, or `output:
+  contract can include `inputType: contentTypeUTF8(...)`, `inputType:
+  contentTypeBytes(...)`, `outputType: contentTypeUTF8(...)`, or `outputType:
   contentTypeBytes(...)` when your code must verify the expected component
   contract.
 - `createRecipe(stages, options)` checks stage compatibility before input
@@ -186,8 +186,9 @@ choose async or sync setup. It provides QIP-specific validation and execution:
   `capacitiesMustFit` failures are reported.
 - `render(componentOrRecipe, input)` executes synchronously against
   instantiated components. This is where runtime traps, input-too-large errors,
-  and invalid output length errors are reported. The result includes `bytes`;
-  use the lazy `text` getter when `outputEncoding` is `"utf8"`.
+  and invalid output length errors are reported. The result always includes
+  `outputBytes` and `outputType`. UTF-8 output also includes a lazy
+  `outputString` getter.
 
 `qipx` does not include a cache. If two recipes share a `.wasm` file, keep
 the component yourself and pass it to each recipe that needs it.
@@ -199,8 +200,8 @@ When validation or execution fails, the library throws an `Error` or
 
 | Phase | Function or CLI point | Typical failures |
 | --- | --- | --- |
-| Component contract bytes | `wasmMustComplyWithComponentContract(bytes, { maxMemory })` or CLI component loading | invalid Wasm binary header; imports; start function; shared memory; `memory.grow`; atomics; malformed function bodies; declared memory exceeds `maxMemory`; memory has no declared maximum when `maxMemory` is set; missing Content exports; non-static ABI getters |
-| Instantiation and ABI | `newComponent(instance, options)` | exported memory is missing; `render` is missing; input/output pointer or capacity exports are missing or ambiguous; declared content type is invalid |
+| Component contract bytes | `wasmMustComplyWithComponentContract(bytes, contract)` or CLI component loading | invalid Wasm binary header; imports; start function; shared memory; `memory.grow`; atomics; malformed function bodies; declared memory exceeds `maxMemory`; memory has no declared maximum when `maxMemory` is set; missing Content exports; non-static ABI getters |
+| Instantiation and ABI | `newComponent(instance, contract)` | exported memory is missing; `render` is missing; input/output pointer or capacity exports are missing or ambiguous; declared content type is invalid |
 | Recipe validation | `createRecipe(...)` | a stage expects a different content type than the previous stage produced; recipe content type is unspecified for a stage that declares an input type; `capacitiesMustFit` finds producer output capacity larger than consumer input capacity |
 | Execution | `render(componentOrRecipe, input)` | input bytes do not fit the stage input buffer; the component traps; returned output length exceeds the advertised output capacity or memory bounds |
 | Compliance bridge | `qipx comply impl.wasm --with oracle.wasm` | oracle does not export `memory` or `comply`; oracle imports other than the `qip` bridge; bridge ordinals are not sequential; expected output does not match actual output; expected trap does not trap; must_render_into protocol is not closed |
