@@ -33,7 +33,7 @@ export interface NewComponentOptions {
   output?: ContentContract;
 }
 
-export interface PipelineOptions {
+export interface RecipeOptions {
   inputContentType?: string;
   capacitiesMustFit?: boolean;
 }
@@ -54,6 +54,8 @@ export interface QIPRunStageSpec {
   label?: string;
   uniforms?: Array<[key: string, value: string | number]>;
 }
+
+export type QIPRunRecipeStep = QIPRunStageSpec | QIPRunRecipe;
 
 export interface QIPRunResult {
   readonly bytes: Uint8Array;
@@ -79,14 +81,14 @@ export interface QIPRunPlan {
   outputEncoding: "bytes" | "utf8";
 }
 
-export interface QIPRunPipeline extends QIPRunPlan {}
+export interface QIPRunRecipe extends QIPRunPlan {}
 
 export function contentTypeUTF8(optionalMIMEType?: string): ContentContract;
 export function contentTypeBytes(optionalMIMEType?: string): ContentContract;
 export function newContentComponentContract(options?: ContentComponentContractOptions): ContentComponentContract;
 export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuffer, options?: ComponentContractOptions | ContentComponentContract): void;
 export function newComponent(instance: WebAssembly.Instance, options?: NewComponentOptions | ContentComponentContract): QIPRunComponent;
-export function createPipeline(componentSpecs: QIPRunStageSpec[], options?: PipelineOptions): QIPRunPipeline;
-export function render(target: QIPRunComponent | QIPRunPipeline, input: Uint8Array | ArrayBuffer | string): QIPRunResult;
+export function createRecipe(steps: QIPRunRecipeStep[], options?: RecipeOptions): QIPRunRecipe;
+export function render(target: QIPRunComponent | QIPRunRecipe, input: Uint8Array | ArrayBuffer | string): QIPRunResult;
 
 export function main(argv?: string[]): Promise<void>;

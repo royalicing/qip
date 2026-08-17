@@ -764,19 +764,23 @@ function pipelineResult(bytesOut, contentType, outputEncoding) {
   });
 }
 
-export function createPipeline(componentSpecs, options = {}) {
+export function createRecipe(steps, options = {}) {
   const stages = [];
-  for (const spec of componentSpecs) {
-    if (!spec.component) throw new Error("stage requires component");
-    stages.push(makeStage(spec, spec.component));
+  for (const step of steps) {
+    if (step && Array.isArray(step.stages)) {
+      stages.push(...step.stages);
+      continue;
+    }
+    if (!step?.component) throw new Error("recipe step requires component or recipe");
+    stages.push(makeStage(step, step.component));
   }
   return validatePipeline(stages, options);
 }
 
 export function render(target, input) {
   if (target && Array.isArray(target.stages)) return runPreparedPipeline(input, target);
-  if (target && target.instance instanceof WebAssembly.Instance) return runPreparedPipeline(input, createPipeline([{ component: target }]));
-  throw new Error("render target must be a component or pipeline");
+  if (target && target.instance instanceof WebAssembly.Instance) return runPreparedPipeline(input, createRecipe([{ component: target }]));
+  throw new Error("render target must be a component or recipe");
 }
 
 async function walkWasmFiles(path) {
@@ -1162,7 +1166,7 @@ async function loadStages(componentSpecs, options) {
 async function prepareRunPipeline(argv) {
   const { options, components } = parseCLI(argv);
   const stages = await loadStages(components, options);
-  const pipeline = createPipeline(stages, {
+  const pipeline = createRecipe(stages, {
     capacitiesMustFit: options.capacitiesMustFit,
   });
   return { options, pipeline };
