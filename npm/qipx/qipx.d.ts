@@ -88,10 +88,5 @@ export function newContentComponentContract(options?: ContentComponentContractOp
 export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuffer, options?: ComponentContractOptions | ContentComponentContract): void;
 export function newComponent(instance: WebAssembly.Instance, options?: NewComponentOptions | ContentComponentContract): QIPRunComponent;
 export function createPipeline(componentSpecs: QIPRunStageSpec[], options?: PipelineOptions): QIPRunPipeline;
-export function runPipeline(
-  input: Uint8Array | ArrayBuffer | string,
-  componentSpecs: QIPRunStageSpec[],
-  options?: PipelineOptions,
-): QIPRunResult;
 
 export function main(argv?: string[]): Promise<void>;

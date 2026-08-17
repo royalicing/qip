@@ -761,10 +761,6 @@ export function createPipeline(componentSpecs, options = {}) {
   });
 }
 
-export function runPipeline(input, componentSpecs, options = {}) {
-  return createPipeline(componentSpecs, options).run(input);
-}
-
 async function walkWasmFiles(path) {
   const info = await stat(path);
   if (info.isFile()) {

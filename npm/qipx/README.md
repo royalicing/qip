@@ -191,7 +191,7 @@ When validation or execution fails, the library throws an `Error` or
 | Component contract bytes | `wasmMustComplyWithComponentContract(bytes, { maxMemory })` or CLI component loading | invalid Wasm binary header; imports; start function; shared memory; `memory.grow`; atomics; malformed function bodies; declared memory exceeds `maxMemory`; memory has no declared maximum when `maxMemory` is set; missing Content exports; non-static ABI getters |
 | Instantiation and ABI | `newComponent(instance, options)` | exported memory is missing; `render` is missing; input/output pointer or capacity exports are missing or ambiguous; declared content type is invalid |
 | Pipeline validation | `createPipeline(...)` | a stage expects a different content type than the previous stage produced; pipeline content type is unspecified for a stage that declares an input type; `capacitiesMustFit` finds producer output capacity larger than consumer input capacity |
-| Execution | `pipeline.run(input)` or `runPipeline(input, stages, options)` | input bytes do not fit the stage input buffer; the component traps; returned output length exceeds the advertised output capacity or memory bounds |
+| Execution | `pipeline.run(input)` | input bytes do not fit the stage input buffer; the component traps; returned output length exceeds the advertised output capacity or memory bounds |
 | Compliance bridge | `qipx comply impl.wasm --with oracle.wasm` | oracle does not export `memory` or `comply`; oracle imports other than the `qip` bridge; bridge ordinals are not sequential; expected output does not match actual output; expected trap does not trap; must_render_into protocol is not closed |
 
 Example `maxMemory` failure:
