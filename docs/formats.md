@@ -17,11 +17,13 @@ Current formats directly supported by a qip command or supported by this repo’
 - `application/warc`: website snapshots
 - `application/x-tar`: directory archive as one input/output blob
 - `application/zip`: compressed directory archive for broad tool compatibility
+- `application/x-www-form-urlencoded`: small named UTF-8 form fields
 - `image/bmp`: simple uncompressed raster interchange
 - `image/jp2`: JPEG 2000 still images
 - `image/svg+xml`: vector graphics that work great with LLMs
 - `image/x-icon`
 - `image/gif`
+- `font/ttf`: SFNT fonts with TrueType `glyf` outlines
 - `text/markdown`
 - `text/html`
 - `text/javascript`
@@ -34,9 +36,13 @@ Examples:
 - `qip router warc ...` emits `application/warc`
 - `components/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
 - `components/image/jp2/jp2-to-bmp-bgra32.wasm` maps `image/jp2 -> image/bmp`
+- `components/font/ttf/ttf-to-svg-paths-csv.wasm` maps `font/ttf -> text/csv`
+- `components/font/ttf/ttf-to-svg-path-defs.wasm` maps `font/ttf -> image/svg+xml`
 - `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
 - `components/application/x-tar/tar-to-zip.wasm` maps `application/x-tar -> application/zip`
 - `components/application/zip/zip-to-tar.wasm` maps `application/zip -> application/x-tar`
+- `components/utf8/text-to-og-image-svg-inter.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
+- `components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
 - `components/application/zip/zip-list-entries-csv.wasm` maps `application/zip -> text/csv`
 - `components/application/zip/zip-list-files-csv.wasm` maps `application/zip -> text/csv`
 - `components/application/zip/zip-extract-file.wasm` maps one regular ZIP entry to `application/octet-stream`; select it with `?file_index=N`

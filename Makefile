@@ -222,6 +222,12 @@ components/application/wasm/wasm-nontrapping-divides.wasm: components/applicatio
 components/application/wasm/wasm-to-js.wasm: components/application/wasm/wasm-to-js.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+components/font/ttf/ttf-to-svg-paths-csv.wasm components/font/ttf/ttf-to-svg-path-defs.wasm: components/font/ttf/lib/ttf.zig components/font/ttf/lib/path-output.zig
+
+components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm: components/utf8/dejavu_sans_mono_56_latin1_paths.zig components/utf8/dejavu_sans_mono_bold_56_latin1_paths.zig
+
+components/utf8/text-to-og-image-svg-inter.wasm: components/utf8/lib/inter_display_latin_paths.zig components/utf8/lib/inter_display_bold_latin_paths.zig
+
 components/application/wasm/wasm-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040
 components/application/wasm/wasm-to-c.wasm: components/application/wasm/wasm-to-c.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -595,6 +601,9 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/sqlite-modules.mjs
 	node --test test/pdf-extract-images.mjs
 	node --test test/pdf-extract-text.mjs
+	node --test test/ttf-svg-paths.mjs
+	node --test test/text-to-og-image-svg.mjs
+	node --test test/text-to-og-image-svg-inter.mjs
 	node --test test/jp2-bmp.mjs
 	node --test test/recipe-book-tar.mjs
 	node --test test/qip-router-node.mjs

@@ -14,6 +14,10 @@ path,input_encoding,input_mime,input_capacity_bytes,output_encoding,output_mime,
 /components/application/zip/zip-list-entries-csv.wasm,bytes,application/zip,134217728,utf8,text/csv,167772160
 /components/application/zip/zip-list-files-csv.wasm,bytes,application/zip,134217728,utf8,text/csv,167772160
 /components/application/zip/zip-to-tar.wasm,bytes,application/zip,134217728,bytes,application/x-tar,167772160
+/components/font/ttf/ttf-to-svg-paths-csv.wasm,bytes,font/ttf,16777216,utf8,text/csv,33554432
+/components/font/ttf/ttf-to-svg-path-defs.wasm,bytes,font/ttf,16777216,utf8,image/svg+xml,33554432
+/components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm,utf8,application/x-www-form-urlencoded,4096,utf8,image/svg+xml,8388608
+/components/utf8/text-to-og-image-svg-inter.wasm,utf8,application/x-www-form-urlencoded,4096,utf8,image/svg+xml,8388608
 /components/multipart/form-data/form-data-to-tar.wasm,bytes,multipart/form-data,67108864,bytes,application/x-tar,67372032
 /components/image/bmp/bmp-bgra32-to-avif-lossy.wasm,bytes,image/bmp,48065536,bytes,image/avif,67108864
 /components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm,bytes,image/bmp,100065536,bytes,image/jpeg,83886080

@@ -1,0 +1,109 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const componentPath = "components/utf8/text-to-og-image-svg-inter.wasm";
+
+async function instantiate() {
+  const { instance } = await WebAssembly.instantiate(
+    await readFile(componentPath),
+    {},
+  );
+  return instance;
+}
+
+function render(instance, text) {
+  const input = Buffer.from(text);
+  assert.ok(input.length <= instance.exports.input_utf8_cap());
+  new Uint8Array(
+    instance.exports.memory.buffer,
+    instance.exports.input_ptr(),
+    input.length,
+  ).set(input);
+  const outputSize = instance.exports.render(input.length);
+  return Buffer.from(
+    new Uint8Array(
+      instance.exports.memory.buffer,
+      instance.exports.output_ptr(),
+      outputSize,
+    ),
+  ).toString("utf8");
+}
+
+function form(title, subtitle) {
+  const fields = new URLSearchParams({ title });
+  if (subtitle !== undefined) fields.set("subtitle", subtitle);
+  return fields.toString();
+}
+
+function firstTwoXPositions(svg) {
+  return [...svg.matchAll(/translate\(([^ ]+) [^)]+\)/g)]
+    .slice(0, 2)
+    .map((match) => Number(match[1]));
+}
+
+test("renders a left-aligned Inter title and smaller subtitle", async () => {
+  const instance = await instantiate();
+  instance.exports.uniform_set_text_color(0xffffffff);
+  instance.exports.uniform_set_background_color(0x4b2e83ff);
+  const svg = render(
+    instance,
+    form(
+      "Inter makes beautifully spaced Open Graph titles",
+      "Proportional paths and kerning, without an external font dependency.",
+    ),
+  );
+
+  const inputContentType = Buffer.from(
+    new Uint8Array(
+      instance.exports.memory.buffer,
+      instance.exports.input_content_type_ptr(),
+      instance.exports.input_content_type_size(),
+    ),
+  ).toString("utf8");
+  assert.equal(inputContentType, "application/x-www-form-urlencoded");
+  assert.match(svg, /^<svg [^>]*width="1200" height="630"/);
+  assert.match(svg, /<rect [^>]*fill="#4b2e83"\/\>/);
+  assert.match(svg, /data-role="title"[^>]*data-font-weight="700"/);
+  assert.match(svg, /data-role="subtitle"[^>]*data-font-weight="400"/);
+  assert.ok((svg.match(/translate\(96\.000 /g) ?? []).length >= 2);
+  const titleSize = Number(svg.match(/data-role="title"[^>]*data-font-size="(\d+)"/)[1]);
+  const subtitleSize = Number(svg.match(/data-role="subtitle"[^>]*data-font-size="(\d+)"/)[1]);
+  assert.ok(titleSize > subtitleSize);
+  assert.doesNotMatch(svg, /<text\b|[\s<]font-family=/);
+});
+
+test("uses proportional advances and Inter pair kerning", async () => {
+  const instance = await instantiate();
+  instance.exports.uniform_set_font_weight(400);
+  assert.equal(instance.exports.uniform_set_font_max_size(112), 112);
+  const [aInAv, vInAv] = firstTwoXPositions(render(instance, form("AV")));
+  const [aInAa, secondA] = firstTwoXPositions(render(instance, form("AA")));
+  assert.ok(vInAv - aInAv < secondA - aInAa, "expected AV kerning to tighten the pair");
+
+  const [i, w] = firstTwoXPositions(render(instance, form("iW")));
+  assert.ok(w - i < secondA - aInAa, "expected the narrow i advance to be proportional");
+});
+
+test("font_max_size remains a ceiling while auto-fit can select less", async () => {
+  const instance = await instantiate();
+  assert.equal(instance.exports.uniform_set_font_max_size(64), 64);
+  assert.equal(instance.exports.uniform_set_font_max_size(999), 160);
+  assert.equal(instance.exports.uniform_set_font_max_size(64), 64);
+  assert.equal(instance.exports.uniform_set_font_size, undefined);
+  const svg = render(instance, form(
+    "A deliberately long title that must wrap and shrink below its configured ceiling ".repeat(5),
+    "Maximum means maximum, not a fixed size.",
+  ));
+  const renderedSize = Number(svg.match(/data-role="title"[^>]*data-font-size="(\d+)"/)[1]);
+  assert.ok(renderedSize < 64);
+});
+
+test("supports common title punctuation and rejects unsupported scripts", async () => {
+  const instance = await instantiate();
+  assert.doesNotThrow(() => render(instance, form("“Clear”—fast… €42™", "A subtitle")));
+  assert.doesNotThrow(() => render(instance, form("", "Subtitle without a title")));
+  assert.doesNotThrow(() => render(instance, form("", "")));
+  assert.throws(() => render(instance, form("Greek Ω is unsupported")));
+  assert.throws(() => render(instance, "subtitle=Missing+title"));
+});
