@@ -16,7 +16,6 @@ function usage() {
     `Options:\n` +
     `  -i, --input <path>              Read input from a file instead of stdin\n` +
     `  -o, --output <path>             Write output to a file instead of stdout\n` +
-    `  --input-content-type <type>     Set the initial pipeline content type\n` +
     `  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes\n` +
     `  --capacities-must-fit           Reject stages whose max output cannot fit next input\n` +
     `  dry run                         Validate the pipeline without reading input or rendering\n` +
@@ -1110,7 +1109,7 @@ function parseStageArgs(args) {
 }
 
 function parseCLI(argv) {
-  const options = { input: "-", output: "-", inputContentType: "", maxMemory: undefined, capacitiesMustFit: false };
+  const options = { input: "-", output: "-", maxMemory: undefined, capacitiesMustFit: false };
   const components = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1121,8 +1120,6 @@ function parseCLI(argv) {
       options.input = argv[++index];
     } else if (arg === "-o" || arg === "--output") {
       options.output = argv[++index];
-    } else if (arg === "--input-content-type") {
-      options.inputContentType = argv[++index];
     } else if (arg === "--max-memory") {
       options.maxMemory = parseMaxMemory(argv[++index]);
     } else if (arg === "--capacities-must-fit") {
@@ -1155,7 +1152,6 @@ async function prepareRunPipeline(argv) {
   const { options, components } = parseCLI(argv);
   const stages = await loadStages(components, options);
   const pipeline = createPipeline(stages, {
-    inputContentType: options.inputContentType,
     capacitiesMustFit: options.capacitiesMustFit,
   });
   return { options, pipeline };

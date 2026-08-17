@@ -41,7 +41,6 @@ qipx run [options] <component.wasm> [component2.wasm ...]
 Options:
   -i, --input <path>              Read input from a file instead of stdin
   -o, --output <path>             Write output to a file instead of stdout
-  --input-content-type <type>     Set the initial pipeline content type
   --max-memory <bytes>            Reject modules whose declared memory exceeds bytes
   --capacities-must-fit           Reject stages whose max output cannot fit next input
 ```
