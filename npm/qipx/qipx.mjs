@@ -130,10 +130,7 @@ function describeContentContract(contract) {
 function assertComponentContract(component, field, expected) {
   if (expected === undefined) return;
   if (!isContentContract(expected)) throw new Error(`${field} must be contentTypeUTF8(...) or contentTypeBytes(...)`);
-  const capName = field === "input" ? component.inputCapName : component.outputCapName;
-  const actualEncoding = capName.endsWith("utf8_cap") ? "utf8" : "bytes";
-  const actualContentType = field === "input" ? component.inputType : component.outputType;
-  const actual = new ContentContract(actualEncoding, actualContentType || undefined);
+  const actual = component[field];
   if (actual.encoding !== expected.encoding || (expected.contentType !== undefined && actual.contentType !== expected.contentType)) {
     throw new Error(`${component.label} ${field} contract mismatch: expected ${describeContentContract(expected)}, got ${describeContentContract(actual)}`);
   }
@@ -636,8 +633,8 @@ export function newComponent(instance, options = {}) {
     label,
     instance,
     exports,
-    inputType: declaredType(exports, "input", label),
-    outputType: declaredType(exports, "output", label),
+    input: new ContentContract(hasInputUTF8 ? "utf8" : "bytes", declaredType(exports, "input", label) || undefined),
+    output: new ContentContract(hasOutputUTF8 ? "utf8" : "bytes", declaredType(exports, "output", label) || undefined),
     inputCapName,
     outputCapName,
     clearsContentType: hasOutputUTF8 && hasInputBytes,
@@ -654,8 +651,8 @@ function makeStage(spec, component) {
     label: spec.label ?? spec.filePath ?? component.label,
     uniforms: spec.uniforms ?? [],
     component,
-    inputType: component.inputType,
-    outputType: component.outputType,
+    input: component.input,
+    output: component.output,
     inputCapName: component.inputCapName,
     outputCapName: component.outputCapName,
     clearsContentType: component.clearsContentType,
@@ -686,16 +683,16 @@ function runStage(stage, input) {
 
 function resolveStageInputType(stage, currentType, allowMissingInputContentType) {
   let effectiveType = currentType;
-  if (!effectiveType && stage.inputType && allowMissingInputContentType) effectiveType = stage.inputType;
-  if (stage.inputType && effectiveType !== stage.inputType) {
-    if (!effectiveType) throw new Error(`${stage.label} expects ${stage.inputType}, but pipeline content type is unspecified`);
-    throw new Error(`${stage.label} expects ${stage.inputType}, got ${effectiveType}`);
+  if (!effectiveType && stage.input.contentType && allowMissingInputContentType) effectiveType = stage.input.contentType;
+  if (stage.input.contentType && effectiveType !== stage.input.contentType) {
+    if (!effectiveType) throw new Error(`${stage.label} expects ${stage.input.contentType}, but pipeline content type is unspecified`);
+    throw new Error(`${stage.label} expects ${stage.input.contentType}, got ${effectiveType}`);
   }
   return effectiveType;
 }
 
 function nextContentType(stage, effectiveInputType) {
-  if (stage.outputType) return stage.outputType;
+  if (stage.output.contentType) return stage.output.contentType;
   if (stage.clearsContentType) return "";
   return effectiveInputType;
 }
@@ -733,7 +730,7 @@ export function validatePipeline(stages, options = {}) {
     stages,
     inputContentType: options.inputContentType ?? "",
     outputContentType: currentType,
-    outputEncoding: last.outputCapName === "output_utf8_cap" ? "utf8" : "bytes",
+    outputEncoding: last.output.encoding,
   });
 }
 
@@ -1181,8 +1178,8 @@ function printDryRunPlan(plan) {
     const buffers = stage.inputCapacity + stage.outputCapacity;
     total += buffers;
     console.log(`${index + 1}. ${stage.label} — Content`);
-    console.log(`   Input:  encoding=${stage.inputCapName === "input_utf8_cap" ? "UTF-8" : "bytes"}, type=${stage.inputType || "unspecified"}, capacity=${formatBytes(stage.inputCapacity)}`);
-    console.log(`   Output: encoding=${stage.outputCapName === "output_utf8_cap" ? "UTF-8" : "bytes"}, type=${stage.outputType || "unspecified"}, capacity=${formatBytes(stage.outputCapacity)}`);
+    console.log(`   Input:  encoding=${stage.input.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.input.contentType || "unspecified"}, capacity=${formatBytes(stage.inputCapacity)}`);
+    console.log(`   Output: encoding=${stage.output.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.output.contentType || "unspecified"}, capacity=${formatBytes(stage.outputCapacity)}`);
     console.log(`   Buffers: ${formatBytes(buffers)}`);
   });
   console.log(`Total declared buffer capacity: ${formatBytes(total)}`);

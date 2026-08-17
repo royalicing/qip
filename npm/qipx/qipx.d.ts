@@ -43,10 +43,8 @@ export interface QIPRunComponent {
   module?: WebAssembly.Module;
   instance: WebAssembly.Instance;
   exports: WebAssembly.Exports;
-  inputType: string;
-  outputType: string;
-  inputCapName: "input_utf8_cap" | "input_bytes_cap";
-  outputCapName: "output_utf8_cap" | "output_bytes_cap";
+  input: ContentContract;
+  output: ContentContract;
   inputCapacity: number;
   outputCapacity: number;
 }
@@ -67,10 +65,8 @@ export interface QIPRunStage {
   label: string;
   uniforms: Array<[key: string, value: string | number]>;
   component: QIPRunComponent;
-  inputType: string;
-  outputType: string;
-  inputCapName: "input_utf8_cap" | "input_bytes_cap";
-  outputCapName: "output_utf8_cap" | "output_bytes_cap";
+  input: ContentContract;
+  output: ContentContract;
   inputCapacity: number;
   outputCapacity: number;
 }
