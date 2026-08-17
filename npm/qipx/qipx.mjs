@@ -711,7 +711,7 @@ function parseU32Flag(name, value) {
   return Number(parsed);
 }
 
-export function validatePipeline(stages, options = {}) {
+function validatePipeline(stages, options = {}) {
   if (!Array.isArray(stages) || stages.length === 0) throw new Error("at least one component is required");
   let currentType = options.inputContentType ?? "";
   if (currentType) validateContentType(currentType, "input content type");
@@ -734,7 +734,7 @@ export function validatePipeline(stages, options = {}) {
   });
 }
 
-export function runPreparedPipeline(input, pipeline) {
+function runPreparedPipeline(input, pipeline) {
   let output = bytes(input);
   let currentType = pipeline.inputContentType;
   for (let index = 0; index < pipeline.stages.length; index += 1) {

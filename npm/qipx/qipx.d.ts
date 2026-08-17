@@ -87,8 +87,6 @@ export function contentTypeBytes(optionalMIMEType?: string): ContentContract;
 export function newContentComponentContract(options?: ContentComponentContractOptions): ContentComponentContract;
 export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuffer, options?: ComponentContractOptions | ContentComponentContract): void;
 export function newComponent(instance: WebAssembly.Instance, options?: NewComponentOptions | ContentComponentContract): QIPRunComponent;
-export function validatePipeline(stages: QIPRunStage[], options?: PipelineOptions): QIPRunPlan;
-export function runPreparedPipeline(input: Uint8Array | ArrayBuffer | string, pipeline: QIPRunPlan): QIPRunResult;
 export function createPipeline(componentSpecs: QIPRunStageSpec[], options?: PipelineOptions): QIPRunPipeline;
 export function runPipeline(
   input: Uint8Array | ArrayBuffer | string,
