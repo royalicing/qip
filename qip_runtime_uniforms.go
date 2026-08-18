@@ -67,7 +67,7 @@ func applyModuleUniforms(ctx context.Context, mod api.Module, uniforms map[strin
 		fnName := "uniform_set_" + key
 		fn := mod.ExportedFunction(fnName)
 		if fn == nil {
-			return fmt.Errorf("Wasm module does not export %s for query key %q", fnName, key)
+			return fmt.Errorf("Wasm module does not export %s for uniform %q", fnName, key)
 		}
 		def, ok := defs[fnName]
 		if !ok {

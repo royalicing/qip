@@ -249,6 +249,13 @@ func TestNormalizeRunArgs(t *testing.T) {
 		t.Fatalf("args=%v, want %v", got, want)
 	}
 
+	inWithUniform := []string{"module.wasm", "-u", "width=640", "--max-memory", "1048576"}
+	gotWithUniform := normalizeRunArgs(inWithUniform)
+	wantWithUniform := []string{"--max-memory", "1048576", "--", "module.wasm", "-u", "width=640"}
+	if !reflect.DeepEqual(gotWithUniform, wantWithUniform) {
+		t.Fatalf("args=%v, want %v", gotWithUniform, wantWithUniform)
+	}
+
 	inWithDashDash := []string{"module.wasm", "--", "--not-a-flag"}
 	gotWithDashDash := normalizeRunArgs(inWithDashDash)
 	wantWithDashDash := []string{"--", "module.wasm", "--not-a-flag"}
@@ -338,6 +345,42 @@ func TestParseComponentInvocations(t *testing.T) {
 		}
 		if specs[1].UniformValues["gamma"] != "4" {
 			t.Fatalf("specs[1].UniformValues[gamma]=%q, want %q", specs[1].UniformValues["gamma"], "4")
+		}
+	})
+
+	t.Run("associates uniform flags with prior module", func(t *testing.T) {
+		specs, err := parseComponentInvocations([]string{
+			"a.wasm",
+			"-u", "alpha=1",
+			"--uniform", "beta=2",
+			"b.wasm",
+			"-u", "gamma=3",
+		}, "run")
+		if err != nil {
+			t.Fatalf("parseComponentInvocations error: %v", err)
+		}
+		if len(specs) != 2 {
+			t.Fatalf("len(specs)=%d, want 2", len(specs))
+		}
+		if specs[0].UniformValues["alpha"] != "1" || specs[0].UniformValues["beta"] != "2" {
+			t.Fatalf("unexpected uniforms for first module: %+v", specs[0].UniformValues)
+		}
+		if specs[1].UniformValues["gamma"] != "3" {
+			t.Fatalf("unexpected uniforms for second module: %+v", specs[1].UniformValues)
+		}
+	})
+
+	t.Run("rejects uniform flag before component path", func(t *testing.T) {
+		_, err := parseComponentInvocations([]string{"-u", "x=1"}, "run")
+		if err == nil || !strings.Contains(err.Error(), "must follow a QIP component path") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("rejects malformed uniform flag", func(t *testing.T) {
+		_, err := parseComponentInvocations([]string{"a.wasm", "-u", "x"}, "run")
+		if err == nil || !strings.Contains(err.Error(), "requires <key=value>") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 

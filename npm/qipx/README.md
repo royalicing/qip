@@ -43,14 +43,19 @@ Options:
   -o, --output <path>             Write output to a file instead of stdout
   --max-memory <bytes>            Reject modules whose declared memory exceeds bytes
   --capacities-must-fit           Reject stages whose max output cannot fit next input
+  -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)
 ```
 
 ### Uniforms
 
-Uniforms can be supplied as query strings after a component path:
+Put `-u <name=value>` or `--uniform <name=value>` after the component it
+configures. Repeat the option to set more than one uniform:
 
 ```sh
-qipx run components/utf8/text-to-bmp.wasm '?cols=80&leading=16' < text.txt > out.bmp
+qipx run components/utf8/text-to-bmp.wasm \
+  -u cols=80 \
+  -u leading=16 \
+  < text.txt > out.bmp
 ```
 
 Uniform keys are lowercase snake identifiers with 1 to 63 characters. They must
@@ -145,6 +150,7 @@ Options:
   --benchtime <duration>          Target measured time per component (default: 3s)
   --warmup <n>                    Warmup runs per component (default: 10)
   --max-memory <bytes>            Reject modules whose declared memory exceeds bytes
+  -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)
 ```
 
 Each timed render uses a reused Wasm instance and includes uniform setters and

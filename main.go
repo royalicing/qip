@@ -106,11 +106,11 @@ func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGro
 }
 
 const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate Content components and run Compliance oracles\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
-const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
-const usageDry = "Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
+const usageDry = "Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
 const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--node] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
-const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [?key=value[&key2=value2...] ...] ..."
+const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [-u <key=value> ...] ..."
 const usageComply = "Usage: qip comply [options] <file-or-dir> [...]"
 const usageRouteDocs = "\n\nDocumentation: https://qip.dev/docs/router"
 const usageDev = "Usage: qip router dev <content_dir> [--recipes <recipes_dir>] [--components <components_dir>] [--mode <dev|prod>] [--view-source] [-p <port>] [-v|--verbose]" + usageRouteDocs
@@ -124,8 +124,8 @@ const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or fil
 const usageHelp = "Usage: qip help [command]"
 const legacyDevNotice = "qip: `qip dev` has moved to `qip router dev`; please update your command. `qip dev` will continue to work for now."
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place a query string immediately after a component path to set that component's uniforms.\n  Quote the full query arg in your shell (for example, to avoid '&' splitting).\n  i32 uniforms are unsigned; use i64 for signed integers.\n  Example: components/utf8/text-to-bmp.wasm '?cols=120&leading=24'\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm '?width=900&height=400&font_size=48'\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
-const helpDryRun = `Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [?key=value[&key2=value2...] ...] ...
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place -u <key=value> or --uniform <key=value> after the component it configures.\n  Repeat the option to set more than one uniform. Legacy '?key=value' arguments remain supported.\n  i32 uniforms are unsigned; use i64 for signed integers.\n  Example: components/utf8/text-to-bmp.wasm -u cols=120 -u leading=24\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm -u width=900 -u height=400 -u font_size=48\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
+const helpDryRun = `Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...
 
 Validates and describes the same prepared pipeline as qip run without reading
 input, calling render, or writing output. A compatible plan exits 0. Invalid
@@ -1198,7 +1198,24 @@ func buildDependencyVersion(modulePath string) string {
 
 func parseComponentInvocations(args []string, commandName string) ([]ComponentInvocation, error) {
 	specs := make([]ComponentInvocation, 0, len(args))
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-u" || arg == "--uniform" {
+			if len(specs) == 0 {
+				return nil, fmt.Errorf("%s %s must follow a QIP component path", commandName, arg)
+			}
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("%s %s requires <key=value>", commandName, arg)
+			}
+			i++
+			assignment := args[i]
+			key, value, ok := strings.Cut(assignment, "=")
+			if !ok || key == "" {
+				return nil, fmt.Errorf("%s %s requires <key=value>, got %q", commandName, arg, assignment)
+			}
+			specs[len(specs)-1].UniformValues[key] = value
+			continue
+		}
 		if strings.HasPrefix(arg, "?") {
 			if len(specs) == 0 {
 				return nil, fmt.Errorf("%s uniform query %q must follow a QIP component path", commandName, arg)
@@ -1927,7 +1944,8 @@ func normalizeRunArgs(args []string) []string {
 		"--trace-with": {},
 		"--max-memory": {},
 	}
-	return qinternal.NormalizeFlagArgs(args, flagsWithValue)
+	uniformFlags := map[string]struct{}{"-u": {}, "--uniform": {}}
+	return qinternal.NormalizeFlagArgsPreserving(args, flagsWithValue, uniformFlags)
 }
 
 func normalizeBenchArgs(args []string) []string {
@@ -1948,7 +1966,8 @@ func normalizeImageArgs(args []string) []string {
 		"--timeout-ms": {},
 		"--max-memory": {},
 	}
-	return qinternal.NormalizeFlagArgs(args, flagsWithValue)
+	uniformFlags := map[string]struct{}{"-u": {}, "--uniform": {}}
+	return qinternal.NormalizeFlagArgsPreserving(args, flagsWithValue, uniformFlags)
 }
 
 func normalizeDevArgs(args []string) []string {

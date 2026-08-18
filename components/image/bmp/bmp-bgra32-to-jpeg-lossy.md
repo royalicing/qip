@@ -39,7 +39,7 @@ strict profile that bans indirect calls.
 ```sh
 make -j components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm
 qip run -i image.bmp -o image.jpg -- \
-  components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm '?quality=85&subsample=2'
+  components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm -u quality=85 -u subsample=2
 ```
 
 MozJPEG 4.1.1 is vendored under `third_party/mozjpeg-4.1.1`; see its

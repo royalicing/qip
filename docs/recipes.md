@@ -291,7 +291,7 @@ filter, then passes BMP Content to the ICO encoder:
 ```sh
 qip dry run \
   components/image/svg+xml/svg-rasterize.wasm \
-  components/rgba/brightness.wasm '?brightness=0.1' \
+  components/rgba/brightness.wasm -u brightness=0.1 \
   components/image/bmp/bmp-to-ico.wasm
 ```
 

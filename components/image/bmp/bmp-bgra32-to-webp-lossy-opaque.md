@@ -14,7 +14,8 @@ The background defaults to white and is configurable as `0xRRGGBB`:
   --max-memory 469762048 \
   -i input.bmp -o output.webp -- \
   components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm \
-  '?quality=95&method=4&sharp_yuv=1&low_memory=1&background_color=0xffffff'
+  -u quality=95 -u method=4 -u sharp_yuv=1 -u low_memory=1 \
+  -u background_color=0xffffff
 ```
 
 The remaining defaults match the alpha-capable lossy component: quality 95,

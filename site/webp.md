@@ -370,13 +370,14 @@ to the page.
 
 ```bash
 qip run components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm \
-  '?quality=95&method=4&sharp_yuv=1&low_memory=1&background_color=0xffffff' \
+  -u quality=95 -u method=4 -u sharp_yuv=1 -u low_memory=1 \
+  -u background_color=0xffffff \
   < input.bmp > output.webp
 
 qip run components/image/bmp/bmp-bgra32-to-webp-lossy.wasm \
-  '?quality=95&method=4&sharp_yuv=1&low_memory=1' \
+  -u quality=95 -u method=4 -u sharp_yuv=1 -u low_memory=1 \
   < input.bmp > output.webp
 
-qip run components/image/bmp/bmp-bgra32-to-webp-lossless.wasm '?level=6' \
+qip run components/image/bmp/bmp-bgra32-to-webp-lossless.wasm -u level=6 \
   < input.bmp > output.webp
 ```

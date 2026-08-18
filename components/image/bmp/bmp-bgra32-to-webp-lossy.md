@@ -40,7 +40,7 @@ use method 6 when requested.
   --max-memory 1275068416 \
   -i input.bmp -o output.webp -- \
   components/image/bmp/bmp-bgra32-to-webp-lossy.wasm \
-  '?quality=95&method=4&sharp_yuv=1&low_memory=1'
+  -u quality=95 -u method=4 -u sharp_yuv=1 -u low_memory=1
 ```
 
 The module accepts BGRA32 BMPs up to 25,000,000 pixels, with no dimension above

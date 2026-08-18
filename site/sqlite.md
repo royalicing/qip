@@ -248,10 +248,10 @@ go install github.com/royalicing/qip@latest
 qip run components/application/vnd.sqlite3/sqlite-schema.wasm -i mydb.sqlite
 
 # Convert the second table to CSV
-qip run components/application/vnd.sqlite3/sqlite-table-csv.wasm '?table=1' -i mydb.sqlite > table.csv
+qip run components/application/vnd.sqlite3/sqlite-table-csv.wasm -u table=1 -i mydb.sqlite > table.csv
 
 # Fetch one row by rowid
-qip run components/application/vnd.sqlite3/sqlite-row-lookup.wasm '?table=0&rowid=42' -i mydb.sqlite
+qip run components/application/vnd.sqlite3/sqlite-row-lookup.wasm -u table=0 -u rowid=42 -i mydb.sqlite
 
 # Count rows
 qip run components/application/vnd.sqlite3/sqlite-table-count.wasm -i mydb.sqlite

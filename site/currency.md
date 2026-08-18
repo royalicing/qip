@@ -325,7 +325,7 @@ format();
 
 ```bash
 go install github.com/royalicing/qip@latest
-printf %s '1234567.895' | qip run currency-format-en-us.wasm '?currency=840'
+printf %s '1234567.895' | qip run currency-format-en-us.wasm -u currency=840
 # $1,234,567.90
 ```
 

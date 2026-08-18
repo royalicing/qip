@@ -64,7 +64,7 @@ Tradeoffs:
 
   The ZIP listing components assign indices from central-directory order.
   `entry_index` counts every explicit archive entry, while `file_index` counts
-  only regular files. This keeps `zip-extract-file.wasm '?file_index=0'`
+  only regular files. This keeps `zip-extract-file.wasm -u file_index=0`
   pointed at the first file even when directory or symlink entries precede it.
 
 ## Raster conversion limits

@@ -38,7 +38,7 @@ For example:
   --max-memory 1073741824 \
   -i input.bmp -o output.avif -- \
   components/image/bmp/bmp-bgra32-to-avif-lossy.wasm \
-  '?quality=70&quality_alpha=100&speed=8&subsample=0'
+  -u quality=70 -u quality_alpha=100 -u speed=8 -u subsample=0
 ```
 
 The input is disposable. After validating the BMP header, the component moves

@@ -41,6 +41,19 @@ func TestNormalizeFormArgs(t *testing.T) {
 	}
 }
 
+func TestNormalizeFlagArgsPreservingPositionalOptions(t *testing.T) {
+	in := []string{"module.wasm", "-u", "width=640", "--max-memory", "1048576"}
+	got := NormalizeFlagArgsPreserving(
+		in,
+		map[string]struct{}{"--max-memory": {}},
+		map[string]struct{}{"-u": {}},
+	)
+	want := []string{"--max-memory", "1048576", "--", "module.wasm", "-u", "width=640"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args=%v, want %v", got, want)
+	}
+}
+
 func TestNormalizeFlagArgsPreservesDoubleDash(t *testing.T) {
 	in := []string{"module.wasm", "--", "--not-a-flag"}
 	got := NormalizeFlagArgs(in, map[string]struct{}{

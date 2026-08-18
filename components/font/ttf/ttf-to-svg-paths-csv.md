@@ -20,7 +20,7 @@ qip run \
   -i font.ttf \
   -o basic-latin.csv \
   -- components/font/ttf/ttf-to-svg-paths-csv.wasm \
-  '?first_codepoint=32&last_codepoint=126'
+  -u first_codepoint=32 -u last_codepoint=126
 ```
 
 The range may contain at most 4,096 codepoints. Unmapped codepoints do not

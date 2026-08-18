@@ -157,7 +157,7 @@ Do not export `text/plain` for generic UTF-8 transforms. The UTF-8 cap already c
 
 Prefer uniforms over parsing ad hoc control bytes from the main input.
 
-Uniforms keep the data plane clean: the input stays the content being transformed, while query arguments configure behavior before `render` runs.
+Uniforms keep the data plane clean: the input stays the content being transformed, while runtime options configure behavior before `render` runs.
 
 ```zig
 var color_rgba: u32 = 0x000000FF;
@@ -171,7 +171,7 @@ export fn uniform_set_color_rgba(value: u32) u32 {
 Callers pass uniforms next to the module path:
 
 ```bash
-qip run components/image/svg+xml/svg-recolor-current-color.wasm '?color_rgba=0xff5511ff'
+qip run components/image/svg+xml/svg-recolor-current-color.wasm -u color_rgba=0xff5511ff
 ```
 
 Use packed integer uniforms for compact settings like colors, flags, and modes. Use `f32` uniforms for image math where fractional values are natural.

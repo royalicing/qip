@@ -21,7 +21,7 @@ qip run \
   -i fixtures/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf \
   -o dejavu-sans-paths.svg \
   -- components/font/ttf/ttf-to-svg-path-defs.wasm \
-  '?first_codepoint=32&last_codepoint=255'
+  -u first_codepoint=32 -u last_codepoint=255
 ```
 
 The default inclusive range is U+0020 through U+00FF, and a requested range

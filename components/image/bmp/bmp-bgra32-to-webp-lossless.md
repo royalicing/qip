@@ -20,7 +20,7 @@ pixels.
   --timeout-ms 180000 \
   --max-memory 1610612736 \
   -i input.bmp -o output.webp -- \
-  components/image/bmp/bmp-bgra32-to-webp-lossless.wasm '?level=6'
+  components/image/bmp/bmp-bgra32-to-webp-lossless.wasm -u level=6
 ```
 
 The component accepts BGRA32 BMPs up to 25,000,000 pixels, with no dimension

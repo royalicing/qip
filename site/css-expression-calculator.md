@@ -192,7 +192,8 @@ curl -O https://qip.dev/components/text/css/css-expression-to-value.wasm
 
 echo -n 'calc(100dvh - max(1rlh, env(safe-area-inset-bottom)))' | \
   qip run css-expression-to-value.wasm \
-  '?root_line_height=24&dynamic_viewport_height=745&safe_area_inset_bottom=34'
+  -u root_line_height=24 -u dynamic_viewport_height=745 \
+  -u safe_area_inset_bottom=34
 ```
 
 The viewport model follows [CSS Values and Units](https://drafts.csswg.org/css-values-4/#viewport-relative-lengths). Safe-area names come from [CSS Environment Variables](https://drafts.csswg.org/css-env-1/#safe-area-insets), and keyboard geometry follows the [Virtual Keyboard API](https://w3c.github.io/virtual-keyboard/#keyboard-inset-variables).

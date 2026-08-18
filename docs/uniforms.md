@@ -8,7 +8,7 @@ Uniforms are a shared extension, not a component type. Content and Tile hosts cu
 
 ## Component Exports
 
-For a query key named `<key>`, export a setter named `uniform_set_<key>`.
+For a uniform named `<key>`, export a setter named `uniform_set_<key>`.
 A uniform key is a lowercase snake identifier with 1 to 63 characters. It must
 start with `[a-z]`, continue with `[a-z0-9_]*`, must not end with `_`, and must
 not contain `__`. These limits keep keys portable in URLs, shells, archives,
@@ -39,7 +39,7 @@ Packed values such as colors and flags fit naturally in `i32`. Fractional image 
 
 The host applies setters after instantiation and before `render`, or before tile execution in image mode. A host reusing an instance may call setters again before a later execution.
 
-- A query key without a matching `uniform_set_<key>` export is an error.
+- A uniform without a matching `uniform_set_<key>` export is an error.
 - A value that cannot be parsed as the setter's parameter type is an error.
 - Hexadecimal integers require a `0x` or `0X` prefix and are parsed as unsigned bit patterns.
 - Keys are applied in sorted key order.
@@ -49,33 +49,36 @@ Returning the applied value lets a host observe clamping or normalization. A set
 
 ## CLI Syntax
 
-Put the quoted query argument immediately after its component path:
+Put `-u <key=value>` or `--uniform <key=value>` immediately after the component
+it configures. Repeat the option to set more than one uniform:
 
 ```bash
-qip run module.wasm '?key=value'
-qip run module.wasm '?width=900&height=400&font_size=48'
-qip image -i in.jpg -o out.png filter.wasm '?radius=2.0&angle=0.26'
+qip run module.wasm -u key=value
+qip run module.wasm -u width=900 -u height=400 -u font_size=48
+qip image -i in.jpg -o out.png filter.wasm -u radius=2.0 -u angle=0.26
 ```
-
-Quote the entire query in a shell so `&` is not interpreted as a command separator.
 
 Examples from this repository:
 
 ```bash
 # i32 uniform
-qip run components/utf8/text-to-bmp.wasm '?cols=120'
+qip run components/utf8/text-to-bmp.wasm -u cols=120
 
 # f32 uniforms
 qip image -i in.jpg -o out.png \
-  components/rgba/color-halftone.wasm '?max_radius=2.0&angle_c=0.26'
+  components/rgba/color-halftone.wasm -u max_radius=2.0 -u angle_c=0.26
 
 # 0xRRGGBBAA passed as the raw bits of an i32
 qip run components/image/svg+xml/svg-recolor-current-color.wasm \
-  '?color_rgba=0xff5511ff'
+  -u color_rgba=0xff5511ff
 ```
+
+The Go CLI continues to accept a quoted `'?key=value&key2=value2'` argument
+after a component for backward compatibility. New commands should use `-u`.
+The qipx CLI accepts only `-u` and `--uniform`.
 
 ## Host-Managed Tile Size
 
-Image components may export `uniform_set_width_and_height(width: f32, height: f32)`. This two-parameter function is a host-managed Tile hook, not a query uniform, despite sharing the `uniform_set_` prefix.
+Image components may export `uniform_set_width_and_height(width: f32, height: f32)`. This two-parameter function is a host-managed Tile hook, not a caller-set uniform, despite sharing the `uniform_set_` prefix.
 
-The image host calls it with the full input dimensions. Callers cannot set it through query arguments.
+The image host calls it with the full input dimensions. Callers cannot set it through CLI uniform arguments.

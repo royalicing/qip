@@ -21,11 +21,11 @@ function usage() {
     `  -o, --output <path>             Write output to a file instead of stdout\n` +
     `  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes\n` +
     `  --capacities-must-fit           Reject stages whose max output cannot fit next input\n` +
+    `  -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)\n` +
     `  dry run                         Validate the pipeline without reading input or rendering\n` +
     `  -h, --help                      Show this help\n\n` +
     `Uniforms:\n` +
-    `  Place a query string after a component path, for example:\n` +
-    `  qipx run component.wasm '?width=640&height=480'\n` +
+    `  qipx run component.wasm -u width=640 -u height=480\n` +
     `  i32 uniforms are treated as unsigned values; use i64 for signed integers.\n\n` +
     `Documentation: https://qip.dev/docs/content-component\n`;
 }
@@ -38,6 +38,7 @@ function benchUsage() {
     `  --benchtime <duration>          Target measured time per component (default: 3s)\n` +
     `  --warmup <n>                    Warmup runs per component (default: 10)\n` +
     `  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes\n` +
+    `  -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)\n` +
     `  -h, --help                      Show this help\n\n` +
     `Components are measured one at a time on reused runtime instances.\n` +
     `With --expose-gc, qipx collects after each component's warmup.\n` +
@@ -1124,13 +1125,19 @@ async function complyCommand(argv) {
 
 function parseStageArgs(args) {
   const stages = [];
-  for (const arg of args) {
-    if (arg.startsWith("?")) {
-      if (stages.length === 0) throw new Error(`uniform query ${arg} has no preceding component`);
-      for (const [key, value] of new URLSearchParams(arg)) stages.at(-1).uniforms.push([key, value]);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "-u" || arg === "--uniform") {
+      if (stages.length === 0) throw new Error(`${arg} must follow a component path`);
+      const assignment = args[++index];
+      if (assignment === undefined) throw new Error(`${arg} requires <name=value>`);
+      const equals = assignment.indexOf("=");
+      if (equals <= 0) throw new Error(`${arg} requires <name=value>, got ${JSON.stringify(assignment)}`);
+      stages.at(-1).uniforms.push([assignment.slice(0, equals), assignment.slice(equals + 1)]);
       continue;
     }
     if (!arg) throw new Error("component path must not be empty");
+    if (arg.startsWith("?")) throw new Error(`uniform query arguments are not supported; use -u <name=value>`);
     stages.push({ filePath: arg, label: arg, uniforms: [] });
   }
   return stages;
@@ -1152,7 +1159,11 @@ function parseCLI(argv) {
       options.maxMemory = parseMaxMemory(argv[++index]);
     } else if (arg === "--capacities-must-fit") {
       options.capacitiesMustFit = true;
-    } else if (arg.startsWith("-") && !arg.startsWith("?")) {
+    } else if (arg === "-u" || arg === "--uniform") {
+      components.push(arg);
+      if (index + 1 >= argv.length) throw new Error(`${arg} requires <name=value>`);
+      components.push(argv[++index]);
+    } else if (arg.startsWith("-")) {
       throw new Error(`unknown option ${arg}`);
     } else {
       components.push(arg);
@@ -1289,7 +1300,11 @@ function parseBenchCLI(argv) {
       options.benchtimeLabel = arg.slice("--benchtime=".length);
       options.benchtime = parseBenchDuration(options.benchtimeLabel);
       benchtimeSet = true;
-    } else if (arg.startsWith("-") && !arg.startsWith("?")) {
+    } else if (arg === "-u" || arg === "--uniform") {
+      components.push(arg);
+      if (index + 1 >= argv.length) throw new Error(`${arg} requires <name=value>`);
+      components.push(argv[++index]);
+    } else if (arg.startsWith("-")) {
       throw new Error(`unknown option ${arg}`);
     } else {
       components.push(arg);
