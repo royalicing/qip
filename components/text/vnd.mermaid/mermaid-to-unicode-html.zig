@@ -173,6 +173,117 @@ const FlowEdge = struct {
     label: []const u8,
     line: FlowLine,
 };
+const FlowArrow = struct { at: usize, len: usize, line: FlowLine };
+
+const MAX_FLOW_NODES = 16;
+const MAX_FLOW_EDGES = 32;
+const TreeNode = struct {
+    flow: FlowNode,
+    parent: ?usize = null,
+    children: [2]usize = undefined,
+    child_count: usize = 0,
+    depth: usize = 0,
+    center: usize = 0,
+    y: usize = 0,
+};
+const TreeEdge = struct {
+    flow: FlowEdge,
+    from: usize,
+    to: usize,
+    feedback: bool,
+};
+const TrackSpan = struct { start: usize, end: usize, from: usize, to: usize, edge: usize };
+
+fn hasStateEdge(edges: []const StateEdge, from: []const u8, to: []const u8) bool {
+    for (edges) |edge| {
+        if (std.mem.eql(u8, edge.from, from) and std.mem.eql(u8, edge.to, to)) return true;
+    }
+    return false;
+}
+
+fn renderLinearStateCycle(edges: []const StateEdge) bool {
+    if (edges.len != 6) return false;
+    for (edges) |edge| if (edge.label.len != 0) return false;
+
+    var first: ?[]const u8 = null;
+    for (edges) |edge| {
+        if (!std.mem.eql(u8, edge.from, "[*]") or std.mem.eql(u8, edge.to, "[*]")) continue;
+        if (first != null) return false;
+        first = edge.to;
+    }
+    const first_id = first orelse return false;
+    if (!hasStateEdge(edges, first_id, "[*]")) return false;
+
+    var second: ?[]const u8 = null;
+    for (edges) |edge| {
+        if (!std.mem.eql(u8, edge.from, first_id) or std.mem.eql(u8, edge.to, "[*]")) continue;
+        if (second != null) return false;
+        second = edge.to;
+    }
+    const second_id = second orelse return false;
+    if (!hasStateEdge(edges, second_id, first_id)) return false;
+
+    var third: ?[]const u8 = null;
+    for (edges) |edge| {
+        if (!std.mem.eql(u8, edge.from, second_id) or std.mem.eql(u8, edge.to, first_id)) continue;
+        if (third != null) return false;
+        third = edge.to;
+    }
+    const third_id = third orelse return false;
+    if (!hasStateEdge(edges, third_id, "[*]")) return false;
+
+    const first_width = codepointLen(first_id) + 4;
+    const second_width = codepointLen(second_id) + 4;
+    const third_width = codepointLen(third_id) + 4;
+    const widest = @max(first_width, @max(second_width, third_width));
+    const center = widest / 2;
+    const first_x = center - first_width / 2;
+    const second_x = center - second_width / 2;
+    const third_x = center - third_width / 2;
+    const rightmost = @max(first_x + first_width - 1, @max(second_x + second_width - 1, third_x + third_width - 1));
+    const retry_lane = rightmost + 2;
+    const finish_lane = retry_lane + 1;
+
+    clearCanvas();
+    markerBox(center, 0, true);
+    put(center, 3, '│', .edge);
+    put(center, 4, '▼', .edge);
+    roundBox(first_x, 5, first_id);
+    put(center, 7, '┬', .edge);
+    put(center, 8, '│', .edge);
+    put(center, 9, '▼', .edge);
+    roundBox(second_x, 10, second_id);
+    put(center, 12, '┬', .edge);
+    put(center, 13, '│', .edge);
+    put(center, 14, '▼', .edge);
+    roundBox(third_x, 15, third_id);
+    put(center, 17, '┬', .edge);
+    put(center, 18, '│', .edge);
+    put(center, 19, '▼', .edge);
+    markerBox(center, 20, false);
+
+    const first_right = first_x + first_width - 1;
+    put(first_right, 6, '├', .edge);
+    hline(first_right + 1, finish_lane - 1, 6, '─');
+    put(finish_lane, 6, '┐', .edge);
+    var y: usize = 7;
+    while (y < 21) : (y += 1) put(finish_lane, y, '│', .edge);
+    const end_right = center + 2;
+    put(end_right + 1, 21, '◄', .edge);
+    hline(end_right + 2, finish_lane - 1, 21, '─');
+    put(finish_lane, 21, '┘', .edge);
+
+    put(first_right + 1, 6, '◄', .edge);
+    hline(first_right + 2, retry_lane - 1, 6, '─');
+    put(retry_lane, 6, '┬', .edge);
+    y = 7;
+    while (y < 11) : (y += 1) put(retry_lane, y, '│', .edge);
+    const second_right = second_x + second_width - 1;
+    put(second_right, 11, '├', .edge);
+    hline(second_right + 1, retry_lane - 1, 11, '─');
+    put(retry_lane, 11, '┘', .edge);
+    return true;
+}
 
 fn renderState(source: []const u8) void {
     var edges: [16]StateEdge = undefined;
@@ -193,6 +304,7 @@ fn renderState(source: []const u8) void {
         edges[count] = .{ .from = from, .to = to, .label = label };
         count += 1;
     }
+    if (renderLinearStateCycle(edges[0..count])) return;
     if ((count != 6 and count != 7) or
         !std.mem.eql(u8, edges[0].from, "[*]") or
         !std.mem.eql(u8, edges[1].from, edges[0].to) or
@@ -332,27 +444,37 @@ fn parseFlowNode(raw: []const u8) FlowNode {
     };
 }
 
-fn parseFlowEdge(line: []const u8) FlowEdge {
-    const forms = .{
-        .{ "-->", FlowEdge{ .from = undefined, .to = undefined, .label = "", .line = .solid } },
-        .{ "-.->", FlowEdge{ .from = undefined, .to = undefined, .label = "", .line = .dotted } },
-        .{ "==>", FlowEdge{ .from = undefined, .to = undefined, .label = "", .line = .thick } },
-    };
-    inline for (forms) |form| {
-        if (std.mem.indexOf(u8, line, form[0])) |at| {
-            var result = form[1];
-            result.from = parseFlowNode(line[0..at]);
-            var tail = std.mem.trim(u8, line[at + form[0].len ..], " \t");
-            if (std.mem.startsWith(u8, tail, "|")) {
-                const close = std.mem.indexOfScalarPos(u8, tail, 1, '|') orelse @trap();
-                result.label = tail[1..close];
-                tail = std.mem.trimLeft(u8, tail[close + 1 ..], " \t");
-            }
-            result.to = parseFlowNode(tail);
-            return result;
+fn findFlowArrow(line: []const u8) ?FlowArrow {
+    var at: usize = 0;
+    while (at < line.len) : (at += 1) {
+        if (std.mem.startsWith(u8, line[at..], "-.->")) return .{ .at = at, .len = 4, .line = .dotted };
+        if (std.mem.startsWith(u8, line[at..], "==>")) return .{ .at = at, .len = 3, .line = .thick };
+        if (line[at] != '-') continue;
+        var end = at;
+        while (end < line.len and line[end] == '-') : (end += 1) {}
+        if (end - at >= 2 and end < line.len and line[end] == '>') {
+            return .{ .at = at, .len = end - at + 1, .line = .solid };
         }
     }
-    @trap();
+    return null;
+}
+
+fn parseFlowEdge(line: []const u8) FlowEdge {
+    const arrow = findFlowArrow(line) orelse @trap();
+    var result = FlowEdge{
+        .from = parseFlowNode(line[0..arrow.at]),
+        .to = undefined,
+        .label = "",
+        .line = arrow.line,
+    };
+    var tail = std.mem.trim(u8, line[arrow.at + arrow.len ..], " \t");
+    if (std.mem.startsWith(u8, tail, "|")) {
+        const close = std.mem.indexOfScalarPos(u8, tail, 1, '|') orelse @trap();
+        result.label = tail[1..close];
+        tail = std.mem.trimLeft(u8, tail[close + 1 ..], " \t");
+    }
+    result.to = parseFlowNode(tail);
+    return result;
 }
 
 fn sameNode(a: FlowNode, b: FlowNode) bool {
@@ -447,6 +569,468 @@ fn drawFlowFeedback(
     }
 }
 
+fn isExplicitFlowNode(node: FlowNode) bool {
+    return node.shape != .rect or !std.mem.eql(u8, node.id, node.label);
+}
+
+fn treeNodeIndex(nodes: *[MAX_FLOW_NODES]TreeNode, count: *usize, flow: FlowNode) usize {
+    for (nodes[0..count.*], 0..) |*node, i| {
+        if (!std.mem.eql(u8, node.flow.id, flow.id)) continue;
+        if (isExplicitFlowNode(flow)) node.flow = flow;
+        return i;
+    }
+    if (count.* == nodes.len) @trap();
+    const result = count.*;
+    nodes[result] = .{ .flow = flow };
+    count.* += 1;
+    return result;
+}
+
+fn treeAncestor(nodes: *const [MAX_FLOW_NODES]TreeNode, ancestor: usize, descendant: usize) bool {
+    var current: ?usize = descendant;
+    var steps: usize = 0;
+    while (current) |index| {
+        if (index == ancestor) return true;
+        current = nodes[index].parent;
+        steps += 1;
+        if (steps > MAX_FLOW_NODES) @trap();
+    }
+    return false;
+}
+
+fn flowChar(line: FlowLine) u21 {
+    return switch (line) {
+        .solid => '─',
+        .dotted => '╌',
+        .thick => '━',
+    };
+}
+
+fn drawTreeSingleEdge(parent: TreeNode, child: TreeNode, edge: FlowEdge) void {
+    const parent_bottom = parent.y + wrappedNodeHeight(parent.flow) - 1;
+    const fork_y = child.y - 2;
+    const arrow_y = child.y - 1;
+    put(parent.center, parent_bottom, '┬', .edge);
+    var y = parent_bottom + 1;
+    while (y < fork_y) : (y += 1) put(parent.center, y, '│', .edge);
+
+    if (parent.center == child.center) {
+        put(parent.center, fork_y, switch (edge.line) {
+            .solid => '│',
+            .dotted => '╎',
+            .thick => '┃',
+        }, .edge);
+    } else if (child.center < parent.center) {
+        put(child.center, fork_y, '┌', .edge);
+        hline(child.center + 1, parent.center - 1, fork_y, flowChar(edge.line));
+        put(parent.center, fork_y, '┘', .edge);
+    } else {
+        put(parent.center, fork_y, '└', .edge);
+        hline(parent.center + 1, child.center - 1, fork_y, flowChar(edge.line));
+        put(child.center, fork_y, '┐', .edge);
+    }
+    arrowLabel(child.center, arrow_y, edge.label);
+}
+
+fn drawTreeFeedback(edge: TreeEdge, nodes: *const [MAX_FLOW_NODES]TreeNode, depth_height: *const [MAX_FLOW_NODES]usize, lane_x: usize) void {
+    const source = nodes[edge.from];
+    const target = nodes[edge.to];
+    const source_bottom = source.y + wrappedNodeHeight(source.flow) - 1;
+    const source_turn_y = source.y + depth_height[source.depth];
+    const target_left = target.center - wrappedNodeWidth(target.flow) / 2;
+    const target_entry_y = target.y + wrappedNodeHeight(target.flow) / 2;
+    if (target_entry_y >= source_turn_y or target_left < lane_x + 2) @trap();
+
+    put(source.center, source_bottom, '┴', .edge);
+    if (source_bottom + 1 < source_turn_y)
+        feedbackVertical(source.center, source_bottom + 1, source_turn_y - 1);
+    feedbackHorizontal(lane_x + 1, source.center - 1, source_turn_y);
+    put(source.center, source_turn_y, '┘', .edge);
+    feedbackVertical(lane_x, target_entry_y + 1, source_turn_y - 1);
+    put(lane_x, source_turn_y, '└', .edge);
+    put(lane_x, target_entry_y, '┌', .edge);
+    feedbackHorizontal(lane_x + 1, target_left - 2, target_entry_y);
+    put(target_left - 1, target_entry_y, '▶', .edge);
+
+    if (edge.flow.label.len != 0) {
+        const label_y = target_entry_y + (source_turn_y - target_entry_y) / 2;
+        textAt(lane_x + 1, label_y, edge.flow.label, .edge_label);
+    }
+}
+
+fn relaxTreeRank(
+    rank_nodes: []const usize,
+    nodes: *const [MAX_FLOW_NODES]TreeNode,
+    positions: *[MAX_FLOW_NODES]f64,
+    widths: *const [MAX_FLOW_NODES]usize,
+    toward_parents: bool,
+) void {
+    if (rank_nodes.len == 0) return;
+    var desired: [MAX_FLOW_NODES]f64 = undefined;
+    for (rank_nodes, 0..) |node_index, i| {
+        const node = nodes[node_index];
+        if (toward_parents) {
+            desired[i] = if (node.parent) |parent| positions[parent] else positions[node_index];
+        } else if (node.child_count == 0) {
+            desired[i] = positions[node_index];
+        } else {
+            var total: f64 = 0;
+            for (node.children[0..node.child_count]) |child| total += positions[child];
+            desired[i] = total / @as(f64, @floatFromInt(node.child_count));
+        }
+    }
+
+    var left: [MAX_FLOW_NODES]f64 = undefined;
+    var right: [MAX_FLOW_NODES]f64 = undefined;
+    for (rank_nodes, 0..) |node_index, i| {
+        const half = @as(f64, @floatFromInt(widths[node_index])) / 2.0;
+        if (i == 0) {
+            left[i] = desired[i];
+        } else {
+            const previous = rank_nodes[i - 1];
+            const previous_half = @as(f64, @floatFromInt(widths[previous])) / 2.0;
+            left[i] = @max(desired[i], left[i - 1] + previous_half + 3.0 + half);
+        }
+    }
+    var reverse = rank_nodes.len;
+    while (reverse != 0) {
+        reverse -= 1;
+        const node_index = rank_nodes[reverse];
+        if (reverse + 1 == rank_nodes.len) {
+            right[reverse] = desired[reverse];
+        } else {
+            const next = rank_nodes[reverse + 1];
+            const half = @as(f64, @floatFromInt(widths[node_index])) / 2.0;
+            const next_half = @as(f64, @floatFromInt(widths[next])) / 2.0;
+            right[reverse] = @min(desired[reverse], right[reverse + 1] - next_half - 3.0 - half);
+        }
+    }
+    for (rank_nodes, 0..) |node_index, i| positions[node_index] = (left[i] + right[i]) / 2.0;
+    for (rank_nodes[1..], 1..) |node_index, i| {
+        const previous = rank_nodes[i - 1];
+        const previous_half = @as(f64, @floatFromInt(widths[previous])) / 2.0;
+        const half = @as(f64, @floatFromInt(widths[node_index])) / 2.0;
+        const minimum = positions[previous] + previous_half + 3.0 + half;
+        if (positions[node_index] < minimum) positions[node_index] = minimum;
+    }
+}
+
+fn spanLess(a: TrackSpan, b: TrackSpan) bool {
+    if (a.start != b.start) return a.start < b.start;
+    if (a.end != b.end) return a.end < b.end;
+    if (a.from != b.from) return a.from < b.from;
+    if (a.to != b.to) return a.to < b.to;
+    return a.edge < b.edge;
+}
+
+fn assignFeedbackTracks(spans: []TrackSpan, edge_lanes: *[MAX_FLOW_EDGES]usize) usize {
+    var i: usize = 1;
+    while (i < spans.len) : (i += 1) {
+        const value = spans[i];
+        var at = i;
+        while (at != 0 and spanLess(value, spans[at - 1])) : (at -= 1) spans[at] = spans[at - 1];
+        spans[at] = value;
+    }
+
+    var track_members: [MAX_FLOW_EDGES][MAX_FLOW_EDGES]usize = undefined;
+    var track_counts: [MAX_FLOW_EDGES]usize = [_]usize{0} ** MAX_FLOW_EDGES;
+    var track_count: usize = 0;
+    for (spans, 0..) |span, span_index| {
+        var slot: usize = 0;
+        while (slot < track_count) : (slot += 1) {
+            var compatible = true;
+            for (track_members[slot][0..track_counts[slot]]) |member_index| {
+                const member = spans[member_index];
+                if (!(member.end + 2 <= span.start or span.end + 2 <= member.start or
+                    member.from == span.from or member.to == span.to))
+                {
+                    compatible = false;
+                    break;
+                }
+            }
+            if (compatible) break;
+        }
+        if (slot == track_count) track_count += 1;
+        edge_lanes[span.edge] = slot;
+        track_members[slot][track_counts[slot]] = span_index;
+        track_counts[slot] += 1;
+    }
+    return track_count;
+}
+
+fn solidBits(char: u21) u4 {
+    return switch (char) {
+        '─', '━', '╌' => 0b1010,
+        '│', '┃', '╎' => 0b0101,
+        '┌', '┏' => 0b0110,
+        '┐', '┓' => 0b1100,
+        '└', '┗' => 0b0011,
+        '┘', '┛' => 0b1001,
+        '┬' => 0b1110,
+        '├' => 0b0111,
+        '┤' => 0b1101,
+        '┴' => 0b1011,
+        '┼' => 0b1111,
+        else => 0,
+    };
+}
+
+fn connectSolid(x: usize, y: usize, bits: u4) void {
+    if (cells[y][x].role == .node) return;
+    if (cells[y][x].role == .edge_label) {
+        put(x, y, cells[y][x].char, .edge);
+        return;
+    }
+    const combined = solidBits(cells[y][x].char) | bits;
+    const char: u21 = switch (combined) {
+        0b1010 => '─',
+        0b0101 => '│',
+        0b0110 => '┌',
+        0b1100 => '┐',
+        0b0011 => '└',
+        0b1001 => '┘',
+        0b1110 => '┬',
+        0b0111 => '├',
+        0b1101 => '┤',
+        0b1011 => '┴',
+        0b1111 => '┼',
+        else => @trap(),
+    };
+    put(x, y, char, .edge);
+}
+
+fn routeSimonForward(from: TreeNode, to: TreeNode, edge: FlowEdge, bus: usize) void {
+    const target_x = to.center;
+    const branch_x = if (from.center -| target_x <= 1 and target_x -| from.center <= 1) target_x else from.center;
+    const bottom = from.y + wrappedNodeHeight(from.flow) - 1;
+    const head_y = to.y - 1;
+    connectSolid(branch_x, bottom, 0b0100);
+    var y = bottom + 1;
+    while (y < bus) : (y += 1) connectSolid(branch_x, y, 0b0101);
+    if (branch_x == target_x) {
+        y = bus;
+        while (y < head_y) : (y += 1) connectSolid(branch_x, y, 0b0101);
+    } else if (branch_x < target_x) {
+        connectSolid(branch_x, bus, 0b0011);
+        var x = branch_x + 1;
+        while (x < target_x) : (x += 1) connectSolid(x, bus, 0b1010);
+        connectSolid(target_x, bus, 0b1100);
+        y = bus + 1;
+        while (y < head_y) : (y += 1) connectSolid(target_x, y, 0b0101);
+    } else {
+        connectSolid(branch_x, bus, 0b1001);
+        var x = target_x + 1;
+        while (x < branch_x) : (x += 1) connectSolid(x, bus, 0b1010);
+        connectSolid(target_x, bus, 0b0110);
+        y = bus + 1;
+        while (y < head_y) : (y += 1) connectSolid(target_x, y, 0b0101);
+    }
+    put(target_x, head_y, '▼', .edge);
+    if (edge.label.len != 0) textAt(target_x + 1, head_y, edge.label, .edge_label);
+}
+
+fn treeCellOccupied(nodes: *const [MAX_FLOW_NODES]TreeNode, node_count: usize, x: usize, y: usize) bool {
+    for (nodes[0..node_count]) |node| {
+        const width = wrappedNodeWidth(node.flow);
+        const height = wrappedNodeHeight(node.flow);
+        const left = node.center - width / 2;
+        if (x >= left and x < left + width and y >= node.y and y < node.y + height) return true;
+    }
+    return false;
+}
+
+fn routeSimonFeedback(
+    nodes: *const [MAX_FLOW_NODES]TreeNode,
+    node_count: usize,
+    from: TreeNode,
+    to: TreeNode,
+    edge: FlowEdge,
+    lane_x: usize,
+) void {
+    const source_width = wrappedNodeWidth(from.flow);
+    const target_width = wrappedNodeWidth(to.flow);
+    const source_x = from.center - source_width / 2 + source_width - 1;
+    const source_y = from.y + wrappedNodeHeight(from.flow) / 2;
+    const target_x = to.center - target_width / 2 + target_width - 1;
+    const target_y = to.y + wrappedNodeHeight(to.flow) / 2;
+    connectSolid(source_x, source_y, 0b0010);
+    var x = source_x + 1;
+    while (x < lane_x) : (x += 1)
+        if (!treeCellOccupied(nodes, node_count, x, source_y)) connectSolid(x, source_y, 0b1010);
+    connectSolid(lane_x, source_y, 0b1001);
+    var y = target_y + 1;
+    while (y < source_y) : (y += 1) connectSolid(lane_x, y, 0b0101);
+    connectSolid(lane_x, target_y, 0b1100);
+    x = target_x + 2;
+    while (x < lane_x) : (x += 1)
+        if (!treeCellOccupied(nodes, node_count, x, target_y)) connectSolid(x, target_y, 0b1010);
+    put(target_x + 1, target_y, '◄', .edge);
+    if (edge.label.len != 0) textAt(lane_x - codepointLen(edge.label) - 1, target_y -| 1, edge.label, .edge_label);
+}
+
+fn renderTreeFlow(parsed: []const FlowEdge) void {
+    var nodes: [MAX_FLOW_NODES]TreeNode = undefined;
+    var node_count: usize = 0;
+    var edges: [MAX_FLOW_EDGES]TreeEdge = undefined;
+    var edge_count: usize = 0;
+
+    for (parsed) |flow| {
+        const from = treeNodeIndex(&nodes, &node_count, flow.from);
+        const to = treeNodeIndex(&nodes, &node_count, flow.to);
+        const feedback = treeAncestor(&nodes, to, from);
+        if (feedback) {
+            if (flow.line != .solid) @trap();
+        } else {
+            if (nodes[to].parent != null or nodes[from].child_count == 2) @trap();
+            nodes[to].parent = from;
+            const child_slot = nodes[from].child_count;
+            nodes[from].children[child_slot] = to;
+            nodes[from].child_count += 1;
+        }
+        edges[edge_count] = .{ .flow = flow, .from = from, .to = to, .feedback = feedback };
+        edge_count += 1;
+    }
+
+    var root: ?usize = null;
+    for (nodes[0..node_count], 0..) |node, i| {
+        if (node.parent != null) continue;
+        if (root != null) @trap();
+        root = i;
+    }
+    _ = root orelse @trap();
+
+    var max_depth: usize = 0;
+    var depth_height: [MAX_FLOW_NODES]usize = [_]usize{0} ** MAX_FLOW_NODES;
+    var depth_nodes: [MAX_FLOW_NODES][MAX_FLOW_NODES]usize = undefined;
+    var depth_counts: [MAX_FLOW_NODES]usize = [_]usize{0} ** MAX_FLOW_NODES;
+    var widths: [MAX_FLOW_NODES]usize = undefined;
+    for (nodes[0..node_count], 0..) |*node, i| {
+        var depth: usize = 0;
+        var current = nodes[i].parent;
+        while (current) |parent| {
+            depth += 1;
+            if (depth == MAX_FLOW_NODES) @trap();
+            current = nodes[parent].parent;
+        }
+        node.depth = depth;
+        max_depth = @max(max_depth, depth);
+        depth_height[depth] = @max(depth_height[depth], wrappedNodeHeight(node.flow));
+        depth_nodes[depth][depth_counts[depth]] = i;
+        depth_counts[depth] += 1;
+        widths[i] = wrappedNodeWidth(node.flow);
+    }
+
+    var positions: [MAX_FLOW_NODES]f64 = undefined;
+    var depth: usize = 0;
+    while (depth <= max_depth) : (depth += 1) {
+        var x: f64 = 0;
+        for (depth_nodes[depth][0..depth_counts[depth]]) |node_index| {
+            const half = @as(f64, @floatFromInt(widths[node_index])) / 2.0;
+            x += half;
+            positions[node_index] = x;
+            x += half + 3.0;
+        }
+    }
+    var iteration: usize = 0;
+    while (iteration < 10) : (iteration += 1) {
+        if (iteration % 2 == 0) {
+            depth = 0;
+            while (depth <= max_depth) : (depth += 1) {
+                relaxTreeRank(depth_nodes[depth][0..depth_counts[depth]], &nodes, &positions, &widths, true);
+            }
+        } else {
+            depth = max_depth + 1;
+            while (depth != 0) {
+                depth -= 1;
+                relaxTreeRank(depth_nodes[depth][0..depth_counts[depth]], &nodes, &positions, &widths, false);
+            }
+        }
+    }
+
+    var minimum_left = positions[0] - @as(f64, @floatFromInt(widths[0])) / 2.0;
+    for (nodes[1..node_count], 1..) |_, i|
+        minimum_left = @min(minimum_left, positions[i] - @as(f64, @floatFromInt(widths[i])) / 2.0);
+    for (nodes[0..node_count], 0..) |*node, i|
+        node.center = @intFromFloat(@max(0.0, @round(positions[i] - minimum_left)));
+
+    var depth_y: [MAX_FLOW_NODES]usize = [_]usize{0} ** MAX_FLOW_NODES;
+    depth = 1;
+    while (depth <= max_depth) : (depth += 1)
+        depth_y[depth] = depth_y[depth - 1] + depth_height[depth - 1] + 2;
+    for (nodes[0..node_count]) |*node|
+        node.y = depth_y[node.depth] + (depth_height[node.depth] - wrappedNodeHeight(node.flow)) / 2;
+
+    var diagram_width: usize = 1;
+    for (nodes[0..node_count], 0..) |node, i|
+        diagram_width = @max(diagram_width, node.center - widths[i] / 2 + widths[i]);
+    var content_width = diagram_width;
+    for (edges[0..edge_count]) |edge| {
+        if (edge.flow.label.len == 0) continue;
+        const label_width = codepointLen(edge.flow.label);
+        if (edge.feedback)
+            content_width = @max(content_width, diagram_width + label_width + 1)
+        else
+            content_width = @max(content_width, nodes[edge.to].center + 2 + label_width);
+    }
+
+    var spans: [MAX_FLOW_EDGES]TrackSpan = undefined;
+    var span_count: usize = 0;
+    for (edges[0..edge_count], 0..) |edge, edge_index| {
+        if (!edge.feedback) continue;
+        const from_y = nodes[edge.from].y + wrappedNodeHeight(nodes[edge.from].flow) / 2;
+        const to_y = nodes[edge.to].y + wrappedNodeHeight(nodes[edge.to].flow) / 2;
+        spans[span_count] = .{
+            .start = @min(from_y, to_y),
+            .end = @max(from_y, to_y),
+            .from = edge.from,
+            .to = edge.to,
+            .edge = edge_index,
+        };
+        span_count += 1;
+    }
+    var edge_lanes: [MAX_FLOW_EDGES]usize = [_]usize{0} ** MAX_FLOW_EDGES;
+    const lane_count = assignFeedbackTracks(spans[0..span_count], &edge_lanes);
+    const lane_base = if (lane_count == 0) 0 else content_width + 1;
+
+    clearCanvas();
+    for (nodes[0..node_count]) |node| wrappedFlowNode(node.flow, node.center, node.y);
+    for (edges[0..edge_count], 0..) |edge, edge_index| {
+        if (edge.feedback) {
+            routeSimonFeedback(&nodes, node_count, nodes[edge.from], nodes[edge.to], edge.flow, lane_base + edge_lanes[edge_index]);
+        } else {
+            routeSimonForward(
+                nodes[edge.from],
+                nodes[edge.to],
+                edge.flow,
+                depth_y[nodes[edge.from].depth] + depth_height[nodes[edge.from].depth],
+            );
+        }
+    }
+}
+
+fn isLegacyFlow(parsed: []const FlowEdge) bool {
+    if (parsed.len < 7 or parsed.len > 9 or
+        !sameNode(parsed[0].to, parsed[1].from) or !sameNode(parsed[1].from, parsed[2].from) or
+        !sameNode(parsed[1].to, parsed[3].from) or !sameNode(parsed[3].from, parsed[4].from) or
+        !sameNode(parsed[3].to, parsed[5].from) or !sameNode(parsed[5].from, parsed[6].from) or
+        parsed[0].line != .solid or parsed[1].line != .solid or parsed[2].line != .solid or
+        parsed[3].line != .solid or parsed[4].line != .solid or parsed[5].line != .dotted or
+        parsed[6].line != .thick) return false;
+    var seen: [2]bool = .{ false, false };
+    for (parsed[7..]) |edge| {
+        if (edge.line != .solid) return false;
+        const slot: usize = if (sameNode(edge.from, parsed[2].to) and sameNode(edge.to, parsed[0].to))
+            0
+        else if (sameNode(edge.from, parsed[4].to) and sameNode(edge.to, parsed[1].to))
+            1
+        else
+            return false;
+        if (seen[slot]) return false;
+        seen[slot] = true;
+    }
+    return true;
+}
+
 fn renderFlow(source: []const u8) void {
     // Simon's parser keeps a valid node even when a trailing arrow has no
     // destination. It renders the partial graph instead of treating the whole
@@ -464,16 +1048,14 @@ fn renderFlow(source: []const u8) void {
         lone_statement = line;
     }
     if (lone_statement) |line| {
-        if (std.mem.endsWith(u8, line, "-->")) {
-            const node = parseFlowNode(std.mem.trimRight(u8, line[0 .. line.len - 3], " \t"));
+        const arrow = findFlowArrow(line);
+        if (arrow != null and arrow.?.line == .solid and arrow.?.at + arrow.?.len == line.len) {
+            const node = parseFlowNode(std.mem.trimRight(u8, line[0..arrow.?.at], " \t"));
             clearCanvas();
             box(1, 0, node.label);
             return;
         }
-        if (std.mem.indexOf(u8, line, "-->") != null or
-            std.mem.indexOf(u8, line, "-.->") != null or
-            std.mem.indexOf(u8, line, "==>") != null)
-        {
+        if (arrow != null) {
             const header_end = std.mem.indexOfScalar(u8, source, '\n') orelse source.len;
             const header = std.mem.trim(u8, source[0..header_end], " \t\r");
             renderSimpleFlowEdge(parseFlowEdge(line), std.mem.endsWith(u8, header, "LR"));
@@ -481,7 +1063,7 @@ fn renderFlow(source: []const u8) void {
         }
     }
 
-    var parsed: [9]FlowEdge = undefined;
+    var parsed: [MAX_FLOW_EDGES]FlowEdge = undefined;
     var count: usize = 0;
     var lines = std.mem.splitScalar(u8, source, '\n');
     const header = std.mem.trim(u8, lines.next() orelse @trap(), " \t\r");
@@ -500,13 +1082,10 @@ fn renderFlow(source: []const u8) void {
         parsed[count] = parseFlowEdge(line);
         count += 1;
     }
-    if (count < 7 or
-        !sameNode(parsed[0].to, parsed[1].from) or !sameNode(parsed[1].from, parsed[2].from) or
-        !sameNode(parsed[1].to, parsed[3].from) or !sameNode(parsed[3].from, parsed[4].from) or
-        !sameNode(parsed[3].to, parsed[5].from) or !sameNode(parsed[5].from, parsed[6].from) or
-        parsed[0].line != .solid or parsed[1].line != .solid or parsed[2].line != .solid or
-        parsed[3].line != .solid or parsed[4].line != .solid or parsed[5].line != .dotted or
-        parsed[6].line != .thick) @trap();
+    if (!isLegacyFlow(parsed[0..count])) {
+        renderTreeFlow(parsed[0..count]);
+        return;
+    }
 
     var feedbacks: [2]?FlowEdge = .{ null, null };
     for (parsed[7..count]) |edge| {

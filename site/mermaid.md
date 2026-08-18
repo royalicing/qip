@@ -94,7 +94,13 @@ of WebAssembly</a>. It runs locally in your browser and as a CLI.
   <span id="mermaid-status" class="mermaid-status" role="status"></span>
 </p>
 
-This component supports the demonstrated flowchart, subgraph, sequence, state, class, and ER forms and traps on unsupported syntax.
+This component supports the demonstrated flowchart, subgraph, sequence, state,
+class, and ER forms and traps on unsupported syntax. A top-to-bottom flowchart
+can contain one rooted tree with no more than 16 nodes, 32 edges, and two
+forward children per node. Solid feedback edges declared after the forward
+tree can return to ancestor nodes. Longer solid arrows such as `--->` and
+`---->` are accepted. Extra dashes do not increase the rank distance. The
+renderer reuses right-side feedback lanes to keep cyclic graphs compact.
 
 ## Download
 
