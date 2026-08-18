@@ -126,9 +126,6 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/benchmarking-components">Benchmarking Components</a></li>
 <li><a href="/docs/tracing">Tracing</a></li>
 <li><a href="/docs/wasm-counts">Counting A WebAssembly Module</a></li>
-<li><a href="/docs/qip-component-to-c">Translating QIP Components To C</a></li>
-<li><a href="/docs/qip-component-to-zig">Translating QIP Components To Zig</a></li>
-<li><a href="/docs/qip-component-to-swift">Translating QIP Components To Swift</a></li>
 <li><a href="/docs/nontrapping-divides">Proving Non-Trapping Divides</a></li>
 <li><a href="/docs/interactive-rendering-performance">Interactive Rendering Performance</a></li>
 <li><a href="/docs/testing-interactive-components">Testing Interactive Components</a></li>
