@@ -16,7 +16,7 @@ Download a Markdown renderer and run it with `npx`:
 curl -L -o gfm-commonmark.0.31.2.wasm \
   https://qip.dev/components/text/markdown/gfm-commonmark.0.31.2.wasm
 
-printf '# Hello from qipx\n' | npx qipx run gfm-commonmark.0.31.2.wasm
+printf '# Hello from qipx\n' | npx @qip.dev/qipx run gfm-commonmark.0.31.2.wasm
 ```
 
 Multiple components run left to right. Download a compressor and a Base64
@@ -28,7 +28,7 @@ curl -L -o zlib-compress.wasm \
 curl -L -o base64-encode.wasm \
   https://qip.dev/components/bytes/base64-encode.wasm
 
-printf 'qip + wasm\n' | npx qipx run zlib-compress.wasm base64-encode.wasm
+printf 'qip + wasm\n' | npx @qip.dev/qipx run zlib-compress.wasm base64-encode.wasm
 ```
 
 ## CLI
@@ -89,7 +89,7 @@ curl -L -o utf8-must-be-valid.wasm \
 curl -L -o trap-invalid-utf8.wasm \
   https://qip.dev/oracles/trap-invalid-utf8.wasm
 
-npx qipx comply utf8-must-be-valid.wasm --with trap-invalid-utf8.wasm
+npx @qip.dev/qipx comply utf8-must-be-valid.wasm --with trap-invalid-utf8.wasm
 ```
 
 `comply` accepts files and directories. Directories are searched recursively.
@@ -133,7 +133,7 @@ import {
   newContentComponentContract,
   render,
   wasmMustComplyWithComponentContract,
-} from "qipx";
+} from "@qip.dev/qipx";
 
 const label = "gfm-commonmark.0.31.2.wasm";
 const wasm = await readFile("gfm-commonmark.0.31.2.wasm");

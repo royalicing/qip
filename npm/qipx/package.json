@@ -1,5 +1,5 @@
 {
-  "name": "qipx",
+  "name": "@qip.dev/qipx",
   "version": "0.1.0",
   "description": "Dependency-free QIP Content component runner and Compliance oracle host for Node.js",
   "repository": {
