@@ -1130,13 +1130,8 @@ function parseStageArgs(args) {
       for (const [key, value] of new URLSearchParams(arg)) stages.at(-1).uniforms.push([key, value]);
       continue;
     }
-    const queryIndex = arg.indexOf("?");
-    const filePath = queryIndex === -1 ? arg : arg.slice(0, queryIndex);
-    const query = queryIndex === -1 ? "" : arg.slice(queryIndex);
-    const stage = { filePath, label: filePath, uniforms: [] };
-    if (!stage.filePath) throw new Error("component path must not be empty");
-    if (query) for (const [key, value] of new URLSearchParams(query)) stage.uniforms.push([key, value]);
-    stages.push(stage);
+    if (!arg) throw new Error("component path must not be empty");
+    stages.push({ filePath: arg, label: arg, uniforms: [] });
   }
   return stages;
 }
