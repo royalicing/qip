@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { arch, cpus, platform } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const encoder = new TextEncoder();
@@ -12,7 +15,7 @@ function usage() {
   return `Usage: qipx run [options] <component.wasm> [component2.wasm ...]\n` +
     `       qipx dry run [options] <component.wasm> [component2.wasm ...]\n` +
     `       qipx comply [options] <file-or-dir> [...]\n` +
-    `       qipx bench [options] <component.wasm> [...]  (coming soon)\n\n` +
+    `       qipx bench -i <input> [options] <component.wasm> [...]\n\n` +
     `Options:\n` +
     `  -i, --input <path>              Read input from a file instead of stdin\n` +
     `  -o, --output <path>             Write output to a file instead of stdout\n` +
@@ -25,6 +28,20 @@ function usage() {
     `  qipx run component.wasm '?width=640&height=480'\n` +
     `  i32 uniforms are treated as unsigned values; use i64 for signed integers.\n\n` +
     `Documentation: https://qip.dev/docs/content-component\n`;
+}
+
+function benchUsage() {
+  return `Usage: qipx bench -i <input> [options] <component.wasm> [...]\n\n` +
+    `Options:\n` +
+    `  -i, --input <path>              Read benchmark input from a file ('-' for stdin)\n` +
+    `  -r, --runs <n>                  Measure exactly n runs per component\n` +
+    `  --benchtime <duration>          Target measured time per component (default: 3s)\n` +
+    `  --warmup <n>                    Warmup runs per component (default: 10)\n` +
+    `  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes\n` +
+    `  -h, --help                      Show this help\n\n` +
+    `Components are measured one at a time on reused runtime instances.\n` +
+    `With --expose-gc, qipx collects after each component's warmup.\n` +
+    `Every output must match the first component byte for byte.\n`;
 }
 
 function complyUsage() {
@@ -1218,6 +1235,310 @@ async function readStdin() {
   return out;
 }
 
+function parsePositiveInteger(value, label) {
+  if (!/^\d+$/.test(String(value))) throw new Error(`${label} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${label} must be a positive integer`);
+  return parsed;
+}
+
+function parseNonnegativeInteger(value, label) {
+  if (!/^\d+$/.test(String(value))) throw new Error(`${label} must be a nonnegative integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${label} must be a nonnegative integer`);
+  return parsed;
+}
+
+function parseBenchDuration(value) {
+  const match = /^(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m)$/.exec(String(value));
+  if (!match) throw new Error(`invalid --benchtime ${value}; use a duration such as 250ms, 3s, or 1m`);
+  const scale = { ns: 1, us: 1e3, "µs": 1e3, ms: 1e6, s: 1e9, m: 60e9 }[match[2]];
+  const nanoseconds = Number(match[1]) * scale;
+  if (!Number.isFinite(nanoseconds) || nanoseconds <= 0) throw new Error("--benchtime must be greater than zero");
+  return nanoseconds;
+}
+
+function parseBenchCLI(argv) {
+  const options = {
+    input: "",
+    runs: undefined,
+    benchtime: 3e9,
+    benchtimeLabel: "3s",
+    warmup: 10,
+    maxMemory: undefined,
+  };
+  const components = [];
+  let runsSet = false;
+  let benchtimeSet = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--") {
+      components.push(...argv.slice(index + 1));
+      break;
+    }
+    if (arg === "-h" || arg === "--help") return { help: true };
+    if (arg === "-i" || arg === "--input") {
+      options.input = argv[++index];
+    } else if (arg === "-r" || arg === "--runs") {
+      options.runs = parsePositiveInteger(argv[++index], arg);
+      runsSet = true;
+    } else if (arg === "--warmup") {
+      options.warmup = parseNonnegativeInteger(argv[++index], arg);
+    } else if (arg === "--max-memory") {
+      options.maxMemory = parseMaxMemory(argv[++index]);
+    } else if (arg === "--benchtime") {
+      options.benchtimeLabel = argv[++index];
+      options.benchtime = parseBenchDuration(options.benchtimeLabel);
+      benchtimeSet = true;
+    } else if (arg.startsWith("--benchtime=")) {
+      options.benchtimeLabel = arg.slice("--benchtime=".length);
+      options.benchtime = parseBenchDuration(options.benchtimeLabel);
+      benchtimeSet = true;
+    } else if (arg.startsWith("-") && !arg.startsWith("?")) {
+      throw new Error(`unknown option ${arg}`);
+    } else {
+      components.push(arg);
+    }
+  }
+  if (runsSet && benchtimeSet) throw new Error("use either --runs or --benchtime, not both");
+  if (!options.input) throw new Error("qipx bench requires -i <input>");
+  const specs = parseStageArgs(components);
+  if (specs.length === 0) throw new Error("qipx bench requires at least one component");
+  return { help: false, options, specs };
+}
+
+function sameBytes(left, right) {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function sameContentType(left, right) {
+  return left.encoding === right.encoding && left.mediaType === right.mediaType;
+}
+
+function assertBenchmarkOutput(expected, actual, label, phase) {
+  if (!sameContentType(expected.outputType, actual.outputType)) {
+    throw new Error(`${label} ${phase} output type ${describeContentType(actual.outputType)} does not match baseline ${describeContentType(expected.outputType)}`);
+  }
+  if (!sameBytes(expected.outputBytes, actual.outputBytes)) {
+    throw new Error(`${label} ${phase} output does not match baseline (${actual.outputBytes.byteLength} bytes, expected ${expected.outputBytes.byteLength})`);
+  }
+}
+
+function percentile(sorted, fraction) {
+  return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)];
+}
+
+function summarizeBenchmarkSamples(samples, measuredMean) {
+  const sorted = [...samples].sort((a, b) => a - b);
+  const mean = measuredMean ?? samples.reduce((sum, value) => sum + value, 0) / samples.length;
+  const variance = samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / samples.length;
+  return {
+    mean,
+    stddev: Math.sqrt(variance),
+    min: sorted[0],
+    p50: percentile(sorted, 0.5),
+    p95: percentile(sorted, 0.95),
+    max: sorted.at(-1),
+  };
+}
+
+function formatDuration(nanoseconds) {
+  if (nanoseconds < 1e3) return `${nanoseconds.toFixed(0)} ns`;
+  if (nanoseconds < 1e6) return `${(nanoseconds / 1e3).toFixed(nanoseconds < 1e4 ? 2 : 1)} µs`;
+  if (nanoseconds < 1e9) return `${(nanoseconds / 1e6).toFixed(nanoseconds < 1e7 ? 2 : 1)} ms`;
+  return `${(nanoseconds / 1e9).toFixed(2)} s`;
+}
+
+function formatRate(value) {
+  if (value >= 1e9) return `${(value / 1e9).toFixed(2)} billion`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(2)} million`;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: value < 100 ? 1 : 0 }).format(value);
+}
+
+function formatInputThroughput(inputSize, meanNanoseconds) {
+  if (inputSize === 0) return "Input empty";
+  const bytesPerSecond = inputSize * 1e9 / meanNanoseconds;
+  const units = [[1024 ** 3, "GiB/s"], [1024 ** 2, "MiB/s"], [1024, "KiB/s"], [1, "bytes/s"]];
+  const [scale, unit] = units.find(([threshold]) => bytesPerSecond >= threshold);
+  const rate = bytesPerSecond / scale;
+  const formatted = new Intl.NumberFormat("en-US", { maximumFractionDigits: rate < 10 ? 2 : 1 }).format(rate);
+  return `Input throughput: ${formatted} ${unit} (${inputSize} bytes/render)`;
+}
+
+function sha256Hex(data) {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+function benchmarkSample(candidate, input, expected, targetNanoseconds) {
+  let elapsed = 0;
+  let renders = 0;
+  do {
+    const start = process.hrtime.bigint();
+    const result = render(candidate.recipe, input);
+    const renderElapsed = Number(process.hrtime.bigint() - start);
+    assertBenchmarkOutput(expected, result, candidate.label, `run ${candidate.renderCount + renders + 1}`);
+    elapsed += renderElapsed;
+    renders += 1;
+  } while (elapsed < targetNanoseconds);
+  return { elapsed, renders, mean: elapsed / renders };
+}
+
+async function loadBenchmarkCandidate(spec, options) {
+  const wasm = await readFile(spec.filePath);
+  const contract = newContentComponentContract({ label: spec.label, maxMemory: options.maxMemory });
+  wasmMustComplyWithComponentContract(wasm, contract);
+
+  const compileStart = process.hrtime.bigint();
+  const module = new WebAssembly.Module(wasm);
+  const compileNanoseconds = Number(process.hrtime.bigint() - compileStart);
+
+  const instantiateStart = process.hrtime.bigint();
+  const instance = new WebAssembly.Instance(module);
+  const instantiateNanoseconds = Number(process.hrtime.bigint() - instantiateStart);
+
+  const component = newComponent(instance, contract);
+  const recipe = createRecipe([{ component, label: spec.label, uniforms: spec.uniforms }]);
+  return {
+    label: spec.label,
+    wasm,
+    component,
+    recipe,
+    compileNanoseconds,
+    instantiateNanoseconds,
+    samples: [],
+    measuredNanoseconds: 0,
+    renderCount: 0,
+  };
+}
+
+function benchmarkRuntimeDescription() {
+  const bunVersion = globalThis.Bun?.version;
+  if (bunVersion) {
+    const jscVersion = process.versions.webkit;
+    return `Bun ${bunVersion}, JavaScriptCore${jscVersion ? ` ${jscVersion}` : ""}`;
+  }
+  return `Node.js ${process.versions.node}, V8 ${process.versions.v8}`;
+}
+
+function benchmarkGCOptInCommand() {
+  const runtime = globalThis.Bun?.version ? "bun" : "node";
+  const modulePath = process.argv[1] ? JSON.stringify(process.argv[1]) : "path/to/qipx.mjs";
+  return `${runtime} --expose-gc ${modulePath} bench ...`;
+}
+
+function printBenchmarkReport(candidates, input, inputLabel, expected, options, collectedAfterWarmup) {
+  const outputHash = sha256Hex(expected.outputBytes);
+  console.log(candidates.length === 1 ? "Benchmark: baseline output captured" : "Benchmark: outputs match");
+  console.log(`Input: ${inputLabel} (${input.byteLength} bytes, sha256 ${sha256Hex(input)})`);
+  console.log(`Output: ${describeContentType(expected.outputType)}, ${expected.outputBytes.byteLength} bytes`);
+  console.log(`Output SHA-256: ${outputHash}`);
+  console.log(`Warmup: ${options.warmup} runs/component`);
+  if (collectedAfterWarmup) {
+    console.log("GC preparation: manual collection after each component's warmup");
+  } else {
+    console.log("GC preparation: runtime-managed only");
+    console.log(`GC opt-in: ${benchmarkGCOptInCommand()}`);
+  }
+  if (options.runs === undefined) console.log(`Measured: ${options.benchtimeLabel} target/component`);
+  else console.log(`Measured: ${options.runs} runs/component`);
+  console.log(`Runtime: ${benchmarkRuntimeDescription()}`);
+  const cpu = cpus()[0]?.model;
+  console.log(`Platform: ${platform()} ${arch()}${cpu ? `, ${cpu}` : ""}`);
+  console.log("Boundary: uniforms, input/output copies, and render on one reused instance\n");
+
+  const summaries = candidates.map((candidate) => summarizeBenchmarkSamples(candidate.samples, candidate.measuredNanoseconds / candidate.renderCount));
+  const fastestMean = Math.min(...summaries.map((summary) => summary.mean));
+  const nameWidth = Math.max("Implementation".length, ...candidates.map((candidate) => basename(candidate.label).length));
+  const headers = ["Implementation".padEnd(nameWidth), "Mean".padStart(11), "p50".padStart(11), "p95".padStart(11), "Stddev".padStart(11), "Relative".padStart(10)];
+  console.log(headers.join("  "));
+  candidates.forEach((candidate, index) => {
+    const summary = summaries[index];
+    console.log([
+      basename(candidate.label).padEnd(nameWidth),
+      formatDuration(summary.mean).padStart(11),
+      formatDuration(summary.p50).padStart(11),
+      formatDuration(summary.p95).padStart(11),
+      formatDuration(summary.stddev).padStart(11),
+      `${(summary.mean / fastestMean).toFixed(2)}x`.padStart(10),
+    ].join("  "));
+  });
+  console.log("");
+
+  candidates.forEach((candidate, index) => {
+    const summary = summaries[index];
+    const rendersPerSecond = 1e9 / summary.mean;
+    const memoryBytes = candidate.component.exports.memory.buffer.byteLength;
+    console.log(`${index + 1}. ${candidate.label}`);
+    console.log(`   Time: ${formatDuration(summary.mean)} ± ${formatDuration(summary.stddev)} [min ${formatDuration(summary.min)}, p50 ${formatDuration(summary.p50)}, p95 ${formatDuration(summary.p95)}, max ${formatDuration(summary.max)}]`);
+    console.log(`   Throughput: ${formatRate(rendersPerSecond)} renders/s`);
+    if (options.runs === undefined) console.log(`   Samples: ${candidate.samples.length}; renders: ${candidate.renderCount}`);
+    console.log(`   ${formatInputThroughput(input.byteLength, summary.mean)}`);
+    console.log(`   Compile: ${formatDuration(candidate.compileNanoseconds)}; instantiate: ${formatDuration(candidate.instantiateNanoseconds)}`);
+    console.log(`   Linear memory: ${formatBytes(memoryBytes)}`);
+    console.log(`   Capacity: input ${formatBytes(candidate.component.inputCapacity)}, output ${formatBytes(candidate.component.outputCapacity)}`);
+    console.log(`   Wasm: ${candidate.wasm.byteLength} bytes, gzip ${gzipSync(candidate.wasm, { level: 9 }).byteLength} bytes`);
+    const variation = summary.stddev / summary.mean;
+    if (variation >= 0.1) console.log(`   Warning: standard deviation is ${(variation * 100).toFixed(1)}% of the mean; repeat without competing CPU-heavy work.`);
+    console.log("");
+  });
+
+  if (candidates.length > 1) {
+    let fastest = 0;
+    let slowest = 0;
+    for (let index = 1; index < candidates.length; index += 1) {
+      if (summaries[index].mean < summaries[fastest].mean) fastest = index;
+      if (summaries[index].mean > summaries[slowest].mean) slowest = index;
+    }
+    console.log(`Fastest: ${candidates[fastest].label}`);
+    if (fastest !== slowest) console.log(`${candidates[fastest].label} was ${(summaries[slowest].mean / summaries[fastest].mean).toFixed(2)}x faster than ${candidates[slowest].label} by mean time.`);
+  }
+}
+
+async function benchCommand(argv) {
+  const parsed = parseBenchCLI(argv);
+  if (parsed.help) {
+    console.log(benchUsage());
+    return;
+  }
+  const { options, specs } = parsed;
+  const collectAfterWarmup = typeof globalThis.gc === "function";
+  const input = options.input === "-" ? await readStdin() : await readFile(options.input);
+  const candidates = [];
+  for (const spec of specs) candidates.push(await loadBenchmarkCandidate(spec, options));
+
+  const expected = render(candidates[0].recipe, input);
+  for (let index = 1; index < candidates.length; index += 1) {
+    assertBenchmarkOutput(expected, render(candidates[index].recipe, input), candidates[index].label, "check");
+  }
+
+  const minimumSamples = options.runs ?? 10;
+  const maximumSamples = options.runs ?? 1_000_000;
+  const sampleTarget = options.runs === undefined ? 1e6 : 0;
+  for (const candidate of candidates) {
+    for (let warmup = 0; warmup < options.warmup; warmup += 1) {
+      assertBenchmarkOutput(expected, render(candidate.recipe, input), candidate.label, `warmup ${warmup + 1}`);
+    }
+    if (collectAfterWarmup) globalThis.gc();
+
+    for (let sample = 0; sample < maximumSamples; sample += 1) {
+      const measured = benchmarkSample(candidate, input, expected, sampleTarget);
+      candidate.samples.push(measured.mean);
+      candidate.measuredNanoseconds += measured.elapsed;
+      candidate.renderCount += measured.renders;
+      const completedSamples = sample + 1;
+      if (options.runs !== undefined && completedSamples >= options.runs) break;
+      if (options.runs === undefined && completedSamples >= minimumSamples && candidate.measuredNanoseconds >= options.benchtime) break;
+      if (completedSamples === maximumSamples) throw new Error(`--benchtime produced more than ${maximumSamples} samples; use --runs for explicit control`);
+    }
+  }
+
+  printBenchmarkReport(candidates, input, options.input === "-" ? "stdin" : options.input, expected, options, collectAfterWarmup);
+}
+
 export async function main(argv = process.argv.slice(2)) {
   if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
     console.log(usage());
@@ -1228,7 +1549,8 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   if (argv[0] === "bench") {
-    throw new Error("qipx bench is coming soon");
+    await benchCommand(argv.slice(1));
+    return;
   }
   let dryRun = false;
   if (argv[0] === "dry" && argv[1] === "run") {

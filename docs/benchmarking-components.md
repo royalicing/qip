@@ -2,9 +2,9 @@
 
 Start with `qip bench`. It measures a component through the same wazero execution
 path as `qip run`, checks the output on every measured run, and makes
-before-and-after comparisons difficult to accidentally invalidate. Add a small
-Node.js harness when the browser/V8 runtime, a warmed instance, or
-component-specific telemetry is part of the measurement.
+before-and-after comparisons difficult to accidentally invalidate. Use `qipx
+bench` for warmed Node.js/V8 measurements. Add a small Node.js harness when a
+browser lifecycle or component-specific telemetry is part of the measurement.
 
 Benchmarking is not a substitute for a correctness test. Keep a deterministic
 test fixture and expected output first; then time the exact artifact that passed
@@ -74,6 +74,58 @@ The displayed ratio retains those labels because it is not an engine-only
 speedup. It answers how a warmed V8 host compares with QIP's default
 fresh-instance boundary. Node's memory line is allocated WebAssembly linear
 memory, not process RSS.
+
+If Node.js is already your target runtime, use `qipx bench` directly:
+
+```sh
+NODE_OPTIONS=--expose-gc npx @qip.dev/qipx bench \
+  -i README.md \
+  --benchtime=3s \
+  /tmp/commonmark-before.wasm \
+  components/text/markdown/commonmark.0.31.2.wasm
+```
+
+`qipx bench` validates and compiles each Content component once, creates one
+instance, then warms and measures each component in input order. It uses 10
+warmup renders by default and measures the same reused instance boundary as the
+`render()` JavaScript API. Every warmup and measured render must match the first
+candidate's output type and bytes. Its report adds p50, renders per second,
+input throughput, runtime and CPU identification, and relative time. Use
+`--warmup <n>` to change warmup work. Use `-r <n>` when you need an exact render
+count instead of the default three-second measured target.
+
+Input throughput is external input bytes divided by mean end-to-end render time.
+It includes uniform setters and input and output copies; it is not Wasm memory
+bandwidth. Empty input is reported as `Input empty` because no meaningful byte
+rate exists.
+
+The example opts into manual GC with `--expose-gc` and uses `NODE_OPTIONS` so
+the normal `npx` command still works. When the flag is present, `qipx` collects
+after each component's warmup and before measuring that component. Without the
+flag, the runtime manages collection normally. `qipx` does not collect before
+each measured render, so measured-phase GC pauses remain part of sustained
+throughput.
+
+Run the same benchmark under Bun to compare JavaScriptCore's WebAssembly
+implementation. Use `bunx --bun` to override the package's Node shebang.
+`BUN_OPTIONS` passes the GC opt-in to the spawned Bun process:
+
+```sh
+BUN_OPTIONS=--expose-gc bunx --bun @qip.dev/qipx bench \
+  -i README.md \
+  --benchtime=3s \
+  /tmp/commonmark-before.wasm \
+  /tmp/commonmark-after.wasm
+```
+
+The report identifies Bun and JavaScriptCore instead of Bun's Node-compatible
+`process.versions.node` and `process.versions.v8` values. Compare runtimes only
+when the input, components, output, host, and command options are the same.
+
+Synchronous WebAssembly blocks the Node thread, so a JavaScript timer cannot
+interrupt a render. `qipx bench` does not offer a per-render timeout. Use only
+admitted components and stop the process if an unexpected render does not
+return.
 
 `--node` currently supports the Content contract, not Tile or Interactive
 components. Synchronous V8 execution cannot receive a JavaScript timer while a
@@ -152,9 +204,9 @@ repository. A benchmark without its input is not reproducible.
 
 ## When To Write A Node.js Harness
 
-Start with `qip bench --node` for an ordinary Content transform. Write a
-separate Node harness when the browser/V8 host needs a different execution
-boundary or component-specific behavior. Common cases are:
+Start with `qip bench --node` or `qipx bench` for an ordinary Content transform.
+Write a separate Node harness when the browser/V8 host needs a different
+execution boundary or component-specific behavior. Common cases are:
 
 - measuring a reused instance after V8 has warmed and optimized it;
 - driving interactive events or a particular renderer state;

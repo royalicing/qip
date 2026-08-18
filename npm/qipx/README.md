@@ -4,8 +4,8 @@
 components](https://qip.dev/docs/content-component) and [Compliance
 oracles](https://qip.dev/docs/comply).
 
-The package requires Node.js 22 or newer. Useful component and oracle downloads
-are available from [qip.dev/tools](https://qip.dev/tools) and
+The package targets Node.js 22 or newer. Useful component and oracle
+downloads are available from [qip.dev/tools](https://qip.dev/tools) and
 [qip.dev/oracles](https://qip.dev/oracles).
 
 ## Try It
@@ -31,7 +31,7 @@ curl -L -o base64-encode.wasm \
 printf 'qip + wasm\n' | npx @qip.dev/qipx run zlib-compress.wasm base64-encode.wasm
 ```
 
-## CLI
+## Run
 
 Run a Content component pipeline:
 
@@ -45,17 +45,7 @@ Options:
   --capacities-must-fit           Reject stages whose max output cannot fit next input
 ```
 
-Validate a pipeline without reading input, calling `render`, or writing output:
-
-```sh
-qipx dry run [options] <component.wasm> [component2.wasm ...]
-```
-
-`dry run` uses the same component loading, Strict Wasm Profile subset, Content
-ABI validation, content-type checks, and `--capacities-must-fit` checks as
-`run`. It applies uniforms on the prepared instances so missing setters,
-invalid values, and setter traps fail before execution. It does not read stdin,
-call `render`, or write output.
+### Uniforms
 
 Uniforms can be supplied as query strings after a component path:
 
@@ -69,6 +59,8 @@ not contain `__`.
 
 Integer `i32` uniforms are treated as unsigned values. Use an `i64` uniform when
 a component needs signed integer configuration.
+
+### Comply
 
 Check QIP Content compliance for files or directories:
 
@@ -112,12 +104,68 @@ PASS components/utf8/trim.wasm --with compliance/preserve-empty.wasm (1 cases)
 pass=2 fail=0 total=2
 ```
 
-Benchmarking is coming soon:
+### Bench
+
+Benchmark one or more Content component implementations on reused Node/V8 or
+Bun/JavaScriptCore instances:
 
 ```sh
-qipx bench [options] <component.wasm> [...]
-# qipx bench is coming soon
+# Node.js
+NODE_OPTIONS=--expose-gc npx @qip.dev/qipx bench \
+  -i README.md \
+  --benchtime=3s \
+  before.wasm \
+  after.wasm
+
+# Bun
+BUN_OPTIONS=--expose-gc bunx --bun @qip.dev/qipx bench \
+  -i README.md \
+  --benchtime=3s \
+  before.wasm \
+  after.wasm
 ```
+
+The first component is the output baseline. `qipx` compiles and instantiates
+each component once, then warms and measures each component in input order.
+Every warmup and measured render must have the same type and bytes as the
+baseline.
+
+The `NODE_OPTIONS` and `BUN_OPTIONS` prefixes opt into one collection after
+each component's warmup and before its measured runs. `bunx --bun` overrides
+the package's Node shebang.
+
+Bun uses
+[JavaScriptCore](https://docs.webkit.org/Deep%20Dive/JSC/JavaScriptCore.html),
+WebKit's JavaScript and WebAssembly engine used by Safari.
+
+```text
+Options:
+  -i, --input <path>              Read benchmark input from a file ('-' for stdin)
+  -r, --runs <n>                  Measure exactly n runs per component
+  --benchtime <duration>          Target measured time per component (default: 3s)
+  --warmup <n>                    Warmup runs per component (default: 10)
+  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes
+```
+
+Each timed render uses a reused Wasm instance and includes uniform setters and
+input/output copies. The report shows latency distribution, render and input
+throughput, relative performance, Wasm size, and runtime and engine details.
+Input throughput is external input bytes divided by mean end-to-end time; it is
+not memory bandwidth.
+
+### Dry run
+
+Validate a pipeline without reading input, calling `render`, or writing output:
+
+```sh
+qipx dry run [options] <component.wasm> [component2.wasm ...]
+```
+
+`dry run` uses the same component loading, Strict Wasm Profile subset, Content
+ABI validation, content-type checks, and `--capacities-must-fit` checks as
+`run`. It applies uniforms on the prepared instances so missing setters,
+invalid values, and setter traps fail before execution. It does not read stdin,
+call `render`, or write output.
 
 ## JavaScript API
 
