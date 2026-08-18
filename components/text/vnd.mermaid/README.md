@@ -11,7 +11,8 @@ rows; the host supplies the surrounding `<pre>`.
 
 - simple top-to-bottom and left-to-right flow edges, plus top-to-bottom
   decision flowcharts with two-way branches, wrapped node labels, and solid,
-  dotted, and thick edges
+  dotted, and thick edges; each rejection branch can have one labelled retry
+  edge back to its decision
 - two left-to-right subgraphs, each containing one edge, joined by one labelled
   edge; node labels wrap at 24 columns for up to four lines
 - sequence diagrams with `participant`/`actor` declarations, aliases,

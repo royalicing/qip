@@ -394,6 +394,59 @@ fn arrowLabel(center: usize, y: usize, label: []const u8) void {
     if (label.len != 0) textAt(center + 1, y, label, .edge_label);
 }
 
+fn feedbackHorizontal(x0: usize, x1: usize, y: usize) void {
+    var x = x0;
+    while (x <= x1) : (x += 1) {
+        const char: u21 = switch (cells[y][x].char) {
+            '│', '┃', '╎', '┌', '┐', '└', '┘' => '┼',
+            else => '─',
+        };
+        put(x, y, char, .edge);
+    }
+}
+
+fn feedbackVertical(x: usize, y0: usize, y1: usize) void {
+    var y = y0;
+    while (y <= y1) : (y += 1) {
+        const char: u21 = switch (cells[y][x].char) {
+            '─', '━', '╌', '┌', '┐', '└', '┘' => '┼',
+            else => '│',
+        };
+        put(x, y, char, .edge);
+    }
+}
+
+fn drawFlowFeedback(
+    edge: FlowEdge,
+    source_node: FlowNode,
+    source_center: usize,
+    source_y: usize,
+    target_node: FlowNode,
+    target_center: usize,
+    target_y: usize,
+    lane_x: usize,
+) void {
+    const source_bottom = source_y + wrappedNodeHeight(source_node) - 1;
+    const source_turn_y = source_bottom + 1;
+    const target_left = target_center - wrappedNodeWidth(target_node) / 2;
+    const target_entry_y = target_y + wrappedNodeHeight(target_node) / 2;
+    if (target_entry_y >= source_turn_y or target_left < lane_x + 2) @trap();
+
+    put(source_center, source_bottom, '┴', .edge);
+    feedbackHorizontal(lane_x + 1, source_center - 1, source_turn_y);
+    put(source_center, source_turn_y, '┘', .edge);
+    feedbackVertical(lane_x, target_entry_y + 1, source_turn_y - 1);
+    put(lane_x, source_turn_y, '└', .edge);
+    put(lane_x, target_entry_y, '┌', .edge);
+    feedbackHorizontal(lane_x + 1, target_left - 2, target_entry_y);
+    put(target_left - 1, target_entry_y, '▶', .edge);
+
+    if (edge.label.len != 0) {
+        const label_y = target_entry_y + (source_turn_y - target_entry_y) / 2;
+        textAt(lane_x + 1, label_y, edge.label, .edge_label);
+    }
+}
+
 fn renderFlow(source: []const u8) void {
     // Simon's parser keeps a valid node even when a trailing arrow has no
     // destination. It renders the partial graph instead of treating the whole
@@ -428,7 +481,7 @@ fn renderFlow(source: []const u8) void {
         }
     }
 
-    var parsed: [7]FlowEdge = undefined;
+    var parsed: [9]FlowEdge = undefined;
     var count: usize = 0;
     var lines = std.mem.splitScalar(u8, source, '\n');
     const header = std.mem.trim(u8, lines.next() orelse @trap(), " \t\r");
@@ -447,7 +500,7 @@ fn renderFlow(source: []const u8) void {
         parsed[count] = parseFlowEdge(line);
         count += 1;
     }
-    if (count != 7 or
+    if (count < 7 or
         !sameNode(parsed[0].to, parsed[1].from) or !sameNode(parsed[1].from, parsed[2].from) or
         !sameNode(parsed[1].to, parsed[3].from) or !sameNode(parsed[3].from, parsed[4].from) or
         !sameNode(parsed[3].to, parsed[5].from) or !sameNode(parsed[5].from, parsed[6].from) or
@@ -455,9 +508,31 @@ fn renderFlow(source: []const u8) void {
         parsed[3].line != .solid or parsed[4].line != .solid or parsed[5].line != .dotted or
         parsed[6].line != .thick) @trap();
 
+    var feedbacks: [2]?FlowEdge = .{ null, null };
+    for (parsed[7..count]) |edge| {
+        if (edge.line != .solid) @trap();
+        const slot: usize = if (sameNode(edge.from, parsed[2].to) and sameNode(edge.to, parsed[0].to))
+            0
+        else if (sameNode(edge.from, parsed[4].to) and sameNode(edge.to, parsed[1].to))
+            1
+        else
+            @trap();
+        if (feedbacks[slot] != null) @trap();
+        feedbacks[slot] = edge;
+    }
+
+    var feedback_count: usize = 0;
+    var feedback_label_width: usize = 0;
+    for (feedbacks) |feedback| if (feedback) |edge| {
+        feedback_count += 1;
+        feedback_label_width = @max(feedback_label_width, codepointLen(edge.label));
+    };
+    const feedback_stride = @max(feedback_label_width + 3, 5);
+    const feedback_margin = if (feedback_count == 0) 0 else feedback_count * feedback_stride + 2;
+
     const log_width = wrappedNodeWidth(parsed[5].to);
     const response_width = wrappedNodeWidth(parsed[6].to);
-    const log_center = (log_width + 1) / 2;
+    const log_center = feedback_margin + (log_width + 1) / 2;
     const leaf_gap: usize = 2 + @as(usize, if (log_width % 2 == 0) 1 else 0);
     const response_center = log_center - log_width / 2 +
         log_width + leaf_gap + response_width / 2;
@@ -517,6 +592,15 @@ fn renderFlow(source: []const u8) void {
     arrowLabel(response_center, response_y - 1, parsed[6].label);
     wrappedFlowNode(parsed[5].to, log_center, log_y);
     wrappedFlowNode(parsed[6].to, response_center, response_y);
+
+    var feedback_lane: usize = 0;
+    if (feedbacks[0]) |edge| {
+        drawFlowFeedback(edge, parsed[2].to, reject1_center, rank2_y, parsed[0].to, auth_center, auth_y, 1 + feedback_lane * feedback_stride);
+        feedback_lane += 1;
+    }
+    if (feedbacks[1]) |edge| {
+        drawFlowFeedback(edge, parsed[4].to, reject2_center, rank3_y, parsed[1].to, rate_center, rank2_y, 1 + feedback_lane * feedback_stride);
+    }
 }
 
 fn renderSimpleFlowEdge(edge: FlowEdge, horizontal: bool) void {

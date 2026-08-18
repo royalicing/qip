@@ -63,6 +63,24 @@ test("invalid UTF-8 traps", async () => {
   assert.throws(() => render(instance.exports, Buffer.from([0xc3, 0x28])));
 });
 
+test("flowcharts render bounded retry edges", async () => {
+  const { instance } = await WebAssembly.instantiate(moduleBytes);
+  const input = Buffer.from(`graph TD
+    Start[Empty input] --> Journey{Journey valid?}
+    Journey -->|yes| Answers{Answers valid?}
+    Journey -->|no| JourneyError[Journey error and retry]
+    Answers -->|yes| Check(Check availability)
+    Answers -->|no| AnswerError[Prompt error and retry]
+    Check -.-> Failed[Route suspended and restart]
+    Check ==> Complete[Complete and buy ticket]
+    JourneyError -->|retry journey| Journey
+    AnswerError -->|retry answer| Answers`);
+  const output = render(instance.exports, input).toString();
+  assert.match(output, /retry journey/);
+  assert.match(output, /retry answer/);
+  assert.match(output, /▶/);
+});
+
 test("renderer stays substantially smaller than the 163 KB reference", () => {
   assert.ok(moduleBytes.length < 32 * 1024, `module grew to ${moduleBytes.length} bytes`);
 });
