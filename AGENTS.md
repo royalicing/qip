@@ -35,7 +35,7 @@ page before changing a contract or workflow; do not repeat protocols here.
 Write for software engineers and technical decision-makers who are short on
 time and skeptical of hype. Treat readers as capable of making tradeoffs. Be
 engaging, informed, opinionated, and friendly without becoming promotional or
-dry.
+dry. Use ASD-STE100 Simplified Technical English.
 
 - Lead with what the thing does and how it works, not a slogan.
 - Prefer mechanics over claims: inputs, outputs, boundaries, commands, files,
