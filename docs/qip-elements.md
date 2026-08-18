@@ -45,6 +45,80 @@ The page or application owns the canonical input, and the user consumes the resu
 
 A view performs a finite rendering operation. Its output may be generated at build time or on the server, and a pre-rendered view stays useful without client-side execution merely to display existing output. The browser may render or rerender the view when the application explicitly asks for it.
 
+## Rendering Times
+
+Finite rendering can observe values from three different eras:
+
+```text
+build time → request time → interaction time
+```
+
+Here, time is logical: it says which value came after another, not how many
+seconds passed. This remains useful when values are synchronized without
+requiring clocks to agree.
+
+- **Build time** supplies authored inputs and fallbacks while producing a static page or server template.
+- **Request time** applies values available only when a server handles a URL, such as explicitly permitted search parameters.
+- **Interaction time** is the current browser state after a person or client-side application changes a control.
+
+Each later era may override a value without destroying the earlier value it
+came from. This lets the same markup provide a static fallback, a complete
+server-rendered response, and optional client-side enhancement.
+
+| Environment | Initial values | Where QIP runs | What remains possible |
+|---|---|---|---|
+| Static page without JavaScript | Build-time fallbacks | During the build | The complete fallback result is readable and form submission can navigate normally |
+| Server with no JavaScript | Build-time fallbacks plus request-time values | While serving the request | The response contains the complete result; a form can submit another request |
+| Static page with JavaScript | Build-time fallbacks, then values connected from the current URL | During the build and locally in the browser | Wasm can rerender after URL or form-control changes without a server renderer |
+| Server with JavaScript | Request-time values in the initial response, followed by live control values | On the server initially and locally thereafter | The page works before activation and can rerender without another request after activation |
+
+### Preserving Value Eras
+
+One proposed finite-rendering element is
+`<qip-connect-search-params>`. It explicitly connects permitted URL search
+parameters to ordinary hidden form controls:
+
+```html
+<qip-connect-search-params>
+  <input type="hidden" name="language" value="en">
+  <input type="hidden" name="currency" value="AUD">
+</qip-connect-search-params>
+```
+
+A build transform can preserve each authored `value` as
+`data-qip-fallback`. A request-time renderer then writes the resolved value to
+the normal `value` attribute:
+
+```html
+<qip-connect-search-params>
+  <input
+    type="hidden"
+    name="language"
+    value="fr"
+    data-qip-fallback="en"
+  >
+</qip-connect-search-params>
+```
+
+The three representations have distinct ownership:
+
+| Era | Representation | Meaning |
+|---|---|---|
+| Build time | `data-qip-fallback` | Authored fallback snapshot retained by the build |
+| Request time | The serialized `value` attribute | Value selected for the server-rendered response, or the fallback when no request value exists |
+| Interaction time | The live input `value` DOM property | Current browser value, which may differ from the serialized request snapshot |
+
+The browser custom element can restore `data-qip-fallback` when a search
+parameter disappears, update the live value when the URL changes, and notify
+the enclosing finite renderer. Without JavaScript, the hidden inputs remain
+successful form controls and carry the server-selected or fallback values into
+the next submission.
+
+This is a proposed API rather than part of the current browser-element
+contract. Its server and browser implementations should share fixtures that
+verify they select the same parameters and produce byte-identical
+`application/x-www-form-urlencoded` input.
+
 ## `<qip-edit>`
 
 `<qip-edit>` is the finite, authoring-oriented element. The user authors one or more declared inputs; QIP performs finite renders in response to relevant input changes and writes the result to the declared outputs. Use "edit element" when a noun is needed in prose.
