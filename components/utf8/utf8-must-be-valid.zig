@@ -26,6 +26,12 @@ fn isContinuation(b: u8) bool {
     return (b & 0xC0) == 0x80;
 }
 
+fn isEightAscii(start: u32) bool {
+    const index: usize = @intCast(start);
+    const ptr: *align(1) const u64 = @ptrCast(&input_buf[index]);
+    return (ptr.* & 0x8080808080808080) == 0;
+}
+
 export fn render(input_size_in: u32) u32 {
     var input_size: u32 = input_size_in;
     if (input_size > INPUT_CAP) {
@@ -36,7 +42,11 @@ export fn render(input_size_in: u32) u32 {
     while (i < input_size) {
         const b = input_buf[@intCast(i)];
         if (b <= 0x7F) {
-            i += 1;
+            if (i + 8 <= input_size and isEightAscii(i)) {
+                i += 8;
+            } else {
+                i += 1;
+            }
             continue;
         }
         if (b >= 0xC2 and b <= 0xDF) {

@@ -514,6 +514,10 @@ components/utf8/wc-odin.wasm: components/utf8/wc-odin.odin
 components/utf8/shortcode-to-emoji-odin.wasm: components/utf8/shortcode-to-emoji-odin.odin
 	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
 
+components/utf8/utf8-must-be-valid-odin.wasm: ODIN_WASM_MAX_MEMORY = 3145728
+components/utf8/utf8-must-be-valid-odin.wasm: components/utf8/utf8-must-be-valid-odin.odin
+	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
+
 recipes/%.wasm: recipes/%.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
