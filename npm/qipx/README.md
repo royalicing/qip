@@ -60,7 +60,7 @@ not contain `__`.
 Integer `i32` uniforms are treated as unsigned values. Use an `i64` uniform when
 a component needs signed integer configuration.
 
-### Comply
+## Comply
 
 Check QIP Content compliance for files or directories:
 
@@ -104,7 +104,7 @@ PASS components/utf8/trim.wasm --with compliance/preserve-empty.wasm (1 cases)
 pass=2 fail=0 total=2
 ```
 
-### Bench
+## Bench
 
 Benchmark one or more Content component implementations on reused Node/V8 or
 Bun/JavaScriptCore instances:
@@ -153,7 +153,7 @@ throughput, relative performance, Wasm size, and runtime and engine details.
 Input throughput is external input bytes divided by mean end-to-end time; it is
 not memory bandwidth.
 
-### Dry run
+## Dry run
 
 Validate a pipeline without reading input, calling `render`, or writing output:
 
