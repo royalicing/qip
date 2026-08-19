@@ -73,10 +73,10 @@ The presets are illustrative starting points, not device specifications. Browser
   <details open>
     <summary>Safe-area environment values</summary>
     <div class="mobile-value-grid">
-      <label>Top<input data-uniform="safe_area_inset_top" type="number" min="0" step="0.1" /></label>
-      <label>Right<input data-uniform="safe_area_inset_right" type="number" min="0" step="0.1" /></label>
-      <label>Bottom<input data-uniform="safe_area_inset_bottom" type="number" min="0" step="0.1" /></label>
-      <label>Left<input data-uniform="safe_area_inset_left" type="number" min="0" step="0.1" /></label>
+      <label>Safe-area top<input data-uniform="safe_area_inset_top" type="number" min="0" step="0.1" /></label>
+      <label>Safe-area right<input data-uniform="safe_area_inset_right" type="number" min="0" step="0.1" /></label>
+      <label>Safe-area bottom<input data-uniform="safe_area_inset_bottom" type="number" min="0" step="0.1" /></label>
+      <label>Safe-area left<input data-uniform="safe_area_inset_left" type="number" min="0" step="0.1" /></label>
       <label>Maximum top<input data-uniform="safe_area_max_inset_top" type="number" min="0" step="0.1" /></label>
       <label>Maximum right<input data-uniform="safe_area_max_inset_right" type="number" min="0" step="0.1" /></label>
       <label>Maximum bottom<input data-uniform="safe_area_max_inset_bottom" type="number" min="0" step="0.1" /></label>
@@ -87,10 +87,10 @@ The presets are illustrative starting points, not device specifications. Browser
   <details>
     <summary>Virtual-keyboard environment values</summary>
     <div class="mobile-value-grid">
-      <label>Top<input data-uniform="keyboard_inset_top" type="number" min="0" step="0.1" /></label>
-      <label>Right<input data-uniform="keyboard_inset_right" type="number" min="0" step="0.1" /></label>
-      <label>Bottom<input data-uniform="keyboard_inset_bottom" type="number" min="0" step="0.1" /></label>
-      <label>Left<input data-uniform="keyboard_inset_left" type="number" min="0" step="0.1" /></label>
+      <label>Keyboard top<input data-uniform="keyboard_inset_top" type="number" min="0" step="0.1" /></label>
+      <label>Keyboard right<input data-uniform="keyboard_inset_right" type="number" min="0" step="0.1" /></label>
+      <label>Keyboard bottom<input data-uniform="keyboard_inset_bottom" type="number" min="0" step="0.1" /></label>
+      <label>Keyboard left<input data-uniform="keyboard_inset_left" type="number" min="0" step="0.1" /></label>
       <label>Width<input data-uniform="keyboard_inset_width" type="number" min="0" step="0.1" /></label>
       <label>Height<input data-uniform="keyboard_inset_height" type="number" min="0" step="0.1" /></label>
     </div>
