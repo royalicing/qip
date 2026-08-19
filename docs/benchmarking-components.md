@@ -259,18 +259,35 @@ For a component whose source exposes the direct-native benchmark adapter, run
 the complete source, generated-C, wasm2c, V8, and wazero matrix with:
 
 ```sh
-tools/bench-wasm-to-c-source.sh \
+tools/bench-qip-component-to-c-source.sh \
   --input README.md \
   components/text/markdown/commonmark.0.31.2.zig
 ```
 
-See [Wasm-To-C Runtime Benchmarks](/docs/wasm-to-c-benchmarks#reproducing) for
+See [QIP Component-to-C Runtime Benchmarks](/docs/qip-component-to-c-benchmarks#reproducing) for
 the adapter contract and the table's lifecycle boundaries.
+
+To measure source emitted by the Zig backend, compile the generated module with
+the reusable native harness. The timed region copies input, calls `render`, and
+copies output, matching the warmed generated-C boundary:
+
+```sh
+./qip run \
+  -i components/text/markdown/commonmark.0.31.2.wasm \
+  -o /tmp/commonmark-qip.zig \
+  components/application/wasm/qip-component-to-zig.wasm
+zig build-exe -O ReleaseFast \
+  --dep component \
+  -Mroot=tools/bench-content-generated-zig.zig \
+  -Mcomponent=/tmp/commonmark-qip.zig \
+  -femit-bin=/tmp/commonmark-qip
+/tmp/commonmark-qip README.md 2000
+```
 
 For a pipeline of Content components, use the recipe variant:
 
 ```sh
-tools/bench-wasm-to-c-recipe.sh \
+tools/bench-qip-component-to-c-recipe.sh \
   --input qip-logo.svg \
   components/image/svg+xml/svg-recolor-current-color.wasm \
   components/image/svg+xml/svg-rasterize.wasm \

@@ -1,4 +1,4 @@
-# Wasm-To-C Runtime Benchmarks
+# QIP Component-to-C Runtime Benchmarks
 
 These measurements compare current QIP generated C against the original Zig
 source, wazero, V8, and WABT wasm2c at three boundaries where the host
@@ -273,7 +273,7 @@ input/output, and shutdown.
 For a new source-level comparison, use the reusable driver:
 
 ```sh
-tools/bench-wasm-to-c-source.sh \
+tools/bench-qip-component-to-c-source.sh \
   --input README.md \
   --duration-ms 2000 \
   --trials 3 \
@@ -305,7 +305,7 @@ The Markdown table is the command's standard output and progress is written to
 standard error, so a report can be captured directly:
 
 ```sh
-tools/bench-wasm-to-c-source.sh \
+tools/bench-qip-component-to-c-source.sh \
   --input README.md \
   components/text/markdown/commonmark.0.31.2.zig \
   > /tmp/commonmark-native-matrix.md
@@ -356,7 +356,7 @@ Run the QIP boundary directly:
 Run a parameterized Content recipe comparison with:
 
 ```sh
-tools/bench-wasm-to-c-recipe.sh \
+tools/bench-qip-component-to-c-recipe.sh \
   --input qip-logo.svg \
   components/image/svg+xml/svg-recolor-current-color.wasm \
   components/image/svg+xml/svg-rasterize.wasm \
@@ -427,7 +427,7 @@ Generate the QIP C header with:
 ./qip run \
   -i components/text/markdown/commonmark.0.31.2.wasm \
   -o /tmp/commonmark-qip.h \
-  components/application/wasm/wasm-to-c.wasm
+  components/application/wasm/qip-component-to-c.wasm
 
 cc -std=c11 -O3 -DNDEBUG \
   -DQIP_WASM_GENERATED_HEADER='"/tmp/commonmark-qip.h"' \

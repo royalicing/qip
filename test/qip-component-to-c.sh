@@ -3,8 +3,8 @@ set -eu
 
 qip_bin=${QIP_BIN:-./qip}
 cc_bin=${CC:-cc}
-translator=components/application/wasm/wasm-to-c.wasm
-tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/qip-wasm-to-c.XXXXXX")
+translator=components/application/wasm/qip-component-to-c.wasm
+tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/qip-component-to-c.XXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
 
 translate_and_compile() {
@@ -16,7 +16,7 @@ translate_and_compile() {
     "$qip_bin" run -i "$module" -o "$header" "$translator"
     "$cc_bin" -std=c11 -O2 -Wall -Wextra -Werror \
         "-DQIP_WASM_GENERATED_HEADER=\"$header\"" \
-        test/wasm-to-c-runner.c -lm -o "$executable"
+        test/qip-component-to-c-runner.c -lm -o "$executable"
 }
 
 compare_output() {
@@ -76,17 +76,17 @@ b_prefix=$(sed -n 's/^typedef struct \(qip_wasm_[0-9a-f]*\)_instance.*/\1/p' "$t
     "-DQIP_B_MEMORY_SIZE=${b_prefix}_MEMORY_SIZE" \
     "-DQIP_B_INPUT_OFFSET=${b_prefix}_INPUT_OFFSET" \
     "-DQIP_B_INPUT_CAPACITY=${b_prefix}_INPUT_CAPACITY" \
-    test/wasm-to-c-bundle.c -lm -o "$tmp_dir/bundle"
+    test/qip-component-to-c-bundle.c -lm -o "$tmp_dir/bundle"
 "$tmp_dir/bundle"
 
-"$qip_bin" run -i test/fixtures/wasm-to-c-traps.wasm \
+"$qip_bin" run -i test/fixtures/qip-component-to-c-traps.wasm \
     -o "$tmp_dir/traps.h" "$translator"
 for dirty_tracking in 0 1; do
     "$cc_bin" -std=c11 -O2 -Wall -Wextra -Werror \
         "-DQIP_WASM_DIRTY_TRACKING=$dirty_tracking" \
         "-DQIP_WASM_GENERATED_HEADER=\"$tmp_dir/traps.h\"" \
-        test/wasm-to-c-traps.c -lm -o "$tmp_dir/traps-$dirty_tracking"
+        test/qip-component-to-c-traps.c -lm -o "$tmp_dir/traps-$dirty_tracking"
     "$tmp_dir/traps-$dirty_tracking"
 done
 
-echo "wasm-to-c native parity tests passed"
+echo "qip-component-to-c native parity tests passed"

@@ -21,7 +21,7 @@ const [
 
 if (!nodeExecutable || !/^[1-9][0-9]*$/.test(trialsArgument)) {
   console.error(
-    "usage: format-wasm-to-c-source-bench.mjs results-dir trials source wasm " +
+    "usage: format-qip-component-to-c-source-bench.mjs results-dir trials source wasm " +
       "input native-fast-exe native-small-exe generated-exe guard-exe bounds-exe " +
       "qip-exe node-exe",
   );

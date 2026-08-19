@@ -25,7 +25,7 @@ if (
   !/^[1-9][0-9]*$/.test(trialsArgument)
 ) {
   console.error(
-    "usage: format-wasm-to-c-recipe-bench.mjs results trials input output " +
+    "usage: format-qip-component-to-c-recipe-bench.mjs results trials input output " +
       "shared-exe dedicated-exe guard-exe bounds-exe qip node wazero wasm ...",
   );
   process.exit(2);

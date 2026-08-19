@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: tools/bench-wasm-to-c-recipe.sh [options] module.wasm module.wasm [...]
+usage: tools/bench-qip-component-to-c-recipe.sh [options] module.wasm module.wasm [...]
 
 Options:
   -i, --input PATH          Input fixture (required)
@@ -29,12 +29,12 @@ EOF
 }
 
 fail() {
-  echo "bench-wasm-to-c-recipe: $*" >&2
+  echo "bench-qip-component-to-c-recipe: $*" >&2
   exit 2
 }
 
 step() {
-  echo "bench-wasm-to-c-recipe: $*" >&2
+  echo "bench-qip-component-to-c-recipe: $*" >&2
 }
 
 input_path=
@@ -136,7 +136,7 @@ cc_bin=${CC:-cc}
 wasm2c_bin=${WASM2C:-wasm2c}
 node_bin=${NODE:-node}
 qip_bin=${QIP_BIN:-"$repo_root/qip"}
-translator="$repo_root/components/application/wasm/wasm-to-c.wasm"
+translator="$repo_root/components/application/wasm/qip-component-to-c.wasm"
 
 for command in "$cc_bin" "$wasm2c_bin" "$node_bin" go; do
   command -v "$command" >/dev/null 2>&1 ||
@@ -145,7 +145,7 @@ done
 
 if [[ "$skip_build" -eq 0 ]]; then
   step "building QIP, translator, and ${#module_targets[@]} components"
-  make -j qip components/application/wasm/wasm-to-c.wasm \
+  make -j qip components/application/wasm/qip-component-to-c.wasm \
     "${module_targets[@]}" >&2
 fi
 [[ -x "$qip_bin" ]] || fail "QIP executable not found: $qip_bin"
@@ -159,7 +159,7 @@ done
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/qip-recipe-bench.XXXXXX")
 cleanup() {
   if [[ "$keep_temp" -eq 1 ]]; then
-    echo "bench-wasm-to-c-recipe: kept $bench_tmp" >&2
+    echo "bench-qip-component-to-c-recipe: kept $bench_tmp" >&2
   else
     rm -rf "$bench_tmp"
   fi
@@ -287,7 +287,7 @@ done
 
 step "formatting comparison"
 export CC="$cc_bin" WASM2C="$wasm2c_bin"
-"$node_bin" "$repo_root/tools/format-wasm-to-c-recipe-bench.mjs" \
+"$node_bin" "$repo_root/tools/format-qip-component-to-c-recipe-bench.mjs" \
   "$bench_tmp" "$trials" "$input_path" "$canonical_output" \
   "$shared_executable" "$dedicated_executable" \
   "$guard_executable" "$bounds_executable" \

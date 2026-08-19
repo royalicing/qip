@@ -1,6 +1,6 @@
 # Translating QIP Components To C
 
-`wasm-to-c.wasm` translates a bounded QIP Content component into one C11
+`qip-component-to-c.wasm` translates a bounded QIP Content component into one C11
 header. The generated header contains the translated functions, a module
 instance type, a host-supplied linear-memory pointer, explicit memory checks,
 dirty-page tracking, trap recovery, and a small wrapper for the QIP `render`
@@ -13,12 +13,12 @@ instructions an unambiguous failure mode.
 Build the translator and run it like any other QIP Content component:
 
 ```sh
-make -j components/application/wasm/wasm-to-c.wasm
+make -j components/application/wasm/qip-component-to-c.wasm
 wasm-validate components/text/markdown/commonmark.0.31.2.wasm
 ./qip run \
   -i components/text/markdown/commonmark.0.31.2.wasm \
   -o commonmark.h \
-  components/application/wasm/wasm-to-c.wasm
+  components/application/wasm/qip-component-to-c.wasm
 ```
 
 The translator enforces its feature profile, but it is not a complete
@@ -314,5 +314,5 @@ moves validation from runtime admission to the artifact-generation step.
 The generated code is intended for applications that need a fixed collection
 of reviewed QIP components compiled into the native binary.
 
-See [Wasm-To-C Runtime Benchmarks](/docs/wasm-to-c-benchmarks) for measurements
+See [QIP Component-to-C Runtime Benchmarks](/docs/qip-component-to-c-benchmarks) for measurements
 against QIP/wazero, Node/V8, WABT wasm2c, and direct native Zig builds.

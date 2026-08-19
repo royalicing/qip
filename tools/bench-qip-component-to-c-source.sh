@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: tools/bench-wasm-to-c-source.sh [options] source.zig|source.c
+usage: tools/bench-qip-component-to-c-source.sh [options] source.zig|source.c
 
 Options:
   -i, --input PATH          Input fixture (required)
@@ -32,12 +32,12 @@ EOF
 }
 
 fail() {
-  echo "bench-wasm-to-c-source: $*" >&2
+  echo "bench-qip-component-to-c-source: $*" >&2
   exit 2
 }
 
 step() {
-  echo "bench-wasm-to-c-source: $*" >&2
+  echo "bench-qip-component-to-c-source: $*" >&2
 }
 
 input_path=
@@ -137,7 +137,7 @@ zig_bin=${ZIG:-zig}
 wasm2c_bin=${WASM2C:-wasm2c}
 node_bin=${NODE:-node}
 qip_bin=${QIP_BIN:-"$repo_root/qip"}
-translator="$repo_root/components/application/wasm/wasm-to-c.wasm"
+translator="$repo_root/components/application/wasm/qip-component-to-c.wasm"
 
 for command in "$cc_bin" "$node_bin" "$wasm2c_bin"; do
   command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
@@ -148,7 +148,7 @@ fi
 
 if [[ "$skip_build" -eq 0 ]]; then
   step "building QIP, translator, and $wasm_target"
-  make -j qip components/application/wasm/wasm-to-c.wasm \
+  make -j qip components/application/wasm/qip-component-to-c.wasm \
     "$wasm_target" >&2
 fi
 [[ -x "$qip_bin" ]] || fail "QIP executable not found: $qip_bin"
@@ -158,7 +158,7 @@ fi
 bench_tmp=$(mktemp -d "${TMPDIR:-/tmp}/qip-source-bench.XXXXXX")
 cleanup() {
   if [[ "$keep_temp" -eq 1 ]]; then
-    echo "bench-wasm-to-c-source: kept $bench_tmp" >&2
+    echo "bench-qip-component-to-c-source: kept $bench_tmp" >&2
   else
     rm -rf "$bench_tmp"
   fi
@@ -358,7 +358,7 @@ step "measuring fresh-process startup"
 
 step "formatting comparison"
 export CC="$cc_bin" ZIG="$zig_bin" WASM2C="$wasm2c_bin"
-"$node_bin" "$repo_root/tools/format-wasm-to-c-source-bench.mjs" \
+"$node_bin" "$repo_root/tools/format-qip-component-to-c-source-bench.mjs" \
   "$bench_tmp" "$trials" "$source_path" "$wasm_path" "$input_path" \
   "$native_fast_once" "$native_small_once" \
   "$generated_once" "$guard_once" "$bounds_once" \
