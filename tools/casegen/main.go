@@ -8,6 +8,11 @@
 //	UnicodeData.txt            2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c
 //	SpecialCasing.txt          efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588
 //	DerivedCoreProperties.txt  24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08
+//	CaseFolding.txt            ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183
+//
+// CaseFolding.txt is not read by casegen itself; it is consumed by
+// tools/generate-markdown-tables.py, which emits the reference-label case-fold
+// tables for the markdown components and their compliance checkers.
 //
 // Usage: go run . (from tools/casegen; writes into the repo relative to this dir)
 package main

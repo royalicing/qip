@@ -5,16 +5,11 @@
 // tools/freeze-markdown-divergences.py from a tools/fuzz-markdown-vs-cmark.py
 // run (cmark 0.31.2, `--unsafe`).
 //
-// EXPECTED TO FAIL until the delimiter-stack rewrite of
-// components/text/markdown/lib/commonmark.zig lands — the corpus exists as
-// that rewrite's acceptance gate, which is why test-comply does not include it
-// yet. Run on demand with:
-//
-//   qip comply components/text/markdown/commonmark.0.31.2.wasm \
-//     --with compliance/commonmark-differential-corpus.comply.wasm
-//
-// Once green, wire it into test-comply (both markdown components) and keep
-// growing the fixture from future fuzz runs.
+// This corpus was the acceptance gate for the delimiter-stack rewrite of
+// components/text/markdown/lib/commonmark.zig and has been green since that
+// rewrite landed; it runs in test-comply against both markdown components.
+// Keep growing the fixture from future fuzz runs (tools/fuzz-markdown-vs-cmark.py
+// then tools/freeze-markdown-divergences.py) as further divergences are fixed.
 //
 // Same fence/separator format as commonmark-spec-0.31.2.txt, but examples are
 // embedded verbatim: tabs are literal bytes, so there is no arrow
