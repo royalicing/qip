@@ -28,6 +28,8 @@ Current formats directly supported by a qip command or supported by this repo’
 - `text/html`
 - `text/javascript`
 - `text/x-c`
+- `text/x-swift`
+- `text/x-zig`
 - `application/vnd.sqlite3`
 - `application/xml`
 
@@ -36,6 +38,7 @@ Examples:
 - `qip router warc ...` emits `application/warc`
 - `components/image/svg+xml/svg-rasterize.wasm` maps `image/svg+xml -> image/bmp`
 - `components/image/jp2/jp2-to-bmp-bgra32.wasm` maps `image/jp2 -> image/bmp`
+- `components/image/bmp/bmp-bgra32-icc-to-srgb.wasm` maps profiled `image/bmp -> image/bmp` and removes the source ICC profile
 - `components/font/ttf/ttf-to-svg-paths-csv.wasm` maps `font/ttf -> text/csv`
 - `components/font/ttf/ttf-to-svg-path-defs.wasm` maps `font/ttf -> image/svg+xml`
 - `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
