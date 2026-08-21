@@ -1,4 +1,4 @@
-.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-warc-libs test-qip-router-help test-wasm-to-c site-static site-checks install score wasm-safety-report
+.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-markdown-pathological test-warc-libs test-qip-component-to-c test-qip-component-to-zig test-qip-component-to-swift test-qip-component-to-swift-complex test-qip-router-help site-static site-checks install score wasm-safety-report strict-profile-report
 
 default: qip compliance components recipes
 
@@ -99,6 +99,9 @@ compliance/data-uri-to-css-url.comply.wasm: compliance/data-uri-to-css-url.compl
 compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-html.comply.zig compliance/mermaid-to-unicode-html.fixtures.txt
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/warc-connect-search-params.comply.wasm: compliance/warc-connect-search-params.comply.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 compliance/jpeg-to-bmp-bgra32.comply.wasm: compliance/jpeg-to-bmp-bgra32.comply.zig $(wildcard compliance/jpeg-to-bmp-bgra32-fixtures/*)
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
@@ -110,10 +113,13 @@ SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-javascript.comply
 compliance/syntax-highlight-%.comply.wasm: compliance/syntax-highlight-%.comply.zig compliance/syntax-highlight-%.fixtures.txt compliance/lib/syntax-highlight-comply.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-COMMONMARK_COMPLY_TARGETS := compliance/commonmark-spec-0.31.2.wasm compliance/commonmark-0.31.2-gfm.wasm
+COMMONMARK_COMPLY_TARGETS := compliance/commonmark-spec-0.31.2.wasm compliance/commonmark-0.31.2-gfm.wasm compliance/html5-entities.comply.wasm compliance/unicode-17-casefold-labels.comply.wasm compliance/commonmark-differential-corpus.comply.wasm
 
 compliance/commonmark-spec-0.31.2.wasm: compliance/commonmark-spec-0.31.2.zig compliance/commonmark-spec-0.31.2.txt
 compliance/commonmark-0.31.2-gfm.wasm: compliance/commonmark-0.31.2-gfm.zig compliance/gfm-commonmark-spec-0.31.2.txt compliance/gfm-extensions-0.29.txt compliance/gfm-spec-0.29.txt
+compliance/html5-entities.comply.wasm: compliance/html5-entities.comply.zig compliance/html5-entities-table.zig
+compliance/unicode-17-casefold-labels.comply.wasm: compliance/unicode-17-casefold-labels.comply.zig compliance/unicode-17-casefold-tables.zig
+compliance/commonmark-differential-corpus.comply.wasm: compliance/commonmark-differential-corpus.comply.zig compliance/commonmark-differential-corpus.txt
 
 $(COMMONMARK_COMPLY_TARGETS):
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -135,6 +141,7 @@ compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
 compliance: compliance/mermaid-to-unicode-html.comply.wasm
+compliance: compliance/warc-connect-search-params.comply.wasm
 compliance: compliance/jpeg-to-bmp-bgra32.comply.wasm
 compliance: compliance/bmp-bgra32-icc-to-srgb.comply.wasm
 compliance: $(SYNTAX_HIGHLIGHT_COMPLY_TARGETS)
@@ -222,14 +229,24 @@ components/application/wasm/wasm-nontrapping-divides.wasm: components/applicatio
 components/application/wasm/wasm-to-js.wasm: components/application/wasm/wasm-to-js.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+components/text/csv/content-recipe-to-browser-javascript.wasm: ZIG_WASM_MAX_MEMORY = 2097152
+
 components/font/ttf/ttf-to-svg-paths-csv.wasm components/font/ttf/ttf-to-svg-path-defs.wasm: components/font/ttf/lib/ttf.zig components/font/ttf/lib/path-output.zig
 
 components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm: components/utf8/dejavu_sans_mono_56_latin1_paths.zig components/utf8/dejavu_sans_mono_bold_56_latin1_paths.zig
 
 components/utf8/text-to-og-image-svg-inter.wasm: components/utf8/lib/inter_display_latin_paths.zig components/utf8/lib/inter_display_bold_latin_paths.zig
 
-components/application/wasm/wasm-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040
-components/application/wasm/wasm-to-c.wasm: components/application/wasm/wasm-to-c.zig
+components/application/wasm/qip-component-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040
+components/application/wasm/qip-component-to-c.wasm: components/application/wasm/qip-component-to-c.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+components/application/wasm/qip-component-to-zig.wasm: ZIG_WASM_MAX_MEMORY = 41943040
+components/application/wasm/qip-component-to-zig.wasm: components/application/wasm/qip-component-to-zig.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+components/application/wasm/qip-component-to-swift.wasm: ZIG_WASM_MAX_MEMORY = 41943040
+components/application/wasm/qip-component-to-swift.wasm: components/application/wasm/qip-component-to-swift.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 components/bytes/bytes-to-sha256.wasm: ZIG_WASM_MAX_MEMORY = 20971520
@@ -261,6 +278,8 @@ recipes/text/markdown/28-html-code-syntax-highlight-css.wasm: components/text/ht
 
 recipes/text/markdown/23-html-code-syntax-highlight-tsx.wasm: components/text/html/html-code-syntax-highlight-tsx.wasm
 	cp $< $@
+
+components/text/markdown/commonmark.0.31.2.wasm components/text/markdown/gfm-commonmark.0.31.2.wasm: components/text/markdown/lib/commonmark.zig components/text/markdown/lib/html5-entities-table.zig components/text/markdown/lib/unicode-17-casefold-tables.zig
 
 components/text/markdown/markdown-basic.wasm: recipes/text/markdown/10-markdown-basic.wasm
 	cp $< $@
@@ -555,11 +574,35 @@ recipes: recipes/text/markdown/29-add-highlight-stylesheet-night-owl.wasm
 
 components: components-wat-wasm components-c-wasm components-zig-wasm
 
-test: qip components test-go test-node test-zig test-snapshot test-comply test-warc-libs test-qip-router-help test-wasm-to-c
+test: qip components test-go test-node test-zig test-snapshot test-comply test-markdown-pathological test-warc-libs test-qip-component-to-c test-qip-component-to-zig test-qip-component-to-swift test-qip-router-help
 
-test-wasm-to-c: qip components/application/wasm/wasm-to-c.wasm
-	wat2wasm test/fixtures/wasm-to-c-traps.wat -o test/fixtures/wasm-to-c-traps.wasm
-	QIP_BIN=$(QIP_BIN) sh test/wasm-to-c.sh
+test-markdown-pathological: qip components/text/markdown/gfm-commonmark.0.31.2.wasm
+	QIP_BIN=$(QIP_BIN) tools/test-markdown-pathological.sh
+
+test-qip-component-to-c: qip components/application/wasm/qip-component-to-c.wasm
+	wat2wasm test/fixtures/qip-component-to-c-traps.wat -o test/fixtures/qip-component-to-c-traps.wasm
+	QIP_BIN=$(QIP_BIN) sh test/qip-component-to-c.sh
+
+test-qip-component-to-zig: qip components/application/wasm/qip-component-to-zig.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-traps.wat -o test/fixtures/qip-component-to-zig-traps.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-direct.wat -o test/fixtures/qip-component-to-zig-direct.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-floats.wat -o test/fixtures/qip-component-to-zig-floats.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-float-traps.wat -o test/fixtures/qip-component-to-zig-float-traps.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-indirect.wat -o test/fixtures/qip-component-to-zig-indirect.wasm
+	QIP_BIN=$(QIP_BIN) sh test/qip-component-to-zig.sh
+
+test-qip-component-to-swift: qip components/application/wasm/qip-component-to-swift.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-traps.wat -o test/fixtures/qip-component-to-zig-traps.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-direct.wat -o test/fixtures/qip-component-to-zig-direct.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-floats.wat -o test/fixtures/qip-component-to-zig-floats.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-float-traps.wat -o test/fixtures/qip-component-to-zig-float-traps.wasm
+	wat2wasm test/fixtures/qip-component-to-zig-indirect.wat -o test/fixtures/qip-component-to-zig-indirect.wasm
+	QIP_BIN=$(QIP_BIN) sh test/qip-component-to-swift.sh
+
+# Large generated Swift functions make this test take several minutes. Keep it
+# separate from the routine test target until the backend splits function bodies.
+test-qip-component-to-swift-complex: qip components/application/wasm/qip-component-to-swift.wasm site-static/_og/index.png
+	QIP_BIN=$(QIP_BIN) sh test/qip-component-to-swift-complex.sh
 
 test-warc-libs:
 	cmp components/application/warc/lib/warc.zig recipes/application/warc/lib/warc.zig
@@ -567,7 +610,7 @@ test-warc-libs:
 test-qip-router-help: qip
 	QIP_BIN=$(QIP_BIN) sh test/qip-router-help.sh
 
-test-node: qip components recipes/application/warc/25-add-content-size.wasm
+test-node: qip components recipes/application/warc/25-add-content-size.wasm compliance/warc-connect-search-params.comply.wasm
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
 	node --test test/bytes-to-sha256.mjs
@@ -598,6 +641,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/svg-data-uri-comply.mjs
 	node --test test/mermaid-to-unicode-html.mjs
 	node --test test/warc-content-size.mjs
+	node --test test/warc-connect-search-params-comply.mjs
 	node --test test/warc-text-uri-list-to-redirect.mjs
 	node --test test/qip-wasm-checks.mjs
 	node --test test/trace-with.mjs
@@ -610,6 +654,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm
 	node --test test/text-to-og-image-svg-inter.mjs
 	node --test test/jp2-bmp.mjs
 	node --test test/recipe-book-tar.mjs
+	node --test test/content-recipe-browser-javascript.mjs
 	node --test test/qip-router-node.mjs
 	node --test test/tar-to-zip.mjs
 	node --test test/zip-to-tar.mjs
@@ -636,22 +681,24 @@ test-deno: qip components
 	deno test --allow-read --allow-write --allow-run --allow-sys --allow-env test/qip-play-debug-stats.mjs test/qip-edit-stats.mjs test/sudoku-ui.mjs test/html-id-validator.mjs test/html-adjacent.mjs test/html-to-accessibility-tree.mjs test/luhn.mjs test/trace-with.mjs test/wasm-trap-instance-continues.mjs
 
 test-comply: qip components compliance
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-tsx.wasm --with compliance/syntax-highlight-javascript.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-html.wasm --with compliance/syntax-highlight-html.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-css.wasm --with compliance/syntax-highlight-css.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply recipes/text/markdown/25-html-code-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply recipes/text/markdown/26-html-code-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply recipes/text/markdown/27-html-code-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-swift.wasm --with compliance/syntax-highlight-swift.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-ruby.wasm --with compliance/syntax-highlight-ruby.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-go.wasm --with compliance/syntax-highlight-go.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-c.wasm --with compliance/syntax-highlight-c.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-bash.wasm --with compliance/syntax-highlight-bash.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-wasm.wasm --with compliance/syntax-highlight-wasm.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-zig.wasm --with compliance/syntax-highlight-zig.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --declarative-checkers
-	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --declarative-checkers
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-tsx.wasm --with compliance/syntax-highlight-javascript.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-html.wasm --with compliance/syntax-highlight-html.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-css.wasm --with compliance/syntax-highlight-css.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply recipes/text/markdown/25-html-code-syntax-highlight-python.wasm --with compliance/syntax-highlight-python.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply recipes/text/markdown/26-html-code-syntax-highlight-java.wasm --with compliance/syntax-highlight-java.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply recipes/text/markdown/27-html-code-syntax-highlight-csharp.wasm --with compliance/syntax-highlight-csharp.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-swift.wasm --with compliance/syntax-highlight-swift.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-ruby.wasm --with compliance/syntax-highlight-ruby.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-go.wasm --with compliance/syntax-highlight-go.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-c.wasm --with compliance/syntax-highlight-c.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-bash.wasm --with compliance/syntax-highlight-bash.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-wasm.wasm --with compliance/syntax-highlight-wasm.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-code-syntax-highlight-zig.wasm --with compliance/syntax-highlight-zig.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/vnd.mermaid/mermaid-to-unicode-html.wasm --with compliance/mermaid-to-unicode-html.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/commonmark-spec-0.31.2.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
+	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
 	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm --with compliance/trap-empty-input.wasm
 	$(QIP_BIN) comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
 	$(QIP_BIN) comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
@@ -669,8 +716,8 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/utf8/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
 	$(QIP_BIN) comply components/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 	$(QIP_BIN) comply components/image/svg+xml/svg-to-data-uri.wasm --with compliance/svg-to-data-uri.comply.wasm
-	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-bgra32.wasm --with compliance/jpeg-to-bmp-bgra32.comply.wasm --declarative-checkers
-	$(QIP_BIN) comply components/image/bmp/bmp-bgra32-icc-to-srgb.wasm --with compliance/bmp-bgra32-icc-to-srgb.comply.wasm --declarative-checkers
+	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-bgra32.wasm --with compliance/jpeg-to-bmp-bgra32.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/image/bmp/bmp-bgra32-icc-to-srgb.wasm --with compliance/bmp-bgra32-icc-to-srgb.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/uri-list/data-uri-to-css-url.wasm --with compliance/data-uri-to-css-url.comply.wasm
 
 test-snapshot: qip components
@@ -813,6 +860,9 @@ score: qip
 		exit 1; \
 	fi; \
 	$(QIP_BIN) score $$files
+
+strict-profile-report: components
+	node tools/report-strict-profile.mjs components
 
 wasm-safety-report: qip components
 	@pass=0; \
