@@ -591,9 +591,9 @@ shifts. Convert them to sRGB before selecting them.
 
 ## Components used by this tool
 
-- <a href="/components/image/jpeg/jpeg-to-bmp-bgra32.wasm" download>jpeg-to-bmp-bgra32.wasm</a>
-- <a href="/components/image/png/png-to-bmp-bgra32-simd.wasm" download>png-to-bmp-bgra32-simd.wasm</a>
-- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm" download>bmp-bgra32-to-webp-lossy-opaque.wasm</a>
-- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossy.wasm" download>bmp-bgra32-to-webp-lossy.wasm</a>
-- <a href="/components/image/bmp/bmp-bgra32-to-avif-lossy.wasm" download>bmp-bgra32-to-avif-lossy.wasm</a>
-- <a href="/components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm" download>bmp-bgra32-to-jpeg-lossy.wasm</a>
+- <a href="/components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm" download>jpeg-to-bmp-b8g8r8a8-srgb.wasm</a>
+- <a href="/components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm" download>png-to-bmp-b8g8r8a8-srgb-simd.wasm</a>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm</a>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy.wasm</a>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.wasm" download>bmp-b8g8r8a8-srgb-to-avif-lossy.wasm</a>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm" download>bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm</a>

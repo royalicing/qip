@@ -61,6 +61,9 @@ const Instr = wasm_reader.Instr;
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
+const NO_RENDER: i64 = 1;
+const ERROR_BIT: u64 = 1 << 63;
+const INVALID_INPUT_BIT: u64 = 1 << 62;
 const MAX_DEFINED_FUNCS: usize = 8192;
 const MAX_TYPES: usize = MAX_DEFINED_FUNCS;
 const MAX_GLOBALS: usize = MAX_DEFINED_FUNCS;
@@ -70,7 +73,7 @@ const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
+var pending_commit_result: i64 = NO_RENDER;
 
 var edge_head_buf: [MAX_DEFINED_FUNCS]i32 = undefined;
 var edge_to_buf: [MAX_CALL_EDGES]u32 = undefined;
@@ -166,7 +169,7 @@ export fn input_bytes_cap() u32 {
 }
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
+    return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
 
 export fn output_bytes_cap() u32 {
@@ -751,10 +754,23 @@ fn checkModule(wasm: []const u8) CheckError!void {
 
 export fn render(input_size: u32) u32 {
     const input_len: usize = @intCast(input_size);
+    if (pending_commit_result != NO_RENDER) @trap();
     if (input_len > INPUT_CAP) @trap();
-    checkModule(input_buf[0..input_len]) catch @trap();
-    @memcpy(output_buf[0..input_len], input_buf[0..input_len]);
+
+    pending_commit_result = @bitCast(ERROR_BIT | INVALID_INPUT_BIT);
+    checkModule(input_buf[0..input_len]) catch return 0;
+    pending_commit_result = 0;
     return input_size;
+}
+
+/// Close the policy-check transaction. This function does not trap.
+export fn commit() i64 {
+    const result = if (pending_commit_result == NO_RENDER)
+        @as(i64, @bitCast(ERROR_BIT | INVALID_INPUT_BIT))
+    else
+        pending_commit_result;
+    pending_commit_result = NO_RENDER;
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -899,6 +915,17 @@ const dynamic_input_ptr_module = hexBytes(
 
 test "accepts a module with fixed memory and no calls" {
     try checkModule(&ok_module);
+}
+
+test "render rejects a policy failure and the instance recovers" {
+    @memcpy(input_buf[0..atomics_module.len], &atomics_module);
+    try std.testing.expectEqual(@as(u32, 0), render(atomics_module.len));
+    try std.testing.expect(commit() < 0);
+
+    @memcpy(input_buf[0..ok_module.len], &ok_module);
+    try std.testing.expectEqual(@as(u32, ok_module.len), render(ok_module.len));
+    try std.testing.expectEqualSlices(u8, &ok_module, input_buf[0..ok_module.len]);
+    try std.testing.expectEqual(@as(i64, 0), commit());
 }
 
 test "accepts static Content buffer metadata with disjoint active data" {

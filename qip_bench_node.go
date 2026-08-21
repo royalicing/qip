@@ -327,6 +327,11 @@ function render(prepared) {
   memory.set(input, prepared.inputPointer);
   const runStart = process.hrtime.bigint();
   const outputSize = exports.render(input.length) >>> 0;
+  if (typeof exports.commit === "function") {
+    const result = exports.commit();
+    if (typeof result !== "bigint") fail("commit export must have signature commit() -> i64");
+    if (result < 0n) fail("component rejected input (commit returned " + result + ")");
+  }
   const runEnd = process.hrtime.bigint();
   const outputPointer = exportedI32(exports, "output_ptr");
   if (outputSize > prepared.outputCapacity ||

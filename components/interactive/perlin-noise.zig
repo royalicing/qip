@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 480;
 const RENDER_H: usize = 320;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
@@ -28,6 +31,7 @@ const MIN_ZOOM: f64 = 0.10;
 const MAX_ZOOM: f64 = 8.0;
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 
 var needs_redraw: bool = true;
 var keys_down: u8 = 0;
@@ -40,23 +44,50 @@ var camera_y: f64 = 0.0;
 var zoom: f64 = 1.0;
 var world_seed: u64 = 0xC8E9_4A77_31BD_5F20;
 
+const Phase = enum { initializing, ready, updating };
+
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
 
     if (x11_key == XK_SHIFT_L or x11_key == XK_SHIFT_R) {
@@ -66,7 +97,7 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
 
     // R regenerates with a new seed and recenters view.
     if (is_down and (x11_key == 'r' or x11_key == 'R')) {
-        const now_bits: u64 = @bitCast(@as(i64, now_ms));
+        const now_bits: u64 = @bitCast(begun_at_ms);
         world_seed = mix64(world_seed ^ now_bits ^ 0x9E37_79B9_7F4A_7C15);
         camera_x = 0.0;
         camera_y = 0.0;
@@ -106,39 +137,71 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     return 0;
 }
 
-export fn tick(now_ms: i64) i64 {
+fn eventPhaseIsValid() bool {
+    if (phase != .updating) @trap();
+    return true;
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     if (!has_last_move) {
         has_last_move = true;
-        last_move_ms = now_ms;
+        last_move_ms = begun_at_ms;
     }
 
     if (keys_down != 0) {
-        var elapsed = now_ms - last_move_ms;
+        var elapsed = begun_at_ms - last_move_ms;
         if (elapsed < 0) elapsed = 0;
-        while (elapsed >= MOVE_INTERVAL_MS) {
-            _ = moveCameraStep();
-            last_move_ms += MOVE_INTERVAL_MS;
-            elapsed -= MOVE_INTERVAL_MS;
+        const steps = @divFloor(elapsed, MOVE_INTERVAL_MS);
+        if (steps > 0) {
+            _ = moveCameraSteps(@intCast(steps));
+            last_move_ms += steps * MOVE_INTERVAL_MS;
         }
     } else {
-        last_move_ms = now_ms;
+        last_move_ms = begun_at_ms;
     }
 
-    return if (keys_down != 0) last_move_ms + MOVE_INTERVAL_MS else 0;
+    setNextWake();
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+fn setNextWake() void {
+    next_wake_at_ms = if (keys_down != 0 and last_move_ms <= std.math.maxInt(i64) - MOVE_INTERVAL_MS)
+        last_move_ms + MOVE_INTERVAL_MS
+    else
+        begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     renderPerlin();
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
-fn moveCameraStep() bool {
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    advanceTransactionTime();
+    // Events run after time reaches begun_at_ms and can change whether another
+    // movement step is needed.
+    setNextWake();
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    phase = .ready;
+    return wake;
+}
+
+fn moveCameraSteps(steps: u64) bool {
     const up = (keys_down & KEY_UP) != 0;
     const down = (keys_down & KEY_DOWN) != 0;
     const left = (keys_down & KEY_LEFT) != 0;
@@ -147,7 +210,8 @@ fn moveCameraStep() bool {
     var dx: f64 = 0.0;
     var dy: f64 = 0.0;
 
-    const speed = if (shift_down) PAN_PIXELS_PER_STEP * SHIFT_SPEED_MULTIPLIER else PAN_PIXELS_PER_STEP;
+    const speed_per_step = if (shift_down) PAN_PIXELS_PER_STEP * SHIFT_SPEED_MULTIPLIER else PAN_PIXELS_PER_STEP;
+    const speed = speed_per_step * @as(f64, @floatFromInt(steps));
 
     if (up and !down) dy -= speed;
     if (down and !up) dy += speed;
@@ -164,24 +228,25 @@ fn moveCameraStep() bool {
 
 fn renderPerlin() void {
     const sample_scale = BASE_SCALE * zoom;
+    var fy = camera_y * sample_scale;
 
     var py: usize = 0;
     while (py < RENDER_H) : (py += 1) {
-        const fy = (camera_y + @as(f64, @floatFromInt(py))) * sample_scale;
-
+        var fx = camera_x * sample_scale;
         var px: usize = 0;
         while (px < RENDER_W) : (px += 1) {
-            const fx = (camera_x + @as(f64, @floatFromInt(px))) * sample_scale;
             const n = fbm2(fx, fy); // ~[-1, 1]
             const t = clamp01(n * 0.5 + 0.5);
             const c = terrainColor(t);
 
             const idx = (py * RENDER_W + px) * 4;
-            output_buf[idx + 0] = c[0];
-            output_buf[idx + 1] = c[1];
-            output_buf[idx + 2] = c[2];
-            output_buf[idx + 3] = 255;
+            pixel_buf[idx + 0] = c[0];
+            pixel_buf[idx + 1] = c[1];
+            pixel_buf[idx + 2] = c[2];
+            pixel_buf[idx + 3] = 255;
+            fx += sample_scale;
         }
+        fy += sample_scale;
     }
 }
 
@@ -305,7 +370,7 @@ test "camera moves with key state" {
     shift_down = false;
     needs_redraw = false;
 
-    const moved = moveCameraStep();
+    const moved = moveCameraSteps(1);
     try std.testing.expect(moved);
     try std.testing.expect(camera_x == PAN_PIXELS_PER_STEP);
     try std.testing.expect(camera_y == PAN_PIXELS_PER_STEP);
@@ -319,7 +384,7 @@ test "camera moves faster while shift held" {
     shift_down = true;
     needs_redraw = false;
 
-    const moved = moveCameraStep();
+    const moved = moveCameraSteps(1);
     try std.testing.expect(moved);
     try std.testing.expect(camera_x == PAN_PIXELS_PER_STEP * SHIFT_SPEED_MULTIPLIER);
     try std.testing.expect(camera_y == 0.0);

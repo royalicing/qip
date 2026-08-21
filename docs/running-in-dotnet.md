@@ -162,7 +162,9 @@ The input span is used only before calling `render`. A span returned by Wasmtime
 
 ## Traps And Reuse
 
-If `render` traps, Wasmtime throws an exception. Treat that render as failed and do not read the output buffer; it may contain stale or partial bytes.
+If `render` traps, Wasmtime throws an exception. Treat that render as failed and
+do not read the output buffer; it may contain stale or partial bytes. Discard
+that instance and instantiate the module again before another render.
 
 The class compiles and instantiates the component once, then reuses it until disposal. A `MarkdownRenderer` owns mutable component memory and is not safe to call concurrently.
 

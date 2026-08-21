@@ -1,9 +1,10 @@
 (module $Base64Encode
-  (memory (export "memory") 3 3)
+  (memory (export "memory") 4 4)
   (global $input_ptr i32 (i32.const 0x10000))
   (global $input_bytes_cap i32 (i32.const 0x10000))
   (global $output_ptr i32 (i32.const 0x20000))
-  (global $output_utf8_cap i32 (i32.const 0x10000))
+  ;; 4 * ceil(input_bytes_cap / 3)
+  (global $output_utf8_cap i32 (i32.const 0x15558))
 
   (func (export "input_ptr") (result i32)
     (global.get $input_ptr))
@@ -60,6 +61,10 @@
     (local $b3 i32)
     (local $remaining i32)
     (local $full_end i32)
+
+    (if (i32.gt_u (local.get $input_size) (global.get $input_bytes_cap))
+      (then unreachable)
+    )
 
     ;; Return 0 if input is empty
     (if (i32.eq (local.get $input_size) (i32.const 0))

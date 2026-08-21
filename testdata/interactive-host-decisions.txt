@@ -1,0 +1,54 @@
+calculator
+call render input_size=0
+return output_bytes=193824
+host initial present output_bytes=193824
+call begin_update_at now_ms=1
+return ok
+call finish_update
+return next_wake_at_ms=1
+host bootstrap wake=none
+call begin_update_at now_ms=2
+return ok
+call pointer_event buttons=0 x=-1 y=-1
+return accepted=0
+call finish_update
+return next_wake_at_ms=2
+host update events=1 accepted=no wake=none render=no
+call begin_update_at now_ms=3
+return ok
+call pointer_event buttons=0 x=-1 y=-1
+return accepted=0
+call key_event keysym=49 flags=1
+return accepted=1
+call finish_update
+return next_wake_at_ms=3
+call render input_size=0
+return output_bytes=193824
+host update events=2 accepted=yes wake=none render=yes
+snake
+call render input_size=0
+return output_bytes=448224
+host initial present output_bytes=448224
+call begin_update_at now_ms=1
+return ok
+call finish_update
+return next_wake_at_ms=120
+host bootstrap wake=120
+call begin_update_at now_ms=120
+return ok
+call key_event keysym=65362 flags=1
+return accepted=1
+call finish_update
+return next_wake_at_ms=240
+call render input_size=0
+return output_bytes=448224
+host update events=1 accepted=yes wake=240 render=yes
+call begin_update_at now_ms=121
+return ok
+call key_event keysym=32 flags=1
+return accepted=1
+call finish_update
+return next_wake_at_ms=121
+call render input_size=0
+return output_bytes=448224
+host update events=1 accepted=yes wake=none render=yes

@@ -160,6 +160,12 @@ calls, recursion, and statically readable content-type metadata.
 host to enforce the structural profile while using a runtime mechanism for
 execution, such as a timeout or fuel meter.
 
+These policy components accept the original module unchanged or reject it
+through `commit()`. A failed proof is an expected policy result, so it does not
+trap or invalidate the checker instance. They assume that the input is valid
+Wasm; place `wasm-validate-core-1.0.wasm` first when bytes enter from an
+untrusted source.
+
 ## Bounded Output Proofs
 
 `wasm-bounded-output` certifies that every successful exit from a Content

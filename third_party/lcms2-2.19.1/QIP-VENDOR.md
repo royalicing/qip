@@ -11,7 +11,7 @@ build compiles the Little CMS core sources as one LTO-linked wasm32 module. It
 does not build the command-line tools, testbed, plugins, JPEG/TIFF frontends,
 or a filesystem backend.
 
-The `bmp-bgra32-icc-to-srgb` component uses only memory-profile loading,
+The `bmp-b8g8r8a8-icc-to-srgb` component uses only memory-profile loading,
 sRGB-profile creation, and 8-bit BGRA transforms. It supplies a fixed arena
 allocator and stubs unused file APIs so the final module has no WASI or host
 imports. The build targets one thread and enables Wasm SIMD and bulk-memory

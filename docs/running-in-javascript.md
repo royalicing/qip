@@ -15,6 +15,12 @@ Wasm supplied by a user or third party; see [Known And Untrusted
 Components](/docs/content-component#known-and-untrusted-components) in the
 Content contract.
 
+`TextEncoder` always produces valid UTF-8, so these string wrappers already
+satisfy `input_utf8_cap`. If input arrives as arbitrary bytes instead, validate
+it before the first UTF-8 component. Once a known-valid component returns an
+`output_utf8_cap` result, a pipeline may pass those bytes to another UTF-8
+component without decoding and validating them again.
+
 ## Direct Import: E.164
 
 This example wraps the E.164 canonicalizer:
@@ -29,7 +35,7 @@ import {
 } from "/components/utf8/e164.wasm";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export function normalizeE164(phoneNumber) {
   const input = new Uint8Array(
@@ -73,7 +79,7 @@ import {
 } from "/components/text/markdown/gfm-commonmark.0.31.2.wasm";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export function markdownToHtml(markdown) {
   const input = new Uint8Array(
@@ -124,7 +130,7 @@ import {
 } from "/components/utf8/currency-format-en-us.wasm";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export function formatCurrency(amount, currency) {
   const input = new Uint8Array(
@@ -191,17 +197,44 @@ For a UTF-8 content component:
 2. Create a `Uint8Array` view over that input region.
 3. Encode into the view and verify that the full string was read.
 4. Call `render(written)`.
-5. Call `output_ptr()` and read exactly the returned number of bytes.
+5. If `commit` is exported, call it. Stop when it returns a negative `BigInt`.
+6. Call `output_ptr()` and read exactly the returned number of bytes.
+
+For an explicitly instantiated component, the optional step is:
+
+```js
+const outputSize = instance.exports.render(written);
+if (typeof instance.exports.commit === "function") {
+  const accepted = instance.exports.commit();
+  if (accepted < 0n) {
+    throw new Error(`component rejected input: ${accepted}`);
+  }
+}
+const output = new Uint8Array(
+  instance.exports.memory.buffer,
+  instance.exports.output_ptr(),
+  outputSize,
+);
+```
+
+An `i64` WebAssembly result is a JavaScript `BigInt`. Call `commit` only after
+`render` returns normally, and do not read provisional output after rejection.
 
 Call `output_ptr()` after `render()`. A component may select its output region
 based on the current input. If `render()` traps, do not read the output buffer;
-it may contain stale or partial bytes.
+it may contain stale or partial bytes. Discard that instance and instantiate the
+module again before another render.
 
 The returned size and output pointer can be used directly because a valid QIP
 component guarantees that they describe output within its declared region.
 
 ## JavaScript-Specific Nuances
 
+- When converting UTF-8 output to a JavaScript string, use
+  `new TextDecoder("utf-8", { fatal: true })`. Without `fatal: true`, malformed
+  bytes become replacement characters and hide a broken `output_utf8_cap`
+  guarantee. A byte-to-byte pipeline does not need to decode intermediate
+  UTF-8 output.
 - Loading is asynchronous, but `render()` is synchronous. Load or import the
   module before entering code that needs a synchronous result.
 - A direct ES module import normally shares one module instance and one memory.
@@ -244,8 +277,10 @@ it, a later render could overwrite the returned view.
 ## Traps And Reuse
 
 A WebAssembly trap appears as a JavaScript exception. A trap does not roll back
-memory or mutable globals, and the module instance can usually be called again.
-Write fresh input before retrying and assume scratch/output memory is dirty.
+memory or mutable globals. Do not call `commit` or read output after a trap.
+Discard the instance and instantiate the module again before another request.
+A negative `commit` result is different: it closes the transaction normally,
+so the same instance remains reusable.
 
 ## Explicit Instantiation
 

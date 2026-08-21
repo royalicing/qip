@@ -1,4 +1,5 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const GRID_N: usize = 3;
 const CELL_PX: usize = 96;
@@ -11,7 +12,9 @@ const BOARD_Y: usize = PAD_Y;
 
 const RENDER_W: usize = BOARD_PX + PAD_X * 2;
 const RENDER_H: usize = BOARD_Y + BOARD_PX + PAD_Y;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -50,30 +53,58 @@ const COLOR_PANEL: Color = .{ 0xFB, 0xFD, 0xFF, 0xFF };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
 
-var board: [9]u8 = [_]u8{0} ** 9;
-var current_player: u8 = PLAYER_SUN;
-var winner: u8 = PLAYER_NONE; // 0 none, 1 sun, 2 moon, 3 draw
-var win_line_index: i32 = -1;
-var needs_redraw: bool = true;
-var primary_down: bool = false;
+const State = struct {
+    board: [9]u8 = [_]u8{0} ** 9,
+    current_player: u8 = PLAYER_SUN,
+    winner: u8 = PLAYER_NONE,
+    win_line_index: i32 = -1,
+    primary_down: bool = false,
+};
+
+const Phase = enum {
+    initializing,
+    ready,
+    updating,
+};
+
+var state: State = .{};
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireEventPhase();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
 
@@ -85,40 +116,45 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireEventPhase();
     const is_down = (button_mask & BTN_PRIMARY) != 0;
 
     var changed = false;
-    if (is_down and !primary_down) {
+    if (is_down and !state.primary_down) {
         changed = handlePrimaryPress(x_px, y_px);
     }
-    primary_down = is_down;
+    state.primary_down = is_down;
 
     return if (changed) 1 else 0;
 }
 
-export fn tick(_: i64) i64 {
-    return 0;
+fn requireEventPhase() void {
+    if (phase != .updating) @trap();
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    committed_at_ms = begun_at_ms;
+    phase = .ready;
+    return begun_at_ms;
 }
 
 fn resetGame() void {
-    board = [_]u8{0} ** 9;
-    current_player = PLAYER_SUN;
-    winner = PLAYER_NONE;
-    win_line_index = -1;
-    primary_down = false;
-    needs_redraw = true;
+    state = .{};
 }
 
 fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
-    if (winner != PLAYER_NONE) {
+    if (state.winner != PLAYER_NONE) {
         resetGame();
         return true;
     }
@@ -126,37 +162,35 @@ fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
     const maybe_idx = cellIndexAtPoint(x_px, y_px);
     if (maybe_idx == null) return false;
     const idx = maybe_idx.?;
-    if (board[idx] != PLAYER_NONE) return false;
+    if (state.board[idx] != PLAYER_NONE) return false;
 
-    board[idx] = current_player;
-    winner = computeWinner();
-    if (winner == PLAYER_NONE) {
+    state.board[idx] = state.current_player;
+    state.winner = computeWinner();
+    if (state.winner == PLAYER_NONE) {
         if (boardIsFull()) {
-            winner = RESULT_DRAW;
+            state.winner = RESULT_DRAW;
         } else {
-            current_player = if (current_player == PLAYER_SUN) PLAYER_MOON else PLAYER_SUN;
+            state.current_player = if (state.current_player == PLAYER_SUN) PLAYER_MOON else PLAYER_SUN;
         }
     }
-
-    needs_redraw = true;
     return true;
 }
 
 fn computeWinner() u8 {
     for (WIN_LINES, 0..) |line, idx| {
-        const a = board[line[0]];
+        const a = state.board[line[0]];
         if (a == PLAYER_NONE) continue;
-        if (board[line[1]] == a and board[line[2]] == a) {
-            win_line_index = @intCast(idx);
+        if (state.board[line[1]] == a and state.board[line[2]] == a) {
+            state.win_line_index = @intCast(idx);
             return a;
         }
     }
-    win_line_index = -1;
+    state.win_line_index = -1;
     return PLAYER_NONE;
 }
 
 fn boardIsFull() bool {
-    for (board) |cell| {
+    for (state.board) |cell| {
         if (cell == PLAYER_NONE) return false;
     }
     return true;
@@ -184,7 +218,7 @@ fn drawFrame() void {
     fillRect(0, 0, RENDER_W, RENDER_H, COLOR_BG);
     drawBoardBase();
     drawPieces();
-    if (winner != PLAYER_NONE) {
+    if (state.winner != PLAYER_NONE) {
         drawWinScreen();
     }
 }
@@ -207,8 +241,8 @@ fn drawBoardBase() void {
 
 fn drawPieces() void {
     var idx: usize = 0;
-    while (idx < board.len) : (idx += 1) {
-        const piece = board[idx];
+    while (idx < state.board.len) : (idx += 1) {
+        const piece = state.board[idx];
         if (piece == PLAYER_NONE) continue;
 
         const tx = idx % GRID_N;
@@ -230,10 +264,10 @@ fn drawSunSymbol(cx: i32, cy: i32, radius: i32) void {
     const raw_ray_r = @divFloor(radius, 7);
     const ray_r = if (raw_ray_r < 2) 2 else raw_ray_r;
     const ray_dirs = [_][2]i32{
-        .{ 1000, 0 },   .{ 924, 383 },  .{ 707, 707 },  .{ 383, 924 },
-        .{ 0, 1000 },   .{ -383, 924 }, .{ -707, 707 }, .{ -924, 383 },
-        .{ -1000, 0 },  .{ -924, -383 }, .{ -707, -707 }, .{ -383, -924 },
-        .{ 0, -1000 },  .{ 383, -924 }, .{ 707, -707 }, .{ 924, -383 },
+        .{ 1000, 0 },  .{ 924, 383 },   .{ 707, 707 },   .{ 383, 924 },
+        .{ 0, 1000 },  .{ -383, 924 },  .{ -707, 707 },  .{ -924, 383 },
+        .{ -1000, 0 }, .{ -924, -383 }, .{ -707, -707 }, .{ -383, -924 },
+        .{ 0, -1000 }, .{ 383, -924 },  .{ 707, -707 },  .{ 924, -383 },
     };
 
     for (ray_dirs) |dir| {
@@ -261,7 +295,7 @@ fn drawWinScreen() void {
     const panel_y: usize = (RENDER_H - panel_h) / 2;
     fillRect(panel_x, panel_y, panel_w, panel_h, COLOR_PANEL);
 
-    const border_color = switch (winner) {
+    const border_color = switch (state.winner) {
         PLAYER_SUN => COLOR_WIN_SUN,
         PLAYER_MOON => COLOR_WIN_MOON,
         else => COLOR_WIN_DRAW,
@@ -273,9 +307,9 @@ fn drawWinScreen() void {
 
     const cx: i32 = @intCast(panel_x + panel_w / 2);
     const cy: i32 = @intCast(panel_y + panel_h / 2 - 8);
-    if (winner == PLAYER_SUN) {
+    if (state.winner == PLAYER_SUN) {
         drawSunSymbol(cx, cy, 34);
-    } else if (winner == PLAYER_MOON) {
+    } else if (state.winner == PLAYER_MOON) {
         drawMoonSymbol(cx, cy, 34);
     } else {
         drawSunSymbol(cx - 26, cy, 16);
@@ -329,7 +363,7 @@ fn setPixelI32(x: i32, y: i32, color: Color) void {
 }
 
 fn setPixel(x: usize, y: usize, color: Color) void {
-    const idx = (y * RENDER_W + x) * 4;
+    const idx = ktx.HEADER_SIZE + (y * RENDER_W + x) * 4;
     output_buf[idx + 0] = color[0];
     output_buf[idx + 1] = color[1];
     output_buf[idx + 2] = color[2];
@@ -337,7 +371,7 @@ fn setPixel(x: usize, y: usize, color: Color) void {
 }
 
 test "winner detection works for row win" {
-    board = [_]u8{ PLAYER_SUN, PLAYER_SUN, PLAYER_SUN, 0, 0, 0, 0, 0, 0 };
+    state = .{ .board = .{ PLAYER_SUN, PLAYER_SUN, PLAYER_SUN, 0, 0, 0, 0, 0, 0 } };
     try std.testing.expect(computeWinner() == PLAYER_SUN);
 }
 
@@ -345,4 +379,47 @@ test "cellIndexAtPoint maps center of top-left cell" {
     const x: i32 = @intCast(BOARD_X + CELL_PX / 2);
     const y: i32 = @intCast(BOARD_Y + CELL_PX / 2);
     try std.testing.expect(cellIndexAtPoint(x, y).? == 0);
+}
+
+fn resetTransactionStateForTest() void {
+    state = .{};
+    phase = .initializing;
+    begun_at_ms = 0;
+    committed_at_ms = 0;
+}
+
+test "Eventful updates change state and only render changes output" {
+    resetTransactionStateForTest();
+    const size = render(0);
+    try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), size);
+    const initial_hash = std.hash.Wyhash.hash(0, &output_buf);
+
+    begin_update_at(1);
+    const x: i32 = @intCast(BOARD_X + CELL_PX / 2);
+    const y: i32 = @intCast(BOARD_Y + CELL_PX / 2);
+    try std.testing.expectEqual(@as(i32, 1), pointer_event(BTN_PRIMARY, x, y));
+    try std.testing.expectEqual(@as(i32, 0), pointer_event(0, x, y));
+    try std.testing.expectEqual(@as(i64, 1), finish_update());
+    try std.testing.expectEqual(PLAYER_SUN, state.board[0]);
+    try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
+
+    try std.testing.expectEqual(size, render(0));
+    try std.testing.expect(initial_hash != std.hash.Wyhash.hash(0, &output_buf));
+}
+
+test "reset event applies inside a later update" {
+    resetTransactionStateForTest();
+    _ = render(0);
+
+    begin_update_at(1);
+    const x: i32 = @intCast(BOARD_X + CELL_PX / 2);
+    const y: i32 = @intCast(BOARD_Y + CELL_PX / 2);
+    try std.testing.expectEqual(@as(i32, 1), pointer_event(BTN_PRIMARY, x, y));
+    try std.testing.expectEqual(@as(i64, 1), finish_update());
+    try std.testing.expectEqual(PLAYER_SUN, state.board[0]);
+
+    begin_update_at(2);
+    try std.testing.expectEqual(@as(i32, 1), key_event(XK_RETURN, FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i64, 2), finish_update());
+    try std.testing.expectEqual(PLAYER_NONE, state.board[0]);
 }

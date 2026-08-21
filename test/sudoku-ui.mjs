@@ -21,14 +21,14 @@ async function makeGame() {
 
 function render(game) {
   const length = game.render(0);
-  return new Uint8Array(
-    new Uint8Array(game.memory.buffer, game.output_ptr(), length),
-  );
+  assert.equal(length, 224 + WIDTH * HEIGHT * 4);
+  const copy = new Uint8Array(new Uint8Array(game.memory.buffer, game.output_ptr(), length));
+  return copy.subarray(224);
 }
 
 function press(game, x, y) {
-  const accepted = game.pointer_event(1, x, y, 0n);
-  game.pointer_event(0, x, y, 0n);
+  const accepted = game.pointer_event(1, x, y);
+  game.pointer_event(0, x, y);
   return accepted;
 }
 
@@ -71,8 +71,13 @@ function hash(frame) {
 
 test("sudoku supports its primary pointer workflow", async () => {
   const game = await makeGame();
-  assert.equal(game.render_width_px(), WIDTH);
-  assert.equal(game.render_height_px(), HEIGHT);
+  for (const legacy of ["tick", "render_width_px", "render_height_px", "output_rgba8_srgb_bytes"]) {
+    assert.equal(game[legacy], undefined);
+  }
+  assert.equal(game.key_event.length, 2);
+  assert.equal(game.pointer_event.length, 3);
+  assert.equal(game.begin_at, undefined);
+  assert.equal(game.commit, undefined);
 
   const initial = render(game);
   const selected = findCell(initial, [242, 201, 76, 255], 2000);
@@ -82,20 +87,31 @@ test("sudoku supports its primary pointer workflow", async () => {
 
   const givenX = BOARD_X + (given % 9) * CELL_PX + 27;
   const givenY = BOARD_Y + Math.floor(given / 9) * CELL_PX + 27;
+  game.begin_update_at(1n);
   assert.equal(press(game, givenX, givenY), 0);
-  assert.equal(hash(render(game)), hash(initial));
+  assert.equal(game.finish_update(), 1n);
+  assert.equal(hash(new Uint8Array(game.memory.buffer, game.output_ptr() + 224, WIDTH * HEIGHT * 4)), hash(initial));
 
+  game.begin_update_at(2n);
   assert.equal(press(game, NUMBER_PAD_X + 92, NUMBER_PAD_Y + 92), 1);
+  assert.equal(game.finish_update(), 2n);
   const selectedX = BOARD_X + (selected % 9) * CELL_PX;
   const selectedY = BOARD_Y + Math.floor(selected / 9) * CELL_PX;
-  assert.ok(countColor(render(game), selectedX, selectedY, CELL_PX, CELL_PX, [15, 15, 14, 255]) > 0);
+  const numbered = render(game);
+  assert.ok(countColor(numbered, selectedX, selectedY, CELL_PX, CELL_PX, [15, 15, 14, 255]) > 0);
 
+  game.begin_update_at(3n);
   assert.equal(press(game, CLEAR_X + 28, CLEAR_Y + 28), 1);
-  assert.equal(countColor(render(game), selectedX + 2, selectedY + 2, 50, 50, [15, 15, 14, 255]), 0);
+  assert.equal(game.finish_update(), 3n);
+  const cleared = render(game);
+  assert.equal(countColor(cleared, selectedX + 2, selectedY + 2, 50, 50, [15, 15, 14, 255]), 0);
 
-  const beforeNew = render(game);
+  const beforeNew = cleared;
+  game.begin_update_at(4n);
   assert.equal(press(game, NEW_X + 44, NEW_Y + 28), 1);
-  assert.notEqual(hash(render(game)), hash(beforeNew));
+  assert.equal(game.finish_update(), 4n);
+  const newPuzzle = render(game);
+  assert.notEqual(hash(newPuzzle), hash(beforeNew));
 });
 
 test("sudoku candidate targets are row-major and ignore identical pointer moves", async () => {
@@ -107,6 +123,7 @@ test("sudoku candidate targets are row-major and ignore identical pointer moves"
 
   let lastX = 0;
   let lastY = 0;
+  let now = 0n;
   for (let digit = 1; digit <= 9; digit++) {
     const slot = digit - 1;
     const column = slot % 3;
@@ -114,18 +131,28 @@ test("sudoku candidate targets are row-major and ignore identical pointer moves"
     lastX = cellX + column * 18 + 9;
     lastY = cellY + row * 18 + 9;
 
-    assert.equal(game.pointer_event(0, lastX, lastY, 0n), 1);
+    now += 1n;
+    game.begin_update_at(now);
+    assert.equal(game.pointer_event(0, lastX, lastY), 1);
+    assert.equal(game.finish_update(), now);
     const preview = render(game);
     assert.ok(
       countColor(preview, cellX + column * 18, cellY + row * 18, 18, 18, [210, 173, 67, 255]) > 200,
       `candidate ${digit} did not preview in its row-major slot`,
     );
 
-    assert.equal(game.pointer_event(0, lastX + 1, lastY + 1, 0n), 0);
-    assert.equal(hash(render(game)), hash(preview));
+    now += 1n;
+    game.begin_update_at(now);
+    assert.equal(game.pointer_event(0, lastX + 1, lastY + 1), 0);
+    assert.equal(game.finish_update(), now);
+    assert.equal(hash(new Uint8Array(game.memory.buffer, game.output_ptr() + 224, WIDTH * HEIGHT * 4)), hash(preview));
   }
 
-  assert.equal(game.pointer_event(4, lastX, lastY, 0n), 0);
+  now += 1n;
+  game.begin_update_at(now);
+  assert.equal(game.pointer_event(4, lastX, lastY), 0);
   assert.equal(press(game, lastX, lastY), 1);
-  assert.ok(countColor(render(game), cellX + 40, cellY + 38, 10, 14, [15, 15, 14, 255]) > 0);
+  assert.equal(game.finish_update(), now);
+  const candidate = render(game);
+  assert.ok(countColor(candidate, cellX + 40, cellY + 38, 10, 14, [15, 15, 14, 255]) > 0);
 });

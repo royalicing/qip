@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -43,18 +42,14 @@ type pipelineComponentKind uint8
 const (
 	pipelineComponentContent pipelineComponentKind = iota
 	pipelineComponentTile
-	pipelineComponentInteractive
 )
 
 type pipelineComponentDescription struct {
-	source               string
-	kind                 pipelineComponentKind
-	content              pipelineContentDescription
-	tileInputCap         uint64
-	tileHaloPx           int
-	interactiveWidth     int
-	interactiveHeight    int
-	interactiveOutputCap uint64
+	source       string
+	kind         pipelineComponentKind
+	content      pipelineContentDescription
+	tileInputCap uint64
+	tileHaloPx   int
 }
 
 type pipelineContentDescription struct {
@@ -154,15 +149,6 @@ func describeRunPipeline(ctx context.Context, pipeline *qinternal.Pipeline) ([]p
 			driver, ok := typed.Driver.(*wasmRunDriver)
 			if !ok {
 				return nil, fmt.Errorf("stage %d: unsupported run driver", pipelineStageIndex+1)
-			}
-			if len(pipeline.Stages) == 1 {
-				interactive, ok, err := inspectInteractivePipelineStep(ctx, driver, stepIndex+1)
-				if err != nil {
-					return nil, err
-				}
-				if ok {
-					return []pipelineComponentDescription{interactive}, nil
-				}
 			}
 			contract, err := inspectContentPipelineStep(ctx, driver, stepIndex+1)
 			if err != nil {
@@ -347,25 +333,6 @@ func planRunPipelineWithOptions(descriptions []pipelineComponentDescription, pla
 			previousOutputStep = stepIndex + 1
 			previousOutputSource = description.source
 
-		case pipelineComponentInteractive:
-			if len(descriptions) != 1 {
-				return plan, fmt.Errorf("step %d (%s): Interactive components can only be run alone", stepIndex+1, description.source)
-			}
-			step := runPipelineStep{
-				index:          stepIndex + 1,
-				source:         description.source,
-				kind:           "Interactive",
-				inputEncoding:  "interactive events",
-				inputType:      "not applicable",
-				outputEncoding: "RGBA8 sRGB",
-				outputType:     "image/bmp",
-				outputCapBytes: description.interactiveOutputCap,
-				bufferBytes:    description.interactiveOutputCap,
-				note:           fmt.Sprintf("%dx%d frame; qip run encodes the frame as BMP", description.interactiveWidth, description.interactiveHeight),
-			}
-			plan.steps = append(plan.steps, step)
-			plan.totalBufferBytes += step.bufferBytes
-
 		default:
 			return plan, fmt.Errorf("step %d (%s): unsupported component kind %d", stepIndex+1, description.source, description.kind)
 		}
@@ -388,74 +355,6 @@ func inspectContentPipelineStep(ctx context.Context, driver *wasmRunDriver, step
 		return runModuleContract{}, fmt.Errorf("step %d (%s): %w", stepIndex, driver.modulePath, err)
 	}
 	return contract, nil
-}
-
-func inspectInteractivePipelineStep(ctx context.Context, driver *wasmRunDriver, stepIndex int) (pipelineComponentDescription, bool, error) {
-	var description pipelineComponentDescription
-	mod, err := driver.runtime.InstantiateModule(ctx, driver.compiled, wazero.NewModuleConfig().WithName("plan-interactive"))
-	if err != nil {
-		return description, false, fmt.Errorf("step %d (%s): Wasm module could not be instantiated", stepIndex, driver.modulePath)
-	}
-	defer mod.Close(ctx)
-
-	requiredFunctions := []string{"key_event", "pointer_event", "tick", "render", "render_width_px", "render_height_px"}
-	for _, name := range requiredFunctions {
-		if mod.ExportedFunction(name) == nil {
-			return description, false, nil
-		}
-	}
-	if mod.Memory() == nil {
-		return description, false, nil
-	}
-	if _, ok, err := getExportedValue(ctx, mod, "output_rgba8_srgb_bytes"); err != nil {
-		return description, true, wasmruntime.HumanizeExecutionError(ctx, err)
-	} else if !ok {
-		return description, false, nil
-	}
-	if err := applyModuleUniforms(ctx, mod, driver.uniforms); err != nil {
-		return description, true, fmt.Errorf("step %d (%s): %w", stepIndex, driver.modulePath, err)
-	}
-
-	widthValue, ok, err := getExportedValue(ctx, mod, "render_width_px")
-	if err != nil {
-		return description, true, wasmruntime.HumanizeExecutionError(ctx, err)
-	}
-	if !ok {
-		return description, true, errors.New("interactive module missing render_width_px export")
-	}
-	heightValue, ok, err := getExportedValue(ctx, mod, "render_height_px")
-	if err != nil {
-		return description, true, wasmruntime.HumanizeExecutionError(ctx, err)
-	}
-	if !ok {
-		return description, true, errors.New("interactive module missing render_height_px export")
-	}
-	outputValue, _, err := getExportedValue(ctx, mod, "output_rgba8_srgb_bytes")
-	if err != nil {
-		return description, true, wasmruntime.HumanizeExecutionError(ctx, err)
-	}
-	if !hasExportedValue(mod, "output_ptr") {
-		return description, true, errors.New("interactive module missing output_ptr export")
-	}
-
-	width := int(int32(widthValue))
-	height := int(int32(heightValue))
-	if width <= 0 || height <= 0 {
-		return description, true, fmt.Errorf("step %d (%s): interactive module reported invalid render size %dx%d", stepIndex, driver.modulePath, width, height)
-	}
-	expectedBytes := uint64(width) * uint64(height) * 4
-	if outputValue != expectedBytes {
-		return description, true, fmt.Errorf("step %d (%s): output_rgba8_srgb_bytes returned %d bytes, expected %d", stepIndex, driver.modulePath, outputValue, expectedBytes)
-	}
-
-	description = pipelineComponentDescription{
-		source:               driver.modulePath,
-		kind:                 pipelineComponentInteractive,
-		interactiveWidth:     width,
-		interactiveHeight:    height,
-		interactiveOutputCap: outputValue,
-	}
-	return description, true, nil
 }
 
 func writeDryRunReport(out io.Writer, report runPipelinePlan) {

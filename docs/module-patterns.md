@@ -9,11 +9,15 @@ This page covers implementation patterns. The
 [Content Component Contract](/docs/content-component) defines the ABI and host
 call flow.
 
+An optional `commit` export lets a component reject expected input without
+trapping. A missing `commit` export does not prove that a component cannot trap;
+static analysis must inspect the compiled Wasm to prove that.
+
 ## Choose By Purpose
 
 | Purpose | Successful output | Reject with | Repository example |
 | --- | --- | --- | --- |
-| Assertion gate | Original input unchanged | Trap | [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) |
+| Assertion gate | Original input unchanged | `commit` rejection | [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) |
 | Transformer | Replacement content | Trap | [`json-prettify.wasm`](/components/text/json/json-prettify.wasm) |
 | Converter | Content in a different format | Trap | [`svg-to-data-uri.wasm`](/components/image/svg+xml/svg-to-data-uri.wasm) |
 | Reporter | Counts, scores, or diagnostics | Trap | [`wasm-counts.wasm`](/components/application/wasm/wasm-counts.wasm) |
@@ -25,8 +29,8 @@ ABI choice, covered under [Choose The Byte Contract](#choose-the-byte-contract).
 ## Assertion Gate
 
 Use an assertion gate to enforce an invariant without changing the payload. On
-success, return the original bytes and byte count. On failure, trap so the
-pipeline stops before an unsafe value reaches another component.
+success, return the original bytes and byte count. On failure, reject through
+`commit` so the pipeline stops before an unsafe value reaches another component.
 
 [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) checks
 every UTF-8 sequence and preserves valid input. The
@@ -39,7 +43,7 @@ needed. Otherwise, copy the input to a separate output buffer. In either case,
 downstream components must receive exactly the bytes that were checked.
 
 Use [`qip comply`](/docs/comply) when the assertion has reusable pass, equality,
-and must-trap cases.
+and rejection cases.
 
 ## Transformer
 
@@ -104,7 +108,7 @@ internal links; the archive still contains its required `warcinfo` record.
 Malformed input and output overflow are not “no match”. Trap for those
 conditions so callers can distinguish failure from a successful empty result.
 
-## A Trap Is The Emergency Stop
+## Current Contract: A Trap Is The Emergency Stop
 
 Use a trap when continuing could corrupt, truncate, mislabel, or discard data.
 The pipeline stops and reports failure instead of passing damaged output to the
@@ -141,6 +145,95 @@ if (invalid_input || output_overflow) __builtin_trap();
 (if (local.get $invalid_input)
   (then unreachable))
 ```
+
+## Commit Rejects Expected Input
+
+A Content component that can reject recoverably exports `commit`. Without that
+export, successful `render` output is
+immediately valid, but `render` may still trap. A host discards the instance
+after a trap.
+
+Nontrapping behavior is not declared through export absence. A static analyzer
+must inspect the compiled Wasm and prove that valid Content calls cannot trap.
+It can prove this for a component with or without `commit`.
+
+For a failable component, `render` writes provisional output and returns
+normally, then `commit` accepts or rejects the invocation:
+
+```text
+output_size = render(input_size)
+result = commit()
+
+result == 0  accepted Content output
+result < 0   rejected Content input
+```
+
+Use commit when a conforming call can still be rejected. A validator which
+accepts arbitrary bytes can reject malformed content this way. A transform
+which requires already validated input may instead treat malformed content as a
+precondition violation. The host ignores provisional output after rejection,
+so a partial result cannot enter the next pipeline stage. A zero-byte render
+remains a valid result when commit accepts it.
+
+A trap becomes an emergency stop for a narrower set of failures:
+
+- a hard host ABI precondition was violated;
+- an internal invariant that valid control flow must preserve was broken; or
+- the component encountered an unrecoverable implementation defect.
+
+The host does not call `commit` after a trap. It ignores output, discards the
+Wasm instance, and creates another instance before a later call. `commit` must
+not trap.
+
+`input_utf8_cap` makes valid UTF-8 a host-enforced precondition; malformed
+UTF-8 is not an allowed input. `input_bytes_cap` allows every byte string within
+capacity unless an exact format adds a narrower precondition. Exact content
+type metadata requires or guarantees a valid supported instance of that format.
+At an untrusted boundary, use a pass-through validator with `commit` before
+components which rely on that guarantee.
+
+For example, an assertion gate can use this shape:
+
+```zig
+var pending_result: i64 = -1;
+
+export fn render(input_size: u32) u32 {
+    pending_result = -1;
+
+    if (input_size > INPUT_CAP) @trap();
+    const size: usize = @intCast(input_size);
+    if (!validate(input_buf[0..size])) return 0;
+
+    @memcpy(output_buf[0..size], input_buf[0..size]);
+    pending_result = 0;
+    return input_size;
+}
+
+export fn commit() i64 {
+    const result = pending_result;
+    pending_result = -1;
+    return result;
+}
+```
+
+Initializing `pending_result` to rejection makes every ordinary early return
+reject by default. Only the complete success path changes it to acceptance.
+Valid empty input still reaches that success state even though `render` returns
+zero. A component with uniforms resets their public values before `render`
+returns.
+
+Every negative Content result is rejection. Its exact value is advisory. A
+component may construct the result as a `u64` bitfield and return its `i64`
+bitcast. Bit 63 marks an error, bit 62 marks invalid input, bits 61 through 32
+are reserved, and the low 32 bits hold an input byte offset or consumed byte
+count. A truncated input points to its end. Precise offsets are optional. Hosts
+may highlight or log them but must not assign them application semantics yet.
+
+Testing changes with this boundary. A recoverable invalid case must prove that
+`render` returns normally, `commit` rejects, provisional output is ignored, and
+a later valid transaction succeeds on the same instance. A precondition case
+may use `must_trap`; a validator failure inside its declared byte domain uses
+`must_reject`.
 
 ## Choose The Byte Contract
 
@@ -186,7 +279,7 @@ and limits are stable.
 ## When Not To Use A Content Component
 
 Use [Interactive](/docs/interactive-component) when state must remain live
-across events and scheduled ticks. Use Tile for host-managed image regions and
+across events and scheduled updates. Use Tile for host-managed image regions and
 Form for prompt-driven multi-step input; both are indexed from
 [QIP Component Contracts](/docs/component-contract).
 

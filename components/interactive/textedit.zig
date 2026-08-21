@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 375;
 const RENDER_H: usize = 667;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const FLAG_SHIFT: i32 = 1 << 2;
@@ -65,7 +68,8 @@ const C_CARET: Color = .{ 0x10, 0x10, 0x10, 0xFF };
 const Rect = struct { x: i32, y: i32, w: i32, h: i32 };
 const Range = struct { start: usize, end: usize };
 
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [PIXEL_BYTES]u8 = undefined;
+var ktx_buf: [OUTPUT_BYTES]u8 = undefined;
 
 var doc: [DOC_CAP]u8 = undefined;
 var doc_len: usize = 0;
@@ -102,23 +106,45 @@ var needs_redraw: bool = true;
 var initialized: bool = false;
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn input_ptr() u32 {
+    return 0;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn input_bytes_cap() u32 {
+    return 0;
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
-    ensureInit();
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+const LifecycleState = enum { initializing, ready, updating };
+var lifecycle_state: LifecycleState = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced = false;
+
+export fn begin_update_at(now_ms: i64) void {
+    if (lifecycle_state != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    lifecycle_state = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
     const key_down = (flags & FLAG_KEY_DOWN) != 0;
     const shift_flag = (flags & FLAG_SHIFT) != 0;
 
@@ -137,36 +163,41 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     const alt = (flags & FLAG_ALT) != 0;
 
     if (shortcut_mod and handleShortcut(x11_key, control, command)) {
-        touchAfterEdit(now_ms);
+        touchAfterEdit(begun_at_ms);
         return 1;
     }
 
     if (alt and !command and handleLineSwapKey(x11_key)) {
-        touchAfterEdit(now_ms);
+        touchAfterEdit(begun_at_ms);
         return 1;
     }
 
     if (handleNavKey(x11_key, extend, alt, command)) {
-        touchAfterNav(now_ms);
+        touchAfterNav(begun_at_ms);
         return 1;
     }
 
     if (handleEditKey(x11_key, alt, command)) {
-        touchAfterEdit(now_ms);
+        touchAfterEdit(begun_at_ms);
         return 1;
     }
 
     if (isPrintable(x11_key) and !shortcut_mod and !alt) {
         const ch: u8 = @as(u8, @intCast(x11_key));
-        if (insertSlice(&[_]u8{ch})) touchAfterEdit(now_ms);
+        if (insertSlice(&[_]u8{ch})) touchAfterEdit(begun_at_ms);
         return 1;
     }
 
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32 {
-    ensureInit();
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
+    return pointerEventAt(button_mask, x_px, y_px, begun_at_ms);
+}
+
+fn pointerEventAt(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32 {
     pointer_x = x_px;
     pointer_y = y_px;
     const primary = (button_mask & BTN_PRIMARY) != 0;
@@ -195,7 +226,7 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32
             mouse_selecting = false;
             last_primary_click_ms = -1000000;
             blink_on = true;
-            next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
+            next_blink_at_ms = now_ms +| BLINK_INTERVAL_MS;
             needs_redraw = true;
         } else if (extend_selection) {
             caret = idx;
@@ -230,22 +261,37 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    ensureInit();
-    if (next_blink_at_ms > 0 and now_ms >= next_blink_at_ms) {
-        blink_on = !blink_on;
-        next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
-        needs_redraw = true;
-    }
-    return next_blink_at_ms;
+fn requireUpdate() void {
+    if (lifecycle_state != .updating) @trap();
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+fn advanceUpdateTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
+    if (next_blink_at_ms > 0 and begun_at_ms >= next_blink_at_ms) {
+        blink_on = !blink_on;
+        next_blink_at_ms = begun_at_ms +| BLINK_INTERVAL_MS;
+        needs_redraw = true;
+    }
+}
+
+export fn finish_update() i64 {
+    requireUpdate();
+    advanceUpdateTime();
+    committed_at_ms = begun_at_ms;
+    lifecycle_state = .ready;
+    return if (next_blink_at_ms > begun_at_ms) next_blink_at_ms else begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     ensureInit();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    _ = ktx.writeHeader(&ktx_buf, RENDER_W, RENDER_H) orelse @trap();
+    @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
+    lifecycle_state = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 fn ensureInit() void {
@@ -285,14 +331,14 @@ fn touchAfterEdit(now_ms: i64) void {
     preferred_col = -1;
     ensureCaretVisible();
     blink_on = true;
-    next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
+    next_blink_at_ms = now_ms +| BLINK_INTERVAL_MS;
     needs_redraw = true;
 }
 
 fn touchAfterNav(now_ms: i64) void {
     ensureCaretVisible();
     blink_on = true;
-    next_blink_at_ms = now_ms + BLINK_INTERVAL_MS;
+    next_blink_at_ms = now_ms +| BLINK_INTERVAL_MS;
     needs_redraw = true;
 }
 
@@ -877,23 +923,23 @@ test "clicking a Markdown checkbox toggles it" {
     const checkbox_x = TEXT_X + 3 * CHAR_W + 1;
     const checkbox_y = TEXT_Y + 1;
 
-    _ = pointer_event(BTN_PRIMARY, left_bracket_x, checkbox_y, 10);
+    _ = pointerEventAt(BTN_PRIMARY, left_bracket_x, checkbox_y, 10);
     try std.testing.expectEqual(@as(u8, ' '), doc[3]);
     try std.testing.expectEqual(@as(usize, 2), caret);
     try std.testing.expectEqual(@as(usize, 2), anchor);
-    _ = pointer_event(0, left_bracket_x, checkbox_y, 11);
+    _ = pointerEventAt(0, left_bracket_x, checkbox_y, 11);
 
     caret = 8;
     anchor = 7;
     preferred_col = 6;
-    _ = pointer_event(BTN_PRIMARY, checkbox_x, checkbox_y, 100);
+    _ = pointerEventAt(BTN_PRIMARY, checkbox_x, checkbox_y, 100);
     try std.testing.expectEqual(@as(u8, 'x'), doc[3]);
     try std.testing.expectEqual(@as(usize, 8), caret);
     try std.testing.expectEqual(@as(usize, 7), anchor);
     try std.testing.expectEqual(@as(i32, 6), preferred_col);
 
-    _ = pointer_event(0, checkbox_x, checkbox_y, 101);
-    _ = pointer_event(BTN_PRIMARY, checkbox_x, checkbox_y, 200);
+    _ = pointerEventAt(0, checkbox_x, checkbox_y, 101);
+    _ = pointerEventAt(BTN_PRIMARY, checkbox_x, checkbox_y, 200);
     try std.testing.expectEqual(@as(u8, ' '), doc[3]);
     try std.testing.expectEqual(@as(usize, 8), caret);
     try std.testing.expectEqual(@as(usize, 7), anchor);

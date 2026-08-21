@@ -4,7 +4,7 @@
 
 Convert a PNG or BMP up to 256×256 into a `favicon.ico` locally in your
 browser, in
-<a href="/components/image/png/png-to-bmp-bgra32.wasm" download><qip-content-size src="/components/image/png/png-to-bmp-bgra32.wasm"></qip-content-size></a>
+<a href="/components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm" download><qip-content-size src="/components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size></a>
 plus <a href="/components/image/bmp/bmp-to-ico.wasm" download><qip-content-size src="/components/image/bmp/bmp-to-ico.wasm"></qip-content-size> of WebAssembly</a>.
 
 <style>
@@ -54,7 +54,7 @@ const status = document.getElementById("favicon-status");
 const preview = document.getElementById("favicon-preview");
 const bytes = contentTypeBytes();
 const [pngToBmpModule, bmpToIcoModule] = await Promise.all([
-  WebAssembly.compileStreaming(fetch("/components/image/png/png-to-bmp-bgra32.wasm")),
+  WebAssembly.compileStreaming(fetch("/components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm")),
   WebAssembly.compileStreaming(fetch("/components/image/bmp/bmp-to-ico.wasm")),
 ]);
 const pngToBmpComponent = contentComponent(bytes, pngToBmpModule, bytes);
@@ -120,19 +120,19 @@ square for best results.
 
 ## Download
 
-- <a href="/components/image/png/png-to-bmp-bgra32.wasm" download>png-to-bmp-bgra32.wasm</a> — <qip-content-size src="/components/image/png/png-to-bmp-bgra32.wasm"></qip-content-size>
+- <a href="/components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm" download>png-to-bmp-b8g8r8a8-srgb.wasm</a> — <qip-content-size src="/components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size>
 - <a href="/components/image/bmp/bmp-to-ico.wasm" download>bmp-to-ico.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-ico.wasm"></qip-content-size>
 
 ## CLI equivalent
 
 ```bash
-qip run components/image/png/png-to-bmp-bgra32.wasm components/image/bmp/bmp-to-ico.wasm \
+qip run components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-ico.wasm \
   < icon.png > favicon.ico
 ```
 
 An SVG works too, rasterized at its declared size (doubling is optional):
 
 ```bash
-qip run components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm \
+qip run components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm \
   components/image/bmp/bmp-to-ico.wasm < icon.svg > favicon.ico
 ```

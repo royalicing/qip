@@ -73,6 +73,16 @@ Current host behavior:
   system permissions, but the Wasm component receives no Node.js APIs.
 - `qip comply` registers the `qip` oracle imports only for the Compliance oracle; the implementation under test remains separately instantiated without those imports.
 - Components that depend on imports outside their contract fail instantiation.
+- For Content components which export `commit() -> i64`, the CLI calls
+  `commit` after `render` and reads output only when the result is nonnegative.
+  A negative result stops the pipeline without exposing provisional output.
+- A Timed or Eventful component starts as Content. `qip run` applies query
+  uniforms, calls `render(input_size)`, calls the optional Content `commit()`,
+  and writes the declared output bytes. It does not open updates or send
+  events.
+- Pipeline errors start with `step N (component path)`. Commit rejections then
+  state whether the component reported invalid input and include its optional
+  byte offset. See [Recipe runtime failures](/docs/recipes#runtime-failures).
 
 Practical effect:
 

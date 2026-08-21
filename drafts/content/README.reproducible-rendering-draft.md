@@ -62,10 +62,10 @@ echo "qip + wasm" | qip run components/bytes/zlib-compress-dynamic-huffman.wasm 
 curl -s https://news.ycombinator.com | qip run components/text/html/html-link-extractor.wasm | grep "^https:"
 
 # Render QIP logo to ICO
-qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > qip-logo.ico
+qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > qip-logo.ico
 
 # Render Switzerland flag SVG to ICO
-echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
 
 # Rendering cannot loop forever
 echo "x" | qip run components/utf8/infinite-loop.wasm

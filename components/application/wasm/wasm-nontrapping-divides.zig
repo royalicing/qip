@@ -7,8 +7,8 @@
 //! that the operands cannot be MIN / -1. Unrecognized dynamic divisors are
 //! rejected.
 //!
-//! Input is a Wasm module; output is the same bytes on success. The component
-//! traps when any division or remainder is not proven non-trapping.
+//! Input is a Wasm module; output is the same bytes on success. `commit`
+//! rejects when any division or remainder is not proven non-trapping.
 
 const std = @import("std");
 const wasm_reader = @import("lib/wasm-reader.zig");
@@ -18,11 +18,14 @@ const Instr = wasm_reader.Instr;
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
+const NO_RENDER: i64 = 1;
+const ERROR_BIT: u64 = 1 << 63;
+const INVALID_INPUT_BIT: u64 = 1 << 62;
 const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
+var pending_commit_result: i64 = NO_RENDER;
 
 const CheckError = wasm_reader.Error || error{
     FunctionCodeMismatch,
@@ -119,7 +122,7 @@ export fn input_bytes_cap() u32 {
 }
 
 export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
+    return @intCast(@intFromPtr(&input_buf));
 }
 
 export fn output_bytes_cap() u32 {
@@ -750,11 +753,24 @@ fn checkModule(wasm: []const u8) CheckError!void {
 }
 
 export fn render(input_size: u32) u32 {
+    if (pending_commit_result != NO_RENDER) @trap();
     if (input_size > INPUT_CAP) @trap();
     const size: usize = @intCast(input_size);
-    checkModule(input_buf[0..size]) catch @trap();
-    @memcpy(output_buf[0..size], input_buf[0..size]);
+
+    pending_commit_result = @bitCast(ERROR_BIT | INVALID_INPUT_BIT);
+    checkModule(input_buf[0..size]) catch return 0;
+    pending_commit_result = 0;
     return input_size;
+}
+
+/// Close the policy-check transaction. This function does not trap.
+export fn commit() i64 {
+    const result = if (pending_commit_result == NO_RENDER)
+        @as(i64, @bitCast(ERROR_BIT | INVALID_INPUT_BIT))
+    else
+        pending_commit_result;
+    pending_commit_result = NO_RENDER;
+    return result;
 }
 
 fn expectBodyPasses(comptime body: []const u8) !void {
@@ -770,6 +786,19 @@ fn expectBodyFails(comptime body: []const u8) !void {
 test "accepts nonzero constant divisors" {
     try expectBodyPasses(&.{ 0x41, 42, 0x41, 3, 0x6e, 0x1a, 0x0b });
     try expectBodyPasses(&.{ 0x42, 42, 0x42, 10, 0x82, 0x1a, 0x0b });
+}
+
+test "render rejects an unsafe divide and the instance recovers" {
+    const unsafe_module = wasm_reader.moduleWithBody(&.{ 0x41, 42, 0x41, 0, 0x6e, 0x1a, 0x0b });
+    @memcpy(input_buf[0..unsafe_module.len], &unsafe_module);
+    try std.testing.expectEqual(@as(u32, 0), render(unsafe_module.len));
+    try std.testing.expect(commit() < 0);
+
+    const safe_module = wasm_reader.moduleWithBody(&.{ 0x41, 42, 0x41, 3, 0x6e, 0x1a, 0x0b });
+    @memcpy(input_buf[0..safe_module.len], &safe_module);
+    try std.testing.expectEqual(@as(u32, safe_module.len), render(safe_module.len));
+    try std.testing.expectEqualSlices(u8, &safe_module, input_buf[0..safe_module.len]);
+    try std.testing.expectEqual(@as(i64, 0), commit());
 }
 
 test "rejects zero and dynamic divisors" {

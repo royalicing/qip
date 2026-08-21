@@ -168,3 +168,20 @@ if (accessibilityTree("<main><button>Save</button></main>") !==
     "- `main`\n  - `button` **Save**\n") {
   throw new Error("HTML to Markdown accessibility-tree component failed");
 }
+
+const luhnModule = await WebAssembly.compile(
+  await readFile("components/utf8/luhn.wasm"),
+);
+const luhn = contentComponent(text, luhnModule, text);
+if (luhn(" 4992-7398 716 ") !== "49927398716") {
+  throw new Error("Wasm-backed component did not accept committed output");
+}
+let rejectedByCommit = false;
+try {
+  luhn("49927398717");
+} catch (error) {
+  rejectedByCommit = /rejected invalid input at byte 11/.test(error.message);
+}
+if (!rejectedByCommit) {
+  throw new Error("Wasm-backed component did not report commit rejection");
+}

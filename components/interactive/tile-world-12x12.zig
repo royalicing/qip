@@ -1,4 +1,5 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const SCREEN_W: usize = 12;
 const SCREEN_H: usize = 12;
@@ -6,7 +7,9 @@ const TILE_PX: usize = 24;
 
 const RENDER_W: usize = SCREEN_W * TILE_PX;
 const RENDER_H: usize = SCREEN_H * TILE_PX;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
@@ -18,6 +21,7 @@ const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
 
 const MOVE_INTERVAL_MS: i64 = 120;
+const MAX_CATCH_UP_STEPS: i64 = SCREEN_W * 2;
 
 const KEY_UP: u8 = 1 << 0;
 const KEY_DOWN: u8 = 1 << 1;
@@ -25,6 +29,7 @@ const KEY_LEFT: u8 = 1 << 2;
 const KEY_RIGHT: u8 = 1 << 3;
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 
 var player_wx: i64 = 1;
 var player_wy: i64 = 1;
@@ -35,6 +40,20 @@ var needs_redraw: bool = true;
 var world_ready: bool = false;
 var level_counter: u64 = 0;
 var world_seed: u64 = 0xA53C_9E21_7D2B_4C11;
+
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 const Color = [4]u8;
 const COLOR_GROUND: Color = .{ 0xA7, 0xD6, 0x8D, 0xFF };
@@ -47,24 +66,34 @@ export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    transaction_phase = .updating;
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
 
     // Regenerate with a new world seed.
     if (is_down and (x11_key == 'r' or x11_key == 'R' or x11_key == 'n' or x11_key == 'N' or x11_key == XK_ENTER)) {
-        generateLevel(now_ms);
+        generateLevel(begun_at_ms);
         return 1;
     }
 
@@ -85,7 +114,9 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     if ((button_mask & BTN_PRIMARY) == 0) return 0;
 
     const tx = @divFloor(x_px, @as(i32, @intCast(TILE_PX)));
@@ -107,36 +138,73 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return 1;
 }
 
-export fn tick(now_ms: i64) i64 {
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     if (!world_ready) {
-        generateLevel(now_ms);
+        generateLevel(begun_at_ms);
     }
 
     if (!has_last_move) {
         has_last_move = true;
-        last_move_ms = now_ms;
+        last_move_ms = begun_at_ms;
     }
 
     if (keys_down != 0) {
-        var elapsed = now_ms - last_move_ms;
+        var elapsed = begun_at_ms - last_move_ms;
         if (elapsed < 0) elapsed = 0;
-        while (elapsed >= MOVE_INTERVAL_MS) {
+        const available_steps = @divFloor(elapsed, MOVE_INTERVAL_MS);
+        const steps = @min(available_steps, MAX_CATCH_UP_STEPS);
+        var i: i64 = 0;
+        while (i < steps) : (i += 1) {
             _ = moveOneStep();
-            last_move_ms += MOVE_INTERVAL_MS;
-            elapsed -= MOVE_INTERVAL_MS;
         }
+        last_move_ms = if (available_steps > MAX_CATCH_UP_STEPS)
+            begun_at_ms
+        else
+            last_move_ms + steps * MOVE_INTERVAL_MS;
     } else {
-        last_move_ms = now_ms;
+        last_move_ms = begun_at_ms;
     }
 
-    return if (keys_down != 0) last_move_ms + MOVE_INTERVAL_MS else 0;
+    next_wake_at_ms = if (keys_down != 0 and last_move_ms <= std.math.maxInt(i64) - MOVE_INTERVAL_MS)
+        last_move_ms + MOVE_INTERVAL_MS
+    else
+        begun_at_ms;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
+    if (!world_ready) {
+        generateLevel(0);
+        has_last_move = true;
+        last_move_ms = 0;
+    }
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawWorld();
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    advanceTransactionTime();
+    next_wake_at_ms = if (keys_down != 0 and last_move_ms <= std.math.maxInt(i64) - MOVE_INTERVAL_MS)
+        last_move_ms + MOVE_INTERVAL_MS
+    else
+        begun_at_ms;
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    transaction_phase = .ready;
+    return wake;
 }
 
 fn moveOneStep() bool {
@@ -242,10 +310,10 @@ fn generateLevel(seed_hint_ms: i64) void {
 
 fn setPixel(x: usize, y: usize, color: Color) void {
     const idx = (y * RENDER_W + x) * 4;
-    output_buf[idx + 0] = color[0];
-    output_buf[idx + 1] = color[1];
-    output_buf[idx + 2] = color[2];
-    output_buf[idx + 3] = color[3];
+    pixel_buf[idx + 0] = color[0];
+    pixel_buf[idx + 1] = color[1];
+    pixel_buf[idx + 2] = color[2];
+    pixel_buf[idx + 3] = color[3];
 }
 
 fn fillRect(x0: usize, y0: usize, w: usize, h: usize, color: Color) void {
@@ -346,4 +414,20 @@ test "procedural map is deterministic by seed" {
     const a = isTree(37, -19);
     const b = isTree(37, -19);
     try std.testing.expect(a == b);
+}
+
+test "late transactions discard movement backlog after the bounded catch-up" {
+    resetForTest(0xCAFE_BABE_D00D_F00D);
+    player_wx = 0;
+    player_wy = 5;
+    keys_down = KEY_RIGHT;
+    has_last_move = true;
+    last_move_ms = 0;
+    begun_at_ms = std.math.maxInt(i64);
+    time_advanced = false;
+
+    advanceTransactionTime();
+
+    try std.testing.expectEqual(std.math.maxInt(i64), last_move_ms);
+    try std.testing.expectEqual(std.math.maxInt(i64), next_wake_at_ms);
 }

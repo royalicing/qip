@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"image"
 	"os"
 	"os/exec"
@@ -554,11 +555,43 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 	}
 
 	gotErr := stderr.String()
-	if !strings.Contains(gotErr, "components/utf8/infinite-loop.wasm:") {
-		t.Fatalf("stderr=%q, want component path prefix", gotErr)
+	if !strings.Contains(gotErr, "step 1 (components/utf8/infinite-loop.wasm): render trapped:") {
+		t.Fatalf("stderr=%q, want step, component path, and render failure", gotErr)
 	}
 	if !strings.Contains(gotErr, "Wasm module exceeded the execution time limit") {
 		t.Fatalf("stderr=%q, want execution timeout message", gotErr)
+	}
+}
+
+func TestRunCommitRejectionNamesPipelineStepAndComponent(t *testing.T) {
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=TestHelperRunModuleCLI",
+		"--",
+		"--trace-with",
+		"components/application/wasm/wasm-trace-instrument.wasm",
+		"components/bytes/base64-encode.wasm",
+		"components/bytes/zlib-decompress.wasm",
+	)
+	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
+	cmd.Stdin = strings.NewReader("not zlib")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err == nil {
+		t.Fatalf("expected rejection, stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("rejected pipeline wrote stdout=%q", stdout.String())
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "step 2 (components/bytes/zlib-decompress.wasm): rejected input") {
+		t.Fatalf("stderr=%q, want step, component, and rejection", got)
+	}
+	if strings.Contains(got, "trace retry") {
+		t.Fatalf("stderr=%q, commit rejection must not trigger trap tracing", got)
 	}
 }
 
@@ -811,7 +844,7 @@ func TestRunOutputFlagImageReencodeByExtension(t *testing.T) {
 	}
 }
 
-func TestRunInteractiveModuleOutputsFirstFrameBMP(t *testing.T) {
+func TestRunInteractiveModuleOutputsInitialContent(t *testing.T) {
 	cmd := exec.Command(
 		os.Args[0],
 		"-test.run=TestHelperRunModuleCLI",
@@ -828,15 +861,17 @@ func TestRunInteractiveModuleOutputsFirstFrameBMP(t *testing.T) {
 		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
 	}
 	if stdout.Len() == 0 {
-		t.Fatal("expected BMP bytes on stdout")
+		t.Fatal("expected KTX2 bytes on stdout")
 	}
-
-	w, h, err := qinternal.GetBMPDimensions(stdout.Bytes())
-	if err != nil {
-		t.Fatalf("stdout was not BMP: %v", err)
+	output := stdout.Bytes()
+	identifier := []byte{0xab, 'K', 'T', 'X', ' ', '2', '0', 0xbb, 0x0d, 0x0a, 0x1a, 0x0a}
+	if len(output) < 28 || !bytes.Equal(output[:len(identifier)], identifier) {
+		t.Fatal("stdout was not KTX2")
 	}
+	w := binary.LittleEndian.Uint32(output[20:24])
+	h := binary.LittleEndian.Uint32(output[24:28])
 	if w != 288 || h != 288 {
-		t.Fatalf("bmp dimensions=%dx%d, want 288x288", w, h)
+		t.Fatalf("KTX2 dimensions=%dx%d, want 288x288", w, h)
 	}
 }
 
@@ -1000,6 +1035,51 @@ func TestContentTypeCheckingModesForRunModule(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("none mode should skip content type mismatch: %v", err)
+	}
+}
+
+func TestRunModuleCommitAcceptsAndRejects(t *testing.T) {
+	ctx := context.Background()
+	runtime := wasmruntime.New(ctx)
+	defer runtime.Close(ctx)
+
+	compiled := compileWasmModuleForTest(t, ctx, runtime, "components/utf8/utf8-must-be-valid.wasm")
+	defer compiled.Close(ctx)
+
+	exec, err := executeModuleWithInput(
+		ctx,
+		runtime,
+		compiled,
+		[]byte("hello"),
+		options{},
+		"test-utf8-validator-accept",
+		nil,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("accepted input failed: %v", err)
+	}
+	if got := string(exec.output.bytes); got != "hello" {
+		t.Fatalf("output=%q, want %q", got, "hello")
+	}
+
+	_, err = executeModuleWithInput(
+		ctx,
+		runtime,
+		compiled,
+		[]byte{'A', 0xc3, '('},
+		options{},
+		"test-utf8-validator-reject",
+		nil,
+		"",
+		false,
+	)
+	if err == nil {
+		t.Fatal("expected invalid UTF-8 rejection")
+	}
+	if !strings.Contains(err.Error(), "rejected invalid input at byte 2") {
+		t.Fatalf("unexpected rejection: %v", err)
 	}
 }
 
@@ -1378,25 +1458,5 @@ func TestLoadComponentAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *tes
 	}
 	if !bytes.Equal(assets["/components/contact.wasm"].body, wasmBytes) {
 		t.Fatalf("contact component bytes mismatch")
-	}
-}
-
-func TestTryRunInteractiveModuleFirstFrame(t *testing.T) {
-	handled, bmp, err := tryRunInteractiveModuleFirstFrame(context.Background(), ComponentInvocation{
-		Source:        "components/interactive/tile-world-12x12.wasm",
-		UniformValues: map[string]string{},
-	}, options{}, 2000)
-	if err != nil {
-		t.Fatalf("tryRunInteractiveModuleFirstFrame: %v", err)
-	}
-	if !handled {
-		t.Fatal("expected interactive module to be handled")
-	}
-	w, h, err := qinternal.GetBMPDimensions(bmp)
-	if err != nil {
-		t.Fatalf("output was not BMP: %v", err)
-	}
-	if w != 288 || h != 288 {
-		t.Fatalf("bmp dimensions=%dx%d, want 288x288", w, h)
 	}
 }

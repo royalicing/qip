@@ -46,32 +46,47 @@ async function bench(path: string) {
 
   const memory = requiredExport<WebAssembly.Memory>(exports, "memory");
   const outputPtr = requiredExport<() => number>(exports, "output_ptr");
-  const outputBytes = requiredExport<() => number>(exports, "output_rgba8_srgb_bytes");
-  const renderWidth = requiredExport<() => number>(exports, "render_width_px");
-  const renderHeight = requiredExport<() => number>(exports, "render_height_px");
-  const tick = requiredExport<(nowMS: bigint) => bigint>(exports, "tick");
+  const outputBytesCap = requiredExport<() => number>(exports, "output_bytes_cap");
+  const outputContentTypePtr = requiredExport<() => number>(exports, "output_content_type_ptr");
+  const outputContentTypeSize = requiredExport<() => number>(exports, "output_content_type_size");
+  requiredExport<(nowMS: bigint) => void>(exports, "begin_update_at");
+  requiredExport<() => bigint>(exports, "finish_update");
   const render = requiredExport<(inputSize: number) => number>(exports, "render");
 
-  tick(0n);
-  for (let i = 0; i < warmup; i++) render(0);
+  const contentType = new TextDecoder("utf-8", { fatal: true }).decode(
+    new Uint8Array(memory.buffer, outputContentTypePtr(), outputContentTypeSize()),
+  );
+  if (contentType !== "image/ktx2") {
+    throw new Error(`${path}: qip-play output must be image/ktx2`);
+  }
+
+  let outputLength = render(0);
+  const commit = exports.commit;
+  if (typeof commit === "function" && (commit as () => bigint)() < 0n) {
+    throw new Error(`${path}: initial Content input was rejected`);
+  }
+  for (let i = 0; i < warmup; i++) outputLength = render(0);
 
   const samples: number[] = [];
   for (let i = 0; i < runs; i++) {
     const start = performance.now();
-    render(0);
+    outputLength = render(0);
     samples.push(performance.now() - start);
   }
   samples.sort((a, b) => a - b);
+  if (outputLength < 0 || outputLength > outputBytesCap()) {
+    throw new Error(`${path}: render returned output outside output_bytes_cap`);
+  }
 
   const ptr = outputPtr();
-  const len = outputBytes();
-  const output = new Uint8Array(memory.buffer, ptr, len);
+  const output = new Uint8Array(memory.buffer, ptr, outputLength);
+  const outputView = new DataView(memory.buffer, ptr, outputLength);
   const avg = mean(samples);
   return {
     path,
     bytes: bytes.byteLength,
-    width: renderWidth(),
-    height: renderHeight(),
+    width: outputView.getUint32(20, true),
+    height: outputView.getUint32(24, true),
     mean: avg,
     stddev: stddev(samples, avg),
     min: samples[0],

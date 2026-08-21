@@ -213,11 +213,14 @@ fn extractAll(input: []const u8, output: []u8) u32 {
 
         if (extractVideoIdFromToken(token)) |id| {
             if (found > 0) {
-                if (out >= output.len) return 0;
+                // Each newline replaces at least one input token separator.
+                if (out >= output.len) @trap();
                 output[out] = '\n';
                 out += 1;
             }
-            if (out + id.len > output.len) return 0;
+            // The ID is an 11-byte slice of its longer source token, so the
+            // complete output cannot be larger than the input.
+            if (out + id.len > output.len) @trap();
             @memcpy(output[out..][0..id.len], id);
             out += id.len;
             found += 1;
@@ -229,7 +232,8 @@ fn extractAll(input: []const u8, output: []u8) u32 {
 }
 
 export fn render(input_size_in: u32) u32 {
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     return extractAll(input_buf[0..input_size], output_buf[0..]);
 }
 
@@ -251,4 +255,16 @@ test "ignores non-youtube hosts" {
     const input = "https://example.com/watch?v=dQw4w9WgXcQ";
     const out_len = extractAll(input, output_buf[0..]);
     try std.testing.expectEqual(@as(u32, 0), out_len);
+}
+
+test "many IDs stay within the input-size output bound" {
+    const token = "youtu.be/12345678901 ";
+    var input_len: usize = 0;
+    while (input_len + token.len <= input_buf.len) : (input_len += token.len) {
+        @memcpy(input_buf[input_len..][0..token.len], token);
+    }
+
+    const out_len = extractAll(input_buf[0..input_len], output_buf[0..]);
+    try std.testing.expect(out_len > 0);
+    try std.testing.expect(out_len <= input_len);
 }

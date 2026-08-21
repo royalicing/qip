@@ -33,7 +33,7 @@ allocation functions where supported, and reconcile APIs that were not
 designed to share storage.
 
 A QIP component moves that work to the component adaptation. For example,
-`components/image/bmp/bmp-bgra32-to-webp-lossy.wasm` is not merely libwebp in another
+`components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm` is not merely libwebp in another
 file format. Its build and wrapper constrain libwebp to fixed memory, one
 thread, no imports, and no external system or data access, then expose the same
 Content lifecycle as other QIP components. A host does not need to learn
@@ -359,7 +359,7 @@ Run a parameterized Content recipe comparison with:
 tools/bench-qip-component-to-c-recipe.sh \
   --input qip-logo.svg \
   components/image/svg+xml/svg-recolor-current-color.wasm \
-  components/image/svg+xml/svg-rasterize.wasm \
+  components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm \
   components/image/bmp/bmp-to-png.wasm
 ```
 

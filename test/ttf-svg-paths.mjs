@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -32,6 +33,26 @@ async function convert(component, first, last) {
   return stdout;
 }
 
+async function renderTwice(component) {
+  const [{ instance }, input] = await Promise.all([
+    WebAssembly.instantiate(await readFile(component)),
+    readFile(fixture),
+  ]);
+  const e = instance.exports;
+  const memory = new Uint8Array(e.memory.buffer);
+  memory.set(input, e.input_ptr());
+  const decode = (size) =>
+    new TextDecoder("utf-8", { fatal: true }).decode(
+      memory.subarray(e.output_ptr(), e.output_ptr() + size),
+    );
+
+  e.uniform_set_first_codepoint(65);
+  e.uniform_set_last_codepoint(65);
+  const configured = decode(e.render(input.length));
+  const defaults = decode(e.render(input.length));
+  return { configured, defaults };
+}
+
 test("extracts a proportional glyph as SVG path CSV", async () => {
   const csv = await convert(csvComponent, 65, 65);
   const lines = csv.trimEnd().split("\n");
@@ -52,4 +73,20 @@ test("resolves a compound glyph and gives its SVG path a codepoint ID", async ()
 
 test("rejects a codepoint range above the fixed limit", async () => {
   await assert.rejects(convert(csvComponent, 0, 4096));
+});
+
+test("CSV range uniforms reset to U+0020 through U+00FF", async () => {
+  const { configured, defaults } = await renderTwice(csvComponent);
+  assert.equal(configured.trimEnd().split("\n").length, 2);
+  assert.match(configured, /\n65,U\+0041,36,1401,16,/);
+  assert.match(defaults, /\n32,U\+0020,3,651,0,/);
+  assert.match(defaults, /\n255,U\+00FF,/);
+});
+
+test("SVG range uniforms reset to U+0020 through U+00FF", async () => {
+  const { configured, defaults } = await renderTwice(defsComponent);
+  assert.equal((configured.match(/<path /g) ?? []).length, 1);
+  assert.match(configured, /<path id="u-0041" data-codepoint="U\+0041"/);
+  assert.match(defaults, /<path id="u-0020" data-codepoint="U\+0020"/);
+  assert.match(defaults, /<path id="u-00FF" data-codepoint="U\+00FF"/);
 });

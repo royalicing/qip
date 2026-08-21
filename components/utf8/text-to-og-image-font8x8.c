@@ -20,12 +20,18 @@
 #define DRAWABLE_H (OG_HEIGHT - PADDING_TOP - PADDING_BOTTOM)
 #define MAX_COLS (DRAWABLE_W / GLYPH_W_PX)
 #define MAX_ROWS (DRAWABLE_H / ROW_H)
+#define DEFAULT_TEXT_COLOR_RGBA 0x000000FFu
+#define DEFAULT_BACKGROUND_COLOR_RGBA 0xFFFFFFFFu
+#define BMP_OUTPUT_SIZE (54u + OG_WIDTH * OG_HEIGHT * 4u)
+
+_Static_assert(MAX_COLS > 0 && MAX_ROWS > 0, "the authored canvas must fit text");
+_Static_assert(BMP_OUTPUT_SIZE <= OUTPUT_CAP, "the BMP output must fit its buffer");
 
 static unsigned char input_buffer[INPUT_CAP];
 static unsigned char output_buffer[OUTPUT_CAP];
 static const char output_content_type[] = "image/bmp";
-static uint32_t text_color_rgba = 0x000000FFu;       // 0xRRGGBBAA
-static uint32_t background_color_rgba = 0xFFFFFFFFu; // 0xRRGGBBAA
+static uint32_t text_color_rgba = DEFAULT_TEXT_COLOR_RGBA;             // 0xRRGGBBAA
+static uint32_t background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA; // 0xRRGGBBAA
 
 __attribute__((export_name("input_ptr")))
 uint32_t input_ptr() {
@@ -353,23 +359,16 @@ static void draw_glyph_scaled(uint32_t base_x, uint32_t base_y, unsigned char gl
 __attribute__((export_name("render")))
 uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
-        input_size = INPUT_CAP;
+        __builtin_trap();
     }
 
     const uint32_t width = OG_WIDTH;
     const uint32_t height = OG_HEIGHT;
     const uint32_t max_cols = MAX_COLS;
     const uint32_t max_rows = MAX_ROWS;
-    if (max_cols == 0 || max_rows == 0) {
-        return 0;
-    }
-
     uint32_t rows = count_rows(input_size, max_cols, max_rows);
     uint64_t pixel_bytes = (uint64_t)width * (uint64_t)height * 4u;
     uint64_t total = 54u + pixel_bytes;
-    if (total > OUTPUT_CAP) {
-        return 0;
-    }
 
     unsigned char bg_r = rgba_r(background_color_rgba);
     unsigned char bg_g = rgba_g(background_color_rgba);
@@ -473,5 +472,7 @@ uint32_t render(uint32_t input_size) {
         i++;
     }
 
+    text_color_rgba = DEFAULT_TEXT_COLOR_RGBA;
+    background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
     return (uint32_t)total;
 }

@@ -214,7 +214,9 @@ This wrapper trusts the known-valid GFM component and checks only the caller-con
 
 ## Traps And Reuse
 
-If `render` traps, WasmKit throws a `Trap`. Treat that render as failed and do not read the output buffer; it may contain stale or partial bytes.
+If `render` traps, WasmKit throws a `Trap`. Treat that render as failed and do
+not read the output buffer; it may contain stale or partial bytes. Discard that
+instance and instantiate the module again before another render.
 
 The class parses and instantiates the component once, then reuses it. A `MarkdownRenderer` owns mutable component memory and is not safe to call concurrently. Keep it on one actor or serial executor, or create one renderer per worker or pool entry. Do not mark the class `Sendable` just to pass one instance between concurrent tasks.
 

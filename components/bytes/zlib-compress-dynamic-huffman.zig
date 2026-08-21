@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
-const OUTPUT_CAP: usize = INPUT_CAP + (INPUT_CAP / 8) + 4096;
 
 const WINDOW_SIZE: usize = 32 * 1024;
 const HASH_BITS = 15;
@@ -17,6 +16,21 @@ const DIST_CODE_COUNT: usize = 30;
 const CL_CODE_COUNT: usize = 19;
 const MAX_CODELEN_RLE: usize = (LIT_CODE_COUNT + DIST_CODE_COUNT) * 2 + 32;
 
+// A literal costs at most 15 bits. A match costs at most 48 bits and consumes
+// at least 3 input bytes. Matches have the higher cost per input byte, so the
+// maximum uses as many three-byte matches as possible and charges any remainder
+// as literals.
+// Each code-length RLE entry costs at most a 7-bit code plus 7 extra bits.
+const MAX_LITERAL_BITS: usize = 15;
+const MAX_MATCH_BITS: usize = 48;
+const MAX_TOKEN_BITS: usize =
+    (INPUT_CAP / MIN_MATCH) * MAX_MATCH_BITS + (INPUT_CAP % MIN_MATCH) * MAX_LITERAL_BITS;
+const DYNAMIC_BLOCK_OVERHEAD_BITS: usize =
+    3 + 5 + 5 + 4 + CL_CODE_COUNT * 3 + MAX_CODELEN_RLE * (7 + 7) + 15;
+const ZLIB_WRAPPER_BYTES: usize = 2 + 4;
+const OUTPUT_CAP: usize = ZLIB_WRAPPER_BYTES +
+    (MAX_TOKEN_BITS + DYNAMIC_BLOCK_OVERHEAD_BITS + 7) / 8;
+
 const CL_ORDER = [_]u8{ 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
 
 var input_buf: [INPUT_CAP]u8 = undefined;
@@ -31,9 +45,9 @@ const TOKEN_LEN_MASK: u32 = 0x1ff;
 const TOKEN_DIST_SHIFT: u5 = 9;
 
 const LENGTH_BASE = [_]u16{
-    3,   4,   5,   6,   7,   8,   9,   10,
-    11,  13,  15,  17,  19,  23,  27,  31,
-    35,  43,  51,  59,  67,  83,  99,  115,
+    3,   4,   5,   6,   7,   8,  9,  10,
+    11,  13,  15,  17,  19,  23, 27, 31,
+    35,  43,  51,  59,  67,  83, 99, 115,
     131, 163, 195, 227, 258,
 };
 
@@ -45,16 +59,16 @@ const LENGTH_EXTRA = [_]u8{
 };
 
 const DIST_BASE = [_]u16{
-    1,    2,    3,    4,    5,    7,    9,    13,
-    17,   25,   33,   49,   65,   97,   129,  193,
-    257,  385,  513,  769,  1025, 1537, 2049, 3073,
+    1,    2,    3,    4,     5,     7,     9,    13,
+    17,   25,   33,   49,    65,    97,    129,  193,
+    257,  385,  513,  769,   1025,  1537,  2049, 3073,
     4097, 6145, 8193, 12289, 16385, 24577,
 };
 
 const DIST_EXTRA = [_]u8{
-    0, 0, 0, 0, 1, 1, 2, 2,
-    3, 3, 4, 4, 5, 5, 6, 6,
-    7, 7, 8, 8, 9, 9, 10, 10,
+    0,  0,  0,  0,  1,  1,  2,  2,
+    3,  3,  4,  4,  5,  5,  6,  6,
+    7,  7,  8,  8,  9,  9,  10, 10,
     11, 11, 12, 12, 13, 13,
 };
 
@@ -614,25 +628,26 @@ fn emitTokenBuffer(
 }
 /// Writes zlib stream with one final dynamic-Huffman DEFLATE block.
 export fn render(input_size_in: u32) u32 {
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
 
     var lit_freq: [LIT_CODE_COUNT]u32 = undefined;
     var dist_freq: [DIST_CODE_COUNT]u32 = undefined;
     var token_count: usize = 0;
-    if (!tokenizeAndCount(input, &token_buf, &token_count, &lit_freq, &dist_freq)) return 0;
+    if (!tokenizeAndCount(input, &token_buf, &token_count, &lit_freq, &dist_freq)) @trap();
 
     var lit_len: [LIT_CODE_COUNT]u8 = undefined;
     var dist_len: [DIST_CODE_COUNT]u8 = undefined;
 
-    if (!buildCodeLengths(LIT_CODE_COUNT, &lit_freq, &lit_len, 15)) return 0;
-    if (!buildCodeLengths(DIST_CODE_COUNT, &dist_freq, &dist_len, 15)) return 0;
+    if (!buildCodeLengths(LIT_CODE_COUNT, &lit_freq, &lit_len, 15)) @trap();
+    if (!buildCodeLengths(DIST_CODE_COUNT, &dist_freq, &dist_len, 15)) @trap();
 
     var lit_code: [LIT_CODE_COUNT]u16 = undefined;
     var dist_code: [DIST_CODE_COUNT]u16 = undefined;
 
-    if (!buildCanonicalCodes(LIT_CODE_COUNT, &lit_len, &lit_code, 15)) return 0;
-    if (!buildCanonicalCodes(DIST_CODE_COUNT, &dist_len, &dist_code, 15)) return 0;
+    if (!buildCanonicalCodes(LIT_CODE_COUNT, &lit_len, &lit_code, 15)) @trap();
+    if (!buildCanonicalCodes(DIST_CODE_COUNT, &dist_len, &dist_code, 15)) @trap();
 
     var num_lit: usize = LIT_CODE_COUNT;
     while (num_lit > 257 and lit_len[num_lit - 1] == 0) : (num_lit -= 1) {}
@@ -644,13 +659,13 @@ export fn render(input_size_in: u32) u32 {
     var rle_len: usize = 0;
     var cl_freq: [CL_CODE_COUNT]u32 = undefined;
 
-    if (!encodeCodeLengthRle(&lit_len, num_lit, &dist_len, num_dist, &rle_entries, &rle_len, &cl_freq)) return 0;
+    if (!encodeCodeLengthRle(&lit_len, num_lit, &dist_len, num_dist, &rle_entries, &rle_len, &cl_freq)) @trap();
 
     var cl_len: [CL_CODE_COUNT]u8 = undefined;
-    if (!buildCodeLengths(CL_CODE_COUNT, &cl_freq, &cl_len, 7)) return 0;
+    if (!buildCodeLengths(CL_CODE_COUNT, &cl_freq, &cl_len, 7)) @trap();
 
     var cl_code: [CL_CODE_COUNT]u16 = undefined;
-    if (!buildCanonicalCodes(CL_CODE_COUNT, &cl_len, &cl_code, 7)) return 0;
+    if (!buildCanonicalCodes(CL_CODE_COUNT, &cl_len, &cl_code, 7)) @trap();
 
     var num_cl: usize = CL_CODE_COUNT;
     while (num_cl > 4 and cl_len[CL_ORDER[num_cl - 1]] == 0) : (num_cl -= 1) {}
@@ -662,15 +677,15 @@ export fn render(input_size_in: u32) u32 {
     var writer = BitWriter.init(2);
 
     // Final block, dynamic Huffman: BFINAL=1, BTYPE=10.
-    if (!writer.writeBits(0b101, 3)) return 0;
+    if (!writer.writeBits(0b101, 3)) @trap();
 
-    if (!writer.writeBits(@intCast(num_lit - 257), 5)) return 0;
-    if (!writer.writeBits(@intCast(num_dist - 1), 5)) return 0;
-    if (!writer.writeBits(@intCast(num_cl - 4), 4)) return 0;
+    if (!writer.writeBits(@intCast(num_lit - 257), 5)) @trap();
+    if (!writer.writeBits(@intCast(num_dist - 1), 5)) @trap();
+    if (!writer.writeBits(@intCast(num_cl - 4), 4)) @trap();
 
     var i: usize = 0;
     while (i < num_cl) : (i += 1) {
-        if (!writer.writeBits(cl_len[CL_ORDER[i]], 3)) return 0;
+        if (!writer.writeBits(cl_len[CL_ORDER[i]], 3)) @trap();
     }
 
     i = 0;
@@ -678,15 +693,15 @@ export fn render(input_size_in: u32) u32 {
         const e = rle_entries[i];
         const sym = e.symbol;
         const clen = cl_len[sym];
-        if (clen == 0) return 0;
-        if (!writer.writeBits(cl_code[sym], clen)) return 0;
-        if (!writer.writeBits(e.extra_value, e.extra_bits)) return 0;
+        if (clen == 0) @trap();
+        if (!writer.writeBits(cl_code[sym], clen)) @trap();
+        if (!writer.writeBits(e.extra_value, e.extra_bits)) @trap();
     }
 
-    if (!emitTokenBuffer(token_buf[0..token_count], &writer, &lit_len, &lit_code, &dist_len, &dist_code)) return 0;
-    if (!writer.flush()) return 0;
+    if (!emitTokenBuffer(token_buf[0..token_count], &writer, &lit_len, &lit_code, &dist_len, &dist_code)) @trap();
+    if (!writer.flush()) @trap();
 
-    if (writer.out_i + 4 > OUTPUT_CAP) return 0;
+    if (writer.out_i + 4 > OUTPUT_CAP) @trap();
     writeU32BE(writer.out_i, std.hash.Adler32.hash(input));
     writer.out_i += 4;
 
@@ -743,4 +758,24 @@ test "round trips repetitive data" {
     const n = try decompressZlib(output_buf[0..written], &out);
     try std.testing.expectEqual(plain.len, n);
     try std.testing.expectEqualSlices(u8, &plain, out[0..n]);
+}
+
+test "maximum input stays within the derived output capacity" {
+    @memset(input_buf[0..], 0);
+    const written = render(@intCast(INPUT_CAP));
+    try std.testing.expect(written > 0);
+    try std.testing.expect(written <= OUTPUT_CAP);
+}
+
+test "dynamic code limits obey the output bound" {
+    var max_length_extra: usize = 0;
+    for (LENGTH_EXTRA) |extra| max_length_extra = @max(max_length_extra, extra);
+
+    var max_distance_extra: usize = 0;
+    for (DIST_EXTRA) |extra| max_distance_extra = @max(max_distance_extra, extra);
+
+    const max_match_bits = 15 + max_length_extra + 15 + max_distance_extra;
+    try std.testing.expect(15 <= MAX_LITERAL_BITS);
+    try std.testing.expect(max_match_bits <= MAX_MATCH_BITS);
+    try std.testing.expect(MAX_CODELEN_RLE >= (LIT_CODE_COUNT + DIST_CODE_COUNT) * 2);
 }

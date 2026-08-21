@@ -28,16 +28,16 @@ printf '%s' '{"name":"QIP","values":[1,true,null],"nested":{"escaped":"a\\nb"}}'
 
 translate_and_compile components/text/markdown/commonmark.0.31.2.wasm commonmark
 translate_and_compile components/text/json/json-prettify.wasm json-prettify
-translate_and_compile components/image/png/png-to-bmp-bgra32.wasm png-to-bmp
+translate_and_compile components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm png-to-bmp
 translate_and_compile components/image/bmp/bmp-to-png.wasm bmp-to-png
 translate_and_compile components/application/wasm/wasm-counts.wasm wasm-counts
 
 compare_output components/text/markdown/commonmark.0.31.2.wasm commonmark "$tmp_dir/commonmark.md"
 compare_output components/text/json/json-prettify.wasm json-prettify "$tmp_dir/data.json"
-compare_output components/image/png/png-to-bmp-bgra32.wasm png-to-bmp site-static/_og/index.png
+compare_output components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm png-to-bmp site-static/_og/index.png
 compare_output components/application/wasm/wasm-counts.wasm wasm-counts components/utf8/hello.wasm
 
-"$qip_bin" run -i site-static/_og/index.png -o "$tmp_dir/image.bmp" components/image/png/png-to-bmp-bgra32.wasm
+"$qip_bin" run -i site-static/_og/index.png -o "$tmp_dir/image.bmp" components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm
 compare_output components/image/bmp/bmp-to-png.wasm bmp-to-png "$tmp_dir/image.bmp"
 
 "$tmp_dir/png-to-bmp" < site-static/_og/index.png > "$tmp_dir/roundtrip.bmp"

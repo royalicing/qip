@@ -124,7 +124,7 @@ const usageForm = "Usage: qip form [-v|--verbose] <QIP form component URL or fil
 const usageHelp = "Usage: qip help [command]"
 const legacyDevNotice = "qip: `qip dev` has moved to `qip router dev`; please update your command. `qip dev` will continue to work for now."
 
-const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place -u <key=value> or --uniform <key=value> after the component it configures.\n  Repeat the option to set more than one uniform. Legacy '?key=value' arguments remain supported.\n  i32 uniforms are unsigned; use i64 for signed integers.\n  Example: components/utf8/text-to-bmp.wasm -u cols=120 -u leading=24\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm -u width=900 -u height=400 -u font_size=48\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
+const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size), input_ptr, and input_utf8_cap or input_bytes_cap\n    - Exports output_ptr and output_utf8_cap or output_bytes_cap\n    - Optional commit() rejects provisional output with a negative i64 result\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place -u <key=value> or --uniform <key=value> after the component it configures.\n  Repeat the option to set more than one uniform. Legacy '?key=value' arguments remain supported.\n  i32 uniforms are unsigned; use i64 for signed integers.\n  Example: components/utf8/text-to-bmp.wasm -u cols=120 -u leading=24\n  Example: components/utf8/text-to-path-svg-dejavu-sans-mono.wasm -u width=900 -u height=400 -u font_size=48\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
 const helpDryRun = `Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...
 
 Validates and describes the same prepared pipeline as qip run without reading
@@ -197,6 +197,7 @@ Compliance oracle contract:
   cases through imports from the qip module:
     - must_render_exactly(ordinal, input_ptr, input_size, expected_ptr, expected_size) -> i32
     - must_trap(ordinal, input_ptr, input_size) -> i32
+    - must_reject(ordinal, input_ptr, input_size) -> i32
     - must_render_into(ordinal, input_ptr, input_size, output_ptr, output_capacity) -> i32
     - must_render_into_emit_error(ordinal, message_ptr, message_size) -> i32
     - must_render_into_finish(ordinal, error_count) -> i32
@@ -211,7 +212,7 @@ Case rules:
 Example:
   qip comply components/utf8/utf8-must-be-valid.wasm \
     --with compliance/preserve-empty.wasm \
-    --with compliance/trap-invalid-utf8.wasm`
+    --with compliance/reject-invalid-utf8.wasm`
 
 func main() {
 	args := os.Args[1:]
@@ -370,20 +371,6 @@ func runCmd(args []string) {
 		vlogf(opts, "input sha256: %x", inputDigest)
 	}
 
-	if len(componentInvocations) == 1 {
-		handled, bmpBytes, err := tryRunInteractiveModuleFirstFrame(context.Background(), componentInvocations[0], opts, timeoutMS)
-		if err != nil {
-			gameOver("%v", err)
-		}
-		if handled {
-			result := qinternal.NewRawBytesContentWithType(bmpBytes, "image/bmp")
-			if err := writeRunOutput(result, bmpBytes, outputPath, opts); err != nil {
-				gameOver("%v", err)
-			}
-			return
-		}
-	}
-
 	start := time.Now()
 	defer func() {
 		if opts.verbose {
@@ -505,7 +492,6 @@ type benchModuleKind uint8
 const (
 	benchModuleKindRun benchModuleKind = iota
 	benchModuleKindTile
-	benchModuleKindInteractive
 )
 
 type durationStats struct {
@@ -632,22 +618,13 @@ func benchCmd(args []string) {
 		funcs := cm.ExportedFunctions()
 		_, hasRun := funcs["render"]
 		_, hasTile := funcs["tile_rgba32float_64x64"]
-		hasInteractive := hasRun &&
-			funcs["tick"] != nil &&
-			funcs["key_event"] != nil &&
-			funcs["pointer_event"] != nil &&
-			funcs["render_width_px"] != nil &&
-			funcs["render_height_px"] != nil &&
-			funcs["output_rgba8_srgb_bytes"] != nil
 		switch {
 		case hasTile:
 			moduleKinds[i] = benchModuleKindTile
-		case hasInteractive:
-			moduleKinds[i] = benchModuleKindInteractive
 		case hasRun:
 			moduleKinds[i] = benchModuleKindRun
 		default:
-			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32, interactive render/tick exports, or tile_rgba32float_64x64(f32, f32)", modules[i])
+			gameOver("bench check failed for %s: Wasm module must export render(i32) -> i32 or tile_rgba32float_64x64(f32, f32)", modules[i])
 		}
 		compiled[i] = cm
 		defer compiled[i].Close(ctx)
@@ -868,118 +845,9 @@ func runBenchSampleByKind(
 		return runBenchSample(parent, runtime, compiled, inputBytes, opts, moduleName, timeout)
 	case benchModuleKindTile:
 		return runBenchTileSample(parent, runtime, compiled, inputBytes, moduleName, timeout)
-	case benchModuleKindInteractive:
-		return runBenchInteractiveSample(parent, runtime, compiled, moduleName, timeout)
 	default:
 		return benchSample{}, contentData{}, errors.New("unknown bench module kind")
 	}
-}
-
-func runBenchInteractiveSample(
-	parent context.Context,
-	runtime wazero.Runtime,
-	compiled wazero.CompiledModule,
-	moduleName string,
-	timeout time.Duration,
-) (sample benchSample, output contentData, returnErr error) {
-	ctx := parent
-	cancel := func() {}
-	if timeout > 0 {
-		ctxWithTimeout, cancelWithTimeout := wasmruntime.WithExecutionTimeout(parent, timeout)
-		ctx = ctxWithTimeout
-		cancel = cancelWithTimeout
-	}
-	defer cancel()
-
-	instStart := time.Now()
-	mod, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName(moduleName))
-	if err != nil {
-		returnErr = errors.New("Wasm module could not be instantiated")
-		return
-	}
-	defer mod.Close(ctx)
-	sample.instantiation = time.Since(instStart)
-
-	if mod.Memory() == nil {
-		returnErr = errors.New("interactive Wasm module must export memory")
-		return
-	}
-
-	renderWidthVal, _, err := getExportedValue(ctx, mod, "render_width_px")
-	if err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	}
-	renderHeightVal, _, err := getExportedValue(ctx, mod, "render_height_px")
-	if err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	}
-	renderWidth := int(int32(renderWidthVal))
-	renderHeight := int(int32(renderHeightVal))
-	if renderWidth <= 0 || renderHeight <= 0 {
-		returnErr = fmt.Errorf("interactive module reported invalid render size %dx%d", renderWidth, renderHeight)
-		return
-	}
-	expectedLen := renderWidth * renderHeight * 4
-
-	outputBytesValue, ok, err := getExportedValue(ctx, mod, "output_rgba8_srgb_bytes")
-	if err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	}
-	if !ok {
-		returnErr = errors.New("interactive module missing output_rgba8_srgb_bytes export")
-		return
-	}
-	if int(int32(outputBytesValue)) != expectedLen {
-		returnErr = fmt.Errorf("interactive module output_rgba8_srgb_bytes=%d, expected %d", int(int32(outputBytesValue)), expectedLen)
-		return
-	}
-
-	outputPtrValue, ok, err := getExportedValue(ctx, mod, "output_ptr")
-	if err != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-		return
-	}
-	if !ok {
-		returnErr = errors.New("interactive module missing output_ptr export")
-		return
-	}
-	outputPtr := uint32(outputPtrValue)
-
-	tickFunc := mod.ExportedFunction("tick")
-	renderFunc := mod.ExportedFunction("render")
-	if _, err := tickFunc.Call(ctx, 0); err != nil {
-		returnErr = fmt.Errorf("tick(0) failed: %w", wasmruntime.HumanizeExecutionError(ctx, err))
-		return
-	}
-	runStart := time.Now()
-	renderResult, err := renderFunc.Call(ctx, 0)
-	if err != nil {
-		returnErr = fmt.Errorf("render(0) failed: %w", wasmruntime.HumanizeExecutionError(ctx, err))
-		return
-	}
-	sample.run = time.Since(runStart)
-	sample.total = sample.run
-	if len(renderResult) != 1 {
-		returnErr = fmt.Errorf("render(0) returned %d values, want 1", len(renderResult))
-		return
-	}
-	outputLen := int(int32(renderResult[0]))
-	if outputLen != expectedLen {
-		returnErr = fmt.Errorf("render(0) returned %d bytes, expected %d", outputLen, expectedLen)
-		return
-	}
-
-	outputRaw, ok := mod.Memory().Read(outputPtr, uint32(outputLen))
-	if !ok {
-		returnErr = errors.New("could not read interactive output frame")
-		return
-	}
-	sample.outputCapBytes = uint64(expectedLen)
-	sample.memoryBytes = uint64(mod.Memory().Size())
-	return sample, contentData{bytes: slices.Clone(outputRaw), encoding: dataEncodingRaw}, nil
 }
 
 func runBenchTileSample(

@@ -119,6 +119,28 @@ function runStage(stage, input) {
   }
   new Uint8Array(exports.memory.buffer, inputPointer, input.byteLength).set(input);
   const outputLength = Number(exports.render(input.byteLength)) >>> 0;
+  if (typeof exports.commit === "function") {
+    let result;
+    try {
+      result = exports.commit();
+    } catch (cause) {
+      throw new Error(
+        `${stage.label} commit trapped; commit() must not trap: ${cause?.message ?? cause}`,
+        { cause },
+      );
+    }
+    if (typeof result !== "bigint") {
+      throw new TypeError(`${stage.label} commit export must have signature commit() -> i64`);
+    }
+    if (result < 0n) {
+      const bits = BigInt.asUintN(64, result);
+      const invalidInput = (bits & (1n << 62n)) !== 0n;
+      const detail = Number(bits & 0xffff_ffffn);
+      throw new Error(invalidInput
+        ? `${stage.label} rejected invalid input at byte ${detail} (commit returned ${result})`
+        : `${stage.label} rejected input (commit returned ${result})`);
+    }
+  }
   const outputPointer = exportedValue(exports, "output_ptr");
   const outputCapacity = exportedValue(exports, stage.outputCapName);
   if (outputLength > outputCapacity || outputPointer + outputLength > exports.memory.buffer.byteLength) {

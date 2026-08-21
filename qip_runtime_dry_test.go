@@ -34,6 +34,30 @@ func TestExecuteDryRunDoesNotCallRender(t *testing.T) {
 	}
 }
 
+func TestDryRunTreatsInteractiveInitializationAsContent(t *testing.T) {
+	config, err := parseRunCommandArgs([]string{
+		"components/interactive/tile-world-12x12.wasm",
+	}, "dry run")
+	if err != nil {
+		t.Fatalf("parseRunCommandArgs: %v", err)
+	}
+
+	var output bytes.Buffer
+	if err := executeDryRun(context.Background(), config, &output); err != nil {
+		t.Fatalf("executeDryRun: %v", err)
+	}
+	got := output.String()
+	for _, expected := range []string{
+		"components/interactive/tile-world-12x12.wasm — Content",
+		"Input:  encoding=raw bytes, type=unspecified, capacity=none",
+		"Output: encoding=raw bytes, type=image/ktx2",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("dry-run report missing %q:\n%s", expected, got)
+		}
+	}
+}
+
 func TestValidateDeclaredContentTypeRequiresCanonicalMIME(t *testing.T) {
 	if got, err := validateDeclaredContentType("text/html"); err != nil || got != "text/html" {
 		t.Fatalf("canonical MIME result=%q error=%v", got, err)
@@ -107,7 +131,7 @@ func TestCapacitiesMustFitFlagRejectsRunAndDryRunPlans(t *testing.T) {
 }
 
 func TestDryRunMaxMemoryIsPerComponent(t *testing.T) {
-	const componentMemory = "196608"
+	const componentMemory = "262144"
 	args := []string{
 		"--max-memory", componentMemory,
 		"components/bytes/base64-encode.wasm",
@@ -121,19 +145,19 @@ func TestDryRunMaxMemoryIsPerComponent(t *testing.T) {
 	if err := executeDryRun(context.Background(), config, &output); err != nil {
 		t.Fatalf("per-component cap rejected compatible pipeline: %v", err)
 	}
-	if !strings.Contains(output.String(), "Total declared buffer capacity: 256.0 KiB (262144 bytes)") {
+	if !strings.Contains(output.String(), "Total declared buffer capacity: 298.7 KiB (305840 bytes)") {
 		t.Fatalf("report does not show total exceeding per-component cap:\n%s", output.String())
 	}
 
 	config, err = parseRunCommandArgs([]string{
-		"--max-memory", "196607",
+		"--max-memory", "262143",
 		"components/bytes/base64-encode.wasm",
 	}, "dry run")
 	if err != nil {
 		t.Fatalf("parseRunCommandArgs below cap: %v", err)
 	}
 	if err := executeDryRun(context.Background(), config, &bytes.Buffer{}); err == nil ||
-		!strings.Contains(err.Error(), "exceeds --max-memory 196607 bytes") {
+		!strings.Contains(err.Error(), "exceeds --max-memory 262143 bytes") {
 		t.Fatalf("error=%v, want per-component max-memory rejection", err)
 	}
 }
@@ -145,14 +169,14 @@ func TestDocumentedRunPipelinesRemainCompatible(t *testing.T) {
 	}{
 		{"zlib to base64", []string{"components/bytes/zlib-compress-dynamic-huffman.wasm", "components/bytes/base64-encode.wasm"}},
 		{"zlib round trip", []string{"components/bytes/zlib-compress-dynamic-huffman.wasm", "components/bytes/zlib-decompress.wasm"}},
-		{"SVG to doubled ICO", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/image/bmp/bmp-double.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
-		{"SVG directly to ICO", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
-		{"PNG to ICO", []string{"components/image/png/png-to-bmp-bgra32.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
+		{"SVG to doubled ICO", []string{"components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm", "components/image/bmp/bmp-double.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
+		{"SVG directly to ICO", []string{"components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
+		{"PNG to ICO", []string{"components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm", "components/image/bmp/bmp-to-ico.wasm"}},
 		{"strict Wasm checks", []string{"components/application/wasm/wasm-strict-profile.wasm", "components/application/wasm/wasm-bounded-loops.wasm"}},
 		{"Markdown highlighting", []string{"components/text/markdown/commonmark.0.31.2.wasm", "components/text/html/html-code-syntax-highlight-tsx.wasm"}},
 		{"HTML highlighter chain", []string{"components/text/html/html-code-syntax-highlight-zig.wasm", "components/text/html/html-code-syntax-highlight-css.wasm", "components/text/html/html-code-syntax-highlight-bash.wasm", "components/text/html/html-add-highlight-stylesheet-night-owl.wasm"}},
 		{"SVG data URI to CSS", []string{"components/image/svg+xml/svg-to-data-uri.wasm", "components/text/uri-list/data-uri-to-css-url.wasm"}},
-		{"Content Tile Content", []string{"components/image/svg+xml/svg-rasterize.wasm", "components/rgba/brightness.wasm", "?brightness=0.1", "components/image/bmp/bmp-to-ico.wasm"}},
+		{"Content Tile Content", []string{"components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm", "components/rgba/brightness.wasm", "?brightness=0.1", "components/image/bmp/bmp-to-ico.wasm"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -169,7 +193,7 @@ func TestDocumentedRunPipelinesRemainCompatible(t *testing.T) {
 
 func TestPreparedContentTileContentPipelineExecutes(t *testing.T) {
 	config, err := parseRunCommandArgs([]string{
-		"components/image/svg+xml/svg-rasterize.wasm",
+		"components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm",
 		"components/rgba/brightness.wasm",
 		"?brightness=0.1",
 		"components/image/bmp/bmp-to-ico.wasm",
@@ -374,23 +398,5 @@ func TestPlanRunPipelineRejectsUndersizedHaloBuffer(t *testing.T) {
 	_, err := planRunPipeline(descriptions)
 	if err == nil || !strings.Contains(err.Error(), "80x80 RGBA32Float tile buffer") {
 		t.Fatalf("error=%v, want undersized halo buffer", err)
-	}
-}
-
-func TestPlanRunPipelineInteractiveMustBeAlone(t *testing.T) {
-	descriptions := []pipelineComponentDescription{
-		{
-			source:               "paint.wasm",
-			kind:                 pipelineComponentInteractive,
-			interactiveWidth:     320,
-			interactiveHeight:    200,
-			interactiveOutputCap: 320 * 200 * 4,
-		},
-		{source: "trim.wasm", kind: pipelineComponentContent},
-	}
-
-	_, err := planRunPipeline(descriptions)
-	if err == nil || !strings.Contains(err.Error(), "can only be run alone") {
-		t.Fatalf("error=%v, want standalone Interactive error", err)
 	}
 }

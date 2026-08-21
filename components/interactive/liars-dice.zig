@@ -5,7 +5,9 @@ const MAX_TOTAL_DICE: usize = PLAYERS * MAX_DICE;
 
 const RENDER_W: usize = 920;
 const RENDER_H: usize = 580;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const BTN_PRIMARY: i32 = 1 << 0;
 
@@ -72,7 +74,8 @@ const FONT_DIGITS = [10][7]u8{
     .{ 0b11111, 0b10001, 0b10001, 0b11111, 0b00001, 0b00001, 0b11111 },
 };
 
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [PIXEL_BYTES]u8 = undefined;
+var ktx_buf: [OUTPUT_BYTES]u8 = undefined;
 
 var dice_count: [PLAYERS]u8 = [_]u8{MAX_DICE} ** PLAYERS;
 var dice_values: [PLAYERS][MAX_DICE]u8 = [_][MAX_DICE]u8{[_]u8{1} ** MAX_DICE} ** PLAYERS;
@@ -130,28 +133,50 @@ const ACTION_RECTS = ActionRects{
 };
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn input_ptr() u32 {
+    return 0;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn input_bytes_cap() u32 {
+    return 0;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+const LifecycleState = enum { initializing, ready, updating };
+var lifecycle_state: LifecycleState = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced = false;
+
+export fn begin_update_at(now_ms: i64) void {
+    if (lifecycle_state != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    lifecycle_state = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
-    if (!initialized) resetGame(0);
 
     const has_shortcut_modifier = (flags & (FLAG_CTRL | FLAG_ALT | FLAG_META)) != 0;
     if (!has_shortcut_modifier and (x11_key == 0x72 or x11_key == 0x52)) {
-        resetGame(0);
+        resetGame(begun_at_ms);
         return 1;
     }
 
@@ -188,8 +213,9 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     }
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
-    if (!initialized) resetGame(0);
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
 
     const is_primary = (button_mask & BTN_PRIMARY) != 0;
     var changed = false;
@@ -202,28 +228,41 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    if (!initialized) resetGame(now_ms);
-
-    if (phase == PHASE_AI_WAIT and now_ms >= ai_due_ms) {
-        runAiTurn(now_ms);
-    }
-
-    if (phase == PHASE_REVEAL and now_ms >= reveal_deadline_ms) {
-        advanceAfterReveal(now_ms);
-    }
-
-    if (phase == PHASE_AI_WAIT) return ai_due_ms;
-    if (phase == PHASE_REVEAL) return reveal_deadline_ms;
-    return 0;
+fn requireUpdate() void {
+    if (lifecycle_state != .updating) @trap();
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+fn advanceUpdateTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
+    if (phase == PHASE_AI_WAIT and begun_at_ms >= ai_due_ms) {
+        runAiTurn(begun_at_ms);
+    }
+
+    if (phase == PHASE_REVEAL and begun_at_ms >= reveal_deadline_ms) {
+        advanceAfterReveal(begun_at_ms);
+    }
+}
+
+export fn finish_update() i64 {
+    requireUpdate();
+    advanceUpdateTime();
+    committed_at_ms = begun_at_ms;
+    lifecycle_state = .ready;
+    if (phase == PHASE_AI_WAIT) return ai_due_ms;
+    if (phase == PHASE_REVEAL) return reveal_deadline_ms;
+    return begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     if (!initialized) resetGame(0);
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    _ = ktx.writeHeader(&ktx_buf, RENDER_W, RENDER_H) orelse @trap();
+    @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
+    lifecycle_state = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 fn resetGame(now_ms: i64) void {
@@ -410,7 +449,7 @@ fn performRaise() bool {
     if (!isBidHigherThanCurrent(draft_qty, draft_face)) return false;
 
     setBid(draft_qty, draft_face, HUMAN);
-    advanceTurnAfterRaise(0);
+    advanceTurnAfterRaise(begun_at_ms);
     needs_redraw = true;
     return true;
 }
@@ -418,7 +457,7 @@ fn performRaise() bool {
 fn performCallBluff() bool {
     if (phase != PHASE_PLAYER_TURN or turn_player != HUMAN) return false;
     if (bid_qty == 0) return false;
-    resolveBluff(HUMAN, 0);
+    resolveBluff(HUMAN, begun_at_ms);
     needs_redraw = true;
     return true;
 }
@@ -426,7 +465,7 @@ fn performCallBluff() bool {
 fn performCallSpot() bool {
     if (phase != PHASE_PLAYER_TURN or turn_player != HUMAN) return false;
     if (bid_qty == 0) return false;
-    resolveSpotOn(HUMAN, 0);
+    resolveSpotOn(HUMAN, begun_at_ms);
     needs_redraw = true;
     return true;
 }
@@ -576,7 +615,7 @@ fn isBidHigherThanCurrent(qty: u8, face: u8) bool {
 
 fn handlePrimaryPress(x_px: i32, y_px: i32) bool {
     if (phase == PHASE_GAME_OVER) {
-        resetGame(0);
+        resetGame(begun_at_ms);
         return true;
     }
 
@@ -1126,3 +1165,4 @@ fn putPixel(x: i32, y: i32, color: Color) void {
 fn pointInRect(px: i32, py: i32, rect: Rect) bool {
     return px >= rect.x and py >= rect.y and px < rect.x + rect.w and py < rect.y + rect.h;
 }
+const ktx = @import("ktx2_rgba8_srgb");

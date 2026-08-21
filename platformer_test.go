@@ -24,7 +24,9 @@ func TestSideScrollerPlatformerIsWinnable(t *testing.T) {
 	defer mod.Close(ctx)
 
 	keyEvent := requiredExportedFunction(t, mod, "key_event")
-	tick := requiredExportedFunction(t, mod, "tick")
+	render := requiredExportedFunction(t, mod, "render")
+	beginUpdateAt := requiredExportedFunction(t, mod, "begin_update_at")
+	finishUpdate := requiredExportedFunction(t, mod, "finish_update")
 	playerTileX := requiredExportedFunction(t, mod, "test_player_tile_x")
 	playerTileY := requiredExportedFunction(t, mod, "test_player_tile_y")
 	gameOver := requiredExportedFunction(t, mod, "test_game_over")
@@ -39,7 +41,14 @@ func TestSideScrollerPlatformerIsWinnable(t *testing.T) {
 		stepMs      = 16
 	)
 
-	callVoid(t, ctx, keyEvent, xkRight, keyDownFlag, 0)
+	if results, err := render.Call(ctx, 0); err != nil || len(results) != 1 {
+		t.Fatalf("initialize platformer: results=%v error=%v", results, err)
+	}
+	callVoid(t, ctx, beginUpdateAt, 1)
+	callVoid(t, ctx, keyEvent, xkRight, keyDownFlag)
+	if results, err := finishUpdate.Call(ctx); err != nil || len(results) != 1 {
+		t.Fatalf("finish initial input update: results=%v error=%v", results, err)
+	}
 
 	jumpAtTiles := []uint64{14, 33, 43, 51, 57, 71, 82, 96, 107, 121, 136, 149, 168, 180, 192, 204}
 	nextJump := 0
@@ -48,29 +57,53 @@ func TestSideScrollerPlatformerIsWinnable(t *testing.T) {
 	nextFire := 0
 	fireUpFrame := -1
 
-	for frame := 0; frame < 2500; frame++ {
+	for frame := 1; frame <= 2500; frame++ {
 		nowMs := uint64(frame * stepMs)
 		tx := callI32(t, ctx, playerTileX)
 		ty := callI32(t, ctx, playerTileY)
+		eventAtMS := nowMs - 1
+		hasEvent := false
 
 		if nextJump < len(jumpAtTiles) && tx >= jumpAtTiles[nextJump] {
-			callVoid(t, ctx, keyEvent, xkSpace, keyDownFlag, nowMs)
+			callVoid(t, ctx, beginUpdateAt, eventAtMS)
+			callVoid(t, ctx, keyEvent, xkSpace, keyDownFlag)
+			hasEvent = true
 			jumpUpFrame = frame + 4
 			nextJump++
 		}
 		if frame == jumpUpFrame {
-			callVoid(t, ctx, keyEvent, xkSpace, 0, nowMs)
+			if !hasEvent {
+				callVoid(t, ctx, beginUpdateAt, eventAtMS)
+				hasEvent = true
+			}
+			callVoid(t, ctx, keyEvent, xkSpace, 0)
 		}
 		if nextFire < len(fireFrames) && frame == fireFrames[nextFire] {
-			callVoid(t, ctx, keyEvent, xkZ, keyDownFlag, nowMs)
+			if !hasEvent {
+				callVoid(t, ctx, beginUpdateAt, eventAtMS)
+				hasEvent = true
+			}
+			callVoid(t, ctx, keyEvent, xkZ, keyDownFlag)
 			fireUpFrame = frame + 2
 			nextFire++
 		}
 		if frame == fireUpFrame {
-			callVoid(t, ctx, keyEvent, xkZ, 0, nowMs)
+			if !hasEvent {
+				callVoid(t, ctx, beginUpdateAt, eventAtMS)
+				hasEvent = true
+			}
+			callVoid(t, ctx, keyEvent, xkZ, 0)
+		}
+		if hasEvent {
+			if results, err := finishUpdate.Call(ctx); err != nil || len(results) != 1 {
+				t.Fatalf("finish event update at frame=%d: results=%v error=%v", frame, results, err)
+			}
 		}
 
-		callVoid(t, ctx, tick, nowMs)
+		callVoid(t, ctx, beginUpdateAt, nowMs)
+		if results, err := finishUpdate.Call(ctx); err != nil || len(results) != 1 {
+			t.Fatalf("finish platformer update at frame=%d: results=%v error=%v", frame, results, err)
+		}
 
 		if callI32(t, ctx, gameOver) != 0 {
 			t.Fatalf("scripted playthrough died at frame=%d tile=(%d,%d) nextJump=%d", frame, tx, ty, nextJump)

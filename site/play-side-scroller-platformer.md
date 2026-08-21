@@ -2,6 +2,10 @@
 
 Run, jump, stomp enemies, break blocks from below, and clear gaps without falling.
 
+The component simulates fixed 16 ms steps before events at each update time. A
+late update runs at most eight steps before dropping the remaining backlog.
+Presentation is separate from simulation and produces canonical KTX2 output.
+
 Controls:
 
 - Arrow keys / WASD: move

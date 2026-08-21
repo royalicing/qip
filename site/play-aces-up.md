@@ -9,6 +9,10 @@ Click cards to play.
 
 Goal: finish with only four aces.
 
+The component advances its staged deal animation in Timed updates. An update
+can deal the next card without replacing the published KTX2 frame; the host
+renders when it needs to present the new state.
+
 <qip-play>
   <source src="/components/interactive/aces-up.wasm" type="application/wasm"></source>
 </qip-play>

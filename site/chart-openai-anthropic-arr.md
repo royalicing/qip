@@ -1,5 +1,9 @@
 # OpenAI vs Anthropic ARR
 
+The selected series, milestone, and scale are retained transaction state. A
+selection can commit without replacing the published KTX2 chart until the host
+calls `render`.
+
 <qip-play canvas-width="820px" canvas-height="auto">
   <source src="/components/interactive/openai-anthropic-arr.wasm" type="application/wasm" />
 </qip-play>

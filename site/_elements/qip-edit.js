@@ -923,6 +923,30 @@ async function qipEditRunStage(stage, input) {
     }
 
     const outputLen = qipEditToI32(exportsObj.render(input.bytes.length), "render");
+    if (typeof exportsObj.commit === "function") {
+      let commitResult;
+      try {
+        commitResult = exportsObj.commit();
+      } catch (cause) {
+        throw new Error(
+          "commit trapped; commit() must not trap: " + (cause && cause.message ? cause.message : String(cause)),
+          { cause: cause },
+        );
+      }
+      if (typeof commitResult !== "bigint") {
+        throw new TypeError("commit export must have signature commit() -> i64");
+      }
+      if (commitResult < 0n) {
+        const bits = BigInt.asUintN(64, commitResult);
+        const invalidInput = (bits & (1n << 62n)) !== 0n;
+        const detail = Number(bits & 0xffff_ffffn);
+        throw new Error(
+          invalidInput
+            ? "component rejected invalid input at byte " + detail + " (commit returned " + commitResult + ")"
+            : "component rejected input (commit returned " + commitResult + ")",
+        );
+      }
+    }
     const outputBytes = qipEditReadOutputBytes(exportsObj, outputLen);
     let outputContentType = qipEditReadDeclaredContentType(exportsObj, "output_content_type_ptr", "output_content_type_size");
     if (outputContentType === "") {

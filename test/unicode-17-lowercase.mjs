@@ -49,3 +49,11 @@ test("repeated renders on one instance leave no stale output", async () => {
   renderBytes(exports, Buffer.from("ΑΣ ".repeat(200)));
   assert.equal(renderBytes(exports, Buffer.from("QIP")).toString(), "qip");
 });
+
+test("malformed UTF-8 violates the input precondition", async () => {
+  for (const bytes of [Buffer.from([0xff]), Buffer.from([0xc3]), Buffer.from([0x80])]) {
+    const exports = await instantiate();
+    assert.throws(() => renderBytes(exports, bytes), WebAssembly.RuntimeError);
+    // A host discards this instance instead of testing another render on it.
+  }
+});

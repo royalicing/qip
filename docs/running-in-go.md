@@ -122,6 +122,9 @@ func (r *MarkdownRenderer) MarkdownToHTML(
 	ctx context.Context,
 	markdown string,
 ) (string, error) {
+	if !utf8.ValidString(markdown) {
+		return "", errors.New("Markdown input is not valid UTF-8")
+	}
 	source := []byte(markdown)
 
 	capacity, err := callI32(ctx, r.inputCap)
@@ -255,10 +258,27 @@ The loader is runtime-specific; the QIP calls are not:
 3. `InstantiateModule` creates an instance with no imports.
 4. Go converts the Markdown to UTF-8 bytes and checks `input_utf8_cap()`.
 5. `Memory.Write` copies those bytes to `input_ptr()`.
-6. `render(input_size)` returns the number of output bytes.
-7. `Memory.Read` exposes that range at `output_ptr()`, and conversion to `string` copies it out of component memory.
+6. `render(input_size)` returns the provisional number of output bytes.
+7. When `commit() -> i64` is exported, the host calls it and stops on a
+   negative result.
+8. `Memory.Read` exposes accepted output at `output_ptr()`, and conversion to
+   `string` copies it out of component memory.
+
+Wazero represents the raw `i64` result as `uint64`; convert it to `int64` before
+testing whether it is negative. If `render` traps, do not call `commit`. Discard
+the instance because memory and globals may contain partial changes.
+
+Converting a Go string to bytes produces valid UTF-8 only when the string itself
+contains valid UTF-8; Go strings can also contain arbitrary bytes. A generic
+host therefore calls `utf8.Valid` when caller-provided bytes first enter an
+`input_utf8_cap` pipeline. It does not repeat that scan between known-valid
+components whose output and input both use the UTF-8 exports.
 
 `Memory.Read` returns a view into WebAssembly memory. Do not keep that byte slice across another component call or memory growth. This example validates it and converts it to a string before returning.
+
+The example's output check is a defensive component check. A production
+pipeline may rely on `output_utf8_cap`; Compliance and debug hosts can keep the
+check to detect a defective component.
 
 This wrapper trusts the known-valid GFM component and checks only the caller-controlled input size. A host accepting arbitrary Wasm has a different validation boundary; see [Known And Untrusted Components](/docs/content-component#known-and-untrusted-components).
 

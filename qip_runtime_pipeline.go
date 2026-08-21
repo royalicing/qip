@@ -195,7 +195,8 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 		d.allowMissingInputContentType,
 	)
 	if err != nil {
-		if d.opts.traceWith != "" {
+		var renderTrap *contentRenderTrapError
+		if d.opts.traceWith != "" && errors.As(err, &renderTrap) {
 			traceReport, traceErr := traceRunModuleAfterTrap(ctx, d.opts.traceWith, d.moduleBody, inputBytes, d.opts, instanceName+"-trace", d.uniforms, qinternal.ContentTypeOf(input), d.allowMissingInputContentType)
 			if traceErr != nil {
 				err = fmt.Errorf("%w\ntrace retry failed: %v", err, traceErr)
@@ -203,7 +204,7 @@ func (d *wasmRunDriver) Execute(ctx context.Context, input qinternal.Content, re
 				err = fmt.Errorf("%w\ntrace retry with %s:\n%s", err, d.opts.traceWith, traceReport)
 			}
 		}
-		return nil, fmt.Errorf("%s: %w", d.modulePath, err)
+		return nil, err
 	}
 
 	switch exec.output.encoding {

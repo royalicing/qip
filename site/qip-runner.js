@@ -294,6 +294,38 @@ function wasmComponent(input, module, output) {
         throw Error("render returned negative output size");
       }
 
+      if (typeof exportsObj.commit === "function") {
+        let commitResult;
+        try {
+          commitResult = exportsObj.commit();
+        } catch (cause) {
+          throw Error(
+            "commit trapped; commit() must not trap: " +
+              (cause?.message ?? cause),
+            { cause },
+          );
+        }
+        if (typeof commitResult !== "bigint") {
+          throw TypeError("commit export must have signature commit() -> i64");
+        }
+        if (commitResult < 0n) {
+          const bits = BigInt.asUintN(64, commitResult);
+          const invalidInput = (bits & (1n << 62n)) !== 0n;
+          const detail = Number(bits & 0xffff_ffffn);
+          throw Error(
+            invalidInput
+              ? "component rejected invalid input at byte " +
+                  String(detail) +
+                  " (commit returned " +
+                  String(commitResult) +
+                  ")"
+              : "component rejected input (commit returned " +
+                  String(commitResult) +
+                  ")",
+          );
+        }
+      }
+
       const outputCap = readI32Export(exportsObj, capName(output, "output"));
       if (outputLen > outputCap) {
         throw Error(

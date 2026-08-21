@@ -40,7 +40,8 @@ fn writeU32BE(off: usize, value: u32) void {
 /// This keeps the implementation tiny and deterministic while still producing
 /// standards-compliant zlib bytes.
 export fn render(input_size_in: u32) u32 {
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
 
     var out_i: usize = 0;
@@ -58,7 +59,7 @@ export fn render(input_size_in: u32) u32 {
         const chunk_len: usize = if (remaining > STORED_BLOCK_MAX) STORED_BLOCK_MAX else remaining;
         const is_final = (pos + chunk_len) == input_size;
 
-        if (out_i + 5 + chunk_len + 4 > OUTPUT_CAP) return 0;
+        if (out_i + 5 + chunk_len + 4 > OUTPUT_CAP) @trap();
 
         // Stored block header: BFINAL + BTYPE=00 and align to byte boundary.
         output_buf[out_i] = if (is_final) 0x01 else 0x00;
@@ -132,4 +133,12 @@ test "round trips across multiple stored blocks" {
     const n = try decompressZlib(output_buf[0..written], &out);
     try std.testing.expectEqual(plain.len, n);
     try std.testing.expectEqualSlices(u8, &plain, out[0..n]);
+}
+
+test "maximum input exactly fits the derived output capacity" {
+    @memset(input_buf[0..], 0);
+    try std.testing.expectEqual(
+        @as(u32, @intCast(OUTPUT_CAP)),
+        render(@intCast(INPUT_CAP)),
+    );
 }

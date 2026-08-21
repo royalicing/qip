@@ -33,6 +33,8 @@ const FIELD_BYTES_CAP: usize = 2 * 1024;
 
 const DEFAULT_TEXT_COLOR: u32 = 0x101010ff;
 const DEFAULT_BACKGROUND_COLOR: u32 = 0xeecc33ff;
+const DEFAULT_FONT_WEIGHT: u32 = 700;
+const DEFAULT_REQUESTED_MAX_FONT_SIZE: u32 = 0;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -45,8 +47,8 @@ var subtitle_lines: [MAX_LINES_PER_FIELD]Line = undefined;
 
 var text_color: u32 = DEFAULT_TEXT_COLOR;
 var background_color: u32 = DEFAULT_BACKGROUND_COLOR;
-var font_weight: u32 = 700;
-var requested_max_font_size: u32 = 0;
+var font_weight: u32 = DEFAULT_FONT_WEIGHT;
+var requested_max_font_size: u32 = DEFAULT_REQUESTED_MAX_FONT_SIZE;
 
 const RenderError = error{
     InvalidForm,
@@ -187,7 +189,15 @@ export fn render(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > input_buf.len) @trap();
     const output_size = renderSvg(input_buf[0..input_size], &output_buf) catch @trap();
+    resetUniforms();
     return @intCast(output_size);
+}
+
+fn resetUniforms() void {
+    text_color = DEFAULT_TEXT_COLOR;
+    background_color = DEFAULT_BACKGROUND_COLOR;
+    font_weight = DEFAULT_FONT_WEIGHT;
+    requested_max_font_size = DEFAULT_REQUESTED_MAX_FONT_SIZE;
 }
 
 fn renderSvg(input: []const u8, output: []u8) RenderError!usize {
@@ -592,9 +602,29 @@ test "switches between regular and bold and formats colors" {
     try std.testing.expect(std.mem.indexOf(u8, rendered[0..size], "fill=\"#aabbcc\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered[0..size], "fill=\"#11223344\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered[0..size], "data-font-weight=\"400\"") != null);
-    text_color = DEFAULT_TEXT_COLOR;
-    background_color = DEFAULT_BACKGROUND_COLOR;
-    font_weight = 700;
+    resetUniforms();
+}
+
+test "render resets all uniforms to authored defaults" {
+    const input = "title=A";
+    @memcpy(input_buf[0..input.len], input);
+    _ = uniform_set_text_color(0x11223344);
+    _ = uniform_set_background_color(0xaabbccff);
+    _ = uniform_set_font_weight(400);
+    _ = uniform_set_font_max_size(64);
+    const configured_size = render(input.len);
+    const configured = output_buf[0..configured_size];
+    try std.testing.expect(std.mem.indexOf(u8, configured, "fill=\"#aabbcc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, configured, "fill=\"#11223344\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, configured, "data-font-weight=\"400\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, configured, "data-font-size=\"64\"") != null);
+
+    const default_size = render(input.len);
+    const defaults = output_buf[0..default_size];
+    try std.testing.expect(std.mem.indexOf(u8, defaults, "fill=\"#eecc33\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, defaults, "fill=\"#101010\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, defaults, "data-font-weight=\"700\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, defaults, "data-font-size=\"112\"") != null);
 }
 
 test "supports common title punctuation and rejects unsupported scripts" {

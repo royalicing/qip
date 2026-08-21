@@ -61,7 +61,7 @@ async function ensurePrerequisites(t) {
   }
 }
 
-test("Core 1.0 validator agrees with WebAssembly.validate and recovers after a trap", async (t) => {
+test("Core 1.0 validator agrees with WebAssembly.validate and recovers after rejection", async (t) => {
   await ensurePrerequisites(t);
 
   const valid = await readFile(helloNaive);
@@ -77,11 +77,8 @@ test("Core 1.0 validator agrees with WebAssembly.validate and recovers after a t
   const wasm = instance.instance.exports;
   const validate = (bytes) => {
     new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), bytes.length).set(bytes);
-    try {
-      return wasm.render(bytes.length) === bytes.length;
-    } catch {
-      return false;
-    }
+    const outputSize = wasm.render(bytes.length);
+    return wasm.commit() >= 0n && outputSize === bytes.length;
   };
 
   assert.equal(validate(invalid), WebAssembly.validate(invalid));
@@ -184,14 +181,15 @@ test("nontrapping divides accepts a proved divisor and rejects zero", async (t) 
   const check = (moduleBytes) => {
     assert.equal(WebAssembly.validate(moduleBytes), true);
     new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), moduleBytes.length).set(moduleBytes);
-    return wasm.render(moduleBytes.length);
+    const outputSize = wasm.render(moduleBytes.length);
+    return wasm.commit() >= 0n ? outputSize : -1;
   };
 
   const safe = singleVoidFunctionModule([0x41, 42, 0x41, 3, 0x6e, 0x1a]);
   assert.equal(check(safe), safe.length);
 
   const zero = singleVoidFunctionModule([0x41, 42, 0x41, 0, 0x6e, 0x1a]);
-  assert.throws(() => check(zero), WebAssembly.RuntimeError);
+  assert.equal(check(zero), -1);
 
   const guarded = singleI32FunctionModule([
     0x02, 0x40,
@@ -223,7 +221,7 @@ test("nontrapping divides accepts a proved divisor and rejects zero", async (t) 
     0x0b,
     0x41, 42, 0x20, 0x00, 0x6e, 0x1a,
   ]);
-  assert.throws(() => check(unsafeJoin), WebAssembly.RuntimeError);
+  assert.equal(check(unsafeJoin), -1);
 
   const unrelatedLaterLoopWrite = singleI32FunctionModule([
     0x41, 1, 0x21, 0x00,
@@ -364,11 +362,8 @@ async function strictProfileAccepts(moduleBytes) {
   const { instance } = await WebAssembly.instantiate(validatorBytes);
   const wasm = instance.exports;
   new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), moduleBytes.length).set(moduleBytes);
-  try {
-    return wasm.render(moduleBytes.length) === moduleBytes.length;
-  } catch {
-    return false;
-  }
+  const outputSize = wasm.render(moduleBytes.length);
+  return wasm.commit() >= 0n && outputSize === moduleBytes.length;
 }
 
 async function createContentTypeReader() {
@@ -568,6 +563,7 @@ test("qip run and comply reject QIP values exported as globals", async (t) => {
         assert.match(
           result.stderr.toString("utf8"),
           new RegExp(`${name}.*(?:\\(\\) -> i32|must be function)`),
+          `${args[0]} should report the invalid ${name} export on stderr`,
         );
       }
     }
@@ -604,7 +600,7 @@ test("bounded output rejects a dynamic result without a proof epilogue", async (
 
   const result = await runQip(["run", "-i", helloNaive, "--", boundedOutput]);
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr.toString("utf8"), /wasm error: unreachable/);
+  assert.match(result.stderr.toString("utf8"), /rejected invalid input at byte 0/);
 });
 
 test("strict profile alone accepts an unbounded loop", async (t) => {
@@ -622,7 +618,7 @@ test("bounded loops stage rejects an unbounded loop", async (t) => {
 
   const result = await runQip(["run", "-i", infiniteLoop, "--", boundedLoops]);
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr.toString("utf8"), /wasm error: unreachable/);
+  assert.match(result.stderr.toString("utf8"), /rejected invalid input at byte 0/);
 });
 
 test("qip score reports fixed-bound loop warnings", async (t) => {

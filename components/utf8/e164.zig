@@ -1,5 +1,5 @@
 const INPUT_CAP: usize = 64 * 1024;
-const OUTPUT_CAP: usize = 64 * 1024;
+const OUTPUT_CAP: usize = INPUT_CAP + 1;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -25,7 +25,8 @@ fn isDigit(c: u8) bool {
 }
 
 export fn render(input_size_in: u32) u32 {
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
 
     // Emit '+' then append only digits.
     output_buf[0] = '+';
@@ -36,13 +37,27 @@ export fn render(input_size_in: u32) u32 {
         const c = input_buf[i];
         if (!isDigit(c)) continue;
 
-        if (out >= OUTPUT_CAP) return 0;
         output_buf[out] = c;
         out += 1;
     }
 
-    // Invalid when no digits were present.
+    // Inputs without digits normalize to empty output.
     if (out == 1) return 0;
 
     return @as(u32, @intCast(out));
 }
+
+test "maximum input fits after adding the plus prefix" {
+    @memset(input_buf[0..], '9');
+
+    try std.testing.expectEqual(@as(u32, OUTPUT_CAP), render(INPUT_CAP));
+    try std.testing.expectEqual(@as(u8, '+'), output_buf[0]);
+    try std.testing.expectEqualSlices(u8, input_buf[0..], output_buf[1..]);
+}
+
+test "input without digits produces successful empty output" {
+    @memcpy(input_buf[0..3], "abc");
+    try std.testing.expectEqual(@as(u32, 0), render(3));
+}
+
+const std = @import("std");

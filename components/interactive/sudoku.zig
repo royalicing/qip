@@ -1,3 +1,5 @@
+const ktx = @import("ktx2_rgba8_srgb");
+
 const GRID: usize = 9;
 const CELLS: usize = GRID * GRID;
 const BOX: usize = 3;
@@ -32,7 +34,9 @@ const NEW_Y: usize = BOARD_Y + BOARD_PX - ACTION_BUTTON_H;
 
 const RENDER_W: usize = CONTROLS_X + CONTROLS_W + OUTER_X;
 const RENDER_H: usize = OUTER_TOP + BOARD_PX + OUTER_BOTTOM;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const BTN_PRIMARY: i32 = 1 << 0;
 
@@ -109,6 +113,7 @@ const X_BITMAP = [7]u8{
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 
 var givens: [CELLS]u8 = [_]u8{0} ** CELLS;
 var values: [CELLS]u8 = [_]u8{0} ** CELLS;
@@ -126,23 +131,44 @@ var primary_down: bool = false;
 var initialized: bool = false;
 var needs_redraw: bool = true;
 
+const Phase = enum { initializing, ready, updating };
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
     if (!initialized) resetPuzzle();
@@ -192,7 +218,8 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     if (!initialized) resetPuzzle();
 
     const is_primary = (button_mask & BTN_PRIMARY) != 0;
@@ -208,17 +235,44 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(_: i64) i64 {
-    if (!initialized) resetPuzzle();
-    return 0;
+fn eventPhaseIsValid() bool {
+    if (phase != .updating) @trap();
+    return true;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
     if (!initialized) resetPuzzle();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    if (!initialized) resetPuzzle();
+    committed_at_ms = begun_at_ms;
+    phase = .ready;
+    return begun_at_ms;
+}
+
+fn resetState() void {
+    givens = [_]u8{0} ** CELLS;
+    values = [_]u8{0} ** CELLS;
+    cands = [_]u16{0} ** CELLS;
+    selected_idx = 0;
+    hovered_idx = CELLS;
+    hovered_candidate = 0;
+    hovered_control = 0;
+    rng_state = 0xC13FA9A9;
+    game_counter = 0;
+    primary_down = false;
+    initialized = false;
+    needs_redraw = true;
 }
 
 fn resetPuzzle() void {
@@ -856,10 +910,10 @@ fn isConflictAt(idx: usize) bool {
 fn setPixel(x: usize, y: usize, color: Color) void {
     if (x >= RENDER_W or y >= RENDER_H) return;
     const off = (y * RENDER_W + x) * 4;
-    output_buf[off + 0] = color[0];
-    output_buf[off + 1] = color[1];
-    output_buf[off + 2] = color[2];
-    output_buf[off + 3] = color[3];
+    pixel_buf[off + 0] = color[0];
+    pixel_buf[off + 1] = color[1];
+    pixel_buf[off + 2] = color[2];
+    pixel_buf[off + 3] = color[3];
 }
 
 fn fillRect(x: usize, y: usize, w: usize, h: usize, color: Color) void {

@@ -6,6 +6,10 @@ Controls:
 
 Input is passed via a normal form input element:
 
+The date bytes are read by the initial Content `render`. Left and Right change
+retained state in later updates. An update does not replace the displayed KTX2
+frame until the host renders again.
+
 <qip-play id="moon-phase-play">
   <input id="moon-phase-date" name="input" type="hidden" value="2026-05-31" />
   <source src="/components/interactive/moon-phases.wasm" type="application/wasm" />

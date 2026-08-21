@@ -8,16 +8,21 @@
 
 const std = @import("std");
 const deflate = @import("lib/deflate.zig");
+const root = @import("root");
+
+const INPUT_KTX2 = @hasDecl(root, "PNG_INPUT_KTX2") and root.PNG_INPUT_KTX2;
+const ktx2_rgba = if (INPUT_KTX2) @import("ktx2_rgba8_srgb") else struct {};
+const ktx2_bgra = if (INPUT_KTX2) @import("ktx2_bgra8_srgb") else struct {};
 
 const MAX_PIXELS: usize = 25_000_000;
 const MAX_DIMENSION: usize = 8192;
 const BMP_HEADER_CAP: usize = 64 * 1024;
-const INPUT_CAP: usize = MAX_PIXELS * 4 + BMP_HEADER_CAP;
+const INPUT_CAP: usize = MAX_PIXELS * 4 + if (INPUT_KTX2) 224 else BMP_HEADER_CAP;
 const FILTERED_CAP: usize = MAX_PIXELS * 4 + MAX_DIMENSION;
 const OUTPUT_CAP: usize = FILTERED_CAP + FILTERED_CAP / 8 + 4096;
 const TOKEN_CAP: usize = 8 * 1024 * 1024;
 const ROW_CAP: usize = MAX_DIMENSION * 4;
-const INPUT_CONTENT_TYPE = "image/bmp";
+const INPUT_CONTENT_TYPE = if (INPUT_KTX2) "image/ktx2" else "image/bmp";
 const OUTPUT_CONTENT_TYPE = "image/png";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
@@ -142,30 +147,54 @@ fn writeFiltered(filter: u8, cur: []const u8, prior: []const u8, bpp: usize, out
 
 export fn render(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
-    if (input_size < 54) return 0;
-    if (input_buf[0] != 'B' or input_buf[1] != 'M') return 0;
+    var pixel_offset: u64 = 0;
+    var width: u64 = 0;
+    var height: u64 = 0;
+    var bytes_pp: u64 = 4;
+    var src_stride: u64 = 0;
+    var top_down = true;
+    var source_is_rgba = true;
 
-    const pixel_offset: u64 = readU32LE(10);
-    const dib_size = readU32LE(14);
-    const width_raw: i32 = @bitCast(readU32LE(18));
-    const height_raw: i32 = @bitCast(readU32LE(22));
-    const planes = readU16LE(26);
-    const bpp_bits = readU16LE(28);
-    const compression = readU32LE(30);
+    if (INPUT_KTX2) {
+        const input = input_buf[0..input_size];
+        if (ktx2_rgba.parse(input)) |image| {
+            width = image.width;
+            height = image.height;
+            pixel_offset = ktx2_rgba.HEADER_SIZE;
+        } else if (ktx2_bgra.parse(input)) |image| {
+            width = image.width;
+            height = image.height;
+            pixel_offset = ktx2_bgra.HEADER_SIZE;
+            source_is_rgba = false;
+        } else return 0;
+        src_stride = width * 4;
+    } else {
+        if (input_size < 54) return 0;
+        if (input_buf[0] != 'B' or input_buf[1] != 'M') return 0;
 
-    if (dib_size < 40 or pixel_offset < 54) return 0;
-    if (planes != 1 or compression != 0) return 0;
-    if (bpp_bits != 24 and bpp_bits != 32) return 0;
-    if (width_raw <= 0 or height_raw == 0) return 0;
+        pixel_offset = readU32LE(10);
+        const dib_size = readU32LE(14);
+        const width_raw: i32 = @bitCast(readU32LE(18));
+        const height_raw: i32 = @bitCast(readU32LE(22));
+        const planes = readU16LE(26);
+        const bpp_bits = readU16LE(28);
+        const compression = readU32LE(30);
 
-    const width: u64 = @intCast(width_raw);
-    const top_down = height_raw < 0;
-    const height: u64 = if (top_down) @intCast(-@as(i64, height_raw)) else @intCast(height_raw);
-    if (width > MAX_DIMENSION or height > MAX_DIMENSION or width * height > MAX_PIXELS) return 0;
+        if (dib_size < 40 or pixel_offset < 54) return 0;
+        if (planes != 1 or compression != 0) return 0;
+        if (bpp_bits != 24 and bpp_bits != 32) return 0;
+        if (width_raw <= 0 or height_raw == 0) return 0;
 
-    const bytes_pp: u64 = bpp_bits / 8;
-    const src_stride: u64 = (width * bytes_pp + 3) & ~@as(u64, 3);
-    if (pixel_offset + src_stride * height > input_size) return 0;
+        width = @intCast(width_raw);
+        top_down = height_raw < 0;
+        height = if (top_down) @intCast(-@as(i64, height_raw)) else @intCast(height_raw);
+        if (width > MAX_DIMENSION or height > MAX_DIMENSION or width * height > MAX_PIXELS) return 0;
+
+        bytes_pp = bpp_bits / 8;
+        src_stride = (width * bytes_pp + 3) & ~@as(u64, 3);
+        source_is_rgba = false;
+        if (pixel_offset + src_stride * height > input_size) return 0;
+    }
 
     const row_bytes: u64 = width * bytes_pp;
     if (row_bytes > ROW_CAP) return 0;
@@ -184,12 +213,14 @@ export fn render(input_size_in: u32) u32 {
         const src_y = if (top_down) y else height - 1 - y;
         const src: usize = @intCast(pixel_offset + src_y * src_stride);
 
-        // BGR(A) to RGB(A).
+        // Normalize either RGB(A), BGR(A), or BGRA source bytes to PNG order.
+        const red_offset: usize = if (source_is_rgba) 0 else 2;
+        const blue_offset: usize = if (source_is_rgba) 2 else 0;
         var x: usize = 0;
         while (x < rb) : (x += bpp) {
-            cur[x] = input_buf[src + x + 2];
+            cur[x] = input_buf[src + x + red_offset];
             cur[x + 1] = input_buf[src + x + 1];
-            cur[x + 2] = input_buf[src + x];
+            cur[x + 2] = input_buf[src + x + blue_offset];
             if (bpp == 4) cur[x + 3] = input_buf[src + x + 3];
         }
 
@@ -273,6 +304,6 @@ test "crc32 matches the PNG check value" {
 }
 
 test "declares the standard 25 MP image capacities" {
-    try std.testing.expectEqual(@as(u32, MAX_PIXELS * 4 + BMP_HEADER_CAP), input_bytes_cap());
+    try std.testing.expectEqual(@as(u32, MAX_PIXELS * 4 + if (INPUT_KTX2) 224 else BMP_HEADER_CAP), input_bytes_cap());
     try std.testing.expectEqual(@as(u32, FILTERED_CAP + FILTERED_CAP / 8 + 4096), output_bytes_cap());
 }

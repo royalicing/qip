@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const INPUT_CAP: usize = 1024 * 1024;
-const OUTPUT_CAP: usize = 64 * 1024;
+const OUTPUT_CAP: usize = INPUT_CAP;
 const INPUT_CONTENT_TYPE = "text/markdown";
 const OUTPUT_CONTENT_TYPE = "text/plain";
 
@@ -33,19 +33,14 @@ const Entity = struct {
 const Writer = struct {
     buf: []u8,
     idx: usize = 0,
-    overflow: bool = false,
     prev_space: bool = true,
 
     fn writeSpace(self: *Writer) void {
-        if (self.overflow) return;
         if (self.idx == 0 or self.prev_space) {
             self.prev_space = true;
             return;
         }
-        if (self.idx >= self.buf.len) {
-            self.overflow = true;
-            return;
-        }
+        if (self.idx >= self.buf.len) @trap();
         self.buf[self.idx] = ' ';
         self.idx += 1;
         self.prev_space = true;
@@ -56,11 +51,7 @@ const Writer = struct {
             self.writeSpace();
             return;
         }
-        if (self.overflow) return;
-        if (self.idx >= self.buf.len) {
-            self.overflow = true;
-            return;
-        }
+        if (self.idx >= self.buf.len) @trap();
         self.buf[self.idx] = b;
         self.idx += 1;
         self.prev_space = false;
@@ -71,7 +62,6 @@ const Writer = struct {
     }
 
     fn finish(self: *Writer) u32 {
-        if (self.overflow) return 0;
         if (self.idx > 0 and self.buf[self.idx - 1] == ' ') self.idx -= 1;
         return @as(u32, @intCast(self.idx));
     }
@@ -595,7 +585,8 @@ fn extractTitleToOutput(input: []const u8, out: []u8) u32 {
 }
 
 export fn render(input_size_in: u32) u32 {
-    const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     return extractTitleToOutput(input_buf[0..input_size], output_buf[0..]);
 }
 
@@ -648,4 +639,14 @@ test "keeps link label text only" {
     var out: [128]u8 = undefined;
     const n = extractTitleToOutput("# [Hello *World*](https://example.com)", out[0..]);
     try std.testing.expectEqualStrings("Hello World", out[0..n]);
+}
+
+test "maximum-size plain heading fits the output capacity" {
+    input_buf[0] = '#';
+    input_buf[1] = ' ';
+    @memset(input_buf[2..], 'x');
+
+    const n = render(INPUT_CAP);
+    try std.testing.expectEqual(@as(u32, INPUT_CAP - 2), n);
+    try std.testing.expectEqualSlices(u8, input_buf[2..], output_buf[0..n]);
 }

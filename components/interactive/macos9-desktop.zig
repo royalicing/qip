@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 320;
 const RENDER_H: usize = 220;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -60,7 +63,8 @@ const InteractionMode = union(enum) {
 
 const MenuId = enum(u8) { none, system, file, edit, view };
 
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [PIXEL_BYTES]u8 = undefined;
+var ktx_buf: [OUTPUT_BYTES]u8 = undefined;
 var icons: [5]Icon = undefined;
 var selected_icon: i32 = -1;
 var selected_mask: u8 = 0;
@@ -103,23 +107,42 @@ var needs_redraw: bool = true;
 var initialized: bool = false;
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn input_ptr() u32 {
+    return 0;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn input_bytes_cap() u32 {
+    return 0;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
-    ensureInit();
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+const LifecycleState = enum { initializing, ready, updating };
+var lifecycle_state: LifecycleState = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+
+export fn begin_update_at(now_ms: i64) void {
+    if (lifecycle_state != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    lifecycle_state = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireUpdate();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     if (x11_key == 'r' or x11_key == 'R') {
         resetDesktop();
@@ -128,8 +151,12 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
-    ensureInit();
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireUpdate();
+    return pointerEventForTest(button_mask, x_px, y_px, 0);
+}
+
+fn pointerEventForTest(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     const down = (button_mask & BTN_PRIMARY) != 0;
     const secondary = (button_mask & BTN_SECONDARY) != 0;
     if (secondary and !secondary_down) {
@@ -327,17 +354,26 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return 0;
 }
 
-export fn tick(_: i64) i64 {
-    ensureInit();
-    return 0;
+fn requireUpdate() void {
+    if (lifecycle_state != .updating) @trap();
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn finish_update() i64 {
+    requireUpdate();
+    committed_at_ms = begun_at_ms;
+    lifecycle_state = .ready;
+    return begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     ensureInit();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    _ = ktx.writeHeader(&ktx_buf, RENDER_W, RENDER_H) orelse @trap();
+    @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
+    lifecycle_state = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 fn ensureInit() void {
@@ -1261,117 +1297,117 @@ fn absI32(v: i32) i32 {
 
 test "icon outline commits on release" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 246, 36, 0);
-    _ = pointer_event(BTN_PRIMARY, 190, 90, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 246, 36, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 190, 90, 0);
     try std.testing.expect(icons[0].x == 244 and icons[0].y == 34);
     try std.testing.expect(icon_drag_x != 244 or icon_drag_y != 34);
-    _ = pointer_event(0, 190, 90, 0);
+    _ = pointerEventForTest(0, 190, 90, 0);
     try std.testing.expect(icons[0].x == icon_drag_x and icons[0].y == icon_drag_y);
 }
 
 test "window outline commits on release" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 114, 58, 0);
-    _ = pointer_event(BTN_PRIMARY, 140, 88, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 114, 58, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 140, 88, 0);
     try std.testing.expect(window_x == 88 and window_y == 52);
     try std.testing.expect(window_drag_x != 88 or window_drag_y != 52);
-    _ = pointer_event(0, 140, 88, 0);
+    _ = pointerEventForTest(0, 140, 88, 0);
     try std.testing.expect(window_x == window_drag_x and window_y == window_drag_y);
 }
 
 test "view menu Shade toggles window shade state" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 160, 8, 0);
-    _ = pointer_event(BTN_PRIMARY, 162, 26, 0);
-    _ = pointer_event(0, 162, 26, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 160, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 162, 26, 0);
+    _ = pointerEventForTest(0, 162, 26, 0);
     try std.testing.expect(window_shaded);
     try std.testing.expect(!window_minimized);
-    _ = pointer_event(BTN_PRIMARY, 160, 8, 0);
-    _ = pointer_event(BTN_PRIMARY, 162, 26, 0);
-    _ = pointer_event(0, 162, 26, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 160, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 162, 26, 0);
+    _ = pointerEventForTest(0, 162, 26, 0);
     try std.testing.expect(!window_shaded);
 }
 
 test "dedicated minimize button hides window and tab restores it" {
     resetDesktop();
     const min_btn = mac9CaptionButtonRect(.minimize);
-    _ = pointer_event(BTN_PRIMARY, min_btn.x + 2, min_btn.y + 2, 0);
-    _ = pointer_event(0, min_btn.x + 2, min_btn.y + 2, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, min_btn.x + 2, min_btn.y + 2, 0);
+    _ = pointerEventForTest(0, min_btn.x + 2, min_btn.y + 2, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(mode == .idle);
-    _ = pointer_event(BTN_PRIMARY, 30, @as(i32, @intCast(RENDER_H)) - 12, 0);
-    _ = pointer_event(0, 30, @as(i32, @intCast(RENDER_H)) - 12, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 30, @as(i32, @intCast(RENDER_H)) - 12, 0);
+    _ = pointerEventForTest(0, 30, @as(i32, @intCast(RENDER_H)) - 12, 0);
     try std.testing.expect(!window_minimized);
 }
 
 test "zoom button toggles fit size and restore" {
     resetDesktop();
     const zoom_btn = mac9CaptionButtonRect(.zoom);
-    _ = pointer_event(BTN_PRIMARY, zoom_btn.x + 2, zoom_btn.y + 2, 0);
-    _ = pointer_event(0, zoom_btn.x + 2, zoom_btn.y + 2, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, zoom_btn.x + 2, zoom_btn.y + 2, 0);
+    _ = pointerEventForTest(0, zoom_btn.x + 2, zoom_btn.y + 2, 0);
     try std.testing.expect(window_zoomed);
     try std.testing.expect(window_w > WINDOW_W and window_h > WINDOW_H);
 
     const zoom_btn_rest = mac9CaptionButtonRect(.zoom);
-    _ = pointer_event(BTN_PRIMARY, zoom_btn_rest.x + 2, zoom_btn_rest.y + 2, 0);
-    _ = pointer_event(0, zoom_btn_rest.x + 2, zoom_btn_rest.y + 2, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, zoom_btn_rest.x + 2, zoom_btn_rest.y + 2, 0);
+    _ = pointerEventForTest(0, zoom_btn_rest.x + 2, zoom_btn_rest.y + 2, 0);
     try std.testing.expect(!window_zoomed);
     try std.testing.expect(window_x == 88 and window_y == 52 and window_w == WINDOW_W and window_h == WINDOW_H);
 }
 
 test "resize outline commits on release" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 205, 109, 0);
-    _ = pointer_event(BTN_PRIMARY, 244, 146, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 205, 109, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 244, 146, 0);
     try std.testing.expect(window_w == WINDOW_W and window_h == WINDOW_H);
     try std.testing.expect(window_drag_w > WINDOW_W and window_drag_h > WINDOW_H);
-    _ = pointer_event(0, 244, 146, 0);
+    _ = pointerEventForTest(0, 244, 146, 0);
     try std.testing.expect(window_w == window_drag_w and window_h == window_drag_h);
 }
 
 test "menubar opens while holding and closes on release" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 86, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 86, 8, 0);
     try std.testing.expect(menu_open == .file);
     try std.testing.expect(menu_tracking);
-    _ = pointer_event(BTN_PRIMARY, 130, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 130, 8, 0);
     try std.testing.expect(menu_open == .edit);
-    _ = pointer_event(0, 280, 120, 0);
+    _ = pointerEventForTest(0, 280, 120, 0);
     try std.testing.expect(menu_open == .none);
     try std.testing.expect(!menu_tracking);
 }
 
 test "menubar file mini item minimizes window on release" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 86, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 86, 8, 0);
     try std.testing.expect(menu_open == .file);
-    _ = pointer_event(BTN_PRIMARY, 82, 40, 0);
-    _ = pointer_event(0, 82, 40, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 82, 40, 0);
+    _ = pointerEventForTest(0, 82, 40, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(menu_open == .none);
 }
 
 test "desktop context menu opens on right click" {
     resetDesktop();
-    _ = pointer_event(BTN_SECONDARY, 220, 170, 0);
-    _ = pointer_event(0, 220, 170, 0);
+    _ = pointerEventForTest(BTN_SECONDARY, 220, 170, 0);
+    _ = pointerEventForTest(0, 220, 170, 0);
     try std.testing.expect(desktop_menu_open);
 }
 
 test "marquee selection selects multiple icons" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 20, 30, 0);
-    _ = pointer_event(BTN_PRIMARY, 180, 180, 0);
-    _ = pointer_event(0, 180, 180, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 20, 30, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 180, 180, 0);
+    _ = pointerEventForTest(0, 180, 180, 0);
     try std.testing.expect((selected_mask & 0b0000_1110) != 0);
 }
 
 test "macos9 vertical scrollbar drag commits scroll on release" {
     resetDesktop();
     const thumb = mac9VThumbRect();
-    _ = pointer_event(BTN_PRIMARY, thumb.x + 2, thumb.y + 2, 0);
-    _ = pointer_event(BTN_PRIMARY, thumb.x + 2, thumb.y + 20, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, thumb.x + 2, thumb.y + 2, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, thumb.x + 2, thumb.y + 20, 0);
     try std.testing.expect(scroll_y == 0);
-    _ = pointer_event(0, thumb.x + 2, thumb.y + 20, 0);
+    _ = pointerEventForTest(0, thumb.x + 2, thumb.y + 20, 0);
     try std.testing.expect(scroll_y > 0);
 }

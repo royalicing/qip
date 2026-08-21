@@ -35,39 +35,64 @@ async function bench(path) {
   const instance = instantiated.instance || instantiated;
   const exports = instance.exports;
   for (const name of [
+    "memory",
     "output_ptr",
-    "output_rgba8_srgb_bytes",
-    "render_width_px",
-    "render_height_px",
-    "tick",
+    "output_bytes_cap",
+    "output_content_type_ptr",
+    "output_content_type_size",
+    "begin_update_at",
+    "finish_update",
     "render",
   ]) {
     if (!(name in exports)) throw new Error(`${path}: missing ${name}`);
   }
+  const outputCapacity = Number(exports.output_bytes_cap());
+  const contentTypePtr = Number(exports.output_content_type_ptr());
+  const contentTypeSize = Number(exports.output_content_type_size());
+  const contentType = new TextDecoder("utf-8", { fatal: true }).decode(
+    new Uint8Array(exports.memory.buffer, contentTypePtr, contentTypeSize),
+  );
+  if (contentType !== "image/ktx2") throw new Error(`${path}: qip-play output must be image/ktx2`);
 
-  exports.tick(0n);
-  for (let i = 0; i < warmup; i++) exports.render(0);
+  function commitInitialContent() {
+    if (typeof exports.commit !== "function") return;
+    const result = exports.commit();
+    if (result < 0n) throw new Error(`${path}: commit rejected after render`);
+  }
+
+  let outputLength = Number(exports.render(0));
+  commitInitialContent();
+  for (let i = 0; i < warmup; i++) {
+    outputLength = Number(exports.render(0));
+  }
 
   const samples = [];
   for (let i = 0; i < runs; i++) {
     const start = performance.now();
-    exports.render(0);
+    outputLength = Number(exports.render(0));
     samples.push(performance.now() - start);
   }
   samples.sort((a, b) => a - b);
+  if (outputLength < 0 || outputLength > outputCapacity) {
+    throw new Error(`${path}: render returned output outside output_bytes_cap`);
+  }
 
   const avg = mean(samples);
   const ptr = Number(exports.output_ptr());
-  const len = Number(exports.output_rgba8_srgb_bytes());
+  const len = outputLength;
   const output = new Uint8Array(exports.memory.buffer, ptr, len);
   const hash = await webcrypto.subtle.digest("SHA-256", output);
   const digest = [...new Uint8Array(hash)].map((n) => n.toString(16).padStart(2, "0")).join("");
 
+  const outputView = new DataView(exports.memory.buffer, ptr, len);
+  const width = outputView.getUint32(20, true);
+  const height = outputView.getUint32(24, true);
+
   return {
     path,
     bytes: bytes.byteLength,
-    width: Number(exports.render_width_px()),
-    height: Number(exports.render_height_px()),
+    width,
+    height,
     mean: avg,
     stddev: stddev(samples, avg),
     min: samples[0],

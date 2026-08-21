@@ -1,8 +1,14 @@
+const std = @import("std");
+
 const INPUT_CAP: usize = 64 * 1024;
 const OUTPUT_CAP: usize = 16;
 
+const no_render: i64 = 1;
+const invalid_input: i64 = -0x4000000000000000;
+
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
+var pending_commit_result: i64 = no_render;
 
 export fn input_ptr() u32 {
     return @intCast(@intFromPtr(&input_buf));
@@ -94,6 +100,15 @@ fn isCustom(input: []const u8) bool {
     return i == input.len and has_hyphen;
 }
 
+fn validUtf8(input: []const u8) bool {
+    var i: usize = 0;
+    var steps: usize = 0;
+    while (i < input.len and steps < INPUT_CAP) : (steps += 1) {
+        _ = decodeCodepoint(input, &i) orelse return false;
+    }
+    return i == input.len;
+}
+
 fn emit(value: []const u8) u32 {
     @memcpy(output_buf[0..value.len], value);
     return @intCast(value.len);
@@ -101,9 +116,53 @@ fn emit(value: []const u8) u32 {
 
 export fn render(input_size: u32) u32 {
     const size: usize = @intCast(input_size);
-    if (size == 0 or size > INPUT_CAP) @trap();
+    if (pending_commit_result != no_render) @trap();
+    if (size > INPUT_CAP) @trap();
     const input = input_buf[0..size];
-    if (isBuiltin(input)) return emit("builtin");
-    if (isCustom(input)) return emit("custom");
-    @trap();
+
+    // The input_utf8_cap export makes valid UTF-8 a caller precondition.
+    if (!validUtf8(input)) @trap();
+
+    pending_commit_result = invalid_input;
+    if (size == 0) return 0;
+    if (isBuiltin(input)) {
+        pending_commit_result = 0;
+        return emit("builtin");
+    }
+    if (isCustom(input)) {
+        pending_commit_result = 0;
+        return emit("custom");
+    }
+
+    // TODO: Report the first byte which rules out a built-in or custom name.
+    return 0;
+}
+
+/// Close the render transaction. This function does not trap.
+export fn commit() i64 {
+    const result = if (pending_commit_result == no_render)
+        invalid_input
+    else
+        pending_commit_result;
+    pending_commit_result = no_render;
+    return result;
+}
+
+test "classifies accepted names and recovers after rejection" {
+    const builtin = "section";
+    @memcpy(input_buf[0..builtin.len], builtin);
+    try std.testing.expectEqual(@as(u32, 7), render(builtin.len));
+    try std.testing.expectEqualStrings("builtin", output_buf[0..7]);
+    try std.testing.expectEqual(@as(i64, 0), commit());
+
+    const invalid = "frobnicate";
+    @memcpy(input_buf[0..invalid.len], invalid);
+    try std.testing.expectEqual(@as(u32, 0), render(invalid.len));
+    try std.testing.expectEqual(invalid_input, commit());
+
+    const custom = "qip-widget";
+    @memcpy(input_buf[0..custom.len], custom);
+    try std.testing.expectEqual(@as(u32, 6), render(custom.len));
+    try std.testing.expectEqualStrings("custom", output_buf[0..6]);
+    try std.testing.expectEqual(@as(i64, 0), commit());
 }

@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 320;
 const RENDER_H: usize = 220;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -56,7 +59,8 @@ const Rect = struct {
     h: i32,
 };
 
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [PIXEL_BYTES]u8 = undefined;
+var ktx_buf: [OUTPUT_BYTES]u8 = undefined;
 var photos: [MAX_PHOTOS][PHOTO_PIXELS]u8 = undefined;
 var initialized: bool = false;
 var needs_redraw: bool = true;
@@ -100,22 +104,45 @@ const stamp_labels = [_][]const u8{
 };
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn input_ptr() u32 {
+    return 0;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn input_bytes_cap() u32 {
+    return 0;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+const Phase = enum { initializing, ready, updating };
+var lifecycle_state: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced = false;
+
+export fn begin_update_at(now_ms: i64) void {
+    if (lifecycle_state != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    lifecycle_state = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
     ensureInit();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
@@ -131,7 +158,9 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
     ensureInit();
     pointer_x = x_px;
     pointer_y = y_px;
@@ -163,19 +192,35 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
+fn requireUpdate() void {
+    if (lifecycle_state != .updating) @trap();
+}
+
+fn advanceUpdateTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     ensureInit();
     pulse = @mod(pulse + 1, 4096);
     needs_redraw = true;
-    return now_ms + 16;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn finish_update() i64 {
+    requireUpdate();
+    advanceUpdateTime();
+    committed_at_ms = begun_at_ms;
+    lifecycle_state = .ready;
+    return if (begun_at_ms <= std.math.maxInt(i64) - 16) begun_at_ms + 16 else begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     ensureInit();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    _ = ktx.writeHeader(&ktx_buf, RENDER_W, RENDER_H) orelse @trap();
+    @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
+    lifecycle_state = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 fn ensureInit() void {

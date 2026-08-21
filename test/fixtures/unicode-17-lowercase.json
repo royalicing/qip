@@ -78,36 +78,6 @@
     "oracle_matches": true
   },
   {
-    "name": "invalid-lone-ff",
-    "input_b64": "Qf9C",
-    "want_b64": "Yf9i",
-    "oracle_matches": true
-  },
-  {
-    "name": "invalid-truncated-c3",
-    "input_b64": "Y2Fmww==",
-    "want_b64": "Y2Fmww==",
-    "oracle_matches": true
-  },
-  {
-    "name": "invalid-overlong",
-    "input_b64": "wK9BQkM=",
-    "want_b64": "wK9hYmM=",
-    "oracle_matches": true
-  },
-  {
-    "name": "invalid-lone-continuation",
-    "input_b64": "gIHOow==",
-    "want_b64": "gIHPgw==",
-    "oracle_matches": true
-  },
-  {
-    "name": "surrogate-encoded",
-    "input_b64": "Qe2ggEI=",
-    "want_b64": "Ye2ggGI=",
-    "oracle_matches": true
-  },
-  {
     "name": "random-00",
     "input_b64": "6p+QSMyBzqPqnoDMgcyB4aSow4PhspZLzIHhs43Oo86jzIHRpHPqmZDhgaLMgeG+mCvOo86jaA==",
     "want_b64": "6p+RaMyBz4PqnoHMgcyB4aSow6Phg5ZrzIHhs43Pg8+DzIHRpXPqmZHhgaLMgeG+kCvPg8+DaA==",

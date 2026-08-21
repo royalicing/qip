@@ -12,3 +12,6 @@ Controls:
 <qip-play>
   <source src="/components/interactive/xbox-dashboard.wasm" type="application/wasm" />
 </qip-play>
+
+The dashboard pulse follows update time. `finish_update` schedules the next
+update, while only `render` replaces the published KTX2 output.

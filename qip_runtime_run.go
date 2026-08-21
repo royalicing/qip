@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"image"
 	"mime"
 	"slices"
 	"strings"
@@ -159,6 +158,7 @@ type runModuleContract struct {
 	hasDeclaredInputContentType  bool
 	declaredOutputContentType    string
 	hasDeclaredOutputContentType bool
+	hasCommit                    bool
 }
 
 func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleContract, error) {
@@ -175,6 +175,15 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 	results := renderFunc.Definition().ResultTypes()
 	if len(params) != 1 || params[0] != api.ValueTypeI32 || len(results) != 1 || results[0] != api.ValueTypeI32 {
 		return contract, errors.New("Wasm module must export render(i32) -> i32")
+	}
+
+	if commitFunc := mod.ExportedFunction("commit"); commitFunc != nil {
+		params := commitFunc.Definition().ParamTypes()
+		results := commitFunc.Definition().ResultTypes()
+		if len(params) != 0 || len(results) != 1 || results[0] != api.ValueTypeI64 {
+			return contract, errors.New("Wasm module commit export must have signature commit() -> i64")
+		}
+		contract.hasCommit = true
 	}
 
 	inputPtr, ok, err := getExportedValue(ctx, mod, "input_ptr")
@@ -269,135 +278,24 @@ type moduleExecutionResult struct {
 	outputCapBytes    uint64
 }
 
+type contentRenderTrapError struct {
+	cause error
+}
+
+func (e *contentRenderTrapError) Error() string {
+	return fmt.Sprintf("render trapped: %v", e.cause)
+}
+
+func (e *contentRenderTrapError) Unwrap() error {
+	return e.cause
+}
+
 func runModuleWithInput(ctx context.Context, runtime wazero.Runtime, compiled wazero.CompiledModule, inputBytes []byte, opts options, moduleName string) (output contentData, instantiation time.Duration, returnErr error) {
 	exec, err := executeModuleWithInput(ctx, runtime, compiled, inputBytes, opts, moduleName, nil, "", opts.trustFirstStageContent)
 	if err != nil {
 		return contentData{}, 0, err
 	}
 	return exec.output, exec.instantiation, nil
-}
-
-func tryRunInteractiveModuleFirstFrame(baseCtx context.Context, spec ComponentInvocation, opts options, timeoutMS int) (bool, []byte, error) {
-	body, err := readModulePath(spec.Source, opts)
-	if err != nil {
-		return false, nil, err
-	}
-
-	execCtx := baseCtx
-	cancel := func() {}
-	if timeoutMS > 0 {
-		execCtx, cancel = wasmruntime.WithExecutionTimeout(baseCtx, time.Duration(timeoutMS)*time.Millisecond)
-	}
-	defer cancel()
-
-	runtime := wasmruntime.New(execCtx)
-	defer runtime.Close(baseCtx)
-
-	compiled, err := runtime.CompileModule(execCtx, body)
-	if err != nil {
-		return false, nil, errors.New("Wasm module could not be compiled")
-	}
-	defer compiled.Close(baseCtx)
-
-	mod, err := runtime.InstantiateModule(execCtx, compiled, wazero.NewModuleConfig().WithName("run-interactive-0"))
-	if err != nil {
-		return false, nil, errors.New("Wasm module could not be instantiated")
-	}
-	defer mod.Close(baseCtx)
-
-	requiredFuncs := []string{
-		"key_event",
-		"pointer_event",
-		"tick",
-		"render",
-		"render_width_px",
-		"render_height_px",
-	}
-	for _, name := range requiredFuncs {
-		if mod.ExportedFunction(name) == nil {
-			return false, nil, nil
-		}
-	}
-	if mod.Memory() == nil {
-		return false, nil, nil
-	}
-
-	outputBytesValue, ok, err := getExportedValue(execCtx, mod, "output_rgba8_srgb_bytes")
-	if err != nil {
-		return false, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
-	}
-	if !ok {
-		return false, nil, nil
-	}
-
-	if err := applyModuleUniforms(execCtx, mod, spec.UniformValues); err != nil {
-		return false, nil, err
-	}
-
-	renderWidthVal, _, err := getExportedValue(execCtx, mod, "render_width_px")
-	if err != nil {
-		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
-	}
-	renderHeightVal, _, err := getExportedValue(execCtx, mod, "render_height_px")
-	if err != nil {
-		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
-	}
-	renderWidth := int(int32(renderWidthVal))
-	renderHeight := int(int32(renderHeightVal))
-	if renderWidth <= 0 || renderHeight <= 0 {
-		return true, nil, fmt.Errorf("%s: interactive module reported invalid render size %dx%d", spec.Source, renderWidth, renderHeight)
-	}
-
-	tickFunc := mod.ExportedFunction("tick")
-	// Interactive snapshot contract: first tick is always tick(0).
-	// Runtime hosts then pass monotonic elapsed milliseconds and schedule by returned next_wake_at_ms.
-	if _, err := tickFunc.Call(execCtx, 0); err != nil {
-		return true, nil, fmt.Errorf("%s: tick(0) failed: %w", spec.Source, wasmruntime.HumanizeExecutionError(execCtx, err))
-	}
-	renderFunc := mod.ExportedFunction("render")
-	renderResult, err := renderFunc.Call(execCtx, 0)
-	if err != nil {
-		return true, nil, fmt.Errorf("%s: render(0) failed: %w", spec.Source, wasmruntime.HumanizeExecutionError(execCtx, err))
-	}
-	if len(renderResult) != 1 {
-		return true, nil, fmt.Errorf("%s: render(0) returned %d values, want 1", spec.Source, len(renderResult))
-	}
-
-	outputLen := int(int32(renderResult[0]))
-	expectedLen := renderWidth * renderHeight * 4
-	if outputLen != expectedLen {
-		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.Source, outputLen, expectedLen)
-	}
-
-	outputBytes := int(int32(outputBytesValue))
-	if outputBytes != expectedLen {
-		return true, nil, fmt.Errorf("%s: output_rgba8_srgb_bytes returned %d bytes, expected %d (render_width_px*render_height_px*4)", spec.Source, outputBytes, expectedLen)
-	}
-	if outputLen != outputBytes {
-		return true, nil, fmt.Errorf("%s: render(0) returned %d bytes, expected output_rgba8_srgb_bytes=%d", spec.Source, outputLen, outputBytes)
-	}
-
-	outputPtrValue, ok, err := getExportedValue(execCtx, mod, "output_ptr")
-	if err != nil {
-		return true, nil, wasmruntime.HumanizeExecutionError(execCtx, err)
-	}
-	if !ok {
-		return true, nil, fmt.Errorf("%s: interactive module missing output_ptr export", spec.Source)
-	}
-	outputPtr := uint32(outputPtrValue)
-	outputRaw, ok := mod.Memory().Read(outputPtr, uint32(outputLen))
-	if !ok {
-		return true, nil, fmt.Errorf("%s: could not read output frame", spec.Source)
-	}
-	rgbaBytes := slices.Clone(outputRaw)
-
-	frame := image.NewRGBA(image.Rect(0, 0, renderWidth, renderHeight))
-	copy(frame.Pix, rgbaBytes)
-	bmp, err := encodeBMP(frame)
-	if err != nil {
-		return true, nil, fmt.Errorf("%s: could not encode first interactive frame as BMP: %w", spec.Source, err)
-	}
-	return true, bmp, nil
 }
 
 func executeModuleWithInput(
@@ -452,7 +350,7 @@ func executeModuleWithInput(
 
 	var inputSize = uint64(len(inputBytes))
 	if inputSize > inputCap {
-		returnErr = fmt.Errorf("Input is too large (%d bytes > %d bytes input capacity)", inputSize, inputCap)
+		returnErr = fmt.Errorf("input is too large (%d bytes > %d bytes input capacity)", inputSize, inputCap)
 		return
 	}
 
@@ -466,8 +364,24 @@ func executeModuleWithInput(
 	runResult, returnErr := runFunc.Call(ctx, inputSize)
 	exec.run = time.Since(runStart)
 	if returnErr != nil {
-		returnErr = wasmruntime.HumanizeExecutionError(ctx, returnErr)
+		returnErr = &contentRenderTrapError{cause: wasmruntime.HumanizeExecutionError(ctx, returnErr)}
 		return
+	}
+	if contract.hasCommit {
+		commitResult, err := mod.ExportedFunction("commit").Call(ctx)
+		if err != nil {
+			returnErr = fmt.Errorf("commit trapped; the Content contract requires commit() not to trap: %w", wasmruntime.HumanizeExecutionError(ctx, err))
+			return
+		}
+		if result := int64(commitResult[0]); result < 0 {
+			bits := uint64(result)
+			if bits&(uint64(1)<<62) != 0 {
+				returnErr = fmt.Errorf("rejected invalid input at byte %d (commit returned %d)", uint32(bits), result)
+			} else {
+				returnErr = fmt.Errorf("rejected input (commit returned %d)", result)
+			}
+			return
+		}
 	}
 
 	outputCount := uint32(runResult[0])

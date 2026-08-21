@@ -1,6 +1,9 @@
 const std = @import("std");
 
 const INPUT_CAP: u32 = 4 * 1024 * 1024;
+// Recoloring cannot expand the input: every replaced 12-byte `currentColor`
+// token becomes a seven- or nine-byte CSS hex color, and all other bytes are
+// copied once.
 const OUTPUT_CAP: u32 = INPUT_CAP;
 const CONTENT_TYPE = "image/svg+xml";
 const DEFAULT_COLOR_RGBA: u32 = 0x000000FF; // 0xRRGGBBAA
@@ -50,6 +53,11 @@ export fn uniform_set_color_rgba(value: u32) u32 {
     color_rgba = value;
     color_css_len = formatColorHex(color_rgba, &color_css_buf);
     return color_rgba;
+}
+
+fn resetColorUniform() void {
+    color_rgba = DEFAULT_COLOR_RGBA;
+    color_css_len = formatColorHex(color_rgba, &color_css_buf);
 }
 
 fn asciiLower(ch: u8) u8 {
@@ -220,10 +228,24 @@ fn formatColorHex(rgba: u32, out: *[9]u8) usize {
 }
 
 export fn render(input_size_in: u32) u32 {
-    const input_size = @min(@as(usize, @intCast(input_size_in)), @as(usize, INPUT_CAP));
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     const replacement = color_css_buf[0..color_css_len];
     const out_len = recolorSVGCurrentColor(input_buf[0..input_size], output_buf[0..], replacement) catch @trap();
+    resetColorUniform();
     return @as(u32, @intCast(out_len));
+}
+
+test "render resets the color uniform to opaque black" {
+    const input = "<svg fill=\"currentColor\"/>";
+    @memcpy(input_buf[0..input.len], input);
+
+    _ = uniform_set_color_rgba(0xff0000ff);
+    const red_len: usize = @intCast(render(input.len));
+    try std.testing.expectEqualStrings("<svg fill=\"#ff0000\"/>", output_buf[0..red_len]);
+
+    const default_len: usize = @intCast(render(input.len));
+    try std.testing.expectEqualStrings("<svg fill=\"#000000\"/>", output_buf[0..default_len]);
 }
 
 test "replaces fill and stroke currentColor attributes" {

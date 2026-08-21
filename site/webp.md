@@ -362,22 +362,22 @@ to the page.
 
 ## Components
 
-- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossy.wasm" download>bmp-bgra32-to-webp-lossy.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossy.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm" download>bmp-bgra32-to-webp-lossy-opaque.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm" download>bmp-bgra32-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"></qip-content-size>
 
 ## CLI equivalent
 
 ```bash
-qip run components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm \
+qip run components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm \
   -u quality=95 -u method=4 -u sharp_yuv=1 -u low_memory=1 \
   -u background_color=0xffffff \
   < input.bmp > output.webp
 
-qip run components/image/bmp/bmp-bgra32-to-webp-lossy.wasm \
+qip run components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm \
   -u quality=95 -u method=4 -u sharp_yuv=1 -u low_memory=1 \
   < input.bmp > output.webp
 
-qip run components/image/bmp/bmp-bgra32-to-webp-lossless.wasm -u level=6 \
+qip run components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm -u level=6 \
   < input.bmp > output.webp
 ```

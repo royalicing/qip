@@ -3,18 +3,21 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 function readI32Export(exports, name) {
   const value = exports[name];
   return typeof value === "function" ? value() : value.value;
 }
 
-function render(exports, input) {
+function render(exports, input, uniforms = {}) {
   const bytes = encoder.encode(input);
   const inputPtr = readI32Export(exports, "input_ptr");
   assert.ok(bytes.length <= readI32Export(exports, "input_utf8_cap"));
   new Uint8Array(exports.memory.buffer, inputPtr, bytes.length).set(bytes);
+  for (const [name, value] of Object.entries(uniforms)) {
+    exports[`uniform_set_${name}`](value);
+  }
   const outputLen = exports.render(bytes.length);
   const outputPtr = readI32Export(exports, "output_ptr");
   return decoder.decode(new Uint8Array(exports.memory.buffer, outputPtr, outputLen));
@@ -29,48 +32,54 @@ async function load() {
 
 test("resolves rem and viewport units using uniforms", async () => {
   const exports = await load();
-  assert.equal(exports.uniform_set_root_font_size(18), 18);
-  assert.equal(exports.uniform_set_root_line_height(27), 27);
-  assert.equal(exports.uniform_set_viewport_width(1440), 1440);
-  assert.equal(exports.uniform_set_viewport_height(900), 900);
+  const uniforms = {
+    root_font_size: 18,
+    root_line_height: 27,
+    viewport_width: 1440,
+    viewport_height: 900,
+  };
 
-  assert.equal(render(exports, "1rem"), "18px");
-  assert.equal(render(exports, "2rlh"), "54px");
-  assert.equal(render(exports, "10vw"), "144px");
-  assert.equal(render(exports, "10vh"), "90px");
-  assert.equal(render(exports, "calc(50% * 1rem)"), "9px");
-  assert.equal(render(exports, "calc(100vh - 2rlh)"), "846px");
-  assert.equal(render(exports, "calc((10vw - 4px) / 2)"), "70px");
+  assert.equal(render(exports, "1rem", uniforms), "18px");
+  assert.equal(render(exports, "2rlh", uniforms), "54px");
+  assert.equal(render(exports, "10vw", uniforms), "144px");
+  assert.equal(render(exports, "10vh", uniforms), "90px");
+  assert.equal(render(exports, "calc(50% * 1rem)", uniforms), "9px");
+  assert.equal(render(exports, "calc(100vh - 2rlh)", uniforms), "846px");
+  assert.equal(render(exports, "calc((10vw - 4px) / 2)", uniforms), "70px");
 });
 
-test("returns numbers and traps on invalid expressions without poisoning the instance", async () => {
+test("returns numbers and discards instances after invalid expressions trap", async () => {
   const exports = await load();
   assert.equal(render(exports, "calc(1 + 5 / 2)"), "3.5");
 
   for (const invalid of ["", "1em", "1rem + 2", "1rem * 2px", "1 / 0", "calc(1rem"]) {
-    assert.throws(() => render(exports, invalid), WebAssembly.RuntimeError);
+    const trapped = await load();
+    assert.throws(() => render(trapped, invalid), WebAssembly.RuntimeError);
   }
-  assert.equal(render(exports, "2px + 3px"), "5px");
+  const replacement = await load();
+  assert.equal(render(replacement, "2px + 3px"), "5px");
 });
 
 test("resolves mobile viewport and environment values", async () => {
   const exports = await load();
-  exports.uniform_set_root_font_size(16);
-  exports.uniform_set_viewport_width(430);
-  exports.uniform_set_viewport_height(932);
-  exports.uniform_set_small_viewport_width(430);
-  exports.uniform_set_small_viewport_height(780);
-  exports.uniform_set_dynamic_viewport_width(430);
-  exports.uniform_set_dynamic_viewport_height(844);
-  exports.uniform_set_safe_area_inset_bottom(34);
-  exports.uniform_set_keyboard_inset_height(290);
+  const uniforms = {
+    root_font_size: 16,
+    viewport_width: 430,
+    viewport_height: 932,
+    small_viewport_width: 430,
+    small_viewport_height: 780,
+    dynamic_viewport_width: 430,
+    dynamic_viewport_height: 844,
+    safe_area_inset_bottom: 34,
+    keyboard_inset_height: 290,
+  };
 
-  assert.equal(render(exports, "100lvh"), "932px");
-  assert.equal(render(exports, "100svh"), "780px");
-  assert.equal(render(exports, "100dvh"), "844px");
-  assert.equal(render(exports, "max(1rem, env(safe-area-inset-bottom))"), "34px");
-  assert.equal(render(exports, "calc(100dvh - env(keyboard-inset-height))"), "554px");
-  assert.equal(render(exports, "env(not-supported, 12px)"), "12px");
+  assert.equal(render(exports, "100lvh", uniforms), "932px");
+  assert.equal(render(exports, "100svh", uniforms), "780px");
+  assert.equal(render(exports, "100dvh", uniforms), "844px");
+  assert.equal(render(exports, "max(1rem, env(safe-area-inset-bottom))", uniforms), "34px");
+  assert.equal(render(exports, "calc(100dvh - env(keyboard-inset-height))", uniforms), "554px");
+  assert.equal(render(exports, "env(not-supported, 12px)", uniforms), "12px");
 });
 
 test("exports every safe-area and keyboard uniform used by the tool", async () => {
@@ -86,6 +95,7 @@ test("exports every safe-area and keyboard uniform used by the tool", async () =
     assert.equal(exports[`uniform_set_${name}`](index + 1), index + 1, name);
   }
   assert.equal(render(exports, "env(safe-area-max-inset-left)"), "8px");
+  exports.uniform_set_keyboard_inset_width(13);
   assert.equal(render(exports, "env(keyboard-inset-width)"), "13px");
 });
 

@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 320;
 const RENDER_H: usize = 220;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -51,6 +54,7 @@ const SystemItem = enum(u8) {
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var initialized: bool = false;
 var needs_redraw: bool = true;
 
@@ -71,6 +75,14 @@ var pointer_x: i32 = -1000;
 var pointer_y: i32 = -1000;
 var primary_down: bool = false;
 var secondary_down: bool = false;
+var last_frame_index: i64 = 0;
+
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
 
 const browser_items = [_][]const u8{
     "MEMORY CARD (PS2) SLOT 1",
@@ -105,23 +117,42 @@ const Rect = struct {
     h: i32,
 };
 
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    transaction_phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     ensureInit();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
@@ -154,7 +185,9 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     ensureInit();
     pointer_x = x_px;
     pointer_y = y_px;
@@ -219,20 +252,45 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    ensureInit();
-    pulse = @mod(pulse + 1, 4096);
-    if (browser_flash > 0) browser_flash -= 1;
-    needs_redraw = true;
-    return now_ms + 16;
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     ensureInit();
+    const frame_index = @divTrunc(begun_at_ms, 16);
+    pulse = @intCast(@mod(frame_index, 4096));
+    if (browser_flash > 0 and frame_index > last_frame_index) {
+        const elapsed = @min(frame_index - last_frame_index, @as(i64, browser_flash));
+        browser_flash -= @intCast(elapsed);
+    }
+    last_frame_index = frame_index;
+    needs_redraw = true;
+    next_wake_at_ms = if (begun_at_ms <= std.math.maxInt(i64) - 16) begun_at_ms + 16 else begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
+    ensureInit();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    advanceTransactionTime();
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    transaction_phase = .ready;
+    return wake;
 }
 
 fn ensureInit() void {
@@ -258,6 +316,7 @@ fn resetState() void {
     primary_down = false;
     secondary_down = false;
     needs_redraw = true;
+    last_frame_index = 0;
 }
 
 fn mainChoiceLabel(choice: MainChoice) []const u8 {
@@ -715,10 +774,10 @@ fn blendPixelI32(x: i32, y: i32, src: [4]u8) void {
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
     const alpha = @as(u16, src[3]);
     const inv = 255 - alpha;
-    output_buf[idx + 0] = blendChannel(src[0], output_buf[idx + 0], alpha, inv);
-    output_buf[idx + 1] = blendChannel(src[1], output_buf[idx + 1], alpha, inv);
-    output_buf[idx + 2] = blendChannel(src[2], output_buf[idx + 2], alpha, inv);
-    output_buf[idx + 3] = 0xFF;
+    pixel_buf[idx + 0] = blendChannel(src[0], pixel_buf[idx + 0], alpha, inv);
+    pixel_buf[idx + 1] = blendChannel(src[1], pixel_buf[idx + 1], alpha, inv);
+    pixel_buf[idx + 2] = blendChannel(src[2], pixel_buf[idx + 2], alpha, inv);
+    pixel_buf[idx + 3] = 0xFF;
 }
 
 fn blendChannel(src: u8, dst: u8, alpha: u16, inv: u16) u8 {
@@ -728,10 +787,10 @@ fn blendChannel(src: u8, dst: u8, alpha: u16, inv: u16) u8 {
 fn setPixelI32(x: i32, y: i32, c: [4]u8) void {
     if (x < 0 or y < 0 or x >= @as(i32, @intCast(RENDER_W)) or y >= @as(i32, @intCast(RENDER_H))) return;
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-    output_buf[idx + 0] = c[0];
-    output_buf[idx + 1] = c[1];
-    output_buf[idx + 2] = c[2];
-    output_buf[idx + 3] = c[3];
+    pixel_buf[idx + 0] = c[0];
+    pixel_buf[idx + 1] = c[1];
+    pixel_buf[idx + 2] = c[2];
+    pixel_buf[idx + 3] = c[3];
 }
 
 fn clampU8(base: u8, delta: i32) u8 {

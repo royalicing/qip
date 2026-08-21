@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 320;
 const RENDER_H: usize = 220;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 const MENU_BAR_H: i32 = 22;
 const WINDOW_TITLEBAR_H: i32 = 16;
 
@@ -91,7 +94,8 @@ const InteractionMode = union(enum) {
     dragging_scroll: ScrollAxis,
 };
 
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [PIXEL_BYTES]u8 = undefined;
+var ktx_buf: [OUTPUT_BYTES]u8 = undefined;
 var window_buf: [WINDOW_BYTES]u8 = undefined;
 var shadow_src_tile: [SHADOW_TILE_PIXELS]u16 = [_]u16{0} ** SHADOW_TILE_PIXELS;
 var shadow_tmp_a: [SHADOW_TILE_PIXELS]u16 = [_]u16{0} ** SHADOW_TILE_PIXELS;
@@ -140,23 +144,49 @@ var initialized: bool = false;
 const dock_icons = [_]DockKind{ .finder, .safari, .mail, .calendar, .photos, .terminal, .trash };
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn input_ptr() u32 {
+    return 0;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn input_bytes_cap() u32 {
+    return 0;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
-    ensureInit();
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+const LifecycleState = enum { initializing, ready, updating };
+var lifecycle_state: LifecycleState = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced = false;
+
+export fn begin_update_at(now_ms: i64) void {
+    if (lifecycle_state != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    lifecycle_state = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
+    return keyEventForTest(x11_key, flags, 0);
+}
+
+fn keyEventForTest(x11_key: i32, flags: i32, _: i64) i32 {
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (x11_key == XK_SHIFT_L or x11_key == XK_SHIFT_R) {
         shift_down = is_down;
@@ -170,8 +200,13 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
-    ensureInit();
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
+    return pointerEventForTest(button_mask, x_px, y_px, 0);
+}
+
+fn pointerEventForTest(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     pointer_x = x_px;
     pointer_y = y_px;
     updateDockHoverState();
@@ -340,8 +375,17 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    ensureInit();
+fn requireUpdate() void {
+    if (lifecycle_state != .updating) @trap();
+}
+
+fn advanceUpdateTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
+    advanceGenieFrameForTest();
+}
+
+fn advanceGenieFrameForTest() void {
     if (genie_mode != .none) {
         genie_frame += 1;
         if (genie_frame >= genie_total_frames) {
@@ -351,17 +395,27 @@ export fn tick(now_ms: i64) i64 {
             genie_total_frames = GENIE_FRAMES;
         }
         needs_redraw = true;
-        return now_ms + 16;
     }
-    return 0;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn finish_update() i64 {
+    requireUpdate();
+    advanceUpdateTime();
+    committed_at_ms = begun_at_ms;
+    const wake = if (genie_mode != .none) begun_at_ms +| 16 else begun_at_ms;
+    lifecycle_state = .ready;
+    return wake;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     ensureInit();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    _ = ktx.writeHeader(&ktx_buf, RENDER_W, RENDER_H) orelse @trap();
+    @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
+    lifecycle_state = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 fn ensureInit() void {
@@ -1865,12 +1919,12 @@ fn absI32(v: i32) i32 {
 
 test "dock magnifies near pointer" {
     resetDesktop();
-    _ = pointer_event(0, 68, DOCK_PANEL_Y + 10, 0);
+    _ = pointerEventForTest(0, 68, DOCK_PANEL_Y + 10, 0);
     try std.testing.expect(dock_hover_active);
     try std.testing.expect(dockSizeFor(68) > DOCK_BASE_SIZE);
     try std.testing.expect(dockSizeFor(84) > dockSizeFor(112));
     try std.testing.expect(dockSizeFor(132) == DOCK_BASE_SIZE);
-    _ = pointer_event(0, 68, 120, 0);
+    _ = pointerEventForTest(0, 68, 120, 0);
     try std.testing.expect(!dock_hover_active);
     try std.testing.expect(dockSizeFor(68) == DOCK_BASE_SIZE);
 }
@@ -1890,47 +1944,47 @@ test "dock magnification activates only after entering dock" {
     pointer_x = 68;
     pointer_y = 190;
     try std.testing.expect(dockSizeFor(68) == DOCK_BASE_SIZE);
-    _ = pointer_event(0, 68, DOCK_PANEL_Y + 8, 0);
+    _ = pointerEventForTest(0, 68, DOCK_PANEL_Y + 8, 0);
     try std.testing.expect(dock_hover_active);
     try std.testing.expect(dockSizeFor(68) > DOCK_BASE_SIZE);
 }
 
 test "window moves live while dragging titlebar" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 88, 49, 0);
-    _ = pointer_event(BTN_PRIMARY, 130, 74, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 88, 49, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 130, 74, 0);
     try std.testing.expect(window_x != 80 or window_y != 42);
     try std.testing.expect(mode == .dragging_window);
-    _ = pointer_event(0, 130, 74, 0);
+    _ = pointerEventForTest(0, 130, 74, 0);
     try std.testing.expect(mode == .idle);
 }
 
 test "window can move offscreen but stays below menu bar" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 88, 49, 0);
-    _ = pointer_event(BTN_PRIMARY, -80, 20, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 88, 49, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, -80, 20, 0);
     try std.testing.expect(window_x < 0);
     try std.testing.expect(window_y >= MENU_BAR_H);
-    _ = pointer_event(0, -80, 20, 0);
+    _ = pointerEventForTest(0, -80, 20, 0);
 }
 
 test "window titlebar cannot cross dock band while dragging" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 88, 49, 0);
-    _ = pointer_event(BTN_PRIMARY, 120, 400, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 88, 49, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 120, 400, 0);
     try std.testing.expect(window_y <= DOCK_PANEL_Y - WINDOW_TITLEBAR_H);
-    _ = pointer_event(0, 120, 400, 0);
+    _ = pointerEventForTest(0, 120, 400, 0);
 }
 
 test "zoom traffic light toggles fit size and restore" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, window_x + 35, window_y + 8, 0);
-    _ = pointer_event(0, window_x + 35, window_y + 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, window_x + 35, window_y + 8, 0);
+    _ = pointerEventForTest(0, window_x + 35, window_y + 8, 0);
     try std.testing.expect(window_zoomed);
     try std.testing.expect(window_w >= WINDOW_W and window_h >= WINDOW_H);
 
-    _ = pointer_event(BTN_PRIMARY, window_x + 35, window_y + 8, 0);
-    _ = pointer_event(0, window_x + 35, window_y + 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, window_x + 35, window_y + 8, 0);
+    _ = pointerEventForTest(0, window_x + 35, window_y + 8, 0);
     try std.testing.expect(!window_zoomed);
     try std.testing.expect(window_x == 80 and window_y == 42 and window_w == WINDOW_W and window_h == WINDOW_H);
 }
@@ -1941,13 +1995,13 @@ test "desktop icon drag uses transparent proxy and commits on release" {
     const start_x = icons[idx].x;
     const start_y = icons[idx].y;
 
-    _ = pointer_event(BTN_PRIMARY, start_x + 4, start_y + 4, 0);
-    _ = pointer_event(BTN_PRIMARY, start_x - 42, start_y + 26, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, start_x + 4, start_y + 4, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, start_x - 42, start_y + 26, 0);
     try std.testing.expect(mode == .dragging_icon);
     try std.testing.expect(icons[idx].x == start_x and icons[idx].y == start_y);
     try std.testing.expect(drag_icon_proxy_x != start_x or drag_icon_proxy_y != start_y);
 
-    _ = pointer_event(0, start_x - 42, start_y + 26, 0);
+    _ = pointerEventForTest(0, start_x - 42, start_y + 26, 0);
     try std.testing.expect(mode == .idle);
     try std.testing.expect(icons[idx].x == drag_icon_proxy_x and icons[idx].y == drag_icon_proxy_y);
     try std.testing.expect(icons[idx].x != start_x or icons[idx].y != start_y);
@@ -1955,11 +2009,11 @@ test "desktop icon drag uses transparent proxy and commits on release" {
 
 test "window resizes live from lower right handle" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 211, 113, 0);
-    _ = pointer_event(BTN_PRIMARY, 246, 140, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 211, 113, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 246, 140, 0);
     try std.testing.expect(window_w > WINDOW_W and window_h > WINDOW_H);
     try std.testing.expect(mode == .resizing_window);
-    _ = pointer_event(0, 246, 140, 0);
+    _ = pointerEventForTest(0, 246, 140, 0);
     try std.testing.expect(mode == .idle);
 }
 
@@ -1969,10 +2023,10 @@ test "window resize can extend down to dock top" {
     window_h = WINDOW_MIN_H;
     const start_x = window_x + window_w - 1;
     const start_y = window_y + window_h - 1;
-    _ = pointer_event(BTN_PRIMARY, start_x, start_y, 0);
-    _ = pointer_event(BTN_PRIMARY, start_x, 500, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, start_x, start_y, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, start_x, 500, 0);
     try std.testing.expect(window_y + window_h == DOCK_PANEL_Y);
-    _ = pointer_event(0, start_x, 500, 0);
+    _ = pointerEventForTest(0, start_x, 500, 0);
 }
 
 test "window backing buffer has rounded top corners" {
@@ -2078,9 +2132,9 @@ test "tiger barber-pole pattern is anchored while thumb moves" {
 test "tiger vertical scrollbar drag updates scroll position" {
     resetDesktop();
     const thumb = tigerVThumbLocalRect();
-    _ = pointer_event(BTN_PRIMARY, window_x + thumb.x + 2, window_y + thumb.y + 2, 0);
-    _ = pointer_event(BTN_PRIMARY, window_x + thumb.x + 2, window_y + thumb.y + 22, 0);
-    _ = pointer_event(0, window_x + thumb.x + 2, window_y + thumb.y + 22, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, window_x + thumb.x + 2, window_y + thumb.y + 2, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, window_x + thumb.x + 2, window_y + thumb.y + 22, 0);
+    _ = pointerEventForTest(0, window_x + thumb.x + 2, window_y + thumb.y + 22, 0);
     try std.testing.expect(scroll_y > 0);
 }
 
@@ -2107,13 +2161,13 @@ test "window shadow is blurred from window alpha" {
 
 test "minimize hides window and dock thumbnail restores it" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 104, 49, 0);
-    _ = pointer_event(0, 104, 49, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 104, 49, 0);
+    _ = pointerEventForTest(0, 104, 49, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(genie_mode == .minimizing);
     advanceGenieForTest();
-    _ = pointer_event(BTN_PRIMARY, 246, 190, 0);
-    _ = pointer_event(0, 246, 190, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 246, 190, 0);
+    _ = pointerEventForTest(0, 246, 190, 0);
     try std.testing.expect(genie_mode == .restoring);
     advanceGenieForTest();
     try std.testing.expect(!window_minimized);
@@ -2122,8 +2176,8 @@ test "minimize hides window and dock thumbnail restores it" {
 test "dock slots shift when window is minimized" {
     resetDesktop();
     const trash_center_open = dockSlotCenter(DOCK_N - 1);
-    _ = pointer_event(BTN_PRIMARY, 104, 49, 0);
-    _ = pointer_event(0, 104, 49, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 104, 49, 0);
+    _ = pointerEventForTest(0, 104, 49, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(dockSlotCenter(DOCK_N) > trash_center_open);
     try std.testing.expect(minimizedWindowAt(dockSlotCenter(DOCK_MINIMIZED_SLOT), 190));
@@ -2131,14 +2185,14 @@ test "dock slots shift when window is minimized" {
 
 test "shift slows genie animation" {
     resetDesktop();
-    _ = key_event(XK_SHIFT_L, FLAG_KEY_DOWN, 0);
-    _ = pointer_event(BTN_PRIMARY, 104, 49, 0);
-    _ = pointer_event(0, 104, 49, 0);
+    _ = keyEventForTest(XK_SHIFT_L, FLAG_KEY_DOWN, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 104, 49, 0);
+    _ = pointerEventForTest(0, 104, 49, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(genie_mode == .minimizing);
     try std.testing.expect(genie_total_frames == GENIE_SHIFT_FRAMES);
     var i: i32 = 0;
-    while (i < GENIE_FRAMES) : (i += 1) _ = tick(16);
+    while (i < GENIE_FRAMES) : (i += 1) _ = advanceGenieFrameForTest();
     try std.testing.expect(genie_mode == .minimizing);
     advanceGenieForTest();
     try std.testing.expect(genie_mode == .none);
@@ -2146,21 +2200,21 @@ test "shift slows genie animation" {
 
 test "menubar opens and closes on outside click" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 84, 9, 0);
-    _ = pointer_event(0, 84, 9, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 84, 9, 0);
+    _ = pointerEventForTest(0, 84, 9, 0);
     try std.testing.expect(menu_open == .file);
-    _ = pointer_event(BTN_PRIMARY, 260, 120, 0);
-    _ = pointer_event(0, 260, 120, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 260, 120, 0);
+    _ = pointerEventForTest(0, 260, 120, 0);
     try std.testing.expect(menu_open == .none);
 }
 
 test "menubar mini action starts minimize" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 36, 9, 0);
-    _ = pointer_event(0, 36, 9, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 36, 9, 0);
+    _ = pointerEventForTest(0, 36, 9, 0);
     try std.testing.expect(menu_open == .finder);
-    _ = pointer_event(BTN_PRIMARY, 32, 41, 0);
-    _ = pointer_event(0, 32, 41, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 32, 41, 0);
+    _ = pointerEventForTest(0, 32, 41, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(genie_mode == .minimizing);
     try std.testing.expect(menu_open == .none);
@@ -2169,22 +2223,22 @@ test "menubar mini action starts minimize" {
 test "desktop context menu opens on right click" {
     resetDesktop();
     try std.testing.expect(desktopSurfaceAt(260, 150));
-    _ = pointer_event(BTN_SECONDARY, 260, 150, 0);
-    _ = pointer_event(0, 260, 150, 0);
+    _ = pointerEventForTest(BTN_SECONDARY, 260, 150, 0);
+    _ = pointerEventForTest(0, 260, 150, 0);
     try std.testing.expect(desktop_menu_open);
 }
 
 test "marquee selection can select multiple icons" {
     resetDesktop();
-    _ = pointer_event(BTN_PRIMARY, 20, 24, 0);
-    _ = pointer_event(BTN_PRIMARY, 170, 152, 0);
-    _ = pointer_event(0, 170, 152, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 20, 24, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 170, 152, 0);
+    _ = pointerEventForTest(0, 170, 152, 0);
     try std.testing.expect((selected_mask & 0b0001_1100) != 0);
 }
 
 fn advanceGenieForTest() void {
     var i: i32 = 0;
-    while (i < GENIE_SHIFT_FRAMES) : (i += 1) _ = tick(16);
+    while (i < GENIE_SHIFT_FRAMES) : (i += 1) _ = advanceGenieFrameForTest();
 }
 
 fn outputIndex(x: i32, y: i32) usize {

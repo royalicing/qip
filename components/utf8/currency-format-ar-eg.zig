@@ -4,6 +4,7 @@
 const INPUT_CAP: usize = 128;
 const OUTPUT_CAP: usize = 320;
 const MAX_INTEGER_DIGITS: usize = 96;
+const DEFAULT_CURRENCY_NUMERIC: u32 = 840;
 const currency_data = @import("lib/currency-format-ar-eg-table.zig");
 
 // The source table stays readable while the emitted representation fits each
@@ -75,7 +76,7 @@ const packed_currencies: [currency_data.currencies.len]PackedCurrency = entries:
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var integer_buf: [MAX_INTEGER_DIGITS + 1]u8 = undefined;
-var currency_numeric: u32 = 840;
+var currency_numeric: u32 = DEFAULT_CURRENCY_NUMERIC;
 
 export fn input_ptr() u32 {
     return @intCast(@intFromPtr(&input_buf));
@@ -184,6 +185,7 @@ fn incrementInteger(len: *usize) void {
 
 export fn render(input_size_in: u32) u32 {
     const currency = selectedCurrency() orelse @trap();
+    currency_numeric = DEFAULT_CURRENCY_NUMERIC;
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
@@ -255,4 +257,19 @@ export fn render(input_size_in: u32) u32 {
         out += 5;
     }
     return @intCast(out);
+}
+
+test "currency uniform resets to USD after render" {
+    const std = @import("std");
+    const input = "1234.5";
+    const expected_eur = "\u{200f}١٬٢٣٤٫٥٠\u{a0}€";
+    const expected_usd = "\u{200f}١٬٢٣٤٫٥٠\u{a0}US$";
+    @memcpy(input_buf[0..input.len], input);
+
+    _ = uniform_set_currency(978);
+    const euro_len: usize = @intCast(render(input.len));
+    try std.testing.expectEqualStrings(expected_eur, output_buf[0..euro_len]);
+
+    const usd_len: usize = @intCast(render(input.len));
+    try std.testing.expectEqualStrings(expected_usd, output_buf[0..usd_len]);
 }

@@ -1,113 +1,127 @@
 (module $CSSClassValidator
-  (memory (export "memory") 3 3)
+  (memory (export "memory") 2 2)
   (global $input_ptr i32 (i32.const 0x10000))
+  (global $input_utf8_cap i32 (i32.const 0x10000))
+  (global $output_utf8_cap i32 (i32.const 0x10000))
+  (global $pending_commit_result (mut i64) (i64.const 1))
+
   (func (export "input_ptr") (result i32)
     (global.get $input_ptr))
-  (global $input_utf8_cap i32 (i32.const 0x10000))
   (func (export "input_utf8_cap") (result i32)
     (global.get $input_utf8_cap))
-  (global $output_ptr i32 (i32.const 0x20000))
+  ;; Accepted text is compacted in place. The host does not need a second copy.
   (func (export "output_ptr") (result i32)
-    (global.get $output_ptr))
-  (global $output_utf8_cap i32 (i32.const 0x10000))
+    (global.get $input_ptr))
   (func (export "output_utf8_cap") (result i32)
     (global.get $output_utf8_cap))
 
-  ;; Check if character is ASCII whitespace (space, tab, LF, FF, CR)
-  ;; Per HTML5 spec, class attributes cannot contain ASCII whitespace
+  ;; HTML ASCII whitespace: tab, LF, FF, CR, and space.
   (func $is_whitespace (param $c i32) (result i32)
     (i32.or
-      (i32.eq (local.get $c) (i32.const 32))  ;; space
+      (i32.eq (local.get $c) (i32.const 32))
       (i32.or
-        (i32.eq (local.get $c) (i32.const 9))   ;; tab
+        (i32.eq (local.get $c) (i32.const 9))
         (i32.or
-          (i32.eq (local.get $c) (i32.const 10))  ;; LF
+          (i32.eq (local.get $c) (i32.const 10))
           (i32.or
-            (i32.eq (local.get $c) (i32.const 12))  ;; FF
-            (i32.eq (local.get $c) (i32.const 13))  ;; CR
-          )
-        )
-      )
-    )
-  )
+            (i32.eq (local.get $c) (i32.const 12))
+            (i32.eq (local.get $c) (i32.const 13)))))))
 
-  ;; Returns: length of valid trimmed class name, or 0 if invalid
-  ;; Outputs the trimmed class name to output buffer
-  ;; Per HTML5: class names can contain any character except ASCII whitespace
-  ;; This allows Tailwind classes like: hover:text-red-500, w-1/2, text-[#000]
-  ;; Leading and trailing whitespace is ignored
-  (func $render (export "render") (param $input_size i32) (result i32)
+  ;; Reject invalid input and include its first known byte offset.
+  (func $reject (param $offset i32) (result i32)
+    (global.set $pending_commit_result
+      (i64.add
+        (i64.const -4611686018427387904)
+        (i64.extend_i32_u (local.get $offset))))
+    (i32.const 0))
+
+  ;; Accept one non-empty class token. Leading and trailing ASCII whitespace is
+  ;; removed, but whitespace inside the token rejects the transaction.
+  (func (export "render") (param $input_size i32) (result i32)
     (local $start i32)
     (local $end i32)
     (local $len i32)
     (local $i i32)
-    (local $current_char i32)
+    (local $c i32)
 
-    ;; Empty class name is invalid
-    (if (i32.eq (local.get $input_size) (i32.const 0))
-      (then (return (i32.const 0)))
-    )
+    ;; A second render before commit is a host call-order violation.
+    (if (i64.ne (global.get $pending_commit_result) (i64.const 1))
+      (then unreachable))
+    (if (i32.gt_u (local.get $input_size) (global.get $input_utf8_cap))
+      (then unreachable))
 
-    ;; Trim leading whitespace
-    (local.set $start (i32.const 0))
-    (block $break_leading
-      (loop $continue_leading
-        (br_if $break_leading (i32.ge_u (local.get $start) (local.get $input_size)))
-        (local.set $current_char (i32.load8_u (i32.add (global.get $input_ptr) (local.get $start))))
-        (br_if $break_leading (i32.eqz (call $is_whitespace (local.get $current_char))))
-        (local.set $start (i32.add (local.get $start) (i32.const 1)))
-        (br $continue_leading)
-      )
-    )
+    (global.set $pending_commit_result (i64.const -4611686018427387904))
 
-    ;; Trim trailing whitespace
-    (local.set $end (local.get $input_size))
-    (block $break_trailing
-      (loop $continue_trailing
-        (br_if $break_trailing (i32.le_u (local.get $end) (local.get $start)))
-        (local.set $current_char (i32.load8_u (i32.add (global.get $input_ptr) (i32.sub (local.get $end) (i32.const 1)))))
-        (br_if $break_trailing (i32.eqz (call $is_whitespace (local.get $current_char))))
-        (local.set $end (i32.sub (local.get $end) (i32.const 1)))
-        (br $continue_trailing)
-      )
-    )
+    (block $finish
+      (if (i32.eqz (local.get $input_size))
+        (then
+          (local.set $len (call $reject (i32.const 0)))
+          (br $finish)))
 
-    ;; If all whitespace or empty after trimming, invalid
-    (if (i32.ge_u (local.get $start) (local.get $end))
-      (then (return (i32.const 0)))
-    )
+      (block $done_leading
+        (loop $trim_leading
+          (br_if $done_leading (i32.ge_u (local.get $start) (local.get $input_size)))
+          (local.set $c
+            (i32.load8_u (i32.add (global.get $input_ptr) (local.get $start))))
+          (br_if $done_leading (i32.eqz (call $is_whitespace (local.get $c))))
+          (local.set $start (i32.add (local.get $start) (i32.const 1)))
+          (br $trim_leading)))
 
-    ;; Check all characters in trimmed range - none can be ASCII whitespace
-    (local.set $i (local.get $start))
-    (block $break
-      (loop $continue
-        (br_if $break (i32.ge_u (local.get $i) (local.get $end)))
+      (local.set $end (local.get $input_size))
+      (block $done_trailing
+        (loop $trim_trailing
+          (br_if $done_trailing (i32.le_u (local.get $end) (local.get $start)))
+          (local.set $c
+            (i32.load8_u
+              (i32.add (global.get $input_ptr) (i32.sub (local.get $end) (i32.const 1)))))
+          (br_if $done_trailing (i32.eqz (call $is_whitespace (local.get $c))))
+          (local.set $end (i32.sub (local.get $end) (i32.const 1)))
+          (br $trim_trailing)))
 
-        (local.set $current_char (i32.load8_u (i32.add (global.get $input_ptr) (local.get $i))))
+      (if (i32.ge_u (local.get $start) (local.get $end))
+        (then
+          (local.set $len (call $reject (local.get $input_size)))
+          (br $finish)))
 
-        ;; If character is whitespace, invalid
-        (if (call $is_whitespace (local.get $current_char))
-          (then (return (i32.const 0)))
-        )
+      (local.set $i (local.get $start))
+      (block $done_validate
+        (loop $validate
+          (br_if $done_validate (i32.ge_u (local.get $i) (local.get $end)))
+          (local.set $c
+            (i32.load8_u (i32.add (global.get $input_ptr) (local.get $i))))
+          (if (call $is_whitespace (local.get $c))
+            (then
+              (local.set $len (call $reject (local.get $i)))
+              (br $finish)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $validate)))
 
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $continue)
-      )
-    )
+      (local.set $len (i32.sub (local.get $end) (local.get $start)))
+      (local.set $i (i32.const 0))
+      (block $done_copy
+        (loop $copy
+          (br_if $done_copy (i32.ge_u (local.get $i) (local.get $len)))
+          (i32.store8
+            (i32.add (global.get $input_ptr) (local.get $i))
+            (i32.load8_u
+              (i32.add (global.get $input_ptr)
+                (i32.add (local.get $start) (local.get $i)))))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $copy)))
 
-    ;; All checks passed - copy trimmed content to output
-    (local.set $len (i32.sub (local.get $end) (local.get $start)))
-    (local.set $i (i32.const 0))
-    (block $break_copy
-      (loop $copy
-        (br_if $break_copy (i32.ge_u (local.get $i) (local.get $len)))
-        (i32.store8
-          (i32.add (global.get $output_ptr) (local.get $i))
-          (i32.load8_u (i32.add (global.get $input_ptr) (i32.add (local.get $start) (local.get $i)))))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $copy)
-      )
-    )
-    (local.get $len)
-  )
+      (global.set $pending_commit_result (i64.const 0)))
+
+    ;; Every normal exit crosses the same output-capacity proof.
+    (if (i32.gt_u (local.get $len) (global.get $output_utf8_cap))
+      (then unreachable))
+    (local.get $len))
+
+  ;; commit never traps. It closes both accepted and rejected transactions.
+  (func (export "commit") (result i64)
+    (local $result i64)
+    (local.set $result (global.get $pending_commit_result))
+    (if (i64.eq (local.get $result) (i64.const 1))
+      (then (local.set $result (i64.const -4611686018427387904))))
+    (global.set $pending_commit_result (i64.const 1))
+    (local.get $result))
 )

@@ -1,6 +1,9 @@
 # Spreadsheet
 
-A compact spreadsheet for editing cells directly inside a QIP interactive module.
+A compact spreadsheet for editing cells directly inside a QIP Eventful
+component. Updates retain cell and editing state, while separate renders present
+canonical KTX2 output. The edit caret requests its next blink as a semantic
+wake deadline.
 
 Supported:
 

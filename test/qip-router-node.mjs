@@ -86,6 +86,22 @@ test("Node router rejects globals used in place of accessor functions", async ()
   );
 });
 
+test("Node router reports Content component commit rejection", async () => {
+  const contentRoot = await mkdtemp(join(tmpdir(), "qip-node-router-commit-"));
+  const recipeRoot = join(contentRoot, "_recipes", "text", "plain");
+  await mkdir(recipeRoot, { recursive: true });
+  await writeFile(join(contentRoot, "index.txt"), "49927398717");
+  await copyFile(
+    join(root, "components", "utf8", "luhn.wasm"),
+    join(recipeRoot, "10-luhn.wasm"),
+  );
+  const router = await createQIPRouter({ contentRoot });
+  await assert.rejects(
+    router.resolve("GET", "/index.txt"),
+    /text\/plain\/10-luhn\.wasm rejected invalid input at byte 11/,
+  );
+});
+
 test("Node and Go routers produce identical page and full-site WARC bytes", async () => {
   const router = await createQIPRouter({ contentRoot: "site", recipesRoot: "recipes" });
   const nodePage = await router.resolve("GET", "/docs/router");

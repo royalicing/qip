@@ -10,14 +10,16 @@ const path_output = @import("lib/path-output.zig");
 const INPUT_CAP: usize = 16 * 1024 * 1024;
 const OUTPUT_CAP: usize = 32 * 1024 * 1024;
 const MAX_CODEPOINT_SPAN: u32 = 4_096;
+const DEFAULT_FIRST_CODEPOINT: u32 = 0x20;
+const DEFAULT_LAST_CODEPOINT: u32 = 0xff;
 const INPUT_CONTENT_TYPE = "font/ttf";
 const OUTPUT_CONTENT_TYPE = "text/csv";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var scratch: ttf.Scratch = undefined;
-var first_codepoint: u32 = 0x20;
-var last_codepoint: u32 = 0xff;
+var first_codepoint: u32 = DEFAULT_FIRST_CODEPOINT;
+var last_codepoint: u32 = DEFAULT_LAST_CODEPOINT;
 
 export fn input_ptr() u32 {
     return @intCast(@intFromPtr(&input_buf));
@@ -64,7 +66,14 @@ export fn uniform_set_last_codepoint(value: u32) u32 {
 export fn render(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > input_buf.len) @trap();
-    return @intCast(renderFont(input_buf[0..input_size], &output_buf) catch @trap());
+    const output_size = renderFont(input_buf[0..input_size], &output_buf) catch @trap();
+    resetUniforms();
+    return @intCast(output_size);
+}
+
+fn resetUniforms() void {
+    first_codepoint = DEFAULT_FIRST_CODEPOINT;
+    last_codepoint = DEFAULT_LAST_CODEPOINT;
 }
 
 fn renderFont(input: []const u8, output: []u8) ttf.Error!usize {
@@ -119,6 +128,5 @@ test "rejects an inverted codepoint range" {
     last_codepoint = 1;
     var output: [256]u8 = undefined;
     try @import("std").testing.expectError(error.InvalidTtf, renderFont("", &output));
-    first_codepoint = 0x20;
-    last_codepoint = 0xff;
+    resetUniforms();
 }

@@ -1,7 +1,18 @@
 const std = @import("std");
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
-const OUTPUT_CAP: usize = INPUT_CAP + (INPUT_CAP / 8) + 4096;
+// A fixed-Huffman literal costs at most 9 bits. A match costs at most 31 bits
+// and consumes at least 3 input bytes. Matches have the higher cost per input
+// byte, so the maximum uses as many three-byte matches as possible and charges
+// any remainder as literals.
+const MAX_LITERAL_BITS: usize = 9;
+const MAX_MATCH_BITS: usize = 31;
+const MAX_TOKEN_BITS: usize =
+    (INPUT_CAP / MIN_MATCH) * MAX_MATCH_BITS + (INPUT_CAP % MIN_MATCH) * MAX_LITERAL_BITS;
+const BLOCK_OVERHEAD_BITS: usize = 3 + 7;
+const ZLIB_WRAPPER_BYTES: usize = 2 + 4;
+const OUTPUT_CAP: usize = ZLIB_WRAPPER_BYTES +
+    (MAX_TOKEN_BITS + BLOCK_OVERHEAD_BITS + 7) / 8;
 
 const WINDOW_SIZE: usize = 32 * 1024;
 const HASH_BITS = 15;
@@ -20,9 +31,9 @@ var head: [HASH_SIZE]i32 = undefined;
 var prev: [WINDOW_SIZE]i32 = undefined;
 
 const LENGTH_BASE = [_]u16{
-    3,   4,   5,   6,   7,   8,   9,   10,
-    11,  13,  15,  17,  19,  23,  27,  31,
-    35,  43,  51,  59,  67,  83,  99,  115,
+    3,   4,   5,   6,   7,   8,  9,  10,
+    11,  13,  15,  17,  19,  23, 27, 31,
+    35,  43,  51,  59,  67,  83, 99, 115,
     131, 163, 195, 227, 258,
 };
 
@@ -34,16 +45,16 @@ const LENGTH_EXTRA = [_]u8{
 };
 
 const DIST_BASE = [_]u16{
-    1,    2,    3,    4,    5,    7,    9,    13,
-    17,   25,   33,   49,   65,   97,   129,  193,
-    257,  385,  513,  769,  1025, 1537, 2049, 3073,
+    1,    2,    3,    4,     5,     7,     9,    13,
+    17,   25,   33,   49,    65,    97,    129,  193,
+    257,  385,  513,  769,   1025,  1537,  2049, 3073,
     4097, 6145, 8193, 12289, 16385, 24577,
 };
 
 const DIST_EXTRA = [_]u8{
-    0, 0, 0, 0, 1, 1, 2, 2,
-    3, 3, 4, 4, 5, 5, 6, 6,
-    7, 7, 8, 8, 9, 9, 10, 10,
+    0,  0,  0,  0,  1,  1,  2,  2,
+    3,  3,  4,  4,  5,  5,  6,  6,
+    7,  7,  8,  8,  9,  9,  10, 10,
     11, 11, 12, 12, 13, 13,
 };
 
@@ -282,7 +293,8 @@ fn emitMatch(writer: *BitWriter, length: usize, distance: usize) bool {
 
 /// Writes zlib (RFC1950) with DEFLATE fixed-Huffman block(s) (RFC1951).
 export fn render(input_size_in: u32) u32 {
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
 
     @memset(head[0..], -1);
@@ -294,13 +306,13 @@ export fn render(input_size_in: u32) u32 {
     var writer = BitWriter.init(2);
 
     // Single final block using fixed Huffman codes: BFINAL=1, BTYPE=01.
-    if (!writer.writeBits(0b011, 3)) return 0;
+    if (!writer.writeBits(0b011, 3)) @trap();
 
     var pos: usize = 0;
     while (pos < input_size) {
         const m = findMatch(input, pos);
         if (m.len >= MIN_MATCH) {
-            if (!emitMatch(&writer, m.len, m.dist)) return 0;
+            if (!emitMatch(&writer, m.len, m.dist)) @trap();
 
             var p = pos;
             const end = pos + m.len;
@@ -310,7 +322,7 @@ export fn render(input_size_in: u32) u32 {
 
             pos = end;
         } else {
-            if (!emitLiteral(&writer, input[pos])) return 0;
+            if (!emitLiteral(&writer, input[pos])) @trap();
             insertPosition(input, pos);
             pos += 1;
         }
@@ -318,11 +330,11 @@ export fn render(input_size_in: u32) u32 {
 
     // End-of-block symbol.
     const eob = fixedLiteralCode(256);
-    if (!writer.writeBits(eob.bits, eob.len)) return 0;
+    if (!writer.writeBits(eob.bits, eob.len)) @trap();
 
-    if (!writer.flush()) return 0;
+    if (!writer.flush()) @trap();
 
-    if (writer.out_i + 4 > OUTPUT_CAP) return 0;
+    if (writer.out_i + 4 > OUTPUT_CAP) @trap();
     writeU32BE(writer.out_i, std.hash.Adler32.hash(input));
     writer.out_i += 4;
 
@@ -378,4 +390,32 @@ test "compresses repetitive data well" {
     const n = try decompressZlib(output_buf[0..written], &out);
     try std.testing.expectEqual(plain.len, n);
     try std.testing.expectEqualSlices(u8, &plain, out[0..n]);
+}
+
+test "maximum input stays within the derived output capacity" {
+    @memset(input_buf[0..], 0);
+    const written = render(@intCast(INPUT_CAP));
+    try std.testing.expect(written > 0);
+    try std.testing.expect(written <= OUTPUT_CAP);
+}
+
+test "literal and match tables obey the output bound" {
+    var max_literal_bits: usize = 0;
+    for (0..256) |symbol| {
+        max_literal_bits = @max(max_literal_bits, fixedLiteralCode(@intCast(symbol)).len);
+    }
+
+    var max_length_bits: usize = 0;
+    for (LENGTH_EXTRA, 0..) |extra, i| {
+        const code = fixedLiteralCode(@intCast(257 + i));
+        max_length_bits = @max(max_length_bits, @as(usize, code.len) + extra);
+    }
+
+    var max_distance_bits: usize = 0;
+    for (DIST_EXTRA) |extra| {
+        max_distance_bits = @max(max_distance_bits, 5 + @as(usize, extra));
+    }
+
+    try std.testing.expect(max_literal_bits <= MAX_LITERAL_BITS);
+    try std.testing.expect(max_length_bits + max_distance_bits <= MAX_MATCH_BITS);
 }

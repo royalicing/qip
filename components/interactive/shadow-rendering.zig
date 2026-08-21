@@ -1,9 +1,12 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 const ui_font = @import("assets/dejavu_sans_mono_56_ascii_subset.zig");
 
 const RENDER_W: usize = 1120;
 const RENDER_H: usize = 720;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const BTN_PRIMARY: i32 = 1 << 0;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
@@ -88,6 +91,7 @@ const slider_info = [_]SliderInfo{
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var x_offset: i32 = 0;
 var y_offset: i32 = 24;
 var blur_radius: i32 = 24;
@@ -98,23 +102,44 @@ var active_slider: i32 = -1;
 var selected_slider: Slider = .blur;
 var primary_down: bool = false;
 
+const Phase = enum { initializing, ready, updating };
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     switch (x11_key) {
         '1'...'6' => {
@@ -137,7 +162,8 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     }
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     const down = (button_mask & BTN_PRIMARY) != 0;
     var changed = false;
 
@@ -163,41 +189,26 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(_: i64) i64 {
-    return 0;
+fn eventPhaseIsValid() bool {
+    if (phase != .updating) @trap();
+    return true;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
-export fn uniform_set_x_offset(value: i64) i64 {
-    return @as(i64, setSliderValueFromI64(.x_offset, value));
-}
-
-export fn uniform_set_y_offset(value: i64) i64 {
-    return @as(i64, setSliderValueFromI64(.y_offset, value));
-}
-
-export fn uniform_set_blur(value: i32) i32 {
-    setSliderValue(.blur, value);
-    return blur_radius;
-}
-
-export fn uniform_set_spread(value: i64) i64 {
-    return @as(i64, setSliderValueFromI64(.spread, value));
-}
-
-export fn uniform_set_opacity(value: i32) i32 {
-    setSliderValue(.opacity, value);
-    return shadow_opacity;
-}
-
-export fn uniform_set_radius(value: i32) i32 {
-    setSliderValue(.radius, value);
-    return corner_radius;
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    committed_at_ms = begun_at_ms;
+    phase = .ready;
+    return begun_at_ms;
 }
 
 fn resetValues() void {
@@ -527,14 +538,6 @@ fn setSliderValue(slider: Slider, value: i32) void {
     }
 }
 
-fn setSliderValueFromI64(slider: Slider, value: i64) i32 {
-    const info = slider_info[@as(usize, @intFromEnum(slider))];
-    const v64 = clampI64(value, @as(i64, @intCast(info.min)), @as(i64, @intCast(info.max)));
-    const v = @as(i32, @intCast(v64));
-    setSliderValue(slider, v);
-    return v;
-}
-
 fn drawRoundedRect(x: i32, y: i32, w: i32, h: i32, r: i32, fill: Color, edge: Color, aa: AaProfile) void {
     const cx = @as(f64, @floatFromInt(x)) + @as(f64, @floatFromInt(w)) * 0.5;
     const cy = @as(f64, @floatFromInt(y)) + @as(f64, @floatFromInt(h)) * 0.5;
@@ -698,10 +701,10 @@ fn setPixelI32(x: i32, y: i32, c: Color) void {
     const ux = @as(usize, @intCast(x));
     const uy = @as(usize, @intCast(y));
     const idx = (uy * RENDER_W + ux) * 4;
-    output_buf[idx + 0] = c[0];
-    output_buf[idx + 1] = c[1];
-    output_buf[idx + 2] = c[2];
-    output_buf[idx + 3] = c[3];
+    pixel_buf[idx + 0] = c[0];
+    pixel_buf[idx + 1] = c[1];
+    pixel_buf[idx + 2] = c[2];
+    pixel_buf[idx + 3] = c[3];
 }
 
 fn blendPixel(x: i32, y: i32, c: Color, alpha: f64) void {
@@ -711,10 +714,10 @@ fn blendPixel(x: i32, y: i32, c: Color, alpha: f64) void {
     const ux = @as(usize, @intCast(x));
     const uy = @as(usize, @intCast(y));
     const idx = (uy * RENDER_W + ux) * 4;
-    output_buf[idx + 0] = blendChannel(output_buf[idx + 0], c[0], a);
-    output_buf[idx + 1] = blendChannel(output_buf[idx + 1], c[1], a);
-    output_buf[idx + 2] = blendChannel(output_buf[idx + 2], c[2], a);
-    output_buf[idx + 3] = 0xFF;
+    pixel_buf[idx + 0] = blendChannel(pixel_buf[idx + 0], c[0], a);
+    pixel_buf[idx + 1] = blendChannel(pixel_buf[idx + 1], c[1], a);
+    pixel_buf[idx + 2] = blendChannel(pixel_buf[idx + 2], c[2], a);
+    pixel_buf[idx + 3] = 0xFF;
 }
 
 fn blendChannel(dst: u8, src: u8, alpha: f64) u8 {
@@ -728,10 +731,6 @@ fn hit(x: i32, y: i32, bx: i32, by: i32, bw: i32, bh: i32) bool {
 }
 
 fn clampI32(v: i32, min_v: i32, max_v: i32) i32 {
-    return if (v < min_v) min_v else if (v > max_v) max_v else v;
-}
-
-fn clampI64(v: i64, min_v: i64, max_v: i64) i64 {
     return if (v < min_v) min_v else if (v > max_v) max_v else v;
 }
 

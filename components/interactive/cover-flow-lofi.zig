@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 720;
 const RENDER_H: usize = 480;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -70,7 +73,7 @@ const albums = [_]Album{
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
-var initialized = false;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var needs_redraw = true;
 var selected_q8: i32 = 3 * 256;
 var target_q8: i32 = 3 * 256;
@@ -84,24 +87,49 @@ var pointer_x: i32 = -1000;
 var pointer_y: i32 = -1000;
 var pulse: i32 = 0;
 
+const Phase = enum { initializing, ready, updating };
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
-    ensureInit();
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     switch (x11_key) {
         XK_LEFT, 'a', 'A' => stepSelection(-1),
@@ -114,8 +142,9 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
-    ensureInit();
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     pointer_x = x_px;
     pointer_y = y_px;
     const down = (button_mask & BTN_PRIMARY) != 0;
@@ -146,8 +175,14 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    ensureInit();
+fn eventPhaseIsValid() bool {
+    if (phase != .updating) @trap();
+    return true;
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     pulse = @mod(pulse + 1, 4096);
     var active = primary_down;
     if (!primary_down) {
@@ -173,22 +208,32 @@ export fn tick(now_ms: i64) i64 {
             }
         }
     }
-    return if (active) now_ms + 16 else 0;
+    next_wake_at_ms = if (active and begun_at_ms <= std.math.maxInt(i64) - 16)
+        begun_at_ms + 16
+    else
+        begun_at_ms;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
-    ensureInit();
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
-fn ensureInit() void {
-    if (initialized) return;
-    clear(.{ 0, 0, 0, 0xFF });
-    initialized = true;
-    needs_redraw = true;
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    advanceTransactionTime();
+    const active = primary_down or velocity_q8 != 0 or absI32(target_q8 - selected_q8) > 1;
+    next_wake_at_ms = if (active and begun_at_ms <= std.math.maxInt(i64) - 16) begun_at_ms + 16 else begun_at_ms;
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    phase = .ready;
+    return wake;
 }
 
 fn stepSelection(delta: i32) void {
@@ -591,10 +636,10 @@ fn clear(c: Color) void {
 fn setPixel(x: i32, y: i32, c: Color) void {
     if (x < 0 or y < 0 or x >= @as(i32, @intCast(RENDER_W)) or y >= @as(i32, @intCast(RENDER_H))) return;
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-    output_buf[idx + 0] = c[0];
-    output_buf[idx + 1] = c[1];
-    output_buf[idx + 2] = c[2];
-    output_buf[idx + 3] = c[3];
+    pixel_buf[idx + 0] = c[0];
+    pixel_buf[idx + 1] = c[1];
+    pixel_buf[idx + 2] = c[2];
+    pixel_buf[idx + 3] = c[3];
 }
 
 fn blendPixel(x: i32, y: i32, c: Color) void {
@@ -606,10 +651,10 @@ fn blendPixel(x: i32, y: i32, c: Color) void {
         return;
     }
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-    output_buf[idx + 0] = @as(u8, @intCast(@divTrunc(@as(i32, output_buf[idx + 0]) * (255 - a) + @as(i32, c[0]) * a, 255)));
-    output_buf[idx + 1] = @as(u8, @intCast(@divTrunc(@as(i32, output_buf[idx + 1]) * (255 - a) + @as(i32, c[1]) * a, 255)));
-    output_buf[idx + 2] = @as(u8, @intCast(@divTrunc(@as(i32, output_buf[idx + 2]) * (255 - a) + @as(i32, c[2]) * a, 255)));
-    output_buf[idx + 3] = 0xFF;
+    pixel_buf[idx + 0] = @as(u8, @intCast(@divTrunc(@as(i32, pixel_buf[idx + 0]) * (255 - a) + @as(i32, c[0]) * a, 255)));
+    pixel_buf[idx + 1] = @as(u8, @intCast(@divTrunc(@as(i32, pixel_buf[idx + 1]) * (255 - a) + @as(i32, c[1]) * a, 255)));
+    pixel_buf[idx + 2] = @as(u8, @intCast(@divTrunc(@as(i32, pixel_buf[idx + 2]) * (255 - a) + @as(i32, c[2]) * a, 255)));
+    pixel_buf[idx + 3] = 0xFF;
 }
 
 fn blendRect(x: i32, y: i32, w: i32, h: i32, c: Color) void {

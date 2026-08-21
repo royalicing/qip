@@ -1,8 +1,15 @@
 # Content Component Contract
 
-Content components perform finite transformations over text or bytes. The host writes input into WebAssembly memory, applies any uniforms, calls `render(input_size)`, then reads the returned output bytes.
+Content components perform finite transformations over text or bytes. The host writes input into WebAssembly memory, applies any uniforms, calls `render(input_size)`, and reads the returned output bytes. A component which can reject allowed input also exports `commit()`.
 
-Use this contract for converters, validators, formatters, document renderers, generators, and pipeline stages. Use the [Interactive Component Contract](/docs/interactive-component) instead when a component must retain live state across user events and scheduled ticks.
+Use this contract for converters, validators, formatters, document renderers,
+generators, and pipeline stages. A component can retain this Content interface
+while adding later capabilities. For example,
+`components/interactive/gif-player.wasm` accepts and renders `image/gif` as
+fallible Content, then adds Timed updates to select later frames. It needs no
+event exports. Use the [Interactive Component
+Contract](/docs/interactive-component) when retained state must also respond to
+user events.
 
 ## Required Exports
 
@@ -20,6 +27,55 @@ An exported global is rejected. A getter function may read an immutable
 internal global when its value is module-constant.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
+
+## Optional Commit Export
+
+A component which can reject a value inside its declared input domain exports:
+
+- `commit() -> i64`
+
+The host calls `commit` after `render` returns normally and before it reads
+output. A nonnegative result accepts the output. A negative result rejects the
+input, and the host ignores the provisional output size and bytes. `commit`
+must not trap.
+
+Only `render` may modify the output buffer. `commit` may update private
+transaction state, but it leaves output bytes unchanged whether it accepts or
+rejects. No uniform setter is legal between `render` and `commit`.
+
+Do not export `commit` when every conforming call which returns normally has
+accepted its output. A missing export does not prove that the Wasm cannot trap;
+static analysis must establish that property from the artifact.
+
+Return `0` for ordinary acceptance. Negative values may contain diagnostic
+bits: bit 63 marks an error, bit 62 marks invalid input, and the low 32 bits may
+contain an input byte offset or consumed byte count. Hosts treat every negative
+value as rejection. Components may report zero detail when an exact position is
+not available.
+
+## UTF-8 Is Validated At Pipeline Edges
+
+The host maintains the UTF-8 guarantee. When arbitrary bytes first enter a
+UTF-8 pipeline, the host validates the complete input before it calls a
+component with `input_utf8_cap`. Encoding a native string as UTF-8 establishes
+the same guarantee without a separate validation pass. Invalid bytes fail at
+the host boundary and do not reach `render`.
+
+A component with `input_utf8_cap` may assume that its complete input is valid
+UTF-8. It does not need to scan the input again only to validate the encoding.
+Passing malformed UTF-8 to that component violates the host contract and may
+trap.
+
+A component with `output_utf8_cap` guarantees that every successful output is
+valid UTF-8. The host carries that guarantee to the next UTF-8 component without
+rescanning the bytes. A UTF-8 output may also flow into `input_bytes_cap`
+because every UTF-8 string is a byte string. An `output_bytes_cap` result may
+not flow into `input_utf8_cap` until the host validates it or an explicit
+bytes-to-UTF-8 validator accepts it.
+
+Compliance tools and debug hosts may validate UTF-8 output to find a defective
+component. Production hosts may rely on the output contract between known-valid
+components.
 
 ## Static ABI Exports
 
@@ -60,9 +116,17 @@ For each render request using a known-valid QIP component, the host:
 3. Writes the input bytes at `input_ptr`.
 4. Applies any requested [uniforms](/docs/uniforms).
 5. Calls `render(input_size)`.
-6. Calls `output_ptr` and reads exactly the returned number of bytes.
+6. If the component exports `commit`, calls it and stops if it rejects.
+7. Calls `output_ptr` and reads exactly the returned number of bytes.
 
-If `render` traps, the request fails. The host must not read `output_ptr`; the buffer may contain stale or partial output.
+If `render` traps, the request fails. The host must not read `output_ptr`; the
+buffer may contain stale or partial output. A trap does not undo memory or
+global changes, so the host discards that Wasm instance and creates a new one
+before another render. The host does not call `commit` after a trap.
+
+If `commit` traps, the component has violated this contract. The host discards
+the instance. If `commit` rejects, the transaction has closed normally and the
+host may reuse the instance for another request.
 
 A valid component guarantees that a successful `render` returns a byte count
 within its declared output capacity and that `output_ptr` identifies a region
@@ -101,15 +165,20 @@ limits.
 
 ## Repeated Renders
 
-Hosts may call `render` more than once on the same component instance. Each call is a new request using the bytes currently at `input_ptr` and the component's current uniform state.
+Hosts may run more than one request on the same component instance. Each
+request uses the bytes currently at `input_ptr`. When `commit` exists, the host
+completes it before starting another request.
 
 Component authors should make repeated renders deliberate:
 
 - Treat the input region as host-owned for the duration of each call.
 - Return the byte length of the current output, not a cumulative length.
-- Expect the host to read `output_ptr` after every successful render.
+- Expect the host to read `output_ptr` after every accepted render.
 - Keep caches and scratch state consistent when input bytes or uniforms change.
-- Trap on invalid input or output overflow instead of leaving a stale previous output.
+- Reset every public uniform to its authored default before each normal return
+  from `render`, including provisional failure.
+- Use `commit` for expected rejection inside the declared input domain. Trap
+  for a caller precondition violation or an internal defect.
 
 This lets browser hosts retain an instance for many requests and lets wrappers set uniforms immediately before rendering without reinstantiation.
 
@@ -245,9 +314,14 @@ These rules let generic operations such as UTF-8 validation or byte-preserving t
 - Keep input and output buffers disjoint unless overlap is an intentional, tested optimization.
 - Validate `input_size` inside the component even when the host also checks it.
 - Reserve explicit scratch space rather than assuming unused capacity belongs to the component.
-- Trap on invalid input, violated invariants, or output overflow.
+- Use `commit` when a conforming call can reject expected input. Set rejection
+  state before parsing so an ordinary early return rejects by default.
+- Trap when the caller violates a declared precondition or an internal
+  invariant fails. The host discards the instance after a trap.
+- Do not trap from `commit`.
 - Prefer a trap over silent truncation for data-preserving transforms.
-- Return `0` only when empty output is a successful result.
+- Return `0` from `render` for successful empty output or provisional failure;
+  `commit` distinguishes these outcomes.
 - For Zig components, compile with an explicit Wasm memory maximum. See [Writing QIP Components In Zig](/docs/zig-components) and [Hard Limits](/docs/hard-limits).
 
 ## Future Numeric Output Shapes

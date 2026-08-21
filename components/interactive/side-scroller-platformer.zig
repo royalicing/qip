@@ -1,11 +1,14 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const SCREEN_W: usize = 480;
 const SCREEN_H: usize = 270;
 const TILE: i32 = 16;
 const WORLD_W: usize = 220;
 const WORLD_H: usize = 18;
-const OUTPUT_BYTES: usize = SCREEN_W * SCREEN_H * 4;
+const PIXEL_BYTES: usize = SCREEN_W * SCREEN_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
@@ -123,29 +126,50 @@ var powerup_vy: i32 = 0;
 var has_last_step: bool = false;
 var last_step_ms: i64 = 0;
 var camera_x: i32 = 0;
+const Phase = enum { initializing, ready, updating };
+var update_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(SCREEN_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(SCREEN_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (update_phase != .ready or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    update_phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireEventPhase();
+    advanceUpdateTime();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
-    if (!initialized) resetGame();
 
     if (is_down and (x11_key == 'r' or x11_key == 'R' or x11_key == XK_ENTER)) {
-        resetGame();
+        resetGameAt(begun_at_ms);
         return 1;
     }
 
@@ -165,20 +189,27 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+    requireEventPhase();
+    advanceUpdateTime();
     return 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    if (!initialized) resetGame();
-    if (game_over or won) return 0;
+fn requireEventPhase() void {
+    if (update_phase != .updating) @trap();
+}
+
+fn advanceUpdateTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
+    if (game_over or won) return;
 
     if (!has_last_step) {
         has_last_step = true;
-        last_step_ms = now_ms;
+        last_step_ms = begun_at_ms;
     }
 
-    var elapsed = now_ms - last_step_ms;
+    var elapsed = begun_at_ms - last_step_ms;
     if (elapsed < 0) elapsed = 0;
 
     var steps: i32 = 0;
@@ -187,15 +218,28 @@ export fn tick(now_ms: i64) i64 {
         last_step_ms += STEP_MS;
         elapsed -= STEP_MS;
     }
-
-    return last_step_ms + STEP_MS;
+    if (!game_over and !won and elapsed >= STEP_MS) {
+        last_step_ms = begun_at_ms;
+    }
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
-    if (!initialized) resetGame();
+export fn finish_update() i64 {
+    if (update_phase != .updating) @trap();
+    advanceUpdateTime();
+    committed_at_ms = begun_at_ms;
+    const wake = if (game_over or won) begun_at_ms else last_step_ms +| STEP_MS;
+    update_phase = .ready;
+    return wake;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (update_phase != .initializing and update_phase != .ready) @trap();
+    if (update_phase == .initializing) resetGameAt(0);
+    _ = ktx.writeHeader(&output_buf, SCREEN_W, SCREEN_H) orelse @trap();
     drawFrame();
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    update_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 export fn test_player_tile_x() i32 {
@@ -242,6 +286,12 @@ fn resetGame() void {
     powerup_vy = 0;
     flames = [_]Flame{.{ .x = 0, .y = 0, .vx = 0, .vy = 0, .alive = false }} ** MAX_FLAMES;
     buildLevel();
+}
+
+fn resetGameAt(now_ms: i64) void {
+    resetGame();
+    has_last_step = true;
+    last_step_ms = now_ms;
 }
 
 fn buildLevel() void {
@@ -852,7 +902,7 @@ fn fillRect(x0: i32, y0: i32, w0: i32, h0: i32, color: Color) void {
     while (y < y_end) : (y += 1) {
         var x = x_start;
         while (x < x_end) : (x += 1) {
-            const idx = (@as(usize, @intCast(y)) * SCREEN_W + @as(usize, @intCast(x))) * 4;
+            const idx = ktx.HEADER_SIZE + (@as(usize, @intCast(y)) * SCREEN_W + @as(usize, @intCast(x))) * 4;
             output_buf[idx + 0] = color[0];
             output_buf[idx + 1] = color[1];
             output_buf[idx + 2] = color[2];

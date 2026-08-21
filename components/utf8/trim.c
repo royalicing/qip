@@ -33,7 +33,7 @@ static int is_space(char c) {
 __attribute__((export_name("render")))
 uint32_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
-        input_size = INPUT_CAP;
+        __builtin_trap();
     }
 
     uint32_t start = 0;
@@ -47,9 +47,6 @@ uint32_t render(uint32_t input_size) {
     }
 
     uint32_t out_len = end - start;
-    if (out_len > OUTPUT_CAP) {
-        return 0;
-    }
 
     for (uint32_t i = 0; i < out_len; i++) {
         output_buffer[i] = input_buffer[start + i];

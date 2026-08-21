@@ -13,3 +13,7 @@ Controls:
 <qip-play>
   <source src="/components/interactive/ps2-menu.wasm" type="application/wasm" />
 </qip-play>
+
+The menu pulse and temporary flash follow update time. `finish_update`
+schedules the next update, while only `render` replaces the published KTX2
+image.

@@ -2,6 +2,10 @@
 
 The high-fidelity Cover Flow renderer: projective covers, bilinear album sampling, antialiased edges, directional lighting, and spring easing.
 
+The component applies input events and animation time before it publishes a new
+KTX2 frame. Its feature flags are retained interaction state; it does not
+export configuration uniforms.
+
 Compare against the browser-native [WebGL2 renderer](/play-cover-flow-webgl2) at the same displayed size.
 
 Controls:

@@ -66,10 +66,10 @@ echo "qip + wasm" | qip run components/bytes/zlib-compress-dynamic-huffman.wasm 
 curl -s https://news.ycombinator.com | qip run components/text/html/html-link-extractor.wasm | grep "^https:"
 
 # Render QIP logo to ICO
-qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > qip-logo.ico
+qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > qip-logo.ico
 
 # Render Switzerland flag SVG to ICO
-echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
 
 # Rendering cannot loop forever
 echo "x" | qip run components/utf8/infinite-loop.wasm
@@ -534,18 +534,22 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
 
 ## TODO
 
+- [ ] For interactive components should we allow uniforms to be optional?
+- [x] Define `commit()` as zero for acceptance and a negative value for rejection.
+- [ ] For interactive components should we inline the ktx2 header write function into components?
 - [ ] Should uniforms return their previous value? This means we can bring a component back to its original state.
 - [ ] Ensure we always `new TextDecoder("utf-8", { fatal: true })`
+- [ ] Add `/text` and `/image` pages with list of wasm modules. I think image should include any with input or output image.
 - [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
 - [ ] Recipes page: interactive upload and text entry
 - [x] Recipes page: copy recipe as source code (e.g. as JavaScript)
 - [ ] Extend `content-recipe-to-browser-javascript` with per-stage uniforms: add an optional recipe CSV query column, apply `uniform_set_<key>` functions in sorted order before each render, parse `i32`, `i64`, `f32`, and `f64` values, reject duplicate keys, missing setters, and host-managed multi-parameter hooks, and support optional runtime overrides. Consider stable stage IDs before exposing overrides for multi-stage recipes.
 - [ ] Recipes page: prune useless recipes
 - [ ] Complete the common image conversion paths through `image/bmp`:
-  - [ ] Add `image/avif/avif-to-bmp-bgra32.wasm` so AVIF can feed the existing PNG, WebP, AVIF, ICO, and image-analysis components.
-  - [x] Add `image/bmp/bmp-bgra32-to-jpeg-lossy.wasm`, with an explicit quality uniform, so every format that decodes to BMP can produce JPEG.
-  - [ ] Add `image/gif/gif-first-frame-to-bmp-bgra32.wasm`. Keep the first-frame policy in the name rather than implying that one BMP preserves an animation; add a separate GIF-frames-to-TAR component if all frames are needed. Or we could pass the frame as a uniform?
-  - [ ] Add `image/x-icon/ico-to-bmp-bgra32.wasm`, with a deterministic default image choice and uniforms for selecting an embedded size when needed.
+  - [x] Add `image/avif/avif-to-ktx2-r8g8b8a8-srgb.wasm` so AVIF can feed the canonical KTX2 image pipeline without a BMP intermediate.
+  - [x] Add `image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm`, with an explicit quality uniform, so every format that decodes to BMP can produce JPEG.
+  - [ ] Add `image/gif/gif-first-frame-to-bmp-b8g8r8a8-srgb.wasm`. Keep the first-frame policy in the name rather than implying that one BMP preserves an animation; add a separate GIF-frames-to-TAR component if all frames are needed. Or we could pass the frame as a uniform?
+  - [ ] Add `image/x-icon/ico-to-bmp-b8g8r8a8-srgb.wasm`, with a deterministic default image choice and uniforms for selecting an embedded size when needed.
 - [ ] Add `php-to-c` that converts a subset of PHP to a standalone C program. `text/x-php`
   - [ ] Support `SQLite3`: <https://www.php.net/manual/en/sqlite3.prepare.php>
 - [ ] Add SQLite prepared statement example that takes SQLite database and a query, and produces a new optimized component that accepts query parameters as its input.
@@ -620,9 +624,9 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
 - [x] Add Cover Flow example.
 - [ ] Add Figma vector networks example.
 - [x] Add localized example in multiple languages.
-- [ ] Add a split interactive pipeline mode with two collaborative modules: state/tick module writes an internal scene buffer, renderer module consumes it via `render(input_size)` with a simple `memcpy` handoff between module instances, enabling presentation variants like language/locale, dark or light mode, font size, DPI scaling, and accessibility-focused rendering.
+- [ ] Add a split interactive pipeline mode with two collaborative modules: a state/update module writes an internal scene buffer, and a renderer consumes it via `render(input_size)` with a simple `memcpy` handoff between module instances. This would enable presentation variants such as language or locale, dark or light mode, font size, DPI scaling, and accessibility-focused rendering.
 - [ ] Have separate `pointermove` event handler so we can skip expensive `pointermove` listeners and rendering if not needed??
-- [ ] Refine the interactive tick result contract: events return accepted/ignored, but `tick()` currently returns only `next_wake_at_ms`; define how tick also communicates whether `render(0)` is necessary without losing scheduled wakeups. Specify pointer leave/cancel coordinates and button state consistently across hosts.
+- [x] Separate update scheduling from presentation: `finish_update()` returns `next_wake_at_ms`, events report accepted or ignored, and the host decides whether to call `render(0)`. Specify pointer leave coordinates and button state consistently across hosts.
 - [ ] Add digest pinning for remote modules (for example `https://...#sha256=<hex>`), and fail fast when fetched bytes do not match the pinned digest.
 - [x] Update docs to encourage hard failure with traps instead of returning empty output which could lead to data loss.
 - [ ] Convert soft-failure validators to trap on invalid input, then add invalid-then-valid same-instance recovery tests:

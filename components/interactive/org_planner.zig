@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 600;
 const RENDER_H: usize = 450;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -27,8 +30,8 @@ const Employee = struct {
     title: [16]u8,
     title_len: u8,
     reports_to: u8, // Employee ID of manager, 0 if reports to no one
-    active: bool,   // Fired employees are false
-    color: Color,   // Employee custom outline color
+    active: bool, // Fired employees are false
+    color: Color, // Employee custom outline color
 };
 
 const Scenario = struct {
@@ -45,7 +48,8 @@ const FocusField = enum {
 };
 
 // Global State
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [PIXEL_BYTES]u8 = undefined;
+var ktx_buf: [OUTPUT_BYTES]u8 = undefined;
 var scenarios: [MAX_SCENARIOS]Scenario = undefined;
 var active_scenario_idx: usize = 0;
 
@@ -71,24 +75,45 @@ var initialized = false;
 var needs_redraw = true;
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
+    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn input_ptr() u32 {
+    return 0;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn input_bytes_cap() u32 {
+    return 0;
 }
 
-export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
-    _ = now_ms;
-    ensureInit();
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+const LifecycleState = enum { initializing, ready, updating };
+var lifecycle_state: LifecycleState = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced = false;
+
+export fn begin_update_at(now_ms: i64) void {
+    if (lifecycle_state != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    lifecycle_state = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
     // ESC key cancels text edits or reassignments
@@ -130,9 +155,9 @@ export fn key_event(x11_key: i32, flags: i32, now_ms: i64) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32 {
-    _ = now_ms;
-    ensureInit();
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireUpdate();
+    advanceUpdateTime();
     const primary = (button_mask & BTN_PRIMARY) != 0;
 
     // Track hovered elements
@@ -308,28 +333,41 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, now_ms: i64) i32
     return 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    ensureInit();
+fn requireUpdate() void {
+    if (lifecycle_state != .updating) @trap();
+}
+
+fn advanceUpdateTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     // Blink cursor every 400ms when focused
     if (focused_field != .none) {
-        if (now_ms - last_blink_ms >= 400) {
+        if (begun_at_ms - last_blink_ms >= 400) {
             cursor_blink = !cursor_blink;
-            last_blink_ms = now_ms;
+            last_blink_ms = begun_at_ms;
             needs_redraw = true;
         }
     }
-    return now_ms + 100;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn finish_update() i64 {
+    requireUpdate();
+    advanceUpdateTime();
+    committed_at_ms = begun_at_ms;
+    lifecycle_state = .ready;
+    return if (begun_at_ms <= std.math.maxInt(i64) - 100) begun_at_ms + 100 else begun_at_ms;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     ensureInit();
-    if (needs_redraw) {
-        calculateLayout();
-        drawFrame();
-        needs_redraw = false;
-    }
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    calculateLayout();
+    drawFrame();
+    needs_redraw = false;
+    _ = ktx.writeHeader(&ktx_buf, RENDER_W, RENDER_H) orelse @trap();
+    @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
+    lifecycle_state = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
 fn ensureInit() void {
@@ -493,7 +531,7 @@ fn positionSubtree(u: usize, x_left: i32, depth: i32) void {
 fn drawFrame() void {
     // 1. Dark glowing space background (Nebula shader layout)
     drawVerticalGradient(0, 0, @as(i32, @intCast(RENDER_W)), @as(i32, @intCast(RENDER_H)), .{ 0x0D, 0x0A, 0x1B, 0xFF }, .{ 0x04, 0x03, 0x08, 0xFF });
-    
+
     // Background glow spots (electric cyber-nebula look)
     drawGlow(120, 360, 140, .{ 0x06, 0xB6, 0xD4, 0xFF }); // Cyan spot bottom left
     drawGlow(460, 100, 160, .{ 0xEC, 0x48, 0x99, 0xFF }); // Neon pink spot top right
@@ -633,18 +671,8 @@ fn drawFrame() void {
     if (selected_emp_id == 0) {
         // Empty Inspection Placeholder
         drawCenteredText(505, 120, "NO WORKER SELECTED", .{ 0x94, 0xA3, 0xB8, 0xFF }, 1);
-        
-        const hints = [_][]const u8{
-            "Click on any team member",
-            "in the tree to inspect",
-            "them, update details,",
-            "reassign manager,",
-            "fire or rehire.",
-            "",
-            "Create Scenario plans",
-            "using tabs at the top",
-            "to compare fork models."
-        };
+
+        const hints = [_][]const u8{ "Click on any team member", "in the tree to inspect", "them, update details,", "reassign manager,", "fire or rehire.", "", "Create Scenario plans", "using tabs at the top", "to compare fork models." };
         var h_idx: i32 = 0;
         while (h_idx < hints.len) : (h_idx += 1) {
             drawCenteredText(505, 150 + h_idx * 14, hints[@as(usize, @intCast(h_idx))], .{ 0x47, 0x55, 0x69, 0xFF }, 1);
@@ -688,7 +716,7 @@ fn drawFrame() void {
 
         // --- REPORTING MANAGER LINE ---
         drawTextScaled(430, 171, "REPORTS TO", .{ 0x47, 0x55, 0x69, 0xFF }, 1);
-        
+
         const reassign_border = if (reassign_mode) Color{ 0xEF, 0x44, 0x44, 0xFF } else Color{ 0xFF, 0xFF, 0xFF, 0x1A };
         drawGlassRect(430, 185, 150, 22, reassign_border);
         if (reassign_mode) {
@@ -795,9 +823,7 @@ fn hireWorker(reports_to_id: u8) void {
         new_id += 1;
     }
 
-    const pool = [_][]const u8{
-        "Harry", "Ivy", "Jack", "Karen", "Leo", "Mia", "Noah", "Olivia", "Peter", "Quinn", "Ruby", "Sam", "Tina", "Uma"
-    };
+    const pool = [_][]const u8{ "Harry", "Ivy", "Jack", "Karen", "Leo", "Mia", "Noah", "Olivia", "Peter", "Quinn", "Ruby", "Sam", "Tina", "Uma" };
     const name_idx = sc.employee_count % pool.len;
     const picked_name = pool[name_idx];
 
@@ -921,15 +947,15 @@ fn setPixelI32(x: i32, y: i32, c: Color) void {
 fn blendPixel(x: i32, y: i32, src: Color, alpha: f32) void {
     if (x < 0 or y < 0 or x >= @as(i32, @intCast(RENDER_W)) or y >= @as(i32, @intCast(RENDER_H))) return;
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-    
+
     const r = @as(f32, @floatFromInt(output_buf[idx + 0]));
     const g = @as(f32, @floatFromInt(output_buf[idx + 1]));
     const b = @as(f32, @floatFromInt(output_buf[idx + 2]));
-    
+
     const sr = @as(f32, @floatFromInt(src[0]));
     const sg = @as(f32, @floatFromInt(src[1]));
     const sb = @as(f32, @floatFromInt(src[2]));
-    
+
     output_buf[idx + 0] = @as(u8, @intFromFloat(clampF32(r * (1.0 - alpha) + sr * alpha, 0.0, 255.0)));
     output_buf[idx + 1] = @as(u8, @intFromFloat(clampF32(g * (1.0 - alpha) + sg * alpha, 0.0, 255.0)));
     output_buf[idx + 2] = @as(u8, @intFromFloat(clampF32(b * (1.0 - alpha) + sb * alpha, 0.0, 255.0)));
@@ -988,10 +1014,10 @@ fn drawGlow(cx: i32, cy: i32, r: i32, color: Color) void {
     const x_end = @min(@as(i32, @intCast(RENDER_W)), cx + r);
     const y_start = @max(0, cy - r);
     const y_end = @min(@as(i32, @intCast(RENDER_H)), cy + r);
-    
+
     const r_sq = r * r;
     const r_sq_f = @as(f32, @floatFromInt(r_sq));
-    
+
     var y = y_start;
     while (y < y_end) : (y += 1) {
         const dy = y - cy;
@@ -1040,7 +1066,7 @@ fn blendLine(x1: i32, y1: i32, x2: i32, y2: i32, c: Color, alpha: f32) void {
     const sx: i32 = if (x1 < x2) 1 else -1;
     const sy: i32 = if (y1 < y2) 1 else -1;
     var err = @as(i32, @intCast(dx)) - @as(i32, @intCast(dy));
-    
+
     var x = x1;
     var y = y1;
     while (true) {

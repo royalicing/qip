@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 760;
 const RENDER_H: usize = 590;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 const BTN_PRIMARY: i32 = 1 << 0;
 const TIMELINE_NORMAL_MAX_MS: i32 = 4200;
 const TIMELINE_ANNOYANCE_MAX_MS: i32 = 7200;
@@ -29,6 +32,7 @@ const C_MARK: Color = .{ 0xD5, 0x5E, 0x00, 0xFF };
 const C_OK: Color = .{ 0x00, 0x9E, 0x73, 0xFF };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var search_page = false;
 var spa_style = false;
 var tls13 = true;
@@ -45,6 +49,13 @@ var primary_down = false;
 var playing = false;
 var play_start_ms: i64 = 0;
 var play_elapsed_ms: i32 = 0;
+
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
 
 const Timing = struct {
     html_ttfb: i32,
@@ -68,28 +79,50 @@ const Timing = struct {
     fouc_end: i32,
 };
 
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(_: i32, _: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    transaction_phase = .updating;
+}
+
+export fn key_event(_: i32, _: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     return 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    if (!playing) return 0;
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
+    const now_ms = begun_at_ms;
+    if (!playing) return;
     const t = compute();
     const hide_at = t.usable + 180 + PLAY_HOLD_MS;
     const elapsed_i64 = now_ms - play_start_ms;
@@ -97,12 +130,15 @@ export fn tick(now_ms: i64) i64 {
     if (play_elapsed_ms >= hide_at) {
         playing = false;
         play_elapsed_ms = 0;
-        return 0;
+        next_wake_at_ms = now_ms;
+        return;
     }
-    return now_ms + 33;
+    next_wake_at_ms = if (now_ms <= std.math.maxInt(i64) - 33) now_ms + 33 else now_ms;
 }
 
-export fn pointer_event(button_mask: i32, x: i32, y: i32, now_ms: i64) i32 {
+export fn pointer_event(button_mask: i32, x: i32, y: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     const down = (button_mask & BTN_PRIMARY) != 0;
     var changed = false;
     if (down and !primary_down) {
@@ -125,7 +161,7 @@ export fn pointer_event(button_mask: i32, x: i32, y: i32, now_ms: i64) i32 {
         if (hit(x, y, 196, 130, 74, 24)) changed = toggleAnnoyance(ANNOY_PROMO);
         if (hit(x, y, 670, 130, 70, 24)) {
             playing = true;
-            play_start_ms = now_ms;
+            play_start_ms = begun_at_ms;
             play_elapsed_ms = 0;
             changed = true;
         } else if (changed) {
@@ -135,6 +171,11 @@ export fn pointer_event(button_mask: i32, x: i32, y: i32, now_ms: i64) i32 {
     }
     primary_down = down;
     return if (changed) 1 else 0;
+}
+
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
 }
 
 fn flip(value: *bool) bool {
@@ -181,10 +222,24 @@ fn apiLabel() []const u8 {
     return if (separate_api) "api. DOMAIN" else "/API PATH";
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    advanceTransactionTime();
+    next_wake_at_ms = if (playing and begun_at_ms <= std.math.maxInt(i64) - 33) begun_at_ms + 33 else begun_at_ms;
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    transaction_phase = .ready;
+    return wake;
 }
 
 fn hit(x: i32, y: i32, bx: i32, by: i32, bw: i32, bh: i32) bool {
@@ -950,10 +1005,10 @@ fn fillRect(x0: i32, y0: i32, w: i32, h: i32, c: Color) void {
         var x = sx;
         while (x < ex) : (x += 1) {
             const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-            output_buf[idx + 0] = c[0];
-            output_buf[idx + 1] = c[1];
-            output_buf[idx + 2] = c[2];
-            output_buf[idx + 3] = c[3];
+            pixel_buf[idx + 0] = c[0];
+            pixel_buf[idx + 1] = c[1];
+            pixel_buf[idx + 2] = c[2];
+            pixel_buf[idx + 3] = c[3];
         }
     }
 }

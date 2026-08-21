@@ -8,13 +8,14 @@ const sqlite = @import("lib/sqlite.zig");
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = 4 * 1024;
 const MAX_PAYLOAD_COPY: usize = 1024 * 1024;
+const DEFAULT_TABLE_INDEX: u32 = 0;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 var payload_copy_buf: [MAX_PAYLOAD_COPY]u8 = undefined;
 var selected: sqlite.SelectedTable = .{};
 
-var table_index: u32 = 0;
+var table_index: u32 = DEFAULT_TABLE_INDEX;
 
 export fn uniform_set_table(v: u32) u32 {
     table_index = v;
@@ -52,9 +53,14 @@ fn onRow(count: *u64, cell: sqlite.LeafCell) bool {
 }
 
 export fn render(input_size_u32: u32) u32 {
-    const input_size = @min(@as(usize, @intCast(input_size_u32)), INPUT_CAP);
-    const input = input_buf[0..input_size];
+    const input_size: usize = input_size_u32;
+    if (input_size > INPUT_CAP) @trap();
+    const output_size = renderCount(input_buf[0..input_size]);
+    table_index = DEFAULT_TABLE_INDEX;
+    return output_size;
+}
 
+fn renderCount(input: []const u8) u32 {
     var out = sqlite.Output{ .buf = &output_buf };
     var db = sqlite.init(input, &payload_copy_buf) catch |e| {
         out.writeSlice("error\t");

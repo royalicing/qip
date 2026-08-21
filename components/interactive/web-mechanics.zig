@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 640;
 const RENDER_H: usize = 420;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 const BTN_PRIMARY: i32 = 1 << 0;
 
 const Color = [4]u8;
@@ -23,35 +26,52 @@ const Topic = enum(u8) { tls, dns, page, cookies };
 const Scenario = enum(u8) { a, b, c, d };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var topic: Topic = .tls;
 var scenario: Scenario = .a;
 var primary_down = false;
+
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    transaction_phase = .updating;
 }
 
-export fn key_event(_: i32, _: i32, _: i64) i32 {
+export fn key_event(_: i32, _: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     return 0;
 }
 
-export fn tick(_: i64) i64 {
-    return 0;
-}
-
-export fn pointer_event(button_mask: i32, x: i32, y: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x: i32, y: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     const down = (button_mask & BTN_PRIMARY) != 0;
     if (down and !primary_down) {
         if (hit(x, y, 20, 52, 78, 24)) {
@@ -80,10 +100,26 @@ export fn pointer_event(button_mask: i32, x: i32, y: i32, _: i64) i32 {
     return 1;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
+}
+
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    committed_at_ms = begun_at_ms;
+    transaction_phase = .ready;
+    return begun_at_ms;
 }
 
 fn hit(x: i32, y: i32, bx: i32, by: i32, bw: i32, bh: i32) bool {
@@ -462,10 +498,10 @@ fn fillRect(x0: i32, y0: i32, w: i32, h: i32, c: Color) void {
         var x = sx;
         while (x < ex) : (x += 1) {
             const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-            output_buf[idx + 0] = c[0];
-            output_buf[idx + 1] = c[1];
-            output_buf[idx + 2] = c[2];
-            output_buf[idx + 3] = c[3];
+            pixel_buf[idx + 0] = c[0];
+            pixel_buf[idx + 1] = c[1];
+            pixel_buf[idx + 2] = c[2];
+            pixel_buf[idx + 3] = c[3];
         }
     }
 }

@@ -5,7 +5,24 @@ const std = @import("std");
 const deflate = @import("lib/deflate.zig");
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
-const OUTPUT_CAP: usize = INPUT_CAP + (INPUT_CAP / 8) + 4096;
+// A literal costs at most 15 bits. A match costs at most 48 bits and consumes
+// at least 3 input bytes. Matches have the higher cost per input byte, so the
+// maximum uses as many three-byte matches as possible and charges any remainder
+// as literals.
+// The shared encoder has at most 664 code-length RLE entries; each costs at
+// most a 7-bit code plus 7 extra bits.
+const MIN_MATCH: usize = 3;
+const MAX_LITERAL_BITS: usize = 15;
+const MAX_MATCH_BITS: usize = 48;
+const MAX_TOKEN_BITS: usize =
+    (INPUT_CAP / MIN_MATCH) * MAX_MATCH_BITS + (INPUT_CAP % MIN_MATCH) * MAX_LITERAL_BITS;
+const CL_CODE_COUNT: usize = 19;
+const MAX_CODELEN_RLE: usize = (286 + 30) * 2 + 32;
+const DYNAMIC_BLOCK_OVERHEAD_BITS: usize =
+    3 + 5 + 5 + 4 + CL_CODE_COUNT * 3 + MAX_CODELEN_RLE * (7 + 7) + 15;
+const ZLIB_WRAPPER_BYTES: usize = 2 + 4;
+const OUTPUT_CAP: usize = ZLIB_WRAPPER_BYTES +
+    (MAX_TOKEN_BITS + DYNAMIC_BLOCK_OVERHEAD_BITS + 7) / 8;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -28,10 +45,11 @@ export fn output_bytes_cap() u32 {
 }
 
 export fn render(input_size_in: u32) u32 {
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+    const input_size: usize = @intCast(input_size_in);
+    if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
 
-    const written = deflate.compressZlib(input, &output_buf, &token_buf) orelse return 0;
+    const written = deflate.compressZlib(input, &output_buf, &token_buf) orelse @trap();
     return @as(u32, @intCast(written));
 }
 
@@ -114,4 +132,24 @@ test "round trips max-length matches" {
     var out: [512]u8 = undefined;
     const n = try decompressZlib(output_buf[0..written], &out);
     try std.testing.expectEqualSlices(u8, &plain, out[0..n]);
+}
+
+test "maximum input stays within the derived output capacity" {
+    @memset(input_buf[0..], 0);
+    const written = render(@intCast(INPUT_CAP));
+    try std.testing.expect(written > 0);
+    try std.testing.expect(written <= OUTPUT_CAP);
+}
+
+test "shared dynamic code limits obey the output bound" {
+    var max_length_extra: usize = 0;
+    for (deflate.LENGTH_EXTRA) |extra| max_length_extra = @max(max_length_extra, extra);
+
+    var max_distance_extra: usize = 0;
+    for (deflate.DIST_EXTRA) |extra| max_distance_extra = @max(max_distance_extra, extra);
+
+    const max_match_bits = 15 + max_length_extra + 15 + max_distance_extra;
+    try std.testing.expect(15 <= MAX_LITERAL_BITS);
+    try std.testing.expect(max_match_bits <= MAX_MATCH_BITS);
+    try std.testing.expect(MAX_CODELEN_RLE >= (286 + 30) * 2);
 }

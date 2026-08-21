@@ -1,6 +1,6 @@
 # BMP RGB metrics
 
-`bmp-rgb-metrics.wasm` compares two same-sized, uncompressed BGRA32 BMP files
+`bmp-rgb-metrics.wasm` compares two same-sized, uncompressed B8G8R8A8 sRGB BMP files
 and emits a JSON report containing RGB MSE, PSNR, and SSIM.
 
 Its input is a POSIX ustar archive containing exactly two root-level regular
@@ -36,6 +36,6 @@ not the Gaussian-window formulation from the original SSIM paper, nor a
 perceptual color-space metric.
 
 The component keeps no image copies or scratch image planes. Its 128 MiB input
-capacity includes the TAR headers and is enough for two BGRA32 BMPs of about
+capacity includes the TAR headers and is enough for two B8G8R8A8 sRGB BMPs of about
 16 megapixels each. On a 12 MP pair it took about 132 ms under Node and 3.45
 seconds in QIP's default Go/Wasm runtime on the development machine.

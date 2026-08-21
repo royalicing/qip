@@ -1,6 +1,11 @@
 # Uniforms
 
-Uniforms are optional numeric settings that a host applies to a QIP component before execution. They keep configuration separate from the main content or pixel input: the component receives the same data shape while callers select values such as column count, color, radius, or angle.
+Uniforms are optional numeric overrides that a host applies to a QIP component
+before execution. Each uniform has an authored default. If the host does not
+call its setter, the component uses that default. Uniforms keep configuration
+separate from the main content or pixel input: the component receives the same
+data shape while callers select values such as column count, color, radius, or
+angle.
 
 They are inspired by uniforms in GPU rendering: small values set by the host and read during execution instead of being embedded in the main input buffer.
 
@@ -46,6 +51,25 @@ The host applies setters after instantiation and before `render`, or before tile
 - Setters must not depend on their call order for related state changes.
 
 Returning the applied value lets a host observe clamping or normalization. A setter for a range-limited value should store and return the value the component will actually use.
+
+## Content Reset Semantics
+
+Content uniforms apply to one render only. Each render starts with authored
+defaults plus the setters called for that render. Each normal return from
+`render` resets every public uniform to its authored default, whether the render
+produced bytes, produced valid empty output, or marked a failable transaction
+for rejection. Private candidate state may remain until `commit`, but a later
+render does not inherit the preceding call's public uniform values.
+
+Hosts which reuse a Content instance therefore apply every non-default uniform
+before each render. A Compliance oracle must set the uniforms needed by each
+case; the bridge does not retain a desired value between cases. These rules do
+not change Tile uniform persistence.
+
+Timed and Eventful update uniforms work the same way. A host can omit any
+setter whose default it wants. `finish_update` resets all update uniforms, and
+the next update starts from authored defaults. Presentation uniforms reset when
+`render` returns.
 
 ## CLI Syntax
 

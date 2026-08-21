@@ -15,3 +15,6 @@ Controls:
 <qip-play>
   <source src="/components/interactive/paint.wasm" type="application/wasm" />
 </qip-play>
+
+Each update changes the bitmap, undo buffer, tool, and drag state together.
+Only `render` replaces the published KTX2 image.

@@ -125,7 +125,9 @@ Components](/docs/content-component#known-and-untrusted-components).
 
 ## Traps And Reuse
 
-If `render` traps, Wasmtime raises an exception. Treat that render as failed and do not read the output buffer; it may contain stale or partial bytes.
+If `render` traps, Wasmtime raises an exception. Treat that render as failed and
+do not read the output buffer; it may contain stale or partial bytes. Discard
+that instance and instantiate the module again before another render.
 
 The example compiles and instantiates the component once, then reuses it. That avoids repeated compilation, but the instance owns mutable memory. Do not let concurrent requests write to the same instance. Serialize access with a lock, or give each worker or concurrent request its own instance. A compiled module can be reused when creating those instances.
 

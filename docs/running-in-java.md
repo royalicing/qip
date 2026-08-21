@@ -136,7 +136,9 @@ Components](/docs/content-component#known-and-untrusted-components).
 
 ## Traps And Reuse
 
-If `render` traps, Chicory throws an exception. Treat that render as failed and do not read the output buffer; it may contain stale or partial bytes.
+If `render` traps, Chicory throws an exception. Treat that render as failed and
+do not read the output buffer; it may contain stale or partial bytes. Discard
+that instance and instantiate the module again before another render.
 
 The example parses and instantiates the component once, then reuses it. A `MarkdownRenderer` owns mutable component memory and is not safe to call concurrently. Create one renderer per worker thread, request, or pool entry instead of sharing an instance. The application can then choose instance ownership that matches its concurrency model without paying for synchronization inside every render call.
 

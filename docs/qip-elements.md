@@ -245,7 +245,13 @@ These checks run after the module bytes are fetched and before `WebAssembly.comp
 
 The distinction from `<qip-edit>` is not merely that both accept interaction. Editing changes declared source inputs and produces finite results; playing interacts with a running component whose state persists between events. A fallback, poster, or initial snapshot may be rendered ahead of time, but the experience requires client activation to become interactive.
 
-The component side of this element is the Interactive contract: `tick`, `key_event`, `pointer_event`, and frame output. See the [Interactive Component Contract](/docs/interactive-component) and [Interactive Rendering Performance](/docs/interactive-rendering-performance).
+The element supports the [Timed and Eventful
+contract](/docs/timed-and-eventful-components): `begin_update_at`, complete
+update uniforms, timestamp-free events, `finish_update`, separate
+presentation, and canonical KTX2 output. `calculator` uses the
+application-style path. `snake` combines events with fixed-step scheduled
+wakes. See also [Interactive Component Contract](/docs/interactive-component)
+and [Interactive Rendering Performance](/docs/interactive-rendering-performance).
 
 ## Pre-Rendering
 

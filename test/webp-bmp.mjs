@@ -5,15 +5,15 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const decoderPath = fileURLToPath(new URL(
-  "../components/image/webp/webp-to-bmp-bgra32.wasm",
+  "../components/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm",
   import.meta.url,
 ));
 const lossyEncoderPath = fileURLToPath(new URL(
-  "../components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm",
+  "../components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm",
   import.meta.url,
 ));
 const losslessEncoderPath = fileURLToPath(new URL(
-  "../components/image/bmp/bmp-bgra32-to-webp-lossless.wasm",
+  "../components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm",
   import.meta.url,
 ));
 
@@ -112,7 +112,7 @@ function markAnimated(webp, width, height) {
   return extended;
 }
 
-test("webp-to-bmp-bgra32 decodes lossy and lossless WebP", async (t) => {
+test("webp-to-bmp-b8g8r8a8-srgb decodes lossy and lossless WebP", async (t) => {
   for (const path of [decoderPath, lossyEncoderPath, losslessEncoderPath]) {
     try {
       await access(path, constants.R_OK);
@@ -172,7 +172,7 @@ test("webp-to-bmp-bgra32 decodes lossy and lossless WebP", async (t) => {
   assert.deepEqual(second, losslessBMP, "reused instance must decode deterministically");
 });
 
-test("webp-to-bmp-bgra32 rejects malformed input", async (t) => {
+test("webp-to-bmp-b8g8r8a8-srgb rejects malformed input", async (t) => {
   try {
     await access(decoderPath, constants.R_OK);
   } catch {

@@ -147,7 +147,7 @@ Use a fixed run count for slow inputs, and raise the per-run timeout explicitly:
   -i fixtures/25mp-lossless.jp2 \
   -r 3 \
   --timeout-ms 30000 \
-  components/image/jp2/jp2-to-bmp-bgra32.wasm
+  components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm
 ```
 
 The timeout protects each sample; it is not the benchmark duration.
@@ -290,7 +290,7 @@ For a pipeline of Content components, use the recipe variant:
 tools/bench-qip-component-to-c-recipe.sh \
   --input qip-logo.svg \
   components/image/svg+xml/svg-recolor-current-color.wasm \
-  components/image/svg+xml/svg-rasterize.wasm \
+  components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm \
   components/image/bmp/bmp-to-png.wasm
 ```
 

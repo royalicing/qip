@@ -142,7 +142,10 @@ export default function Page() {
 
 ## Errors and Traps
 
-If `render` traps, the WebAssembly call throws. Let the nearest React error boundary or server error handler deal with it. Do not try to read the output buffer after a trapped call; it may contain stale or partial bytes.
+If `render` traps, the WebAssembly call throws. Let the nearest React error
+boundary or server error handler deal with it. Do not read the output buffer
+after a trapped call; it may contain stale or partial bytes. Discard that
+instance and instantiate the module again before another render.
 
 ## Rendering Untrusted Markdown
 

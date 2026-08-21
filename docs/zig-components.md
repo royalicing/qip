@@ -88,13 +88,15 @@ printf 'hello' | qip run echo.wasm
 
 ## Defaults We Prefer
 
-QIP components age well when their resource shape is obvious from the source.
+QIP components age well when their buffer sizes and memory use are obvious from
+the source.
 
 Use these defaults unless the module has a concrete reason not to:
 
 - Static input, output, and scratch buffers sized by named constants.
 - No allocator for normal content transforms.
-- `@trap()` for invalid input, violated invariants, and output overflow.
+- `@trap()` for violated input preconditions, invariants, and proved-unreachable
+  output overflow.
 - `error` unions internally, converted to `@trap()` at the exported boundary.
 - Small exported surface: QIP ABI exports plus intentional `uniform_set_*` functions.
 - `usize` for indexing inside Zig; cast at the ABI boundary.
@@ -104,7 +106,9 @@ Use these defaults unless the module has a concrete reason not to:
 
 Avoid these by default:
 
-- `@panic` for expected validation failures. Prefer `@trap()` so the component fails hard without pretending there is a recoverable runtime.
+- `@panic` for expected validation failures. Use `@trap()` for a precondition or
+  invariant failure. In a fallible Content transaction, use a negative
+  `commit` result when a conforming call can be rejected recoverably.
 - Heap allocation for ordinary one-input/one-output transforms. Static buffers are easier to inspect and budget.
 - Hidden global state that changes `render` behavior unless it is set through a documented uniform.
 - Recursion in modules intended to pass strict safety checks.
@@ -115,16 +119,87 @@ This does not mean every useful component must be tiny. It means the cost of a c
 
 Use `input_utf8_cap` / `output_utf8_cap` for text and `input_bytes_cap` / `output_bytes_cap` for raw bytes.
 
+`input_utf8_cap` is a precondition maintained by the host. Component code may
+assume that the complete input is valid UTF-8 and should not add another full
+validation pass only to establish that fact. Check sequence structure only when
+the transform already needs it to decode code points. If malformed UTF-8 reaches
+`render`, the host broke the contract and the component may trap.
+
+`output_utf8_cap` is a guarantee made by the component. Emit valid UTF-8 on
+every successful return. Later UTF-8 stages may trust that guarantee without
+rescanning the output.
+
 QIP checks the host side of the capacity contract before writing input and after `render` returns. The component should still check its own assumptions and trap when an invariant fails. That keeps bugs obvious and prevents accidental truncation.
 
 Good defaults:
 
 - Validate `input_size <= INPUT_CAP` even though the host also checks it.
-- Trap on malformed input for normalizers and transforms.
-- Trap on output overflow.
+- Trap when a normalizer or transform receives input outside its declared
+  encoding or format precondition.
+- Trap on output overflow when the component proves that overflow is
+  unreachable for every valid in-cap input.
 - Return `0` only when empty output is a meaningful success.
 
-For assertion pass-through validators, copy the input unchanged or use the same pointer for input and output when the host contract allows it. `components/utf8/utf8-must-be-valid.zig` is the model: validate every byte, trap on failure, and preserve the original bytes on success.
+For assertion pass-through validators, copy the input unchanged or use the same
+pointer for input and output when the host contract allows it. In a fallible
+Content transaction, a validator accepts a wider input domain, returns
+normally, and uses `commit` to reject values which do not establish its output
+guarantee. A later transform can require that guarantee and trap if the caller
+breaks the precondition.
+
+## Derive Output Capacity From Input Capacity
+
+Prefer a mathematical output bound to a guessed output buffer size. Start with
+the largest accepted input, find the transform's maximum expansion, and derive
+`OUTPUT_CAP` from `INPUT_CAP`.
+
+For example:
+
+```zig
+const INPUT_CAP: usize = 1024 * 1024;
+
+// Every input byte can produce at most three output bytes.
+const OUTPUT_CAP: usize = 3 * INPUT_CAP;
+```
+
+Other common bounds include:
+
+- pass-through, trimming, and extraction: `OUTPUT_CAP = INPUT_CAP`;
+- one fixed prefix byte plus filtered input: `OUTPUT_CAP = INPUT_CAP + 1`;
+- Base64 encoding: `OUTPUT_CAP = 4 * ceil(INPUT_CAP / 3)`; and
+- a UTF-8 rewrite with a proven threefold maximum expansion:
+  `OUTPUT_CAP = 3 * INPUT_CAP`.
+
+Prove the bound for the algorithm, not only for current examples. Account for
+terminators, separators, headers, padding, escaping, and final flush output.
+Check the capacity arithmetic at compile time so an overflowing calculation
+cannot silently produce a smaller buffer.
+
+Keep a guard at the write boundary even after proving the bound. If valid input
+reaches that guard, the capacity formula, parser, or generated table is wrong.
+The guard should trap as an invariant failure; treating it as ordinary invalid
+input would hide the broken proof behind a recoverable error.
+
+Put the proof next to the implementation. Use inline Zig tests for:
+
+- an input that realizes the maximum expansion;
+- `INPUT_CAP - 1` and `INPUT_CAP` where both boundaries are useful;
+- generated tables whose entries must obey the expansion ratio; and
+- a direct assertion that the returned size does not exceed `OUTPUT_CAP`.
+
+Input byte length does not bound every output. A small compressed image or
+archive can expand to a much larger result. In that case, define and validate
+another finite domain limit, such as maximum width, height, pixel count,
+uncompressed bytes, archive entries, or nesting depth. Derive the output buffer
+from those limits. If a valid in-cap input can still exceed the advertised
+output capacity, overflow is an expected input-dependent failure rather than
+an invariant. Under the Content contract, `render` returns normally and
+[`commit` rejects the provisional
+output](/docs/content-component#optional-commit-export).
+
+Do not increase a derived output capacity to a round memory profile merely for
+consistency. Keep formulas exact enough that reviewers can see why overflow is
+unreachable, then budget the component's total Wasm memory separately.
 
 ## Export Content Types When Known
 
@@ -253,6 +328,27 @@ Each component should have at least one direct smoke test through `qip`.
 printf 'hello' | qip run components/utf8/your-module.wasm
 ```
 
+Use inline Zig `test` blocks for checks tied to the implementation. They are
+the best place for:
+
+- exact-capacity boundaries;
+- internal output-bound proofs;
+- invariant traps;
+- parser offsets and private state; and
+- regression cases tied to that implementation.
+
+Run them directly while iterating:
+
+```bash
+zig test components/utf8/your-module.zig
+```
+
+Keep portable behavior in a Compliance oracle when alternative
+implementations should satisfy the same cases. Do not make a portable oracle
+match one Zig implementation's exact buffer capacity. Test that boundary in
+the Zig source instead, unless the component contract specifies a minimum
+capacity for every implementation.
+
 For binary modules, round-trip through files or compare bytes:
 
 ```bash
@@ -267,7 +363,11 @@ printf 'valid' | qip run components/utf8/your-validator.wasm
 printf '\xff' | qip run components/utf8/your-validator.wasm
 ```
 
-Also test recovery on a reused instance: feed a range of invalid inputs that trap, then feed valid input through the same instance and confirm the result is still correct. A WebAssembly trap stops the current call, but it does not reset memory or globals. This catches parsers that mutate persistent state before rejecting malformed input.
+For a validator with `commit`, test recovery on a reused instance: reject a
+range of invalid inputs, then feed valid input through the same instance and
+confirm the result is still correct. Do not reuse an instance after `render`
+traps. The host ignores its output and creates a new instance because a trap
+does not undo memory or global changes.
 
 Review the binary shape before trusting the source shape:
 
@@ -290,9 +390,13 @@ an optional optimized component such as a SIMD variant.
 ## Checklist
 
 - Pick UTF-8 or bytes caps before writing parsing logic.
-- Keep input and output buffers sized from explicit constants.
-- Trap on invalid input, oversized input, and output overflow.
-- Test invalid input followed by valid input on the same instance.
+- Derive the output cap from the accepted input and maximum expansion.
+- Keep input, output, and format-specific limits visible as explicit constants.
+- Trap on oversized input and on output overflow that violates the proven
+  bound. Use the component's documented way of reporting expected
+  input-dependent rejection.
+- For a component with `commit`, test rejection followed by valid input on the
+  same instance. After a trap, test the next call on a fresh instance.
 - Compile with `--max-memory`.
 - Run `wasm-objdump -x` and confirm `max=...` is present.
 - Check for accidental imports, indirect calls, tables, and recursion.

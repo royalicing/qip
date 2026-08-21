@@ -336,6 +336,35 @@ fn normalizeForTest(input: []const u8) []const u8 {
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 
+fn utf8Len(cp: u32) usize {
+    if (cp <= 0x7f) return 1;
+    if (cp <= 0x7ff) return 2;
+    if (cp <= 0xffff) return 3;
+    return 4;
+}
+
+fn expectDecompositionFits(cp: u32) !void {
+    var decomposed: [64]u32 = undefined;
+    var decomposed_len: usize = 0;
+    try testing.expect(decompose(cp, &decomposed, &decomposed_len));
+
+    const input_bytes = utf8Len(cp);
+    try testing.expect(decomposed_len <= input_bytes * 2);
+
+    var output_bytes: usize = 0;
+    for (decomposed[0..decomposed_len]) |part| output_bytes += utf8Len(part);
+    try testing.expect(output_bytes <= input_bytes * 4);
+}
+
+test "all canonical decompositions fit scratch and output bounds" {
+    for (decomp_codepoints) |cp| try expectDecompositionFits(cp);
+
+    var cp: u32 = SBase;
+    while (cp < SBase + SCount) : (cp += 1) {
+        try expectDecompositionFits(cp);
+    }
+}
+
 // https://www.unicode.org/Public/17.0.0/ucd/NormalizationTest.txt
 test "nfc normalizes combining sequence" {
     const input = "e\u{0301}";

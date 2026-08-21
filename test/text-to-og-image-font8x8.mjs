@@ -1,0 +1,49 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const components = [
+  "components/utf8/text-to-og-image-font8x8.wasm",
+  "components/utf8/text-to-og-image-dejavu-sans-mono.wasm",
+];
+
+function hasPixel(bytes, b, g, r, a) {
+  for (let i = 54; i + 3 < bytes.length; i += 4) {
+    if (
+      bytes[i] === b &&
+      bytes[i + 1] === g &&
+      bytes[i + 2] === r &&
+      bytes[i + 3] === a
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+for (const component of components) {
+  test(`${component} resets colors to black text on white`, async () => {
+    const { instance } = await WebAssembly.instantiate(await readFile(component));
+    const e = instance.exports;
+    const memory = new Uint8Array(e.memory.buffer);
+    memory[e.input_ptr()] = "A".charCodeAt(0);
+
+    e.uniform_set_text_color(0xff0000ff);
+    e.uniform_set_background_color(0x0000ffff);
+    const configuredSize = e.render(1);
+    const configured = memory.slice(e.output_ptr(), e.output_ptr() + configuredSize);
+    assert.equal(hasPixel(configured, 0, 0, 255, 255), true);
+    assert.equal(hasPixel(configured, 255, 0, 0, 255), true);
+
+    const defaultSize = e.render(1);
+    const defaults = memory.slice(e.output_ptr(), e.output_ptr() + defaultSize);
+    assert.equal(hasPixel(defaults, 0, 0, 0, 255), true);
+    assert.equal(hasPixel(defaults, 255, 255, 255, 255), true);
+  });
+
+  test(`${component} traps above its advertised input capacity`, async () => {
+    const { instance } = await WebAssembly.instantiate(await readFile(component));
+    const e = instance.exports;
+    assert.throws(() => e.render(e.input_utf8_cap() + 1), WebAssembly.RuntimeError);
+  });
+}

@@ -90,7 +90,11 @@ make -j components/interactive/dock-magnification.wasm
 node tools/bench-qip-play.mjs components/interactive/dock-magnification.wasm
 ```
 
-`tools/bench-qip-play.mjs` instantiates the module, calls `tick(0)`, warms up `render(0)`, then times only `render(0)`. It also prints render size, wasm byte size, and a SHA-256 of the framebuffer so two variants can be checked for byte-identical output.
+`tools/bench-qip-play.mjs` instantiates the module and performs its initial
+Content render. It then warms up the renderer and times only `render(0)`.
+Presentation renders do not open updates or advance time. The tool also prints
+render size, Wasm byte size, and a SHA-256 of the KTX2 output so two variants
+can be checked for byte-identical output.
 
 3. For longer runs, set the warmup and sample count explicitly:
 
@@ -102,7 +106,7 @@ QIP_PLAY_BENCH_WARMUP=50 QIP_PLAY_BENCH_RUNS=300 \
 4. For interactive states, write a tiny Node snippet that sends the same exported events the browser sends, warms up the chosen state, and times only `render(0)`. For example, the Dock open/bounce path:
 
 ```sh
-node -e 'const fs=require("fs");const {performance}=require("perf_hooks");(async()=>{const bytes=fs.readFileSync("components/interactive/dock-magnification.wasm");const {instance}=await WebAssembly.instantiate(bytes,{});const e=instance.exports;e.pointer_event(1,960,655,0n);e.pointer_event(0,960,655,0n);for(let i=0;i<20;i++){e.tick(BigInt(i*16));e.render(0);}const samples=[];for(let i=0;i<120;i++){e.tick(BigInt((20+i)*16));const t=performance.now();e.render(0);samples.push(performance.now()-t);}samples.sort((a,b)=>a-b);const mean=samples.reduce((a,b)=>a+b,0)/samples.length;console.log(`open-bounce render mean ${mean.toFixed(3)} ms [min ${samples[0].toFixed(3)}, p50 ${samples[60].toFixed(3)}, p95 ${samples[Math.ceil(samples.length*.95)-1].toFixed(3)}, max ${samples[samples.length-1].toFixed(3)}]`);})();'
+node -e 'const fs=require("fs");const {performance}=require("perf_hooks");(async()=>{const bytes=fs.readFileSync("components/interactive/dock-magnification.wasm");const {instance}=await WebAssembly.instantiate(bytes,{});const e=instance.exports;e.render(0);e.begin_update_at(1n);e.pointer_event(1,960,655);e.pointer_event(0,960,655);e.finish_update();for(let i=1;i<=20;i++){e.begin_update_at(BigInt(i*16+1));e.finish_update();e.render(0);}const samples=[];for(let i=21;i<=140;i++){e.begin_update_at(BigInt(i*16+1));e.finish_update();const t=performance.now();e.render(0);samples.push(performance.now()-t);}samples.sort((a,b)=>a-b);const mean=samples.reduce((a,b)=>a+b,0)/samples.length;console.log(`open-bounce render mean ${mean.toFixed(3)} ms [min ${samples[0].toFixed(3)}, p50 ${samples[60].toFixed(3)}, p95 ${samples[Math.ceil(samples.length*.95)-1].toFixed(3)}, max ${samples[samples.length-1].toFixed(3)}]`);})();'
 ```
 
 Run benchmark commands by themselves. Do not run preview generation, tests, or another benchmark in parallel with timing runs; the Node/V8 numbers are sensitive enough that unrelated work can create misleading max and p95 values.

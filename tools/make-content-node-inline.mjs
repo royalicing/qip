@@ -33,6 +33,11 @@ const inputCap = exportedI32(
 if (input.length > inputCap) throw new Error("input exceeds component capacity");
 new Uint8Array(exports.memory.buffer, inputPtr, input.length).set(input);
 const outputSize = exports.render(input.length) >>> 0;
+if (typeof exports.commit === "function") {
+  const result = exports.commit();
+  if (typeof result !== "bigint") throw new TypeError("commit export must have signature commit() -> i64");
+  if (result < 0n) throw new Error(\`component rejected input (commit returned \${result})\`);
+}
 const outputCap = exportedI32(
   exports,
   exports.output_utf8_cap ? "output_utf8_cap" : "output_bytes_cap",

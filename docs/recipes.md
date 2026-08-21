@@ -210,6 +210,38 @@ A compatible plan exits successfully. Invalid component contracts, uniforms,
 encoding or MIME composition, and module-policy violations return a non-zero
 exit status.
 
+## Runtime Failures
+
+When a recipe step fails, the host reports its one-based position and component
+path before the component error:
+
+```text
+step 2 (components/bytes/zlib-decompress.wasm): rejected input (commit returned -9223372036854775808)
+```
+
+The same format applies to `qip run` pipelines and router recipe chains. This
+lets a log identify the failing component even when a recipe uses the same
+component more than once.
+
+A component with `commit() -> i64` can reject expected input without trapping.
+The CLI calls `commit` after `render` and before it reads output. A negative
+result produces `rejected input`. If the component sets the invalid-input bit
+and supplies an offset, the message is more specific:
+
+```text
+step 3 (components/utf8/utf8-must-be-valid.wasm): rejected invalid input at byte 17 (commit returned -4611686018427387887)
+```
+
+The byte offset and numeric commit result are diagnostics. Recipe logic must
+not parse them as stable error codes. Every negative commit result rejects the
+step, no output from that step is used, and the recipe stops.
+
+A trap is different. The CLI reports `render trapped` and discards the Wasm
+instance because its memory may contain partial output or state. If `commit`
+traps, the component has broken the Content contract; the message states that
+`commit()` must not trap. Capacity, content-type, and uniform failures use the
+same `step N (component)` prefix.
+
 Use `--capacities-must-fit` to turn capacity warnings into errors:
 
 ```sh
@@ -236,7 +268,16 @@ is counted once.
 Composition is directional and based only on the ordered step descriptions.
 The planner does not inspect example input bytes or use browser/runtime
 heuristics, so the same component artifacts and uniforms produce the same plan
-or the same error:
+or the same error.
+
+The host validates arbitrary bytes once when they enter the UTF-8 domain. It
+then carries the UTF-8 guarantee through `output_utf8_cap` and
+`input_utf8_cap` stages without rescanning every intermediate value. Encoding a
+native string as UTF-8 also establishes the guarantee. If a bytes-producing
+stage breaks the chain, a later UTF-8 stage requires explicit host validation
+or a bytes-to-UTF-8 validator.
+
+The planner applies these rules:
 
 - UTF-8 may flow into a raw-bytes input. This is safe widening: UTF-8 is already
   bytes, and browser hosts encode the string before calling a bytes component.
@@ -290,7 +331,7 @@ filter, then passes BMP Content to the ICO encoder:
 
 ```sh
 qip dry run \
-  components/image/svg+xml/svg-rasterize.wasm \
+  components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm \
   components/rgba/brightness.wasm -u brightness=0.1 \
   components/image/bmp/bmp-to-ico.wasm
 ```

@@ -129,13 +129,47 @@ function makeEventTarget() {
   };
 }
 
+function godRaysUniforms(speed = "0.75") {
+  return Object.entries({
+    density: "0.3",
+    spotty: "0.3",
+    mid_size: "0.2",
+    mid_intensity: "0.4",
+    intensity: "0.8",
+    bloom: "0.4",
+    colors_count: "4",
+    color_back: "0x000000ff",
+    color_bloom: "0x0000ffff",
+    color_1: "0xa600ff6e",
+    color_2: "0x6200fff0",
+    color_3: "0xffffffff",
+    color_4: "0x33fff5ff",
+    color_5: "0",
+    fit: "1",
+    scale: "1",
+    rotation: "0",
+    origin_x: "0.5",
+    origin_y: "0.5",
+    offset_x: "0",
+    offset_y: "-0.55",
+    world_width: "0",
+    world_height: "0",
+    pixel_ratio: "1",
+    speed,
+    frame: "0",
+  }).map(([key, value]) => ({ key, value }));
+}
+
 test("qip-play debug stats count unchanged renders without skipping canvas draws", () => {
   const { element, bytes, putImageDataN } = makePlayElement(true);
 
-  assert.equal(element._renderFrame().unchanged, false);
-  assert.equal(element._renderFrame().unchanged, true);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, false);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, true);
   bytes[3] = 5;
-  assert.equal(element._renderFrame().unchanged, false);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, false);
 
   assert.equal(element._renderN, 3);
   assert.equal(element._unchangedRenderN, 1);
@@ -143,10 +177,9 @@ test("qip-play debug stats count unchanged renders without skipping canvas draws
   assert.equal(putImageDataN(), 3);
   assert.match(
     element._stats.textContent,
-    /^wasm 0 B \| memory 65\.5 kB \| tick {3}0 \d+\.\d ms \| render {3}3 \d+\.\d ms \| unchanged renders 1 \| compare \d+\.\d ms$/,
+    /^wasm 0 B \| memory 65\.5 kB \| update {3}0 \d+\.\d ms \| render {3}3 \d+\.\d ms \| unchanged renders 1 \| compare \d+\.\d ms$/,
   );
   assert.doesNotMatch(element._stats.textContent, /\binit\b/);
-  assert.doesNotMatch(element._stats.textContent, /\| ticks /);
   assert.doesNotMatch(element._stats.textContent, /\| renders /);
   assert.doesNotMatch(element._stats.textContent, /\bdraws?\b/);
   assert.match(element._stats.textContent, /unchanged renders 1/);
@@ -154,10 +187,12 @@ test("qip-play debug stats count unchanged renders without skipping canvas draws
 });
 
 test("qip-play unchanged render comparison is disabled outside debug stats", () => {
-  const { element, putImageDataN } = makePlayElement(false);
+  const { element, bytes, putImageDataN } = makePlayElement(false);
 
-  assert.equal(element._renderFrame().unchanged, false);
-  assert.equal(element._renderFrame().unchanged, false);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, false);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, false);
 
   assert.equal(element._renderN, 2);
   assert.equal(element._unchangedRenderN, 0);
@@ -165,10 +200,9 @@ test("qip-play unchanged render comparison is disabled outside debug stats", () 
   assert.equal(putImageDataN(), 2);
   assert.match(
     element._stats.textContent,
-    /^wasm 0 B \| memory 65\.5 kB \| tick {3}0 \d+\.\d ms \| render {3}2 \d+\.\d ms$/,
+    /^wasm 0 B \| memory 65\.5 kB \| update {3}0 \d+\.\d ms \| render {3}2 \d+\.\d ms$/,
   );
   assert.doesNotMatch(element._stats.textContent, /\binit\b/);
-  assert.doesNotMatch(element._stats.textContent, /\| ticks /);
   assert.doesNotMatch(element._stats.textContent, /\| renders /);
   assert.doesNotMatch(element._stats.textContent, /unchanged renders/);
   assert.doesNotMatch(element._stats.textContent, /\bdraws?\b/);
@@ -177,10 +211,13 @@ test("qip-play unchanged render comparison is disabled outside debug stats", () 
 test("qip-play unchanged render comparison handles matching unaligned views", () => {
   const { element, bytes } = makePlayElement(true, 1, 9, 1);
 
-  assert.equal(element._renderFrame().unchanged, false);
-  assert.equal(element._renderFrame().unchanged, true);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, false);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, true);
   bytes[8] = 10;
-  assert.equal(element._renderFrame().unchanged, false);
+  element._renderN++;
+  assert.equal(element._presentPixels(bytes, 0).unchanged, false);
 
   assert.equal(element._unchangedRenderN, 1);
 });
@@ -225,6 +262,44 @@ test("qip-play scopes keyboard focus to the canvas", () => {
   element._detachInputHandlers();
 });
 
+test("qip-play releases held input on blur without dropping queued events", () => {
+  const element = new QIPPlayElement();
+  element._exports = { key_event() {}, pointer_event() {} };
+  element._eventNowMS = () => 9;
+  let resumed = 0;
+  element._resumeLoop = () => { resumed++; };
+
+  element._queuePointerEvent(1, 10, 20, 7);
+  element._activeKeyRepeats.set("KeyA", {
+    timeoutID: 0,
+    keysym: 0x61,
+    flags: 7,
+    pending: true,
+    pendingTimeMS: 8,
+    pendingSequence: ++element._eventSequence,
+  });
+
+  element._releaseHeldInput();
+
+  assert.equal(element._activeKeyRepeats.size, 0);
+  assert.equal(resumed, 1);
+  assert.deepEqual(
+    element._pendingEvents.map(({ type, flags, timeMS, x, y }) => ({
+      type,
+      flags,
+      timeMS,
+      x,
+      y,
+    })),
+    [
+      { type: "pointer", flags: undefined, timeMS: 7, x: 10, y: 20 },
+      { type: "key", flags: 7, timeMS: 8, x: undefined, y: undefined },
+      { type: "key", flags: 4, timeMS: 9, x: undefined, y: undefined },
+      { type: "pointer", flags: undefined, timeMS: 9, x: -1, y: -1 },
+    ],
+  );
+});
+
 test("qip-play reports pointer leave outside the render surface", () => {
   const element = new QIPPlayElement();
   element._exports = { pointer_event() {} };
@@ -246,37 +321,163 @@ test("qip-play reports pointer leave outside the render surface", () => {
   element._detachInputHandlers();
 });
 
-test("qip-play ticks accepted events but skips ignored events", () => {
+test("qip-play runs initial Content render and separate Timed KTX2 updates", () => {
+  const wasm = readFileSync("components/interactive/god-rays-optimized.wasm");
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), {});
   const element = new QIPPlayElement();
-  let eventResult = 0;
-  let tickN = 0;
-  let renderN = 0;
-  element._exports = {
-    pointer_event() {
-      return eventResult;
+  element._exports = instance.exports;
+  element._memory = instance.exports.memory;
+  element._uniforms = godRaysUniforms();
+  element._outputPtr = instance.exports.output_ptr();
+  element._outputCapacity = instance.exports.output_bytes_cap();
+
+  const initial = element._runInitialContentRender();
+  const parsed = element._readKTX2Output(initial.outputLen);
+  assert.equal(parsed.width, 640);
+  assert.equal(parsed.height, 360);
+  assert.equal(parsed.pixels.byteLength, 640 * 360 * 4);
+  assert.equal(element._nextWakeAtMS, 0);
+  assert.equal(element._updateN, 0);
+  assert.equal(element._renderN, 1);
+
+  element._runBootstrapUpdate();
+  assert.equal(element._nextWakeAtMS, 17);
+
+  const before = Buffer.from(parsed.pixels);
+  const update = element._runUpdate(17, false);
+  assert.equal(update.nextWakeAtMS, 33);
+  assert.equal(element._finishedAtMS, 17);
+  assert.equal(element._updateN, 2);
+  assert.equal(element._renderN, 1);
+  assert.deepEqual(Buffer.from(element._readKTX2Output(initial.outputLen).pixels), before);
+
+  let drawN = 0;
+  element._renderWidth = parsed.width;
+  element._renderHeight = parsed.height;
+  element._expectedOutputBytes = parsed.pixels.byteLength;
+  element._canvas = { width: parsed.width, height: parsed.height };
+  element._ctx = {
+    createImageData(width, height) {
+      return { data: new Uint8ClampedArray(width * height * 4) };
     },
-    tick() {
+    putImageData() {
+      drawN++;
+    },
+  };
+  element._imageData = element._ctx.createImageData(parsed.width, parsed.height);
+  element._stats = { textContent: "" };
+  const visible = element._runUpdate(33, true);
+  assert.equal(visible.nextWakeAtMS, 49);
+  assert.equal(element._renderN, 2);
+  assert.equal(element._drawN, 1);
+  assert.equal(drawN, 1);
+  assert.match(element._stats.textContent, /\| update +3 /);
+});
+
+test("qip-play batches timestamp-free Interactive events inside an update", () => {
+  const wasm = readFileSync("components/interactive/tic-tac-toe-sun-moon.wasm");
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), {});
+  const element = new QIPPlayElement();
+  element._exports = instance.exports;
+  element._memory = instance.exports.memory;
+  element._uniforms = [];
+  element._outputPtr = instance.exports.output_ptr();
+  element._outputCapacity = instance.exports.output_bytes_cap();
+
+  const initial = element._runInitialContentRender();
+  element._runBootstrapUpdate();
+  const parsed = element._readKTX2Output(initial.outputLen);
+  let drawN = 0;
+  element._renderWidth = parsed.width;
+  element._renderHeight = parsed.height;
+  element._expectedOutputBytes = parsed.pixels.byteLength;
+  element._canvas = { width: parsed.width, height: parsed.height };
+  element._ctx = {
+    createImageData(width, height) {
+      return { data: new Uint8ClampedArray(width * height * 4) };
+    },
+    putImageData() {
+      drawN++;
+    },
+  };
+  element._imageData = element._ctx.createImageData(parsed.width, parsed.height);
+  element._stats = { textContent: "" };
+
+  element._queuePointerEvent(1, 64, 64, 1);
+  element._queuePointerEvent(0, 64, 64, 1);
+  const accepted = element._runUpdate(1, false);
+  assert.equal(accepted.eventCount, 2);
+  assert.equal(accepted.acceptedEvent, true);
+  assert.equal(accepted.rendered, true);
+  assert.equal(drawN, 1);
+
+  element._queuePointerEvent(1, 64, 64, 2);
+  element._queuePointerEvent(0, 64, 64, 2);
+  const ignored = element._runUpdate(2, false);
+  assert.equal(ignored.eventCount, 2);
+  assert.equal(ignored.acceptedEvent, false);
+  assert.equal(ignored.rendered, false);
+  assert.equal(drawN, 1);
+});
+
+test("qip-play combines a scheduled Timed wake with an Interactive event", () => {
+  const wasm = readFileSync("components/interactive/snake.wasm");
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), {});
+  const element = new QIPPlayElement();
+  element._exports = instance.exports;
+  element._memory = instance.exports.memory;
+  element._uniforms = [];
+  element._outputPtr = instance.exports.output_ptr();
+  element._outputCapacity = instance.exports.output_bytes_cap();
+
+  const initial = element._runInitialContentRender();
+  const parsed = element._readKTX2Output(initial.outputLen);
+  assert.equal(element._nextWakeAtMS, 0);
+  element._runBootstrapUpdate();
+  assert.equal(element._nextWakeAtMS, 120);
+  let drawN = 0;
+  element._renderWidth = parsed.width;
+  element._renderHeight = parsed.height;
+  element._expectedOutputBytes = parsed.pixels.byteLength;
+  element._canvas = { width: parsed.width, height: parsed.height };
+  element._ctx = {
+    createImageData(width, height) {
+      return { data: new Uint8ClampedArray(width * height * 4) };
+    },
+    putImageData() {
+      drawN++;
+    },
+  };
+  element._imageData = element._ctx.createImageData(parsed.width, parsed.height);
+  element._stats = { textContent: "" };
+
+  element._queueKeyEvent(0xff52, 1, 120);
+  const result = element._runUpdate(120, true);
+  assert.equal(result.eventCount, 1);
+  assert.equal(result.acceptedEvent, true);
+  assert.equal(result.nextWakeAtMS, 240);
+  assert.equal(result.rendered, true);
+  assert.equal(drawN, 1);
+});
+
+test("qip-play commits fallible Content input before bootstrapping updates", () => {
+  const element = new QIPPlayElement();
+  let commitN = 0;
+  element._inputSize = 3;
+  element._uniforms = [];
+  element._exports = {
+    render(inputSize) {
+      assert.equal(inputSize, 3);
+      return 0;
+    },
+    commit() {
+      commitN++;
       return 0n;
     },
   };
-  element._elapsedFromPerfNow = () => 0;
-  element._runTick = () => {
-    tickN++;
-    return { nextWakeAtMS: 0, tickMS: 0 };
-  };
-  element._renderFrame = () => {
-    renderN++;
-    return { renderMS: 0, compareMS: 0, drawMS: 0, unchanged: false };
-  };
 
-  element._queuePointerEvent(0, 1, 1, 0);
-  element._frame(0);
-  assert.equal(tickN, 0);
-  assert.equal(renderN, 0);
-
-  eventResult = 1;
-  element._queuePointerEvent(0, 2, 2, 0);
-  element._frame(0);
-  assert.equal(tickN, 1);
-  assert.equal(renderN, 1);
+  const initial = element._runInitialContentRender();
+  assert.equal(initial.outputLen, 0);
+  assert.equal(commitN, 1);
+  assert.equal(element._nextWakeAtMS, 0);
 });

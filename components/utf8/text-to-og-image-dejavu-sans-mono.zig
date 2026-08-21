@@ -18,12 +18,20 @@ const DRAWABLE_H: u32 = OG_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
 const ROW_H: u32 = font.GLYPH_H + LEADING;
 const MAX_COLS: u32 = DRAWABLE_W / font.GLYPH_W;
 const MAX_ROWS: u32 = DRAWABLE_H / ROW_H;
+const DEFAULT_TEXT_COLOR_RGBA: u32 = 0x000000FF;
+const DEFAULT_BACKGROUND_COLOR_RGBA: u32 = 0xFFFFFFFF;
+const BMP_OUTPUT_SIZE: usize = 54 + @as(usize, OG_WIDTH) * @as(usize, OG_HEIGHT) * 4;
+
+comptime {
+    if (MAX_COLS == 0 or MAX_ROWS == 0) @compileError("the authored canvas must fit text");
+    if (BMP_OUTPUT_SIZE > OUTPUT_CAP) @compileError("the BMP output must fit its buffer");
+}
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
-var text_color_rgba: u32 = 0x000000FF; // 0xRRGGBBAA
-var background_color_rgba: u32 = 0xFFFFFFFF; // 0xRRGGBBAA
+var text_color_rgba: u32 = DEFAULT_TEXT_COLOR_RGBA; // 0xRRGGBBAA
+var background_color_rgba: u32 = DEFAULT_BACKGROUND_COLOR_RGBA; // 0xRRGGBBAA
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -238,17 +246,15 @@ fn drawGlyph(base_x: u32, base_y: u32, glyph_index: usize, r: u8, g: u8, b: u8, 
 }
 
 export fn render(input_size: u32) u32 {
-    const use_size: usize = @min(@as(usize, input_size), INPUT_CAP);
+    if (input_size > INPUT_CAP) @trap();
+    const use_size: usize = input_size;
     const input = input_buf[0..use_size];
-
-    if (MAX_COLS == 0 or MAX_ROWS == 0) return 0;
 
     const rows = countRows(input);
     const width: u32 = OG_WIDTH;
     const height: u32 = OG_HEIGHT;
     const pixel_bytes: u64 = @as(u64, width) * @as(u64, height) * 4;
-    const total: u64 = 54 + pixel_bytes;
-    if (total > OUTPUT_CAP) return 0;
+    const total: u64 = BMP_OUTPUT_SIZE;
 
     const bg_r = colorR(background_color_rgba);
     const bg_g = colorG(background_color_rgba);
@@ -345,11 +351,38 @@ export fn render(input_size: u32) u32 {
         prev_was_delim = (c == ' ');
     }
 
+    resetUniforms();
     return @intCast(total);
+}
+
+fn resetUniforms() void {
+    text_color_rgba = DEFAULT_TEXT_COLOR_RGBA;
+    background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
+}
+
+fn outputHasPixel(b: u8, g: u8, r: u8, a: u8) bool {
+    var i: usize = 54;
+    while (i + 3 < BMP_OUTPUT_SIZE) : (i += 4) {
+        if (output_buf[i] == b and output_buf[i + 1] == g and output_buf[i + 2] == r and output_buf[i + 3] == a) return true;
+    }
+    return false;
 }
 
 test "supports latin-1 glyph lookup including e-acute" {
     try std.testing.expect(glyphIndexForCodepoint('A') != null);
     try std.testing.expect(glyphIndexForCodepoint(0x00E9) != null); // é
     try std.testing.expect(glyphIndexForCodepoint(0x20AC) == null); // €
+}
+
+test "render resets colors to black text on white" {
+    input_buf[0] = 'A';
+    _ = uniform_set_text_color(0xff0000ff);
+    _ = uniform_set_background_color(0x0000ffff);
+    try std.testing.expectEqual(@as(u32, BMP_OUTPUT_SIZE), render(1));
+    try std.testing.expect(outputHasPixel(0, 0, 255, 255));
+    try std.testing.expect(outputHasPixel(255, 0, 0, 255));
+
+    try std.testing.expectEqual(@as(u32, BMP_OUTPUT_SIZE), render(1));
+    try std.testing.expect(outputHasPixel(0, 0, 0, 255));
+    try std.testing.expect(outputHasPixel(255, 255, 255, 255));
 }

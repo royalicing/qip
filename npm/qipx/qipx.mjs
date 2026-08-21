@@ -681,6 +681,27 @@ function makeStage(spec, component) {
   return stage;
 }
 
+class ContentRejection extends Error {
+  constructor(label, result) {
+    const bits = BigInt.asUintN(64, result);
+    const invalid = (bits & (1n << 62n)) !== 0n;
+    const offset = Number(bits & 0xffff_ffffn);
+    super(invalid
+      ? `${label} rejected invalid input at byte ${offset} (commit returned ${result})`
+      : `${label} rejected input (commit returned ${result})`);
+    this.name = "ContentRejection";
+    this.result = result;
+  }
+}
+
+class ContentCommitTrap extends Error {
+  constructor(label, cause) {
+    super(`${label} commit trapped; commit() must not trap: ${cause?.message ?? cause}`);
+    this.name = "ContentCommitTrap";
+    this.cause = cause;
+  }
+}
+
 function runStage(stage, input) {
   applyUniforms(stage);
   const { exports } = stage.component;
@@ -691,6 +712,16 @@ function runStage(stage, input) {
   }
   new Uint8Array(exports.memory.buffer, inputPointer, input.byteLength).set(input);
   const outputLength = Number(exports.render(input.byteLength)) >>> 0;
+  if (typeof exports.commit === "function") {
+    let result;
+    try {
+      result = exports.commit();
+    } catch (error) {
+      throw new ContentCommitTrap(stage.label, error);
+    }
+    if (typeof result !== "bigint") throw new TypeError(`${stage.label} commit export must have signature commit() -> i64`);
+    if (result < 0n) throw new ContentRejection(stage.label, result);
+  }
   const outputPointer = exportedValue(exports, "output_ptr", stage.label);
   const outputCapacity = exportedValue(exports, stage.outputCapName, stage.label);
   if (outputLength > outputCapacity || outputPointer + outputLength > exports.memory.buffer.byteLength) {
@@ -967,7 +998,13 @@ async function runComplianceOracle(implWasm, implPath, oraclePath, options = {})
         return 1;
       } catch (error) {
         state.failCount += 1;
-        state.failures.push(`case ${ordinal}: trapped: ${error.message ?? error}`);
+        if (error instanceof ContentRejection) {
+          state.failures.push(`case ${ordinal}: unexpected rejection (commit returned ${error.result})`);
+        } else if (error instanceof ContentCommitTrap) {
+          state.failures.push(`case ${ordinal}: ${error.message}`);
+        } else {
+          state.failures.push(`case ${ordinal}: trapped: ${error.message ?? error}`);
+        }
         return 0;
       }
     },
@@ -984,8 +1021,43 @@ async function runComplianceOracle(implWasm, implPath, oraclePath, options = {})
         state.failCount += 1;
         state.failures.push(`case ${ordinal}: expected trap, got output`);
         return 0;
-      } catch {
+      } catch (error) {
+        if (error instanceof ContentRejection) {
+          state.failCount += 1;
+          state.failures.push(`case ${ordinal}: expected trap, got rejection (commit returned ${error.result})`);
+          return 0;
+        }
+        if (error instanceof ContentCommitTrap) {
+          state.failCount += 1;
+          state.failures.push(`case ${ordinal}: expected render trap, but ${error.message}`);
+          return 0;
+        }
         return 1;
+      }
+    },
+    must_reject(ordinal, inPtr, inLen) {
+      if (!caseOpen(ordinal, "must_reject")) return 0;
+      state.next += 1n;
+      const input = readOracle(inPtr, inLen);
+      if (!input) {
+        failProtocol(`must_reject pointer out of range at ordinal ${ordinal}`);
+        return 0;
+      }
+      if (typeof impl.exports.commit !== "function") {
+        state.failCount += 1;
+        state.failures.push(`case ${ordinal}: expected rejection, but implementation does not export commit`);
+        return 0;
+      }
+      try {
+        renderComponent(impl, input);
+        state.failCount += 1;
+        state.failures.push(`case ${ordinal}: expected rejection, transaction was accepted`);
+        return 0;
+      } catch (error) {
+        if (error instanceof ContentRejection) return 1;
+        state.failCount += 1;
+        state.failures.push(`case ${ordinal}: expected rejection: ${error.message ?? error}`);
+        return 0;
       }
     },
     must_render_into(ordinal, inPtr, inLen, outPtr, outCap) {

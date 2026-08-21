@@ -2,8 +2,8 @@
 
 `wasm-nontrapping-divides.wasm` is a conservative static checker for
 WebAssembly integer division and remainder instructions. It returns the input
-module unchanged when every operation is proven non-trapping and traps when a
-proof is missing.
+module unchanged when every operation is proven non-trapping. Its `commit()`
+result rejects the input when a proof is missing.
 
 ```sh
 make -j qip components/application/wasm/wasm-nontrapping-divides.wasm

@@ -83,10 +83,10 @@ Download a component and a reusable oracle, then check them together:
 ```sh
 curl -L -o utf8-must-be-valid.wasm \
   https://qip.dev/components/utf8/utf8-must-be-valid.wasm
-curl -L -o trap-invalid-utf8.wasm \
-  https://qip.dev/oracles/trap-invalid-utf8.wasm
+curl -L -o reject-invalid-utf8.wasm \
+  https://qip.dev/oracles/reject-invalid-utf8.wasm
 
-npx @qip.dev/qipx comply utf8-must-be-valid.wasm --with trap-invalid-utf8.wasm
+npx @qip.dev/qipx comply utf8-must-be-valid.wasm --with reject-invalid-utf8.wasm
 ```
 
 `comply` accepts files and directories. Directories are searched recursively.

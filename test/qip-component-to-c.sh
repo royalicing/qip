@@ -36,9 +36,9 @@ printf '# Heading\n\nHello *world*.\n' > "$tmp_dir/commonmark.md"
 translate_and_compile components/utf8/hello.wasm hello
 translate_and_compile components/text/html/html-escape.wasm html-escape
 translate_and_compile components/text/json/json-prettify.wasm json-prettify
-translate_and_compile components/image/png/png-to-bmp-bgra32.wasm png-to-bmp
+translate_and_compile components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm png-to-bmp
 translate_and_compile components/image/bmp/bmp-to-png.wasm bmp-to-png
-translate_and_compile components/image/svg+xml/svg-rasterize.wasm svg-rasterize
+translate_and_compile components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm svg-rasterize
 translate_and_compile components/application/x-tar/tar-to-zip.wasm tar-to-zip
 translate_and_compile components/application/wasm/wasm-counts.wasm wasm-counts
 translate_and_compile components/text/markdown/commonmark.0.31.2.wasm commonmark
@@ -46,11 +46,11 @@ translate_and_compile components/text/markdown/commonmark.0.31.2.wasm commonmark
 compare_output components/utf8/hello.wasm hello "$tmp_dir/html.txt"
 compare_output components/text/html/html-escape.wasm html-escape "$tmp_dir/html.txt"
 compare_output components/text/json/json-prettify.wasm json-prettify "$tmp_dir/data.json"
-compare_output components/image/png/png-to-bmp-bgra32.wasm png-to-bmp site-static/_og/index.png
-compare_output components/image/svg+xml/svg-rasterize.wasm svg-rasterize qip-logo.svg
+compare_output components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm png-to-bmp site-static/_og/index.png
+compare_output components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm svg-rasterize qip-logo.svg
 
 "$qip_bin" run -i site-static/_og/index.png -o "$tmp_dir/image.bmp" \
-    components/image/png/png-to-bmp-bgra32.wasm
+    components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm
 compare_output components/image/bmp/bmp-to-png.wasm bmp-to-png "$tmp_dir/image.bmp"
 
 tar -cf "$tmp_dir/input.tar" docs/formats.md

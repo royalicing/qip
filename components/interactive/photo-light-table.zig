@@ -1,4 +1,5 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const DISPLAY_W: usize = 800;
 const DISPLAY_H: usize = 520;
@@ -7,21 +8,21 @@ const RETINA_SCALE_SQ: i32 = RETINA_SCALE * RETINA_SCALE;
 const RETINA_SCALE_USIZE: usize = 2;
 const RENDER_W: usize = DISPLAY_W * RETINA_SCALE_USIZE;
 const RENDER_H: usize = DISPLAY_H * RETINA_SCALE_USIZE;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const TEX_SIZE: usize = 256;
 const TEX_COORD_MAX: i32 = @as(i32, @intCast(TEX_SIZE - 1));
 const TEX_BYTES: usize = TEX_SIZE * TEX_SIZE * 4;
 const PHOTO_COUNT: usize = 12;
 const TGA_BGRA8_256_HEADER = [_]u8{
-    0, 0, 2,
-    0, 0, 0, 0, 0,
-    0, 0,
-    0, 0,
-    0, 1,
-    0, 1,
-    32,
-    0x28,
+    0, 0,  2,
+    0, 0,  0,
+    0, 0,  0,
+    0, 0,  0,
+    0, 1,  0,
+    1, 32, 0x28,
 };
 
 const CENTER_X: i32 = @as(i32, @intCast(RENDER_W / 2));
@@ -135,7 +136,8 @@ const cards = [_]Card{
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
-var background_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
+var background_buf: [PIXEL_BYTES]u8 = undefined;
 var initialized = false;
 var needs_redraw = true;
 var selected: i32 = 5;
@@ -151,23 +153,49 @@ var press_pan_y_q8: i32 = 0;
 var pointer_x: i32 = -1000;
 var pointer_y: i32 = -1000;
 
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    transaction_phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     ensureInit();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     switch (x11_key) {
@@ -183,7 +211,9 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     ensureInit();
     pointer_x = x_px;
     pointer_y = y_px;
@@ -216,7 +246,14 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (needs_redraw) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     ensureInit();
     var active = primary_down;
     if (!primary_down) {
@@ -232,21 +269,36 @@ export fn tick(now_ms: i64) i64 {
             pan_y_q8 = target_pan_y_q8;
         }
     }
-    return if (active) now_ms + 16 else 0;
+    next_wake_at_ms = if (active and begun_at_ms <= std.math.maxInt(i64) - 16) begun_at_ms + 16 else begun_at_ms;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
     ensureInit();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    advanceTransactionTime();
+    const active = primary_down or absI32(target_pan_x_q8 - pan_x_q8) > 1 or absI32(target_pan_y_q8 - pan_y_q8) > 1;
+    next_wake_at_ms = if (active and begun_at_ms <= std.math.maxInt(i64) - 16) begun_at_ms + 16 else begun_at_ms;
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    transaction_phase = .ready;
+    return wake;
 }
 
 fn ensureInit() void {
     if (initialized) return;
     drawBackground();
-    @memcpy(background_buf[0..], output_buf[0..]);
+    @memcpy(background_buf[0..], pixel_buf[0..]);
     initialized = true;
     needs_redraw = true;
 }
@@ -268,7 +320,7 @@ fn easedStep(delta: i32) i32 {
 }
 
 fn drawFrame() void {
-    @memcpy(output_buf[0..], background_buf[0..]);
+    @memcpy(pixel_buf[0..], background_buf[0..]);
 
     var i: usize = 0;
     while (i < PHOTO_COUNT) : (i += 1) {
@@ -607,7 +659,7 @@ fn shadeChannel(value: i32, light_q8: i32) u8 {
 
 fn blendPixel(x: i32, y: i32, src: u32, alpha: u8) void {
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-    const dst = std.mem.readInt(u32, output_buf[idx..][0..4], .little);
+    const dst = std.mem.readInt(u32, pixel_buf[idx..][0..4], .little);
     const a = @as(i32, alpha);
     const inv = 255 - a;
     const sr = @as(i32, @intCast(src & 0xFF));
@@ -619,12 +671,12 @@ fn blendPixel(x: i32, y: i32, src: u32, alpha: u8) void {
     const r = div255Positive(sr * a + dr * inv);
     const g = div255Positive(sg * a + dg * inv);
     const b = div255Positive(sb * a + db * inv);
-    std.mem.writeInt(u32, output_buf[idx..][0..4], packRgb(@as(u8, @intCast(r)), @as(u8, @intCast(g)), @as(u8, @intCast(b))), .little);
+    std.mem.writeInt(u32, pixel_buf[idx..][0..4], packRgb(@as(u8, @intCast(r)), @as(u8, @intCast(g)), @as(u8, @intCast(b))), .little);
 }
 
 fn storePixel(x: i32, y: i32, pixel: u32) void {
     const idx = (@as(usize, @intCast(y)) * RENDER_W + @as(usize, @intCast(x))) * 4;
-    std.mem.writeInt(u32, output_buf[idx..][0..4], pixel, .little);
+    std.mem.writeInt(u32, pixel_buf[idx..][0..4], pixel, .little);
 }
 
 fn packRgb(r: u8, g: u8, b: u8) u32 {

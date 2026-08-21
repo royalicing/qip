@@ -42,6 +42,10 @@ The current Tile and Form interfaces are evolving:
 - The repository's `IMAGE.md` for Tile components.
 - [Form ABI](/docs/form_abi) for Form components.
 
+[Timed And Eventful Component Contract](/docs/timed-and-eventful-components)
+defines initialization, timed updates, events, presentation, scheduled wakes,
+and fixed-step simulation.
+
 [`qip` CLI](/docs/qip-cli), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Elements](/docs/qip-elements) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
 
 ## Why WebAssembly
@@ -111,6 +115,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><a href="/docs/component-contract">Component Contracts</a></li>
 <li><a href="/docs/content-component">Content Component</a></li>
 <li><a href="/docs/interactive-component">Interactive Component</a></li>
+<li><a href="/docs/timed-and-eventful-components">Timed And Eventful Component Contract</a></li>
 <li><a href="/docs/uniforms">Uniforms</a></li>
 <li><a href="/docs/hard-limits">Hard Limits</a></li>
 <li><a href="/docs/formats">Formats and Encodings</a></li>

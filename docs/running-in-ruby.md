@@ -142,7 +142,9 @@ This wrapper trusts the known-valid GFM component and checks only the caller-con
 
 ## Traps, Threads, And Reuse
 
-If `render` traps, Wasmtime raises a `Wasmtime::Trap`. Treat that render as failed and do not read the output buffer; it may contain stale or partial bytes.
+If `render` traps, Wasmtime raises a `Wasmtime::Trap`. Treat that render as
+failed and do not read the output buffer; it may contain stale or partial bytes.
+Discard that instance and instantiate the module again before another render.
 
 The class compiles and instantiates the component once, then reuses it. A `MarkdownRenderer` owns mutable component memory and is not safe to call concurrently. Give each thread, worker, or pool entry its own renderer instead of sharing one instance.
 

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 function readI32Export(exports, name) {
   const value = exports[name];
@@ -37,16 +37,20 @@ async function load(name) {
 function renderText(exports, text) {
   const inputLen = writeInput(exports, text);
   const outputLen = exports.render(inputLen);
+  if (typeof exports.commit === "function") {
+    assert.ok(exports.commit() >= 0n);
+  }
   const outputPtr = readI32Export(exports, "output_ptr");
   return decoder.decode(new Uint8Array(exports.memory.buffer, outputPtr, outputLen));
 }
 
-test("html-id-validator traps on invalid input and recovers on the same instance", async () => {
+test("html-id-validator rejects invalid input and recovers on the same instance", async () => {
   const exports = await load("html-id-validator");
 
   for (const invalid of ["", "   ", "main content"]) {
     const inputLen = writeInput(exports, invalid);
-    assert.throws(() => exports.render(inputLen), WebAssembly.RuntimeError);
+    assert.equal(exports.render(inputLen), 0);
+    assert.ok(exports.commit() < 0n);
   }
 
   assert.equal(renderText(exports, "main-content"), "main-content");
@@ -60,10 +64,14 @@ test("html-input-name-validator accepts the HTML form name syntax", async () => 
   for (const valid of ["full name", "items[0].email", "名前 😀"]) {
     assert.equal(renderText(exports, valid), valid);
   }
-  assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
-  const invalidUtf8Length = writeBytes(exports, Uint8Array.of(0xc0, 0xaf));
-  assert.throws(() => exports.render(invalidUtf8Length), WebAssembly.RuntimeError);
+  assert.equal(exports.render(0), 0);
+  assert.ok(exports.commit() < 0n);
   assert.equal(renderText(exports, "email"), "email");
+
+  // Malformed UTF-8 violates input_utf8_cap. A host discards this instance.
+  const malformedExports = await load("html-input-name-validator");
+  const invalidUtf8Length = writeBytes(malformedExports, Uint8Array.of(0xc0, 0xaf));
+  assert.throws(() => malformedExports.render(invalidUtf8Length), WebAssembly.RuntimeError);
 });
 
 test("html-tag-validator recognizes HTML and valid custom element names", async () => {
@@ -77,7 +85,8 @@ test("html-tag-validator recognizes HTML and valid custom element names", async 
   }
   for (const invalid of ["", "frobnicate", "annotation-xml", "X-widget", "x_widget", " x-widget "]) {
     const inputLen = writeInput(exports, invalid);
-    assert.throws(() => exports.render(inputLen), WebAssembly.RuntimeError);
+    assert.equal(exports.render(inputLen), 0);
+    assert.ok(exports.commit() < 0n);
   }
   assert.equal(renderText(exports, "button"), "builtin");
 });

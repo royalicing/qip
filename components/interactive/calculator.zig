@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 220;
 const RENDER_H: usize = 220;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
@@ -22,13 +25,22 @@ const C_DARK: Color = .{ 0x1D, 0x1D, 0x20, 0xFF };
 const Op = enum(u8) { none, add, sub, mul, div };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
-var current: i32 = 0;
-var stored: i32 = 0;
-var op: Op = .none;
-var entering: bool = false;
-var has_error: bool = false;
-var primary_down: bool = false;
-var needs_redraw: bool = true;
+
+const State = struct {
+    current: i32 = 0,
+    stored: i32 = 0,
+    op: Op = .none,
+    entering: bool = false,
+    has_error: bool = false,
+    primary_down: bool = false,
+};
+
+const Phase = enum { initializing, ready, updating };
+
+var state: State = .{};
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
 
 const labels = [_]u8{
     'C', '<', '/', '*',
@@ -38,23 +50,39 @@ const labels = [_]u8{
     '0', '0', '.', '=',
 };
 
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireEventPhase();
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
     if (x11_key >= '0' and x11_key <= '9') {
         pressDigit(@as(u8, @intCast(x11_key - '0')));
@@ -65,31 +93,43 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
         XK_BACKSPACE, '<' => backspace(),
         else => return 0,
     }
-    needs_redraw = true;
     return 1;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    requireEventPhase();
     const down = (button_mask & BTN_PRIMARY) != 0;
-    if (down and !primary_down) {
-        if (buttonIndexAt(x_px, y_px)) |idx| pressButton(idx);
-        primary_down = down;
-        needs_redraw = true;
-        return 1;
+    if (down and !state.primary_down) {
+        const idx = buttonIndexAt(x_px, y_px);
+        state.primary_down = down;
+        if (idx) |button_idx| {
+            pressButton(button_idx);
+            return 1;
+        }
+        return 0;
     }
-    primary_down = down;
+    state.primary_down = down;
     return 0;
 }
 
-export fn tick(_: i64) i64 {
-    return 0;
+fn requireEventPhase() void {
+    if (phase != .updating) @trap();
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    committed_at_ms = begun_at_ms;
+    phase = .ready;
+    return begun_at_ms;
 }
 
 fn pressButton(idx: usize) void {
@@ -105,55 +145,51 @@ fn pressButton(idx: usize) void {
 }
 
 fn pressDigit(digit: u8) void {
-    if (has_error) resetCalc();
-    if (!entering) {
-        current = 0;
-        entering = true;
+    if (state.has_error) resetCalc();
+    if (!state.entering) {
+        state.current = 0;
+        state.entering = true;
     }
-    if (current <= 99999999) current = current * 10 + digit;
+    if (state.current <= 99999999) state.current = state.current * 10 + digit;
 }
 
 fn pressOp(next: Op) void {
-    if (op != .none and entering) applyOp();
-    stored = current;
-    op = next;
-    entering = false;
+    if (state.op != .none and state.entering) applyOp();
+    state.stored = state.current;
+    state.op = next;
+    state.entering = false;
 }
 
 fn pressEquals() void {
-    if (op == .none) return;
+    if (state.op == .none) return;
     applyOp();
-    op = .none;
-    entering = false;
+    state.op = .none;
+    state.entering = false;
 }
 
 fn applyOp() void {
-    current = switch (op) {
-        .none => current,
-        .add => stored + current,
-        .sub => stored - current,
-        .mul => stored * current,
-        .div => blk: {
-            if (current == 0) {
-                has_error = true;
-                break :blk 0;
-            }
-            break :blk @divTrunc(stored, current);
-        },
+    const result: ?i32 = switch (state.op) {
+        .none => state.current,
+        .add => std.math.add(i32, state.stored, state.current) catch null,
+        .sub => std.math.sub(i32, state.stored, state.current) catch null,
+        .mul => std.math.mul(i32, state.stored, state.current) catch null,
+        .div => if (state.current == 0 or (state.stored == std.math.minInt(i32) and state.current == -1)) null else @divTrunc(state.stored, state.current),
     };
+    if (result) |value| {
+        state.current = value;
+    } else {
+        state.current = 0;
+        state.has_error = true;
+    }
 }
 
 fn resetCalc() void {
-    current = 0;
-    stored = 0;
-    op = .none;
-    entering = false;
-    has_error = false;
+    state = .{};
 }
 
 fn backspace() void {
-    if (has_error) return resetCalc();
-    current = @divTrunc(current, 10);
+    if (state.has_error) return resetCalc();
+    state.current = @divTrunc(state.current, 10);
 }
 
 fn keyToOp(k: i32) Op {
@@ -189,10 +225,10 @@ fn drawFrame() void {
     drawBorder(10, 10, 200, 200);
     fillRectI32(18, 24, 184, 34, C_DISPLAY);
     drawBorder(18, 24, 184, 34);
-    if (has_error) {
+    if (state.has_error) {
         drawText(156, 38, "ERR", C_TEXT);
     } else {
-        drawNumberRight(194, 38, current, C_TEXT);
+        drawNumberRight(194, 38, state.current, C_TEXT);
     }
     drawButtons();
 }
@@ -215,13 +251,13 @@ fn drawButtons() void {
 fn drawNumberRight(x_right: i32, y: i32, n: i32, c: Color) void {
     var digits: [12]u8 = undefined;
     var count: usize = 0;
-    var value = if (n < 0) -n else n;
+    var value: u32 = @intCast(if (n < 0) -@as(i64, n) else @as(i64, n));
     if (value == 0) {
         digits[0] = 0;
         count = 1;
     } else {
         while (value > 0 and count < digits.len) : (count += 1) {
-            digits[count] = @as(u8, @intCast(@mod(value, 10)));
+            digits[count] = @as(u8, @intCast(value % 10));
             value = @divTrunc(value, 10);
         }
     }
@@ -310,7 +346,7 @@ fn fillRectI32(x0: i32, y0: i32, w: i32, h: i32, c: Color) void {
 }
 
 fn setPixel(x: usize, y: usize, c: Color) void {
-    const idx = (y * RENDER_W + x) * 4;
+    const idx = ktx.HEADER_SIZE + (y * RENDER_W + x) * 4;
     output_buf[idx + 0] = c[0];
     output_buf[idx + 1] = c[1];
     output_buf[idx + 2] = c[2];
@@ -318,10 +354,58 @@ fn setPixel(x: usize, y: usize, c: Color) void {
 }
 
 test "addition" {
+    state = .{};
     resetCalc();
     pressDigit(2);
     pressOp(.add);
     pressDigit(3);
     pressEquals();
-    try std.testing.expect(current == 5);
+    try std.testing.expect(state.current == 5);
+}
+
+fn resetTransactionStateForTest() void {
+    state = .{};
+    phase = .initializing;
+    begun_at_ms = 0;
+    committed_at_ms = 0;
+}
+
+test "calculator updates state separately from presentation" {
+    resetTransactionStateForTest();
+    const size = render(0);
+    try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), size);
+    const initial_hash = std.hash.Wyhash.hash(0, &output_buf);
+
+    begin_update_at(1);
+    try std.testing.expectEqual(@as(i32, 1), key_event('2', FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i32, 1), key_event('+', FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i32, 1), key_event('3', FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i32, 1), key_event('=', FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i64, 1), finish_update());
+    try std.testing.expectEqual(@as(i32, 5), state.current);
+    try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
+
+    try std.testing.expectEqual(size, render(0));
+    const result_hash = std.hash.Wyhash.hash(0, &output_buf);
+    try std.testing.expect(initial_hash != result_hash);
+    try std.testing.expectEqual(size, render(0));
+    try std.testing.expectEqual(result_hash, std.hash.Wyhash.hash(0, &output_buf));
+
+    begin_update_at(2);
+    try std.testing.expectEqual(@as(i32, 1), key_event('7', FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i64, 2), finish_update());
+    try std.testing.expectEqual(@as(i32, 7), state.current);
+    try std.testing.expectEqual(result_hash, std.hash.Wyhash.hash(0, &output_buf));
+}
+
+test "calculator arithmetic overflow becomes display error" {
+    state = .{
+        .current = 3,
+        .stored = std.math.maxInt(i32),
+        .op = .mul,
+        .entering = true,
+    };
+    applyOp();
+    try std.testing.expect(state.has_error);
+    try std.testing.expectEqual(@as(i32, 0), state.current);
 }

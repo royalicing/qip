@@ -1,4 +1,5 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const NUM_CARDS: usize = 52;
 const NUM_PILES: usize = 4;
@@ -19,7 +20,9 @@ const BOARD_H: usize = CARD_H + (13 - 1) * STACK_DY;
 
 const RENDER_W: usize = PAD_X * 3 + BOARD_W + SIDE_W;
 const RENDER_H: usize = PAD_Y * 2 + BOARD_H + 20;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 const SIDE_X: usize = PAD_X * 2 + BOARD_W;
 const DECK_X: usize = SIDE_X + @divFloor(SIDE_W - CARD_W, 2);
 const DECK_Y: usize = PAD_Y;
@@ -50,6 +53,7 @@ const COLOR_WIN: Color = .{ 0xF2, 0xC2, 0x1C, 0xFF };
 const COLOR_LOSS: Color = .{ 0x7A, 0x8B, 0x9C, 0xFF };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 
 var deck: [NUM_CARDS]u8 = undefined;
 var deck_pos: usize = 0;
@@ -69,23 +73,49 @@ var dealing: bool = false;
 var deal_next_pile: u8 = 0;
 var deal_next_ms: i64 = 0;
 
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
+
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    transaction_phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
 
@@ -100,7 +130,9 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 0;
 }
 
-export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
+export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     const is_down = (button_mask & BTN_PRIMARY) != 0;
     var changed = false;
 
@@ -112,24 +144,64 @@ export fn pointer_event(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
     return if (changed) 1 else 0;
 }
 
-export fn tick(now_ms: i64) i64 {
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     if (!initialized) {
         resetGame();
     }
     if (dealing) {
-        stepDeal(now_ms);
+        stepDeal(begun_at_ms);
     }
-    return if (dealing) deal_next_ms else 0;
+    next_wake_at_ms = if (dealing) deal_next_ms else begun_at_ms;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
     if (!initialized) {
         resetGame();
+        if (dealing) stepDeal(0);
     }
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    advanceTransactionTime();
+    next_wake_at_ms = if (dealing) deal_next_ms else begun_at_ms;
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    transaction_phase = .ready;
+    return wake;
+}
+
+fn resetState() void {
+    deck = [_]u8{0} ** NUM_CARDS;
+    deck_pos = 0;
+    rng_state = 0x9E3779B9;
+    game_count = 0;
+    piles = [_][MAX_PILE]u8{[_]u8{0} ** MAX_PILE} ** NUM_PILES;
+    pile_lens = [_]u8{0} ** NUM_PILES;
+    discard_count = 0;
+    selected_pile = -1;
+    primary_down = false;
+    game_state = STATE_PLAYING;
+    needs_redraw = true;
+    initialized = false;
+    dealing = false;
+    deal_next_pile = 0;
+    deal_next_ms = 0;
 }
 
 fn resetGame() void {
@@ -731,10 +803,10 @@ fn setPixelI32(x: i32, y: i32, color: Color) void {
 
 fn setPixel(x: usize, y: usize, color: Color) void {
     const idx = (y * RENDER_W + x) * 4;
-    output_buf[idx + 0] = color[0];
-    output_buf[idx + 1] = color[1];
-    output_buf[idx + 2] = color[2];
-    output_buf[idx + 3] = color[3];
+    pixel_buf[idx + 0] = color[0];
+    pixel_buf[idx + 1] = color[1];
+    pixel_buf[idx + 2] = color[2];
+    pixel_buf[idx + 3] = color[3];
 }
 
 fn absI32(v: i32) i32 {

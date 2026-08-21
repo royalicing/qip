@@ -2,6 +2,9 @@
 
 A quarter-by-quarter view of Shutterstock earnings with the SSTK share price drawn over the same reporting periods.
 
+The metric and selected quarter are retained update state. Hover changes do
+not replace the chart until the host calls `render`.
+
 Controls:
 
 - Hover the chart or use the arrow keys to inspect a quarter

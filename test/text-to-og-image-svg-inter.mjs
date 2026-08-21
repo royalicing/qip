@@ -78,9 +78,13 @@ test("uses proportional advances and Inter pair kerning", async () => {
   instance.exports.uniform_set_font_weight(400);
   assert.equal(instance.exports.uniform_set_font_max_size(112), 112);
   const [aInAv, vInAv] = firstTwoXPositions(render(instance, form("AV")));
+  instance.exports.uniform_set_font_weight(400);
+  instance.exports.uniform_set_font_max_size(112);
   const [aInAa, secondA] = firstTwoXPositions(render(instance, form("AA")));
   assert.ok(vInAv - aInAv < secondA - aInAa, "expected AV kerning to tighten the pair");
 
+  instance.exports.uniform_set_font_weight(400);
+  instance.exports.uniform_set_font_max_size(112);
   const [i, w] = firstTwoXPositions(render(instance, form("iW")));
   assert.ok(w - i < secondA - aInAa, "expected the narrow i advance to be proportional");
 });
@@ -100,10 +104,30 @@ test("font_max_size remains a ceiling while auto-fit can select less", async () 
 });
 
 test("supports common title punctuation and rejects unsupported scripts", async () => {
-  const instance = await instantiate();
+  let instance = await instantiate();
   assert.doesNotThrow(() => render(instance, form("“Clear”—fast… €42™", "A subtitle")));
   assert.doesNotThrow(() => render(instance, form("", "Subtitle without a title")));
   assert.doesNotThrow(() => render(instance, form("", "")));
   assert.throws(() => render(instance, form("Greek Ω is unsupported")));
+  instance = await instantiate();
   assert.throws(() => render(instance, "subtitle=Missing+title"));
+});
+
+test("uniforms reset to authored defaults after render", async () => {
+  const instance = await instantiate();
+  instance.exports.uniform_set_text_color(0x11223344);
+  instance.exports.uniform_set_background_color(0xaabbccff);
+  instance.exports.uniform_set_font_weight(400);
+  instance.exports.uniform_set_font_max_size(64);
+  const configured = render(instance, form("A"));
+  assert.match(configured, /fill="#aabbcc"/);
+  assert.match(configured, /fill="#11223344"/);
+  assert.match(configured, /data-font-weight="400"/);
+  assert.match(configured, /data-font-size="64"/);
+
+  const defaults = render(instance, form("A"));
+  assert.match(defaults, /fill="#eecc33"/);
+  assert.match(defaults, /fill="#101010"/);
+  assert.match(defaults, /data-font-weight="700"/);
+  assert.match(defaults, /data-font-size="112"/);
 });

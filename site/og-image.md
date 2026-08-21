@@ -156,9 +156,9 @@ const status = document.getElementById("og-status");
 const titleInput = form.elements.namedItem("title");
 const subtitleInput = form.elements.namedItem("subtitle");
 const rasterComponentURLs = {
-  svg: "/components/image/svg+xml/svg-rasterize.wasm",
+  svg: "/components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm",
   png: "/components/image/bmp/bmp-to-png.wasm",
-  webp: "/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm",
+  webp: "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm",
 };
 const rasterComponents = new Map();
 
@@ -381,9 +381,9 @@ update();
 
 - <a href="/components/utf8/text-to-og-image-svg-inter.wasm" download>text-to-og-image-svg-inter.wasm</a> — <qip-content-size src="/components/utf8/text-to-og-image-svg-inter.wasm"></qip-content-size>
 - <a href="/components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm" download>text-to-og-image-svg-dejavu-sans-mono.wasm</a> — <qip-content-size src="/components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm"></qip-content-size>
-- <a href="/components/image/svg+xml/svg-rasterize.wasm" download>svg-rasterize.wasm</a> — <qip-content-size src="/components/image/svg+xml/svg-rasterize.wasm"></qip-content-size>
+- <a href="/components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm" download>svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm</a> — <qip-content-size src="/components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size>
 - <a href="/components/image/bmp/bmp-to-png.wasm" download>bmp-to-png.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-png.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm" download>bmp-bgra32-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-bgra32-to-webp-lossless.wasm"></qip-content-size>
+- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"></qip-content-size>
 
 ## JavaScript
 
@@ -408,10 +408,10 @@ import * as ogImageRenderer from "./text-to-og-image-svg-inter.wasm";
 
 // The SVG rasterizer produces a BGRA BMP. The other two components encode that
 // BMP as PNG or lossless WebP. Remove imports and calls for formats you do not use.
-import * as svgRasterizer from "./svg-rasterize.wasm";
+import * as svgRasterizer from "./svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm";
 import * as pngEncoder from "./bmp-to-png.wasm";
 // This lossless WebP encoder reserves 1.5 GiB of Wasm memory when imported.
-import * as webpEncoder from "./bmp-bgra32-to-webp-lossless.wasm";
+import * as webpEncoder from "./bmp-b8g8r8a8-srgb-to-webp-lossless.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });

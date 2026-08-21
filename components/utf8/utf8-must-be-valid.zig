@@ -1,86 +1,139 @@
-// Traps on invalid UTF-8 input.
+// Accepts valid UTF-8 input unchanged and rejects malformed byte sequences.
 
 const INPUT_CAP: usize = 1024 * 1024;
-const OUTPUT_CAP: usize = INPUT_CAP;
+const NO_RENDER: i64 = 1;
+const ERROR_BIT: u64 = 1 << 63;
+const INVALID_INPUT_BIT: u64 = 1 << 62;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
+var pending_commit_result: i64 = NO_RENDER;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
 
-export fn input_utf8_cap() u32 {
+export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
 export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
+    return input_ptr();
 }
 
 export fn output_utf8_cap() u32 {
-    return @as(u32, @intCast(OUTPUT_CAP));
+    return @as(u32, @intCast(INPUT_CAP));
 }
 
-fn isContinuation(b: u8) bool {
-    return (b & 0xC0) == 0x80;
+fn invalidInput(offset: u32) i64 {
+    return @bitCast(ERROR_BIT | INVALID_INPUT_BIT | @as(u64, offset));
+}
+
+fn isContinuation(byte: u8) bool {
+    return (byte & 0xc0) == 0x80;
 }
 
 fn isEightAscii(start: u32) bool {
     const index: usize = @intCast(start);
     const ptr: *align(1) const u64 = @ptrCast(&input_buf[index]);
-    return (ptr.* & 0x8080808080808080) == 0;
+    return (ptr.* & 0x8080_8080_8080_8080) == 0;
 }
 
-export fn render(input_size_in: u32) u32 {
-    var input_size: u32 = input_size_in;
-    if (input_size > INPUT_CAP) {
-        input_size = @intCast(INPUT_CAP);
-    }
+fn reject(offset: u32) u32 {
+    pending_commit_result = invalidInput(offset);
+    return 0;
+}
 
+export fn render(input_size: u32) u32 {
+    if (pending_commit_result != NO_RENDER) @trap();
+    if (input_size > INPUT_CAP) @trap();
+
+    pending_commit_result = invalidInput(0);
     var i: u32 = 0;
     while (i < input_size) {
-        const b = input_buf[@intCast(i)];
-        if (b <= 0x7F) {
-            if (i + 8 <= input_size and isEightAscii(i)) {
-                i += 8;
-            } else {
-                i += 1;
-            }
+        const b = input_buf[i];
+        if (b <= 0x7f) {
+            if (i + 8 <= input_size and isEightAscii(i)) i += 8 else i += 1;
             continue;
         }
-        if (b >= 0xC2 and b <= 0xDF) {
-            if (i + 1 >= input_size) @trap();
-            const b2 = input_buf[@intCast(i + 1)];
-            if (!isContinuation(b2)) @trap();
+
+        if (b >= 0xc2 and b <= 0xdf) {
+            if (i + 1 >= input_size) return reject(input_size);
+            if (!isContinuation(input_buf[i + 1])) return reject(i + 1);
             i += 2;
             continue;
         }
-        if (b >= 0xE0 and b <= 0xEF) {
-            if (i + 2 >= input_size) @trap();
-            const b2 = input_buf[@intCast(i + 1)];
-            const b3 = input_buf[@intCast(i + 2)];
-            if (!isContinuation(b2) or !isContinuation(b3)) @trap();
-            if (b == 0xE0 and b2 < 0xA0) @trap();
-            if (b == 0xED and b2 >= 0xA0) @trap();
+
+        if (b >= 0xe0 and b <= 0xef) {
+            if (i + 2 >= input_size) return reject(input_size);
+            const b2 = input_buf[i + 1];
+            const b3 = input_buf[i + 2];
+            if (!isContinuation(b2)) return reject(i + 1);
+            if (!isContinuation(b3)) return reject(i + 2);
+            if (b == 0xe0 and b2 < 0xa0) return reject(i);
+            if (b == 0xed and b2 >= 0xa0) return reject(i);
             i += 3;
             continue;
         }
-        if (b >= 0xF0 and b <= 0xF4) {
-            if (i + 3 >= input_size) @trap();
-            const b2 = input_buf[@intCast(i + 1)];
-            const b3 = input_buf[@intCast(i + 2)];
-            const b4 = input_buf[@intCast(i + 3)];
-            if (!isContinuation(b2) or !isContinuation(b3) or !isContinuation(b4)) @trap();
-            if (b == 0xF0 and b2 < 0x90) @trap();
-            if (b == 0xF4 and b2 >= 0x90) @trap();
+
+        if (b >= 0xf0 and b <= 0xf4) {
+            if (i + 3 >= input_size) return reject(input_size);
+            const b2 = input_buf[i + 1];
+            const b3 = input_buf[i + 2];
+            const b4 = input_buf[i + 3];
+            if (!isContinuation(b2)) return reject(i + 1);
+            if (!isContinuation(b3)) return reject(i + 2);
+            if (!isContinuation(b4)) return reject(i + 3);
+            if (b == 0xf0 and b2 < 0x90) return reject(i);
+            if (b == 0xf4 and b2 >= 0x90) return reject(i);
             i += 4;
             continue;
         }
-        @trap();
+
+        return reject(i);
     }
 
-    const out_len: usize = @intCast(input_size);
-    @memcpy(output_buf[0..out_len], input_buf[0..out_len]);
+    pending_commit_result = 0;
     return input_size;
 }
+
+export fn commit() i64 {
+    const result = if (pending_commit_result == NO_RENDER)
+        invalidInput(0)
+    else
+        pending_commit_result;
+    pending_commit_result = NO_RENDER;
+    return result;
+}
+
+test "accepts UTF-8 in place" {
+    const input = "Hello, \xe4\xb8\x96\xe7\x95\x8c";
+    @memcpy(input_buf[0..input.len], input);
+    try std.testing.expectEqual(@as(u32, input.len), render(input.len));
+    try std.testing.expectEqual(@as(i64, 0), commit());
+    try std.testing.expectEqualStrings("Hello, \xe4\xb8\x96\xe7\x95\x8c", input_buf[0..input.len]);
+}
+
+test "rejects with an offset and accepts the next render" {
+    const invalid = [_]u8{ 'A', 0xc3, '(' };
+    @memcpy(input_buf[0..invalid.len], &invalid);
+    try std.testing.expectEqual(@as(u32, 0), render(invalid.len));
+    const rejected: u64 = @bitCast(commit());
+    try std.testing.expect(rejected >> 63 == 1);
+    try std.testing.expect(rejected & INVALID_INPUT_BIT != 0);
+    try std.testing.expectEqual(@as(u64, 2), rejected & 0xffff_ffff);
+
+    input_buf[0] = 'A';
+    try std.testing.expectEqual(@as(u32, 1), render(1));
+    try std.testing.expectEqual(@as(i64, 0), commit());
+    try std.testing.expectEqualStrings("A", input_buf[0..1]);
+}
+
+test "reports truncated input at the end" {
+    const invalid = [_]u8{ 0xe2, 0x82 };
+    @memcpy(input_buf[0..invalid.len], &invalid);
+    try std.testing.expectEqual(@as(u32, 0), render(invalid.len));
+    const rejected: u64 = @bitCast(commit());
+    try std.testing.expectEqual(@as(u64, invalid.len), rejected & 0xffff_ffff);
+}
+
+const std = @import("std");

@@ -1,8 +1,11 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 420;
 const RENDER_H: usize = 300;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 const INPUT_CAP: usize = 64;
 
 const XK_LEFT: i32 = 0xFF51;
@@ -56,43 +59,56 @@ const NAMED_CRATERS = [_]Crater{
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var input_buf: [INPUT_CAP]u8 = [_]u8{0} ** INPUT_CAP;
 
-var initialized: bool = false;
 var needs_redraw: bool = true;
 
-var base_days: i64 = 0;
+var base_days: i64 = daysFromCivil(2026, 5, 31);
 var day_offset: i32 = 0;
 var input_sig: u32 = 0;
+
+const Phase = enum { initializing, ready, updating };
+
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf[0])));
 }
 
-export fn input_utf8_cap() u32 {
+export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    transaction_phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
-    ensureInitialized();
 
     switch (x11_key) {
         XK_LEFT => day_offset -= 1,
@@ -103,56 +119,47 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     return 0;
 }
 
-export fn tick(_: i64) i64 {
-    ensureInitialized();
-    maybeRefreshInputDate();
-    return 0;
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
-    ensureInitialized();
-    drawScene();
-    needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
-}
-
-fn ensureInitialized() void {
-    if (initialized) return;
-    const n = inputLenUntilNul(input_buf[0..]);
-    input_sig = hashInput(input_buf[0..n]);
-    if (parseDateDays(input_buf[0..n])) |days| {
-        base_days = days;
+export fn render(input_size: u32) u32 {
+    if (input_size > INPUT_CAP) @trap();
+    if (transaction_phase == .initializing) {
+        refreshInputDate(input_buf[0..input_size]);
     } else {
-        base_days = daysFromCivil(2026, 5, 31);
+        if (transaction_phase != .ready or input_size != 0) @trap();
     }
-    day_offset = 0;
-    initialized = true;
-    needs_redraw = true;
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
+    drawScene();
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    needs_redraw = false;
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
-fn maybeRefreshInputDate() void {
-    const n = inputLenUntilNul(input_buf[0..]);
-    const sig = hashInput(input_buf[0..n]);
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    committed_at_ms = begun_at_ms;
+    transaction_phase = .ready;
+    return begun_at_ms;
+}
+
+fn refreshInputDate(input: []const u8) void {
+    const sig = hashInput(input);
     if (sig == input_sig) return;
     input_sig = sig;
-    if (parseDateDays(input_buf[0..n])) |days| {
+    if (parseDateDays(input)) |days| {
         base_days = days;
         day_offset = 0;
         needs_redraw = true;
     }
-}
-
-fn inputLenUntilNul(s: []const u8) usize {
-    var i: usize = 0;
-    while (i < s.len) : (i += 1) {
-        if (s[i] == 0) return i;
-    }
-    return s.len;
 }
 
 fn hashInput(s: []const u8) u32 {
@@ -507,10 +514,10 @@ fn setPixelI32(x: i32, y: i32, color: Color) void {
 
 fn setPixel(x: usize, y: usize, color: Color) void {
     const idx = (y * RENDER_W + x) * 4;
-    output_buf[idx + 0] = color[0];
-    output_buf[idx + 1] = color[1];
-    output_buf[idx + 2] = color[2];
-    output_buf[idx + 3] = color[3];
+    pixel_buf[idx + 0] = color[0];
+    pixel_buf[idx + 1] = color[1];
+    pixel_buf[idx + 2] = color[2];
+    pixel_buf[idx + 3] = color[3];
 }
 
 fn fillRect(x0: usize, y0: usize, w: usize, h: usize, color: Color) void {

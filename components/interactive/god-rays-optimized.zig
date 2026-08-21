@@ -16,11 +16,14 @@
 // the straight port by at most 1/255 per channel.
 
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 const noise = @import("assets/god_rays_noise_r_128.zig");
 
 const RENDER_W: usize = 640;
 const RENDER_H: usize = 360;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const MAX_COLOR_COUNT: usize = 5;
 
@@ -65,7 +68,46 @@ var u_pixel_ratio: f32 = 1.0;
 
 var u_speed: f32 = 0.75;
 var frame_offset_ms: f32 = 0.0;
-var now_ms_state: i64 = 0;
+
+const Uniform = enum(u5) {
+    density,
+    spotty,
+    mid_size,
+    mid_intensity,
+    intensity,
+    bloom,
+    colors_count,
+    color_back,
+    color_bloom,
+    color_1,
+    color_2,
+    color_3,
+    color_4,
+    color_5,
+    fit,
+    scale,
+    rotation,
+    origin_x,
+    origin_y,
+    offset_x,
+    offset_y,
+    world_width,
+    world_height,
+    pixel_ratio,
+    speed,
+    frame,
+};
+
+const Phase = enum {
+    initializing,
+    ready,
+    updating,
+};
+
+var phase: Phase = .initializing;
+var uniform_mask: u32 = 0;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
 
 fn rgbaFromPacked(v: u32) [4]f32 {
     return .{
@@ -84,147 +126,230 @@ fn packedFromRgba(c: [4]f32) u32 {
     return (r << 24) | (g << 16) | (b << 8) | a;
 }
 
-// ---- Interactive ABI ----
+// ---- Timed ABI ----
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(_: i32, _: i32, _: i64) i32 {
-    return 0;
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready or uniform_mask != 0) @trap();
+    if (now_ms <= committed_at_ms) @trap();
+    resetUniforms();
+    uniform_mask = 0;
+    begun_at_ms = now_ms;
+    phase = .updating;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
-    return 0;
-}
-
-export fn tick(now_ms: i64) i64 {
-    now_ms_state = now_ms;
-    if (u_speed == 0.0) return 0;
-    return now_ms + 16;
-}
-
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     renderFrame();
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    finishUniforms();
+    return OUTPUT_BYTES;
+}
+
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    const speed = u_speed;
+    committed_at_ms = begun_at_ms;
+    finishUniforms();
+    if (speed == 0.0) return begun_at_ms;
+    return begun_at_ms +| 16;
+}
+
+fn finishUniforms() void {
+    resetUniforms();
+    uniform_mask = 0;
+    phase = .ready;
+}
+
+fn resetUniforms() void {
+    u_color_back = .{ 0.0, 0.0, 0.0, 1.0 };
+    u_color_bloom = .{ 0.0, 0.0, 1.0, 1.0 };
+    u_colors = .{
+        rgbaFromPacked(0xa600ff6e),
+        rgbaFromPacked(0x6200fff0),
+        rgbaFromPacked(0xffffffff),
+        rgbaFromPacked(0x33fff5ff),
+        .{ 0.0, 0.0, 0.0, 0.0 },
+    };
+    u_colors_count = 4.0;
+    u_density = 0.3;
+    u_spotty = 0.3;
+    u_mid_size = 0.2;
+    u_mid_intensity = 0.4;
+    u_intensity = 0.8;
+    u_bloom = 0.4;
+    u_fit = 1.0;
+    u_scale = 1.0;
+    u_rotation = 0.0;
+    u_origin_x = 0.5;
+    u_origin_y = 0.5;
+    u_offset_x = 0.0;
+    u_offset_y = -0.55;
+    u_world_width = 0.0;
+    u_world_height = 0.0;
+    u_pixel_ratio = 1.0;
+    u_speed = 0.75;
+    frame_offset_ms = 0.0;
+}
+
+fn markUniform(uniform: Uniform) void {
+    if (phase != .initializing and phase != .ready and phase != .updating) @trap();
+    uniform_mask |= @as(u32, 1) << @intFromEnum(uniform);
 }
 
 // ---- Uniform setters ----
 
 export fn uniform_set_density(v: f32) f32 {
+    markUniform(.density);
     u_density = v;
     return u_density;
 }
 export fn uniform_set_spotty(v: f32) f32 {
+    markUniform(.spotty);
     u_spotty = v;
     return u_spotty;
 }
 export fn uniform_set_mid_size(v: f32) f32 {
+    markUniform(.mid_size);
     u_mid_size = v;
     return u_mid_size;
 }
 export fn uniform_set_mid_intensity(v: f32) f32 {
+    markUniform(.mid_intensity);
     u_mid_intensity = v;
     return u_mid_intensity;
 }
 export fn uniform_set_intensity(v: f32) f32 {
+    markUniform(.intensity);
     u_intensity = v;
     return u_intensity;
 }
 export fn uniform_set_bloom(v: f32) f32 {
+    markUniform(.bloom);
     u_bloom = v;
     return u_bloom;
 }
 export fn uniform_set_colors_count(v: f32) f32 {
+    markUniform(.colors_count);
     u_colors_count = std.math.clamp(v, 0.0, @as(f32, MAX_COLOR_COUNT));
     return u_colors_count;
 }
 export fn uniform_set_color_back(v: u32) u32 {
+    markUniform(.color_back);
     u_color_back = rgbaFromPacked(v);
     return packedFromRgba(u_color_back);
 }
 export fn uniform_set_color_bloom(v: u32) u32 {
+    markUniform(.color_bloom);
     u_color_bloom = rgbaFromPacked(v);
     return packedFromRgba(u_color_bloom);
 }
 export fn uniform_set_color_1(v: u32) u32 {
+    markUniform(.color_1);
     u_colors[0] = rgbaFromPacked(v);
     return packedFromRgba(u_colors[0]);
 }
 export fn uniform_set_color_2(v: u32) u32 {
+    markUniform(.color_2);
     u_colors[1] = rgbaFromPacked(v);
     return packedFromRgba(u_colors[1]);
 }
 export fn uniform_set_color_3(v: u32) u32 {
+    markUniform(.color_3);
     u_colors[2] = rgbaFromPacked(v);
     return packedFromRgba(u_colors[2]);
 }
 export fn uniform_set_color_4(v: u32) u32 {
+    markUniform(.color_4);
     u_colors[3] = rgbaFromPacked(v);
     return packedFromRgba(u_colors[3]);
 }
 export fn uniform_set_color_5(v: u32) u32 {
+    markUniform(.color_5);
     u_colors[4] = rgbaFromPacked(v);
     return packedFromRgba(u_colors[4]);
 }
 export fn uniform_set_fit(v: f32) f32 {
+    markUniform(.fit);
     u_fit = std.math.clamp(v, 0.0, 2.0);
     return u_fit;
 }
 export fn uniform_set_scale(v: f32) f32 {
+    markUniform(.scale);
     u_scale = v;
     return u_scale;
 }
 export fn uniform_set_rotation(v: f32) f32 {
+    markUniform(.rotation);
     u_rotation = v;
     return u_rotation;
 }
 export fn uniform_set_origin_x(v: f32) f32 {
+    markUniform(.origin_x);
     u_origin_x = v;
     return u_origin_x;
 }
 export fn uniform_set_origin_y(v: f32) f32 {
+    markUniform(.origin_y);
     u_origin_y = v;
     return u_origin_y;
 }
 export fn uniform_set_offset_x(v: f32) f32 {
+    markUniform(.offset_x);
     u_offset_x = v;
     return u_offset_x;
 }
 export fn uniform_set_offset_y(v: f32) f32 {
+    markUniform(.offset_y);
     u_offset_y = v;
     return u_offset_y;
 }
 export fn uniform_set_world_width(v: f32) f32 {
+    markUniform(.world_width);
     u_world_width = v;
     return u_world_width;
 }
 export fn uniform_set_world_height(v: f32) f32 {
+    markUniform(.world_height);
     u_world_height = v;
     return u_world_height;
 }
 export fn uniform_set_pixel_ratio(v: f32) f32 {
+    markUniform(.pixel_ratio);
     u_pixel_ratio = v;
     return u_pixel_ratio;
 }
 export fn uniform_set_speed(v: f32) f32 {
+    markUniform(.speed);
     u_speed = v;
     return u_speed;
 }
 export fn uniform_set_frame(v: f32) f32 {
+    markUniform(.frame);
     frame_offset_ms = v;
     return frame_offset_ms;
 }
@@ -374,7 +499,7 @@ fn renderFrame() void {
     const res_x: f32 = @floatFromInt(RENDER_W);
     const res_y: f32 = @floatFromInt(RENDER_H);
 
-    const u_time: f32 = (frame_offset_ms + u_speed * @as(f32, @floatFromInt(now_ms_state))) * 0.001;
+    const u_time: f32 = (frame_offset_ms + u_speed * @as(f32, @floatFromInt(begun_at_ms))) * 0.001;
     const t = 0.2 * u_time;
 
     // ---- v_objectUV affine constants (vertex shader, objectUV path) ----
@@ -525,7 +650,7 @@ fn renderFrame() void {
                 color_b = 0.0;
             }
 
-            const idx = (py * RENDER_W + px) * 4;
+            const idx = ktx.HEADER_SIZE + (py * RENDER_W + px) * 4;
             output_buf[idx + 0] = @intFromFloat(@round(clampf(color_r, 0.0, 1.0) * 255.0));
             output_buf[idx + 1] = @intFromFloat(@round(clampf(color_g, 0.0, 1.0) * 255.0));
             output_buf[idx + 2] = @intFromFloat(@round(clampf(color_b, 0.0, 1.0) * 255.0));
@@ -534,8 +659,88 @@ fn renderFrame() void {
     }
 }
 
-test "default preset renders opaque frame" {
-    now_ms_state = 0;
-    renderFrame();
-    try std.testing.expectEqual(@as(u8, 255), output_buf[3]);
+test "default preset renders opaque KTX2 frame" {
+    resetForTest();
+    setEveryDefaultUniform(0.75);
+    const output_size = render(0);
+    const image = ktx.parse(output_buf[0..output_size]).?;
+    try std.testing.expectEqual(RENDER_W, image.width);
+    try std.testing.expectEqual(RENDER_H, image.height);
+    try std.testing.expectEqual(@as(u8, 255), image.pixels[3]);
+}
+
+test "renderless Timed update leaves output bytes unchanged" {
+    resetForTest();
+    setEveryDefaultUniform(0.75);
+    const output_size = render(0);
+    const before = std.hash.Wyhash.hash(0, output_buf[0..output_size]);
+
+    begin_update_at(1);
+    setEveryDefaultUniform(0.75);
+    try std.testing.expectEqual(@as(i64, 17), finish_update());
+    try std.testing.expectEqual(before, std.hash.Wyhash.hash(0, output_buf[0..output_size]));
+}
+
+test "same presentation uniforms render deterministically after an update" {
+    resetForTest();
+    setEveryDefaultUniform(0.0);
+    const first_size = render(0);
+    const first = std.hash.Wyhash.hash(0, output_buf[0..first_size]);
+
+    begin_update_at(1);
+    setEveryDefaultUniform(0.0);
+    try std.testing.expectEqual(@as(i64, 1), finish_update());
+
+    setEveryDefaultUniform(0.0);
+    const second_size = render(0);
+    const second = std.hash.Wyhash.hash(0, output_buf[0..second_size]);
+    try std.testing.expectEqual(first_size, second_size);
+    try std.testing.expectEqual(first, second);
+}
+
+test "render resets presentation uniforms" {
+    resetForTest();
+    setEveryDefaultUniform(0.0);
+    const output_size = render(0);
+    try std.testing.expectEqual(@as(u32, 0), uniform_mask);
+    setEveryDefaultUniform(0.0);
+    try std.testing.expectEqual(output_size, render(0));
+    try std.testing.expectEqual(@as(u32, 0), uniform_mask);
+}
+
+fn resetForTest() void {
+    resetUniforms();
+    phase = .initializing;
+    uniform_mask = 0;
+    begun_at_ms = 0;
+    committed_at_ms = 0;
+}
+
+fn setEveryDefaultUniform(speed: f32) void {
+    _ = uniform_set_density(0.3);
+    _ = uniform_set_spotty(0.3);
+    _ = uniform_set_mid_size(0.2);
+    _ = uniform_set_mid_intensity(0.4);
+    _ = uniform_set_intensity(0.8);
+    _ = uniform_set_bloom(0.4);
+    _ = uniform_set_colors_count(4.0);
+    _ = uniform_set_color_back(0x000000ff);
+    _ = uniform_set_color_bloom(0x0000ffff);
+    _ = uniform_set_color_1(0xa600ff6e);
+    _ = uniform_set_color_2(0x6200fff0);
+    _ = uniform_set_color_3(0xffffffff);
+    _ = uniform_set_color_4(0x33fff5ff);
+    _ = uniform_set_color_5(0x00000000);
+    _ = uniform_set_fit(1.0);
+    _ = uniform_set_scale(1.0);
+    _ = uniform_set_rotation(0.0);
+    _ = uniform_set_origin_x(0.5);
+    _ = uniform_set_origin_y(0.5);
+    _ = uniform_set_offset_x(0.0);
+    _ = uniform_set_offset_y(-0.55);
+    _ = uniform_set_world_width(0.0);
+    _ = uniform_set_world_height(0.0);
+    _ = uniform_set_pixel_ratio(1.0);
+    _ = uniform_set_speed(speed);
+    _ = uniform_set_frame(0.0);
 }

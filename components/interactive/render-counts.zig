@@ -1,8 +1,12 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const RENDER_W: usize = 320;
 const RENDER_H: usize = 220;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
+const WAKE_INTERVAL_MS: i64 = 16;
 
 const BTN_PRIMARY: i32 = 1 << 0;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
@@ -15,106 +19,143 @@ const C_BLUE: Color = .{ 0x10, 0x88, 0xFF, 0xFF };
 const C_PURPLE: Color = .{ 0xAA, 0x22, 0xFF, 0xFF };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
-var total_tick_count: i32 = 0;
-var total_render_count: i32 = 0;
-var total_key_count: i32 = 0;
-var total_pointer_count: i32 = 0;
-var last_tick_ms: i32 = 0;
-var last_key_ms: i32 = 0;
-var last_key_char: u8 = 0;
-var last_pointer_ms: i32 = 0;
-var needs_redraw: bool = false;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
+
+const State = struct {
+    total_begin_count: u64 = 0,
+    total_finish_count: u64 = 0,
+    total_render_count: u64 = 0,
+    total_key_count: u64 = 0,
+    total_pointer_count: u64 = 0,
+    transaction_ms: i64 = 0,
+    last_key_ms: i64 = 0,
+    last_key_char: u8 = 0,
+    last_pointer_ms: i64 = 0,
+};
+
+const Phase = enum { initializing, ready, updating };
+
+var state: State = .{};
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, ms: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    state.total_begin_count +%= 1;
+    state.transaction_ms = now_ms;
+    begun_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
     if ((flags & FLAG_KEY_DOWN) == 0) return 0;
 
     switch (x11_key) {
-        '0'...'9', 'a'...'z' => last_key_char = @as(u8, @intCast(x11_key)),
+        '0'...'9', 'a'...'z' => state.last_key_char = @as(u8, @intCast(x11_key)),
+        'A'...'Z' => state.last_key_char = @as(u8, @intCast(x11_key + ('a' - 'A'))),
         else => return 0,
     }
-    total_key_count += 1;
-    last_key_ms = @as(i32, @intCast(ms));
-    needs_redraw = true;
+    state.total_key_count +%= 1;
+    state.last_key_ms = begun_at_ms;
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, ms: i64) i32 {
-    total_pointer_count += 1;
-    last_pointer_ms = @as(i32, @intCast(ms));
-    return 0;
+export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    state.total_pointer_count +%= 1;
+    state.last_pointer_ms = begun_at_ms;
+    return 1;
 }
 
-export fn tick(now_ms: i64) i64 {
-    total_tick_count += 1;
-    last_tick_ms = @as(i32, @intCast(now_ms));
-    return now_ms + 16;
+fn eventPhaseIsValid() bool {
+    if (phase != .updating) @trap();
+    return true;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
-    total_render_count += 1;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    state.total_render_count +%= 1;
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
-fn parseFloat(s: []const u8) f64 {
-    var value: f64 = 0;
-    var frac: f64 = 0.1;
-    var after_dot = false;
-    for (s) |ch| {
-        if (ch == '.') {
-            after_dot = true;
-        } else if (ch >= '0' and ch <= '9') {
-            const d = @as(f64, @floatFromInt(ch - '0'));
-            if (after_dot) {
-                value += d * frac;
-                frac *= 0.1;
-            } else {
-                value = value * 10 + d;
-            }
-        }
-    }
-    return value;
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    state.total_finish_count +%= 1;
+    committed_at_ms = begun_at_ms;
+    const wake = if (begun_at_ms <= std.math.maxInt(i64) - WAKE_INTERVAL_MS)
+        begun_at_ms + WAKE_INTERVAL_MS
+    else
+        begun_at_ms;
+    phase = .ready;
+    return wake;
 }
 
 fn drawFrame() void {
     fillRect(0, 0, RENDER_W, RENDER_H, C_BG);
 
-    var print_buf: [32]u8 = undefined;
+    var print_buf: [48]u8 = undefined;
 
-    drawText(20, 20, print32(&print_buf, total_key_count, ""), C_YELLOW);
-    drawText(80, 20, print32(&print_buf, last_key_ms, "ms key"), C_YELLOW);
-    drawText(200, 20, &[1]u8{last_key_char}, C_YELLOW);
-
-    drawText(20, 40, print32(&print_buf, total_pointer_count, ""), C_YELLOW);
-    drawText(80, 40, print32(&print_buf, last_pointer_ms, "ms pointer"), C_YELLOW);
-
-    drawText(20, 60, print32(&print_buf, total_tick_count, ""), C_PURPLE);
-    drawText(80, 60, print32(&print_buf, last_tick_ms, "ms tick"), C_PURPLE);
-
-    drawText(20, 80, print32(&print_buf, total_render_count, ""), C_BLUE);
+    drawText(20, 20, printUnsigned(&print_buf, state.total_begin_count, "updates begun"), C_PURPLE);
+    drawText(150, 20, printSigned(&print_buf, state.transaction_ms, "ms update"), C_PURPLE);
+    drawText(20, 45, printUnsigned(&print_buf, state.total_finish_count, "updates finished"), C_BLUE);
+    drawText(20, 70, printUnsigned(&print_buf, state.total_render_count, "renders including frame"), C_BLUE);
+    drawText(20, 105, printUnsigned(&print_buf, state.total_key_count, "keys"), C_YELLOW);
+    drawText(150, 105, printSigned(&print_buf, state.last_key_ms, "ms key"), C_YELLOW);
+    drawText(285, 105, &[1]u8{state.last_key_char}, C_YELLOW);
+    drawText(20, 130, printUnsigned(&print_buf, state.total_pointer_count, "pointers"), C_YELLOW);
+    drawText(150, 130, printSigned(&print_buf, state.last_pointer_ms, "ms pointer"), C_YELLOW);
+    drawText(20, 175, "render follows finished update", C_TEXT);
 }
 
-fn print32(buf: *[32]u8, number: i32, item: []const u8) []const u8 {
-    var value: u32 = @as(u32, @intCast(@max(1, number)));
-    var digits_rev: [10]u8 = undefined;
+fn printSigned(buf: *[48]u8, number: i64, item: []const u8) []const u8 {
+    if (number >= 0) return printUnsigned(buf, @intCast(number), item);
+    buf[0] = '-';
+    var tail: [47]u8 = undefined;
+    const magnitude = @as(u64, @intCast(-(number + 1))) + 1;
+    const rendered = printUnsignedInto(tail[0..], magnitude, item);
+    @memcpy(buf[1 .. 1 + rendered.len], rendered);
+    return buf[0 .. 1 + rendered.len];
+}
+
+fn printUnsigned(buf: *[48]u8, number: u64, item: []const u8) []const u8 {
+    return printUnsignedInto(buf[0..], number, item);
+}
+
+fn printUnsignedInto(buf: []u8, number: u64, item: []const u8) []const u8 {
+    var value = number;
+    var digits_rev: [20]u8 = undefined;
     var digits_len: usize = 0;
     while (true) {
         digits_rev[digits_len] = @as(u8, @intCast('0')) + @as(u8, @intCast(value % 10));
@@ -130,8 +171,6 @@ fn print32(buf: *[32]u8, number: i32, item: []const u8) []const u8 {
         buf[out] = digits_rev[i];
         out += 1;
     }
-    buf[out] = '.';
-    out += 1;
     buf[out] = ' ';
     out += 1;
 
@@ -142,7 +181,7 @@ fn print32(buf: *[32]u8, number: i32, item: []const u8) []const u8 {
 
 fn drawText(x: i32, y: i32, text: []const u8, c: Color) void {
     var i: usize = 0;
-    while (i < text.len and i < 36) : (i += 1) drawChar(x + @as(i32, @intCast(i * 7)), y, text[i], c);
+    while (i < text.len and i < 42) : (i += 1) drawChar(x + @as(i32, @intCast(i * 7)), y, text[i], c);
 }
 
 fn drawChar(x: i32, y: i32, ch: u8, c: Color) void {
@@ -161,6 +200,21 @@ fn drawChar(x: i32, y: i32, ch: u8, c: Color) void {
         'X', 'x' => [_]u8{ 0b101, 0b101, 0b010, 0b101, 0b101 },
         'E' => [_]u8{ 0b111, 0b100, 0b110, 0b100, 0b111 },
         'R' => [_]u8{ 0b110, 0b101, 0b110, 0b101, 0b101 },
+        'b' => [_]u8{ 0b100, 0b100, 0b110, 0b101, 0b110 },
+        'd' => [_]u8{ 0b001, 0b001, 0b011, 0b101, 0b011 },
+        'e' => [_]u8{ 0b000, 0b111, 0b111, 0b100, 0b111 },
+        'f' => [_]u8{ 0b011, 0b010, 0b111, 0b010, 0b010 },
+        'g' => [_]u8{ 0b000, 0b011, 0b101, 0b011, 0b001 },
+        'h' => [_]u8{ 0b100, 0b100, 0b110, 0b101, 0b101 },
+        'j' => [_]u8{ 0b001, 0b000, 0b001, 0b101, 0b111 },
+        'k' => [_]u8{ 0b100, 0b101, 0b110, 0b101, 0b101 },
+        'l' => [_]u8{ 0b110, 0b010, 0b010, 0b010, 0b111 },
+        'm' => [_]u8{ 0b000, 0b110, 0b111, 0b101, 0b101 },
+        'p' => [_]u8{ 0b000, 0b110, 0b101, 0b110, 0b100 },
+        'u' => [_]u8{ 0b000, 0b101, 0b101, 0b101, 0b111 },
+        'v' => [_]u8{ 0b000, 0b101, 0b101, 0b101, 0b010 },
+        'w' => [_]u8{ 0b000, 0b101, 0b101, 0b111, 0b111 },
+        'z' => [_]u8{ 0b000, 0b111, 0b001, 0b010, 0b111 },
         's' => [_]u8{ 0b111, 0b100, 0b111, 0b001, 0b111 },
         'i' => [_]u8{ 0b010, 0b000, 0b010, 0b010, 0b010 },
         'n' => [_]u8{ 0b000, 0b110, 0b101, 0b101, 0b101 },
@@ -218,8 +272,8 @@ fn setPixelI32(x: i32, y: i32, c: Color) void {
 
 fn setPixel(x: usize, y: usize, c: Color) void {
     const idx = (y * RENDER_W + x) * 4;
-    output_buf[idx + 0] = c[0];
-    output_buf[idx + 1] = c[1];
-    output_buf[idx + 2] = c[2];
-    output_buf[idx + 3] = c[3];
+    pixel_buf[idx + 0] = c[0];
+    pixel_buf[idx + 1] = c[1];
+    pixel_buf[idx + 2] = c[2];
+    pixel_buf[idx + 3] = c[3];
 }

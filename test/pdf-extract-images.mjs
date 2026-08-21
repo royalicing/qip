@@ -15,7 +15,7 @@ const modulePath = join(
 );
 const jpegFixture = join(
   process.cwd(),
-  "compliance/jpeg-to-bmp-bgra32-fixtures/red-16x16-420.jpg",
+  "compliance/jpeg-to-bmp-b8g8r8a8-srgb-fixtures/red-16x16-420.jpg",
 );
 
 function pdfObject(number, dictionary, stream) {

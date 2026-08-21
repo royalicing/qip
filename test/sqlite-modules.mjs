@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,31 @@ async function runQip(modulePath, input, query) {
     maxBuffer: 16 * 1024 * 1024,
   });
   return stdout;
+}
+
+async function instantiateWithInput(modulePath, inputPath) {
+  const [wasm, input] = await Promise.all([
+    readFile(modulePath),
+    readFile(inputPath),
+  ]);
+  const { instance } = await WebAssembly.instantiate(wasm);
+  assert.ok(input.length <= instance.exports.input_bytes_cap());
+  new Uint8Array(instance.exports.memory.buffer).set(
+    input,
+    instance.exports.input_ptr(),
+  );
+  return { instance, inputSize: input.length };
+}
+
+function renderUtf8(instance, inputSize) {
+  const outputSize = instance.exports.render(inputSize);
+  return new TextDecoder("utf-8", { fatal: true }).decode(
+    new Uint8Array(
+      instance.exports.memory.buffer,
+      instance.exports.output_ptr(),
+      outputSize,
+    ),
+  );
 }
 
 test("table names lists all user tables in simplefolks", async (t) => {
@@ -236,4 +261,22 @@ test("table count walks multi-page tables", async (t) => {
     fixture("kv-without-rowid.sqlite"),
   );
   assert.equal(worowid.trimEnd(), "error\tWITHOUT ROWID tables are not supported");
+});
+
+test("table count resets its table uniform after counts and diagnostics", async () => {
+  const { instance, inputSize } = await instantiateWithInput(
+    module("sqlite-table-count"),
+    fixture("simplefolks.sqlite"),
+  );
+
+  instance.exports.uniform_set_table(1);
+  assert.equal(renderUtf8(instance, inputSize), "15\n");
+  assert.equal(renderUtf8(instance, inputSize), "20\n");
+
+  instance.exports.uniform_set_table(99);
+  assert.equal(
+    renderUtf8(instance, inputSize),
+    "error\ttable index out of range\n",
+  );
+  assert.equal(renderUtf8(instance, inputSize), "20\n");
 });

@@ -1,4 +1,5 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const GRID_W: usize = 20;
 const GRID_H: usize = 14;
@@ -7,7 +8,9 @@ const MAX_CELLS: usize = GRID_W * GRID_H;
 
 const RENDER_W: usize = GRID_W * TILE_PX;
 const RENDER_H: usize = GRID_H * TILE_PX;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
@@ -16,6 +19,7 @@ const XK_DOWN: i32 = 0xFF54;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 
 const STEP_MS: i64 = 120;
+const MAX_CATCH_UP_STEPS: usize = 8;
 
 const Color = [4]u8;
 const COLOR_BG: Color = .{ 0x0A, 0x11, 0x17, 0xFF };
@@ -41,48 +45,80 @@ var apple_x: i32 = 0;
 var apple_y: i32 = 0;
 
 var rng_state: u32 = 0xA3575D17;
-var has_last_step: bool = false;
 var last_step_ms: i64 = 0;
 
-var initialized: bool = false;
 var paused: bool = false;
 var game_over: bool = false;
-var needs_redraw: bool = true;
+
+const Phase = enum { initializing, ready, updating };
+
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready) @trap();
+    if (now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    requireEventPhase();
+    advanceTransactionTime();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
-
-    if (!initialized) resetGame();
 
     switch (x11_key) {
         XK_LEFT => trySetDirection(-1, 0),
         XK_RIGHT => trySetDirection(1, 0),
         XK_UP => trySetDirection(0, -1),
         XK_DOWN => trySetDirection(0, 1),
-        0x72, 0x52 => resetGame(), // r / R
+        0x72, 0x52 => {
+            resetGame(begun_at_ms);
+            next_wake_at_ms = begun_at_ms +| STEP_MS;
+        }, // r / R
         0x20 => { // space toggles pause/restart
             if (game_over) {
-                resetGame();
+                resetGame(begun_at_ms);
+                next_wake_at_ms = begun_at_ms +| STEP_MS;
             } else {
-                paused = !paused;
-                needs_redraw = true;
+                if (paused) {
+                    paused = false;
+                    last_step_ms = begun_at_ms;
+                    next_wake_at_ms = begun_at_ms +| STEP_MS;
+                } else {
+                    paused = true;
+                    next_wake_at_ms = begun_at_ms;
+                }
             }
         },
         else => return 0,
@@ -90,45 +126,61 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+    requireEventPhase();
+    advanceTransactionTime();
     return 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    if (!initialized) resetGame();
+fn requireEventPhase() void {
+    if (phase != .updating) @trap();
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
     if (paused or game_over) {
-        return 0;
+        next_wake_at_ms = begun_at_ms;
+        return;
     }
 
-    if (!has_last_step) {
-        has_last_step = true;
-        last_step_ms = now_ms;
-    }
-
-    var elapsed = now_ms - last_step_ms;
-    if (elapsed < 0) elapsed = 0;
-    while (elapsed >= STEP_MS and !game_over and !paused) {
+    var steps: usize = 0;
+    while (steps < MAX_CATCH_UP_STEPS and begun_at_ms - last_step_ms >= STEP_MS and !game_over and !paused) : (steps += 1) {
         stepSnake();
         last_step_ms += STEP_MS;
-        elapsed -= STEP_MS;
+    }
+    if (!game_over and !paused and begun_at_ms - last_step_ms >= STEP_MS) {
+        // Bound work after a long host pause. Snake cannot reconstruct every
+        // missed collision cheaply, so it drops the remaining elapsed time.
+        last_step_ms = begun_at_ms;
     }
 
-    return last_step_ms + STEP_MS;
+    next_wake_at_ms = if (paused or game_over) begun_at_ms else last_step_ms +| STEP_MS;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (phase != .initializing and phase != .ready) @trap();
+    if (phase == .initializing) resetGame(0);
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
-    needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    phase = .ready;
+    return @intCast(OUTPUT_BYTES);
 }
 
-fn resetGame() void {
-    initialized = true;
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    advanceTransactionTime();
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    phase = .ready;
+    return wake;
+}
+
+fn resetGame(at_ms: i64) void {
     paused = false;
     game_over = false;
-    has_last_step = false;
-    last_step_ms = 0;
+    last_step_ms = at_ms;
 
     snake_len = 4;
     var i: usize = 0;
@@ -144,7 +196,6 @@ fn resetGame() void {
 
     rng_state +%= 0x9E3779B9;
     placeApple();
-    needs_redraw = true;
 }
 
 fn trySetDirection(dx: i32, dy: i32) void {
@@ -165,7 +216,6 @@ fn stepSnake() void {
 
     if (nx < 0 or ny < 0 or nx >= @as(i32, @intCast(GRID_W)) or ny >= @as(i32, @intCast(GRID_H))) {
         game_over = true;
-        needs_redraw = true;
         return;
     }
 
@@ -179,7 +229,6 @@ fn stepSnake() void {
     }
     if (collide) {
         game_over = true;
-        needs_redraw = true;
         return;
     }
 
@@ -212,7 +261,6 @@ fn stepSnake() void {
             placeApple();
         }
     }
-    needs_redraw = true;
 }
 
 fn placeApple() void {
@@ -305,11 +353,90 @@ fn fillRect(x0: usize, y0: usize, w: usize, h: usize, color: Color) void {
     while (y < y0 + h) : (y += 1) {
         var x = x0;
         while (x < x0 + w) : (x += 1) {
-            const idx = (y * RENDER_W + x) * 4;
+            const idx = ktx.HEADER_SIZE + (y * RENDER_W + x) * 4;
             output_buf[idx + 0] = color[0];
             output_buf[idx + 1] = color[1];
             output_buf[idx + 2] = color[2];
             output_buf[idx + 3] = color[3];
         }
     }
+}
+
+fn resetTransactionStateForTest() void {
+    snake_len = 0;
+    dir_x = 1;
+    dir_y = 0;
+    next_dir_x = 1;
+    next_dir_y = 0;
+    apple_x = 0;
+    apple_y = 0;
+    rng_state = 0xA3575D17;
+    last_step_ms = 0;
+    paused = false;
+    game_over = false;
+    phase = .initializing;
+    begun_at_ms = 0;
+    committed_at_ms = 0;
+    time_advanced = false;
+    next_wake_at_ms = 0;
+}
+
+test "snake advances before events at the update boundary" {
+    resetTransactionStateForTest();
+    const size = render(0);
+    try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), size);
+    try std.testing.expectEqual(@as(i32, 6), snake_x[0]);
+    try std.testing.expectEqual(@as(i32, 6), snake_y[0]);
+
+    begin_update_at(STEP_MS);
+    try std.testing.expectEqual(@as(i32, 1), key_event(XK_UP, FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i64, STEP_MS * 2), finish_update());
+    try std.testing.expectEqual(@as(i32, 7), snake_x[0]);
+    try std.testing.expectEqual(@as(i32, 6), snake_y[0]);
+
+    begin_update_at(STEP_MS * 2);
+    try std.testing.expectEqual(@as(i64, STEP_MS * 3), finish_update());
+    try std.testing.expectEqual(@as(i32, 7), snake_x[0]);
+    try std.testing.expectEqual(@as(i32, 5), snake_y[0]);
+}
+
+test "snake updates preserve output until a separate render" {
+    resetTransactionStateForTest();
+    const size = render(0);
+    const initial_hash = std.hash.Wyhash.hash(0, &output_buf);
+
+    begin_update_at(STEP_MS);
+    try std.testing.expectEqual(@as(i64, STEP_MS * 2), finish_update());
+    try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
+
+    begin_update_at(STEP_MS * 2);
+    try std.testing.expectEqual(@as(i32, 1), key_event(0x20, FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i64, STEP_MS * 2), finish_update());
+    try std.testing.expect(paused);
+    try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
+
+    try std.testing.expectEqual(size, render(0));
+    try std.testing.expect(initial_hash != std.hash.Wyhash.hash(0, &output_buf));
+
+    begin_update_at(1000);
+    try std.testing.expectEqual(@as(i32, 1), key_event(0x20, FLAG_KEY_DOWN));
+    try std.testing.expectEqual(@as(i64, 1000 + STEP_MS), finish_update());
+    try std.testing.expect(!paused);
+}
+
+test "snake bounds fixed-step catch-up after a long pause" {
+    resetTransactionStateForTest();
+    _ = render(0);
+
+    begin_update_at(10_000);
+    try std.testing.expectEqual(@as(i64, 10_000 + STEP_MS), finish_update());
+    try std.testing.expectEqual(@as(i64, 10_000), last_step_ms);
+}
+
+test "snake accepts the largest update time without overflowing its wake" {
+    resetTransactionStateForTest();
+    _ = render(0);
+
+    begin_update_at(std.math.maxInt(i64));
+    try std.testing.expectEqual(@as(i64, std.math.maxInt(i64)), finish_update());
 }

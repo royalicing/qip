@@ -1,4 +1,5 @@
 const std = @import("std");
+const ktx = @import("ktx2_rgba8_srgb");
 
 const BOARD_W: usize = 10;
 const BOARD_H: usize = 20;
@@ -12,7 +13,9 @@ const PLAY_H: usize = BOARD_H * TILE;
 
 const RENDER_W: usize = PAD * 3 + PLAY_W + SIDE_W;
 const RENDER_H: usize = PAD * 2 + PLAY_H;
-const OUTPUT_BYTES: usize = RENDER_W * RENDER_H * 4;
+const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
+const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 
 const XK_LEFT: i32 = 0xFF51;
 const XK_UP: i32 = 0xFF52;
@@ -21,6 +24,7 @@ const XK_DOWN: i32 = 0xFF54;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 
 const DROP_MS: i64 = 520;
+const MAX_CATCH_UP_DROPS: i64 = BOARD_H + 4;
 
 const Color = [4]u8;
 const COLOR_BG: Color = .{ 0x10, 0x12, 0x18, 0xFF };
@@ -57,6 +61,7 @@ const SHAPES = [_][4]u16{
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var board: [BOARD_H][BOARD_W]u8 = [_][BOARD_W]u8{[_]u8{0} ** BOARD_W} ** BOARD_H;
 
 var cur_type: u8 = 0;
@@ -77,31 +82,53 @@ var game_over: bool = false;
 var initialized: bool = false;
 var needs_redraw: bool = true;
 
+const Phase = enum { initializing, ready, updating };
+var transaction_phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var time_advanced: bool = false;
+var next_wake_at_ms: i64 = 0;
+
 const WELL_X: usize = PAD;
 const WELL_Y: usize = PAD;
 const SIDE_X: usize = WELL_X + PLAY_W + PAD;
+
+export fn input_ptr() u32 {
+    return 0;
+}
+export fn input_bytes_cap() u32 {
+    return 0;
+}
 
 export fn output_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
 }
 
-export fn output_rgba8_srgb_bytes() u32 {
+export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
 
-export fn render_width_px() i32 {
-    return @as(i32, @intCast(RENDER_W));
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn render_height_px() i32 {
-    return @as(i32, @intCast(RENDER_H));
+export fn begin_update_at(now_ms: i64) void {
+    if (transaction_phase != .ready) @trap();
+    if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    time_advanced = false;
+    next_wake_at_ms = now_ms;
+    transaction_phase = .updating;
 }
 
-export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     const is_down = (flags & FLAG_KEY_DOWN) != 0;
     if (!is_down) return 0;
-    if (!initialized) resetGame();
-
     switch (x11_key) {
         0x72, 0x52 => resetGame(), // r/R
         0x20 => { // space hard drop
@@ -135,37 +162,83 @@ export fn key_event(x11_key: i32, flags: i32, _: i64) i32 {
     return 1;
 }
 
-export fn pointer_event(_: i32, _: i32, _: i32, _: i64) i32 {
+export fn pointer_event(_: i32, _: i32, _: i32) i32 {
+    if (!eventPhaseIsValid()) return 0;
+    advanceTransactionTime();
     return 0;
 }
 
-export fn tick(now_ms: i64) i64 {
-    if (!initialized) resetGame();
-    if (game_over or paused) return 0;
+fn eventPhaseIsValid() bool {
+    if (transaction_phase != .updating) @trap();
+    return true;
+}
+
+fn advanceTransactionTime() void {
+    if (time_advanced) return;
+    time_advanced = true;
+    if (!initialized) {
+        resetGame();
+        has_last_drop = true;
+        last_drop_ms = 0;
+    }
+    if (game_over or paused) {
+        next_wake_at_ms = begun_at_ms;
+        return;
+    }
 
     if (!has_last_drop) {
         has_last_drop = true;
-        last_drop_ms = now_ms;
+        last_drop_ms = begun_at_ms;
     }
-    var elapsed = now_ms - last_drop_ms;
+    var elapsed = begun_at_ms - last_drop_ms;
     if (elapsed < 0) elapsed = 0;
 
-    while (elapsed >= DROP_MS and !game_over and !paused) {
+    const available_drops = @divFloor(elapsed, DROP_MS);
+    const drops = @min(available_drops, MAX_CATCH_UP_DROPS);
+    var i: i64 = 0;
+    while (i < drops and !game_over and !paused) : (i += 1) {
         if (!tryMove(0, 1)) {
             lockPiece();
         }
-        last_drop_ms += DROP_MS;
-        elapsed -= DROP_MS;
     }
+    last_drop_ms = if (available_drops > MAX_CATCH_UP_DROPS)
+        begun_at_ms
+    else
+        last_drop_ms + drops * DROP_MS;
 
-    return last_drop_ms + DROP_MS;
+    next_wake_at_ms = if (!game_over and !paused and last_drop_ms <= std.math.maxInt(i64) - DROP_MS)
+        last_drop_ms + DROP_MS
+    else
+        begun_at_ms;
 }
 
-export fn render(input_size: i32) i32 {
-    _ = input_size;
+export fn render(input_size: u32) u32 {
+    if (input_size != 0) @trap();
+    if (transaction_phase != .initializing and transaction_phase != .ready) @trap();
+    if (!initialized) {
+        resetGame();
+        has_last_drop = true;
+        last_drop_ms = 0;
+    }
+    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
+    @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
     needs_redraw = false;
-    return @as(i32, @intCast(OUTPUT_BYTES));
+    transaction_phase = .ready;
+    return @intCast(OUTPUT_BYTES);
+}
+
+export fn finish_update() i64 {
+    if (transaction_phase != .updating) @trap();
+    advanceTransactionTime();
+    next_wake_at_ms = if (!game_over and !paused and last_drop_ms <= std.math.maxInt(i64) - DROP_MS)
+        last_drop_ms + DROP_MS
+    else
+        begun_at_ms;
+    committed_at_ms = begun_at_ms;
+    const wake = next_wake_at_ms;
+    transaction_phase = .ready;
+    return wake;
 }
 
 fn resetGame() void {
@@ -409,10 +482,23 @@ fn fillRect(x0: usize, y0: usize, w: usize, h: usize, color: Color) void {
         var x = x0;
         while (x < x0 + w) : (x += 1) {
             const idx = (y * RENDER_W + x) * 4;
-            output_buf[idx + 0] = color[0];
-            output_buf[idx + 1] = color[1];
-            output_buf[idx + 2] = color[2];
-            output_buf[idx + 3] = color[3];
+            pixel_buf[idx + 0] = color[0];
+            pixel_buf[idx + 1] = color[1];
+            pixel_buf[idx + 2] = color[2];
+            pixel_buf[idx + 3] = color[3];
         }
     }
+}
+
+test "late transactions discard drop backlog after the bounded catch-up" {
+    resetGame();
+    has_last_drop = true;
+    last_drop_ms = 0;
+    begun_at_ms = std.math.maxInt(i64);
+    time_advanced = false;
+
+    advanceTransactionTime();
+
+    try std.testing.expectEqual(std.math.maxInt(i64), last_drop_ms);
+    try std.testing.expectEqual(std.math.maxInt(i64), next_wake_at_ms);
 }

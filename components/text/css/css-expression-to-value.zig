@@ -6,16 +6,21 @@ const OUTPUT_CAP: usize = 128;
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
-// Deterministic defaults for callers that do not provide uniforms. All three
-// values are CSS pixels.
-var root_font_size: f64 = 16;
-var root_line_height: f64 = 19.2;
-var viewport_width: f64 = 1280;
-var viewport_height: f64 = 720;
-var small_viewport_width: f64 = 1280;
-var small_viewport_height: f64 = 720;
-var dynamic_viewport_width: f64 = 1280;
-var dynamic_viewport_height: f64 = 720;
+// Deterministic defaults for callers that do not provide uniforms. Every value
+// is in CSS pixels.
+const DEFAULT_ROOT_FONT_SIZE: f64 = 16;
+const DEFAULT_ROOT_LINE_HEIGHT: f64 = 19.2;
+const DEFAULT_VIEWPORT_WIDTH: f64 = 1280;
+const DEFAULT_VIEWPORT_HEIGHT: f64 = 720;
+
+var root_font_size: f64 = DEFAULT_ROOT_FONT_SIZE;
+var root_line_height: f64 = DEFAULT_ROOT_LINE_HEIGHT;
+var viewport_width: f64 = DEFAULT_VIEWPORT_WIDTH;
+var viewport_height: f64 = DEFAULT_VIEWPORT_HEIGHT;
+var small_viewport_width: f64 = DEFAULT_VIEWPORT_WIDTH;
+var small_viewport_height: f64 = DEFAULT_VIEWPORT_HEIGHT;
+var dynamic_viewport_width: f64 = DEFAULT_VIEWPORT_WIDTH;
+var dynamic_viewport_height: f64 = DEFAULT_VIEWPORT_HEIGHT;
 var safe_area_inset_top: f64 = 0;
 var safe_area_inset_right: f64 = 0;
 var safe_area_inset_bottom: f64 = 0;
@@ -30,6 +35,31 @@ var keyboard_inset_bottom: f64 = 0;
 var keyboard_inset_left: f64 = 0;
 var keyboard_inset_width: f64 = 0;
 var keyboard_inset_height: f64 = 0;
+
+fn resetUniforms() void {
+    root_font_size = DEFAULT_ROOT_FONT_SIZE;
+    root_line_height = DEFAULT_ROOT_LINE_HEIGHT;
+    viewport_width = DEFAULT_VIEWPORT_WIDTH;
+    viewport_height = DEFAULT_VIEWPORT_HEIGHT;
+    small_viewport_width = DEFAULT_VIEWPORT_WIDTH;
+    small_viewport_height = DEFAULT_VIEWPORT_HEIGHT;
+    dynamic_viewport_width = DEFAULT_VIEWPORT_WIDTH;
+    dynamic_viewport_height = DEFAULT_VIEWPORT_HEIGHT;
+    safe_area_inset_top = 0;
+    safe_area_inset_right = 0;
+    safe_area_inset_bottom = 0;
+    safe_area_inset_left = 0;
+    safe_area_max_inset_top = 0;
+    safe_area_max_inset_right = 0;
+    safe_area_max_inset_bottom = 0;
+    safe_area_max_inset_left = 0;
+    keyboard_inset_top = 0;
+    keyboard_inset_right = 0;
+    keyboard_inset_bottom = 0;
+    keyboard_inset_left = 0;
+    keyboard_inset_width = 0;
+    keyboard_inset_height = 0;
+}
 
 const Kind = enum {
     number,
@@ -424,6 +454,7 @@ export fn render(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     var result = evaluate(input_buf[0..input_size]) catch @trap();
+    resetUniforms();
     if (result.value == 0) result.value = 0; // Normalize negative zero.
     const numeric = std.fmt.bufPrint(output_buf[0..], "{d}", .{result.value}) catch @trap();
     var output_size = numeric.len;
@@ -434,6 +465,40 @@ export fn render(input_size_in: u32) u32 {
         output_size += 2;
     }
     return @intCast(output_size);
+}
+
+test "render resets every uniform to its authored default" {
+    const input = "calc(1rem + 1rlh + 1vw + 1vh + 1svw + 1svh + 1dvw + 1dvh + env(safe-area-inset-top) + env(safe-area-inset-right) + env(safe-area-inset-bottom) + env(safe-area-inset-left) + env(safe-area-max-inset-top) + env(safe-area-max-inset-right) + env(safe-area-max-inset-bottom) + env(safe-area-max-inset-left) + env(keyboard-inset-top) + env(keyboard-inset-right) + env(keyboard-inset-bottom) + env(keyboard-inset-left) + env(keyboard-inset-width) + env(keyboard-inset-height))";
+    @memcpy(input_buf[0..input.len], input);
+
+    _ = uniform_set_root_font_size(20);
+    _ = uniform_set_root_line_height(30);
+    _ = uniform_set_viewport_width(1000);
+    _ = uniform_set_viewport_height(800);
+    _ = uniform_set_small_viewport_width(600);
+    _ = uniform_set_small_viewport_height(400);
+    _ = uniform_set_dynamic_viewport_width(200);
+    _ = uniform_set_dynamic_viewport_height(100);
+    _ = uniform_set_safe_area_inset_top(1);
+    _ = uniform_set_safe_area_inset_right(2);
+    _ = uniform_set_safe_area_inset_bottom(3);
+    _ = uniform_set_safe_area_inset_left(4);
+    _ = uniform_set_safe_area_max_inset_top(5);
+    _ = uniform_set_safe_area_max_inset_right(6);
+    _ = uniform_set_safe_area_max_inset_bottom(7);
+    _ = uniform_set_safe_area_max_inset_left(8);
+    _ = uniform_set_keyboard_inset_top(9);
+    _ = uniform_set_keyboard_inset_right(10);
+    _ = uniform_set_keyboard_inset_bottom(11);
+    _ = uniform_set_keyboard_inset_left(12);
+    _ = uniform_set_keyboard_inset_width(13);
+    _ = uniform_set_keyboard_inset_height(14);
+
+    const configured_len: usize = @intCast(render(input.len));
+    try std.testing.expectEqualStrings("186px", output_buf[0..configured_len]);
+
+    const default_len: usize = @intCast(render(input.len));
+    try std.testing.expectEqualStrings("95.2px", output_buf[0..default_len]);
 }
 
 test "resolves supported relative units" {

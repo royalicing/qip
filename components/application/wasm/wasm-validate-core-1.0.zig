@@ -6,13 +6,16 @@
 //! section forms are rejected even when the host browser implements them.
 //! Specification: https://webassembly.github.io/spec/versions/core/WebAssembly-1.0.pdf
 //!
-//! Input and output are application/wasm. Valid input is copied unchanged;
-//! malformed or ill-typed input traps.
+//! Input and output are application/wasm. Valid input is accepted unchanged;
+//! malformed or ill-typed input is rejected by commit.
 
 const std = @import("std");
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
+const NO_RENDER: i64 = 1;
+const ERROR_BIT: u64 = 1 << 63;
+const INVALID_INPUT_BIT: u64 = 1 << 62;
 const MAX_TYPES: usize = 8192;
 const MAX_TYPE_VALUES: usize = 65536;
 const MAX_FUNCTIONS: usize = 16384;
@@ -25,7 +28,10 @@ const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
+var pending_commit_result: i64 = NO_RENDER;
+
+// TODO(content-commit): report the parser's invalid input byte offset instead
+// of zero.
 
 const Error = error{
     InvalidWasm,
@@ -756,7 +762,7 @@ export fn input_bytes_cap() u32 {
     return INPUT_CAP;
 }
 export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
+    return @intCast(@intFromPtr(&input_buf));
 }
 export fn output_bytes_cap() u32 {
     return OUTPUT_CAP;
@@ -774,10 +780,24 @@ export fn output_content_type_size() u32 {
     return OUTPUT_CONTENT_TYPE.len;
 }
 export fn render(input_size: u32) u32 {
+    if (pending_commit_result != NO_RENDER) @trap();
     if (input_size > INPUT_CAP) @trap();
-    checkModule(input_buf[0..input_size]) catch @trap();
-    @memcpy(output_buf[0..input_size], input_buf[0..input_size]);
+
+    pending_commit_result = @bitCast(ERROR_BIT | INVALID_INPUT_BIT);
+    checkModule(input_buf[0..input_size]) catch return 0;
+    pending_commit_result = 0;
     return input_size;
+}
+
+// commit never traps. Accepted output aliases the input buffer, so validation
+// does not need to copy the module.
+export fn commit() i64 {
+    const result = if (pending_commit_result == NO_RENDER)
+        @as(i64, @bitCast(ERROR_BIT | INVALID_INPUT_BIT))
+    else
+        pending_commit_result;
+    pending_commit_result = NO_RENDER;
+    return result;
 }
 
 const empty_module = "\x00asm\x01\x00\x00\x00";
@@ -806,4 +826,16 @@ test "accepts maximum-length signed LEB encodings" {
     try std.testing.expectEqual(@as(i32, -1), try i32_reader.s32());
     var i64_reader = Reader.init("\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f");
     try std.testing.expectEqual(@as(i64, -1), try i64_reader.s64());
+}
+
+test "render rejects invalid input and the instance recovers" {
+    @memcpy(input_buf[0..bad_add.len], bad_add);
+    try std.testing.expectEqual(@as(u32, 0), render(bad_add.len));
+    const rejected: u64 = @bitCast(commit());
+    try std.testing.expect(rejected >> 63 == 1);
+    try std.testing.expect(rejected & INVALID_INPUT_BIT != 0);
+
+    @memcpy(input_buf[0..empty_module.len], empty_module);
+    try std.testing.expectEqual(@as(u32, empty_module.len), render(empty_module.len));
+    try std.testing.expectEqual(@as(i64, 0), commit());
 }
