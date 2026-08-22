@@ -102,10 +102,10 @@ compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-ht
 compliance/warc-connect-search-params.comply.wasm: compliance/warc-connect-search-params.comply.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-compliance/jpeg-to-bmp-bgra32.comply.wasm: compliance/jpeg-to-bmp-bgra32.comply.zig $(wildcard compliance/jpeg-to-bmp-bgra32-fixtures/*)
+compliance/jpeg-to-bmp-b8g8r8a8-srgb.comply.wasm: compliance/jpeg-to-bmp-b8g8r8a8-srgb.comply.zig $(wildcard compliance/jpeg-to-bmp-b8g8r8a8-srgb-fixtures/*)
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-compliance/bmp-bgra32-icc-to-srgb.comply.wasm: compliance/bmp-bgra32-icc-to-srgb.comply.zig $(wildcard compliance/bmp-bgra32-icc-to-srgb-fixtures/*)
+compliance/bmp-b8g8r8a8-icc-to-srgb.comply.wasm: compliance/bmp-b8g8r8a8-icc-to-srgb.comply.zig $(wildcard compliance/bmp-b8g8r8a8-icc-to-srgb-fixtures/*)
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
 SYNTAX_HIGHLIGHT_COMPLY_TARGETS := compliance/syntax-highlight-javascript.comply.wasm compliance/syntax-highlight-html.comply.wasm compliance/syntax-highlight-css.comply.wasm compliance/syntax-highlight-python.comply.wasm compliance/syntax-highlight-java.comply.wasm compliance/syntax-highlight-csharp.comply.wasm compliance/syntax-highlight-swift.comply.wasm compliance/syntax-highlight-ruby.comply.wasm compliance/syntax-highlight-go.comply.wasm compliance/syntax-highlight-c.comply.wasm compliance/syntax-highlight-bash.comply.wasm compliance/syntax-highlight-wasm.comply.wasm compliance/syntax-highlight-zig.comply.wasm
@@ -142,8 +142,9 @@ compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
 compliance: compliance/mermaid-to-unicode-html.comply.wasm
 compliance: compliance/warc-connect-search-params.comply.wasm
-compliance: compliance/jpeg-to-bmp-bgra32.comply.wasm
-compliance: compliance/bmp-bgra32-icc-to-srgb.comply.wasm
+compliance: compliance/jpeg-to-bmp-b8g8r8a8-srgb.comply.wasm
+compliance: compliance/bmp-b8g8r8a8-icc-to-srgb.comply.wasm
+compliance: compliance/base64-decode.comply.wasm
 compliance: $(SYNTAX_HIGHLIGHT_COMPLY_TARGETS)
 compliance: $(COMMONMARK_COMPLY_TARGETS)
 
@@ -191,11 +192,56 @@ components/image/bmp/bmp-double.wasm: components/image/bmp/bmp-double.c
 components/image/bmp/bmp-double-simd.wasm: components/image/bmp/bmp-double-simd.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
-components/image/png/png-to-bmp-bgra32-simd.wasm: components/image/png/png-to-bmp-bgra32-simd.zig components/image/png/png-to-bmp-bgra32.zig
+components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm: components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.zig components/image/lib/ktx2-rgba32float.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba32float -Mroot=$< -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig -femit-bin=$@
+
+components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.wasm: components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.zig components/image/lib/ktx2-bgra8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_bgra8_srgb -Mroot=$< -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig -femit-bin=$@
+
+components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.wasm: components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm: components/image/ktx2/%.wasm: components/image/ktx2/%.zig components/image/lib/ktx2-rgba32float.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba32float -Mroot=$< -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig -femit-bin=$@
+
+components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm: components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.zig components/image/lib/ktx2-bgra8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_bgra8_srgb -Mroot=$< -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig -femit-bin=$@
+
+components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm: components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm: components/image/ktx2/%.wasm: components/image/ktx2/%.zig components/image/lib/ktx2-rgba8-srgb.zig components/image/lib/ktx2-rgba32float.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb --dep ktx2_rgba32float -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig -femit-bin=$@
+
+components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.zig components/image/png/png-to-bmp-b8g8r8a8-srgb.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
-components/interactive/cover-flow.wasm: components/interactive/cover-flow.zig
-	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig components/image/svg+xml/lib/svg-rasterize.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
+components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig components/image/svg+xml/lib/svg-rasterize.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/interactive/cover-flow.wasm: components/interactive/cover-flow.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/interactive/god-rays-optimized.wasm: components/interactive/god-rays-optimized.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/interactive/tic-tac-toe-sun-moon.wasm: components/interactive/tic-tac-toe-sun-moon.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/interactive/side-scroller-platformer.wasm components/interactive/spreadsheet.wasm: components/interactive/%.wasm: components/interactive/%.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/interactive/gameboy-camera.wasm components/interactive/liars-dice.wasm components/interactive/macos9-desktop.wasm components/interactive/macosx-leopard-desktop.wasm components/interactive/org_planner.wasm components/interactive/peon-gold.wasm components/interactive/textedit.wasm components/interactive/vector-editor.wasm components/interactive/vertical-shooter.wasm components/interactive/windows95-desktop.wasm: components/interactive/%.wasm: components/interactive/%.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
+components/interactive/aces-up.wasm components/interactive/browser-security.wasm components/interactive/calculator.wasm components/interactive/cover-flow-lofi.wasm components/interactive/dock-magnification.wasm components/interactive/formula-1-map.wasm components/interactive/gif-player.wasm components/interactive/god-rays.wasm components/interactive/graph-calculator.wasm components/interactive/ieee-754-floats.wasm components/interactive/layout-systems.wasm components/interactive/mandelbrot.wasm components/interactive/moon-phases.wasm components/interactive/openai-anthropic-arr.wasm components/interactive/page-load-waterfall.wasm components/interactive/paint.wasm components/interactive/perlin-noise.wasm components/interactive/photo-light-table.wasm components/interactive/ps2-menu.wasm components/interactive/render-counts.wasm components/interactive/shadow-rendering.wasm components/interactive/shutterstock-earnings.wasm components/interactive/snake.wasm components/interactive/sudoku.wasm components/interactive/tetris.wasm components/interactive/tile-world-12x12.wasm components/interactive/web-mechanics.wasm components/interactive/webos-card-view.wasm components/interactive/xbox-dashboard.wasm: components/interactive/%.wasm: components/interactive/%.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
 components/application/wasm/wasm-strict-profile.wasm: ZIG_WASM_MAX_MEMORY = 20971520
 components/application/wasm/wasm-strict-profile.wasm: components/application/wasm/wasm-strict-profile.zig components/application/wasm/lib/wasm-reader.zig
@@ -319,26 +365,45 @@ components/image/gif/gifsicle-optimize.wasm: ZIG_WASM_MAX_MEMORY = 167772160
 components/image/bmp/bmp-rgb-metrics.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/multipart/form-data/form-data-to-tar.wasm: ZIG_WASM_MAX_MEMORY = 142606336
 components/image/bmp/bmp-to-png.wasm: ZIG_WASM_MAX_MEMORY = 369098752
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm: ZIG_WASM_MAX_MEMORY = 369098752
 # Full 25 MP level-9 VP8L encoding needs a 1.25 GiB reclaiming arena in
 # addition to its input and worst-case output buffers.
-components/image/bmp/bmp-bgra32-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
+components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.wasm: ZIG_WASM_MAX_MEMORY = 1610612736
 # The module has no memory.grow instruction, so its maximum matches its initial
 # memory. Transparent images exercise libwebp's VP8L alpha compressor.
-components/image/bmp/bmp-bgra32-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
+components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
+components/image/ktx2/ktx2-r8g8b8a8-srgb-to-webp-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1275068416
 # The opaque build has no VP8L alpha path and needs only the measured lossy VP8
 # arena plus input, output, row scratch, stack, and code.
-components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762048
-components/image/bmp/bmp-bgra32-to-avif-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
+components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm: ZIG_WASM_MAX_MEMORY = 469762048
+components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
+components/image/avif/avif-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
 # MozJPEG's trellis pass stores image-wide coefficient arrays. The 336 MiB
 # arena supports the measured 25 MP 4:4:4 peak within 512 MiB fixed memory.
-components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm: ZIG_WASM_MAX_MEMORY = 536870912
-components/image/webp/webp-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 469762048
-components/image/jp2/jp2-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 671088640
-components/image/png/png-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 201326592
-components/image/png/png-to-bmp-bgra32-simd.wasm: ZIG_WASM_MAX_MEMORY = 201326592
-components/image/jpeg/jpeg-to-bmp-bgra32.wasm: ZIG_WASM_MAX_MEMORY = 268435456
-components/image/bmp/bmp-bgra32-icc-to-srgb.wasm: LCMS_WASM_MAX_MEMORY = 536870912
-components/image/svg+xml/svg-rasterize.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 469762048
+components/image/webp/webp-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 469762048
+components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 671088640
+components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 201326592
+components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: ZIG_WASM_MAX_MEMORY = 201326592
+components/image/png/png-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 201326592
+components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm: LCMS_WASM_MAX_MEMORY = 536870912
+components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 134217728
+components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/application/pdf/pdf-extract-images.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/pdf/pdf-extract-text.wasm: ZIG_WASM_MAX_MEMORY = 335544320
 components/application/pdf/pdf-extract-images.wasm components/application/pdf/pdf-extract-text.wasm: components/application/pdf/%.wasm: components/application/pdf/%.zig components/bytes/lib/inflate.zig
@@ -395,20 +460,26 @@ EMSDK_CLANG := $(EMSDK_UPSTREAM)/bin/clang
 EMSDK_WASM_OPT := $(EMSDK_UPSTREAM)/bin/wasm-opt
 EMSDK_EMBUILDER := env EM_CACHE=$(EMCC_CACHE) $(EMSDK_UPSTREAM)/emscripten/embuilder.py
 EMSDK_EMCMAKE := env EM_CACHE=$(EMCC_CACHE) $(EMSDK_UPSTREAM)/emscripten/emcmake
-LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-webp-lossy.raw.wasm
-LIBWEBP_OPAQUE_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-webp-lossy-opaque.raw.wasm
-LIBWEBP_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-webp-lossless.raw.wasm
-LIBWEBP_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/webp-to-bmp-bgra32.raw.wasm
-OPENJPEG_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/jp2-to-bmp-bgra32.raw.wasm
-AVIF_AOM_BUILD := $(EMCC_CACHE)/libaom-3.13.0-qip
-AVIF_LIBAVIF_BUILD := $(EMCC_CACHE)/libavif-1.4.1-qip
-AVIF_AOM_STAMP := $(EMCC_CACHE)/qip-libaom-3.13.0.stamp
-AVIF_LIBAVIF_STAMP := $(EMCC_CACHE)/qip-libavif-1.4.1.stamp
-AVIF_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-avif-lossy.raw.wasm
+LIBWEBP_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-srgb-to-webp-lossy.raw.wasm
+LIBWEBP_OPAQUE_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.raw.wasm
+LIBWEBP_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-srgb-to-webp-lossless.raw.wasm
+LIBWEBP_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/webp-to-bmp-b8g8r8a8-srgb.raw.wasm
+LIBWEBP_KTX_LOSSY_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-srgb-to-webp-lossy.raw.wasm
+LIBWEBP_KTX_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.raw.wasm
+LIBWEBP_KTX_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/webp-to-ktx2-r8g8b8a8-srgb.raw.wasm
+OPENJPEG_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/jp2-to-bmp-b8g8r8a8-srgb.raw.wasm
+AVIF_AOM_BUILD := $(EMCC_CACHE)/libaom-3.13.0-qip-encode-decode
+AVIF_LIBAVIF_BUILD := $(EMCC_CACHE)/libavif-1.4.1-qip-encode-decode
+AVIF_AOM_STAMP := $(EMCC_CACHE)/qip-libaom-3.13.0-encode-decode.stamp
+AVIF_LIBAVIF_STAMP := $(EMCC_CACHE)/qip-libavif-1.4.1-encode-decode.stamp
+AVIF_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-srgb-to-avif-lossy.raw.wasm
+AVIF_KTX_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.raw.wasm
+AVIF_DEC_KTX_CLANG_RAW_WASM := $(EMCC_CACHE)/avif-to-ktx2-r8g8b8a8-srgb.raw.wasm
 MOZJPEG_BUILD := $(EMCC_CACHE)/mozjpeg-4.1.1-qip
 MOZJPEG_STAMP := $(EMCC_CACHE)/qip-mozjpeg-4.1.1.stamp
-MOZJPEG_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-to-jpeg-lossy.raw.wasm
-LCMS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-bgra32-icc-to-srgb.raw.wasm
+MOZJPEG_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-srgb-to-jpeg-lossy.raw.wasm
+MOZJPEG_KTX_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.raw.wasm
+LCMS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-icc-to-srgb.raw.wasm
 LIBWEBP_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_method uniform_set_sharp_yuv uniform_set_low_memory arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_allocation_size arena_allocation_event arena_allocation_free_event
 LIBWEBP_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_CLANG_EXPORTS),-Xlinker --export=$(name))
 LIBWEBP_OPAQUE_CLANG_EXPORTS := $(LIBWEBP_CLANG_EXPORTS) uniform_set_background_color
@@ -425,6 +496,8 @@ LIBWEBP_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DEMSCRIPTEN=1 -D__SSE__=
 AVIF_CMAKE_C_FLAGS := -I$(AVIF_COMPAT_ROOT) -O3 -DNDEBUG -flto -ffunction-sections -fdata-sections -msimd128 -mbulk-memory -fno-builtin-setjmp -fno-builtin-longjmp -sSUPPORT_LONGJMP=0
 AVIF_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_quality_alpha uniform_set_speed uniform_set_subsample arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_matched_count arena_free_unmatched_count
 AVIF_CLANG_EXPORT_FLAGS := $(foreach name,$(AVIF_CLANG_EXPORTS),-Xlinker --export=$(name))
+AVIF_DEC_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_matched_count arena_free_unmatched_count
+AVIF_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(AVIF_DEC_CLANG_EXPORTS),-Xlinker --export=$(name))
 MOZJPEG_CLANG_EXPORTS := render input_ptr input_bytes_cap output_ptr output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_subsample uniform_set_background_color arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count
 MOZJPEG_CLANG_EXPORT_FLAGS := $(foreach name,$(MOZJPEG_CLANG_EXPORTS),-Xlinker --export=$(name))
 MOZJPEG_CMAKE_C_FLAGS := -O3 -DNDEBUG -DQIP_FREESTANDING=1 -flto -ffunction-sections -fdata-sections -mbulk-memory -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
@@ -442,52 +515,82 @@ $(EMSDK_LTO_STAMP):
 	$(EMSDK_EMBUILDER) --lto build libc libcompiler_rt libc_rt_wasm libstandalonewasm
 	touch $@
 
-$(LIBWEBP_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-webp-lossy.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-bgra32-to-webp-lossy.wasm: $(LIBWEBP_CLANG_RAW_WASM)
+components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm: $(LIBWEBP_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(LIBWEBP_OPAQUE_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.c $(LIBWEBP_OPAQUE_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_OPAQUE_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.c $(LIBWEBP_OPAQUE_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DWEBP_OPAQUE_ONLY=1 -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_OPAQUE_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-bgra32-to-webp-lossy-opaque.wasm: $(LIBWEBP_OPAQUE_CLANG_RAW_WASM)
+components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm: $(LIBWEBP_OPAQUE_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(LIBWEBP_LOSSLESS_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-webp-lossless.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_LOSSLESS_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.c $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_LOSSLESS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-bgra32-to-webp-lossless.wasm: $(LIBWEBP_LOSSLESS_CLANG_RAW_WASM)
+components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm: $(LIBWEBP_LOSSLESS_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(LIBWEBP_DEC_CLANG_RAW_WASM): components/image/webp/webp-to-bmp-bgra32.c $(LIBWEBP_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_KTX_LOSSY_CLANG_RAW_WASM): components/image/ktx2/ktx2-r8g8b8a8-srgb-to-webp-lossy.c components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.c components/image/lib/ktx2-rgba8-srgb.h $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $< $(LIBWEBP_SIMD_C_SOURCES) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/ktx2/ktx2-r8g8b8a8-srgb-to-webp-lossy.wasm: $(LIBWEBP_KTX_LOSSY_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(LIBWEBP_KTX_LOSSLESS_CLANG_RAW_WASM): components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.c components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.c components/image/lib/ktx2-rgba8-srgb.h $(LIBWEBP_SIMD_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $< $(LIBWEBP_SIMD_C_SOURCES) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_LOSSLESS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.wasm: $(LIBWEBP_KTX_LOSSLESS_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(LIBWEBP_DEC_CLANG_RAW_WASM): components/image/webp/webp-to-bmp-b8g8r8a8-srgb.c $(LIBWEBP_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/webp/webp-to-bmp-bgra32.wasm: $(LIBWEBP_DEC_CLANG_RAW_WASM)
+components/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm: $(LIBWEBP_DEC_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(OPENJPEG_DEC_CLANG_RAW_WASM): components/image/jp2/jp2-to-bmp-bgra32.c $(OPENJPEG_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(LIBWEBP_KTX_DEC_CLANG_RAW_WASM): components/image/webp/webp-to-ktx2-r8g8b8a8-srgb.c components/image/webp/webp-to-bmp-b8g8r8a8-srgb.c components/image/lib/ktx2-rgba8-srgb.h $(LIBWEBP_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBWEBP_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-free $(LIBWEBP_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib $< $(LIBWEBP_DEC_C_SOURCES) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LIBWEBP_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/webp/webp-to-ktx2-r8g8b8a8-srgb.wasm: $(LIBWEBP_KTX_DEC_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(OPENJPEG_DEC_CLANG_RAW_WASM): components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.c $(OPENJPEG_DEC_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(OPENJPEG_LIB_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(OPENJPEG_CLANG_FEATURE_FLAGS) -DOPJ_STATIC -DMUTEX_stub -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(OPENJPEG_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/jp2/jp2-to-bmp-bgra32.wasm: $(OPENJPEG_DEC_CLANG_RAW_WASM)
+components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm: $(OPENJPEG_DEC_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 $(AVIF_AOM_STAMP): $(AVIF_AOM_SOURCE_FILES) $(AVIF_COMPAT_ROOT)/setjmp.h
 	rm -rf $(AVIF_AOM_BUILD)
-	$(EMSDK_EMCMAKE) cmake -S $(LIBAOM_ROOT) -B $(AVIF_AOM_BUILD) -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DAOM_TARGET_CPU=generic -DENABLE_TESTS=OFF -DENABLE_DOCS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_NASM=OFF -DCONFIG_AV1_DECODER=0 -DCONFIG_AV1_ENCODER=1 -DCONFIG_MULTITHREAD=0 -DCONFIG_RUNTIME_CPU_DETECT=0 -DCONFIG_WEBM_IO=0 -DCONFIG_ACCOUNTING=0 -DCONFIG_INSPECTION=0 -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS='$(AVIF_CMAKE_C_FLAGS)'
+	$(EMSDK_EMCMAKE) cmake -S $(LIBAOM_ROOT) -B $(AVIF_AOM_BUILD) -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DAOM_TARGET_CPU=generic -DENABLE_TESTS=OFF -DENABLE_DOCS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_NASM=OFF -DCONFIG_AV1_DECODER=1 -DCONFIG_AV1_ENCODER=1 -DCONFIG_MULTITHREAD=0 -DCONFIG_RUNTIME_CPU_DETECT=0 -DCONFIG_WEBM_IO=0 -DCONFIG_ACCOUNTING=0 -DCONFIG_INSPECTION=0 -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS='$(AVIF_CMAKE_C_FLAGS)'
 	env EM_CACHE=$(EMCC_CACHE) cmake --build $(AVIF_AOM_BUILD) --target aom
 	touch $@
 
 $(AVIF_LIBAVIF_STAMP): $(AVIF_LIBAVIF_SOURCE_FILES) $(AVIF_AOM_STAMP) $(AVIF_COMPAT_ROOT)/setjmp.h
 	rm -rf $(AVIF_LIBAVIF_BUILD)
-	$(EMSDK_EMCMAKE) cmake -S $(LIBAVIF_ROOT) -B $(AVIF_LIBAVIF_BUILD) -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DAVIF_CODEC_AOM=SYSTEM -DAVIF_CODEC_AOM_DECODE=OFF -DAVIF_CODEC_AOM_ENCODE=ON -DAVIF_LIBYUV=OFF -DAVIF_LIBSHARPYUV=OFF -DAVIF_BUILD_APPS=OFF -DAVIF_BUILD_TESTS=OFF -DAVIF_JPEG=OFF -DAVIF_ZLIBPNG=OFF -DAOM_INCLUDE_DIR=$(LIBAOM_ROOT) -DAOM_LIBRARY=$(AVIF_AOM_BUILD)/libaom.a -DCMAKE_C_FLAGS='$(AVIF_CMAKE_C_FLAGS)'
+	$(EMSDK_EMCMAKE) cmake -S $(LIBAVIF_ROOT) -B $(AVIF_LIBAVIF_BUILD) -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DAVIF_CODEC_AOM=SYSTEM -DAVIF_CODEC_AOM_DECODE=ON -DAVIF_CODEC_AOM_ENCODE=ON -DAVIF_LIBYUV=OFF -DAVIF_LIBSHARPYUV=OFF -DAVIF_BUILD_APPS=OFF -DAVIF_BUILD_TESTS=OFF -DAVIF_JPEG=OFF -DAVIF_ZLIBPNG=OFF -DAOM_INCLUDE_DIR=$(LIBAOM_ROOT) -DAOM_LIBRARY=$(AVIF_AOM_BUILD)/libaom.a -DCMAKE_C_FLAGS='$(AVIF_CMAKE_C_FLAGS)'
 	env EM_CACHE=$(EMCC_CACHE) cmake --build $(AVIF_LIBAVIF_BUILD) --target avif_static
 	touch $@
 
-$(AVIF_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-avif-lossy.c $(AVIF_LIBAVIF_STAMP) $(AVIF_AOM_STAMP) $(EMSDK_LTO_STAMP)
+$(AVIF_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.c $(AVIF_LIBAVIF_STAMP) $(AVIF_AOM_STAMP) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(AVIF_COMPAT_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBAVIF_ROOT)/include -I$(LIBAOM_ROOT) -I$(AVIF_AOM_BUILD) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fno-builtin-setjmp -fno-builtin-longjmp -DNDEBUG -nostdlib -Wl,--gc-sections $(AVIF_CLANG_WRAP_FLAGS) $< $(AVIF_LIBAVIF_BUILD)/libavif_internal.a $(AVIF_AOM_BUILD)/libaom.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(AVIF_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-bgra32-to-avif-lossy.wasm: $(AVIF_CLANG_RAW_WASM)
+components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.wasm: $(AVIF_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(AVIF_KTX_CLANG_RAW_WASM): components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.c components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.c components/image/lib/ktx2-rgba8-srgb.h $(AVIF_LIBAVIF_STAMP) $(AVIF_AOM_STAMP) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(AVIF_COMPAT_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBAVIF_ROOT)/include -I$(LIBAOM_ROOT) -I$(AVIF_AOM_BUILD) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fno-builtin-setjmp -fno-builtin-longjmp -DNDEBUG -nostdlib -Wl,--gc-sections $(AVIF_CLANG_WRAP_FLAGS) $< $(AVIF_LIBAVIF_BUILD)/libavif_internal.a $(AVIF_AOM_BUILD)/libaom.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(AVIF_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.wasm: $(AVIF_KTX_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(AVIF_DEC_KTX_CLANG_RAW_WASM): components/image/avif/avif-to-ktx2-r8g8b8a8-srgb.c components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.c components/image/lib/ktx2-rgba8-srgb.h $(AVIF_LIBAVIF_STAMP) $(AVIF_AOM_STAMP) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(AVIF_COMPAT_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(LIBAVIF_ROOT)/include -I$(LIBAOM_ROOT) -I$(AVIF_AOM_BUILD) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fno-builtin-setjmp -fno-builtin-longjmp -DNDEBUG -nostdlib -Wl,--gc-sections $(AVIF_CLANG_WRAP_FLAGS) $< $(AVIF_LIBAVIF_BUILD)/libavif_internal.a $(AVIF_AOM_BUILD)/libaom.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(AVIF_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/avif/avif-to-ktx2-r8g8b8a8-srgb.wasm: $(AVIF_DEC_KTX_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 $(MOZJPEG_STAMP): $(shell find $(MOZJPEG_ROOT) -type f) $(EMSDK_LTO_STAMP)
@@ -496,16 +599,22 @@ $(MOZJPEG_STAMP): $(shell find $(MOZJPEG_ROOT) -type f) $(EMSDK_LTO_STAMP)
 	env EM_CACHE=$(EMCC_CACHE) cmake --build $(MOZJPEG_BUILD) --target jpeg-static
 	touch $@
 
-$(MOZJPEG_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-to-jpeg-lossy.c $(MOZJPEG_STAMP) $(EMSDK_LTO_STAMP)
+$(MOZJPEG_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.c $(MOZJPEG_STAMP) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(MOZJPEG_BUILD) -I$(MOZJPEG_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -mbulk-memory -DNDEBUG -nostdlib -Wl,--gc-sections $< $(MOZJPEG_BUILD)/libjpeg.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(MOZJPEG_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-bgra32-to-jpeg-lossy.wasm: $(MOZJPEG_CLANG_RAW_WASM)
+components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm: $(MOZJPEG_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-$(LCMS_CLANG_RAW_WASM): components/image/bmp/bmp-bgra32-icc-to-srgb.c $(LCMS_C_SOURCES) $(EMSDK_LTO_STAMP)
+$(MOZJPEG_KTX_CLANG_RAW_WASM): components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.c components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.c components/image/lib/ktx2-rgba8-srgb.h $(MOZJPEG_STAMP) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(MOZJPEG_BUILD) -I$(MOZJPEG_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -mbulk-memory -DNDEBUG -nostdlib -Wl,--gc-sections $< $(MOZJPEG_BUILD)/libjpeg.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(MOZJPEG_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm: $(MOZJPEG_KTX_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(LCMS_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.c $(LCMS_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(LCMS_ROOT)/include -I$(LCMS_ROOT)/src -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(LCMS_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib -Wl,--gc-sections $(LCMS_CLANG_WRAP_FLAGS) $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(LCMS_WASM_MAX_MEMORY) -Wl,--max-memory=$(LCMS_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LCMS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
-components/image/bmp/bmp-bgra32-icc-to-srgb.wasm: $(LCMS_CLANG_RAW_WASM)
+components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm: $(LCMS_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
@@ -514,8 +623,12 @@ components/utf8/iso-4217-alpha-to-numeric.wasm: components/utf8/lib/iso-4217-alp
 
 components/bytes/zlib-compress-dynamic-huffman-opt.wasm: components/bytes/lib/deflate.zig
 components/image/bmp/bmp-to-png.wasm: components/image/bmp/lib/deflate.zig
+components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm: components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.zig components/image/bmp/bmp-to-png.zig components/image/bmp/lib/deflate.zig components/image/lib/ktx2-rgba8-srgb.zig components/image/lib/ktx2-bgra8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep png_encoder_impl -Mroot=$< --dep ktx2_rgba8_srgb --dep ktx2_bgra8_srgb -Mpng_encoder_impl=components/image/bmp/bmp-to-png.zig -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig -femit-bin=$@
 components/bytes/zlib-decompress.wasm: components/bytes/lib/inflate.zig components/bytes/lib/deflate.zig
-components/image/png/png-to-bmp-bgra32.wasm components/image/png/png-to-bmp-bgra32-simd.wasm: components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig
+components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig
+components/image/png/png-to-ktx2-r8g8b8a8-srgb.wasm: components/image/png/png-to-ktx2-r8g8b8a8-srgb.zig components/image/png/png-to-bmp-b8g8r8a8-srgb.zig components/image/png/lib/inflate.zig components/image/png/lib/deflate.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
 components/%.wasm: components/%.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_ptr -Wl,--export=output_utf8_cap -Oz -o $@
@@ -614,7 +727,29 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --check site/qip-runner.js
 	node test/qip-runner-smoke.mjs
 	node --test test/bytes-to-sha256.mjs
+	node --test test/content-total-byte-components.mjs
+	node --test test/content-component-host.mjs
+	node --test test/qipx-commit.mjs
 	node --test test/qip-play-debug-stats.mjs
+	node --test test/interactive-host-decisions.mjs
+	node --test test/gif-player.mjs
+	node --test test/god-rays-optimized-timed.mjs
+	node --test test/tic-tac-toe-interactive.mjs
+	node --test test/calculator-snake-interactive.mjs
+	node --test test/fixed-timestep-simulator.mjs
+	node --test test/spreadsheet-platformer-update.mjs
+	node --test test/final-interactive-components.mjs
+	node --test test/cover-flow-shadow-interactive.mjs
+	node --test test/render-counts-mandelbrot-perlin.mjs
+	node --test test/moon-cover-lofi-dock-interactive.mjs
+	node --test test/layout-security-graph-interactive.mjs
+	node --test test/tile-tetris-web-interactive.mjs
+	node --test test/floats-financial-charts-interactive.mjs
+	node --test test/map-waterfall-interactive.mjs
+	node --test test/photo-xbox-interactive.mjs
+	node --test test/paint-ps2-interactive.mjs
+	node --test test/aces-god-rays-interactive.mjs
+	node --test test/sudoku-webos-interactive.mjs
 	node --test test/qip-edit-stats.mjs
 	node --test test/qip-form-element.mjs
 	node --test test/qip-search.mjs
@@ -650,6 +785,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/pdf-extract-images.mjs
 	node --test test/pdf-extract-text.mjs
 	node --test test/ttf-svg-paths.mjs
+	node --test test/text-to-og-image-font8x8.mjs
 	node --test test/text-to-og-image-svg.mjs
 	node --test test/text-to-og-image-svg-inter.mjs
 	node --test test/jp2-bmp.mjs
@@ -660,13 +796,18 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/zip-to-tar.mjs
 	node --test test/zip-list-extract.mjs
 	node --test test/bmp-png.mjs
-	node --test test/bmp-bgra32-webp-lossy.mjs
-	node --test test/bmp-bgra32-avif-lossy.mjs
-	node --test test/bmp-bgra32-jpeg-lossy.mjs
+	node --test test/bmp-b8g8r8a8-srgb-webp-lossy.mjs
+	node --test test/bmp-b8g8r8a8-srgb-avif-lossy.mjs
+	node --test test/bmp-b8g8r8a8-srgb-jpeg-lossy.mjs
 	node --test test/image-compress-jpeg.mjs
-	node --test test/bmp-bgra32-webp-lossy-opaque.mjs
-	node --test test/bmp-bgra32-webp-lossless.mjs
-	node --test test/bmp-bgra32-icc-to-srgb.mjs
+	node --test test/bmp-b8g8r8a8-srgb-webp-lossy-opaque.mjs
+	node --test test/bmp-b8g8r8a8-srgb-webp-lossless.mjs
+	node --test test/bmp-b8g8r8a8-icc-to-srgb.mjs
+	node --test test/ktx2-rgba32float.mjs
+	node --test test/ktx2-rgba8-srgb.mjs
+	node --test test/ktx2-rgba8-webp.mjs
+	node --test test/ktx2-rgba8-png-avif.mjs
+	node --test test/ktx2-bgra8-srgb.mjs
 	node --test test/webp-bmp.mjs
 	node --test test/bmp-rgb-metrics.mjs
 	node --test test/form-data-to-tar.mjs
@@ -699,9 +840,19 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
-	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm --with compliance/trap-empty-input.wasm
+	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
+	$(QIP_BIN) comply components/utf8/base64-decode.wasm --with compliance/base64-decode.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/css/css-class-validator.wasm --with compliance/css-class-validator.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-id-validator.wasm --with compliance/html-id-validator.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-input-name-validator.wasm --with compliance/html-input-name-validator.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/html/html-tag-validator.wasm --with compliance/html-tag-validator.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
-	$(QIP_BIN) comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+	$(QIP_BIN) comply components/bytes/base64-encode.wasm --with compliance/base64-encode.comply.wasm
+	$(QIP_BIN) comply components/bytes/crc32-hex.wasm --with compliance/crc32-hex.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/utf8/trim.wasm --with compliance/trim.comply.wasm
+	$(QIP_BIN) comply components/text/markdown/extract-title-text.wasm --with compliance/extract-title-text.comply.wasm
+	$(QIP_BIN) comply components/utf8/utf8-must-be-valid.wasm --with compliance/reject-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+	$(QIP_BIN) comply components/utf8/utf8-must-be-ascii.wasm --with compliance/reject-non-ascii.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
 	$(QIP_BIN) comply components/utf8/unicode-17-lowercase.wasm --with compliance/unicode-17-lowercase.comply.wasm
 	$(QIP_BIN) comply components/utf8/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
 	$(QIP_BIN) comply components/utf8/currency-format-usd-en-us.wasm --with compliance/currency-format-usd-en-us.comply.wasm
@@ -716,8 +867,8 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/utf8/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
 	$(QIP_BIN) comply components/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 	$(QIP_BIN) comply components/image/svg+xml/svg-to-data-uri.wasm --with compliance/svg-to-data-uri.comply.wasm
-	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-bgra32.wasm --with compliance/jpeg-to-bmp-bgra32.comply.wasm --straight-line-oracles
-	$(QIP_BIN) comply components/image/bmp/bmp-bgra32-icc-to-srgb.wasm --with compliance/bmp-bgra32-icc-to-srgb.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm --with compliance/jpeg-to-bmp-b8g8r8a8-srgb.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm --with compliance/bmp-b8g8r8a8-icc-to-srgb.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/uri-list/data-uri-to-css-url.wasm --with compliance/data-uri-to-css-url.comply.wasm
 
 test-snapshot: qip components
@@ -791,7 +942,9 @@ test-snapshot: qip components
 	@printf "%s\n" "module: utf8-must-be-valid.wasm" >> test/latest.txt
 	@printf %s "hello" | $(QIP_BIN) run components/utf8/utf8-must-be-valid.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
-	@cat components/utf8/hello.wasm | $(QIP_BIN) run components/application/wasm/wasm-to-js.wasm >> test/latest.txt
+	@cat components/utf8/hello.wasm | $(QIP_BIN) run -o test/latest-wasm-to-js.txt components/application/wasm/wasm-to-js.wasm
+	@cat test/latest-wasm-to-js.txt >> test/latest.txt
+	@rm -f test/latest-wasm-to-js.txt
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
 
 ZIG_TEST_FILES := $(COMPONENT_ZIG_FILES) $(wildcard recipes/text/markdown/*.zig) $(wildcard recipes/application/warc/*.zig)
@@ -810,6 +963,20 @@ test-zig: $(ZIG_TEST_FILES)
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
 		elif [ "$$f" = "components/application/zip/zip-list-entries-csv.zig" ] || [ "$$f" = "components/application/zip/zip-list-files-csv.zig" ] || [ "$$f" = "components/application/zip/zip-extract-file.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inflate -Mroot="$$f" -Minflate=components/bytes/lib/inflate.zig || status=1; \
+		elif [ "$$f" = "components/interactive/liars-dice.zig" ] || [ "$$f" = "components/interactive/macos9-desktop.zig" ] || [ "$$f" = "components/interactive/macosx-leopard-desktop.zig" ] || [ "$$f" = "components/interactive/org_planner.zig" ] || [ "$$f" = "components/interactive/peon-gold.zig" ] || [ "$$f" = "components/interactive/textedit.zig" ] || [ "$$f" = "components/interactive/vertical-shooter.zig" ] || [ "$$f" = "components/interactive/windows95-desktop.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
+		elif [ "$$f" = "components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-rgba32float-look-warm-fade.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba32float -Mroot="$$f" -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig || status=1; \
+		elif [ "$$f" = "components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_bgra8_srgb -Mroot="$$f" -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig || status=1; \
+		elif [ "$$f" = "components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.zig" ] || [ "$$f" = "components/interactive/aces-up.zig" ] || [ "$$f" = "components/interactive/gameboy-camera.zig" ] || [ "$$f" = "components/interactive/gif-player.zig" ] || [ "$$f" = "components/interactive/god-rays-optimized.zig" ] || [ "$$f" = "components/interactive/god-rays.zig" ] || [ "$$f" = "components/interactive/tic-tac-toe-sun-moon.zig" ] || [ "$$f" = "components/interactive/browser-security.zig" ] || [ "$$f" = "components/interactive/calculator.zig" ] || [ "$$f" = "components/interactive/cover-flow-lofi.zig" ] || [ "$$f" = "components/interactive/dock-magnification.zig" ] || [ "$$f" = "components/interactive/formula-1-map.zig" ] || [ "$$f" = "components/interactive/graph-calculator.zig" ] || [ "$$f" = "components/interactive/ieee-754-floats.zig" ] || [ "$$f" = "components/interactive/layout-systems.zig" ] || [ "$$f" = "components/interactive/mandelbrot.zig" ] || [ "$$f" = "components/interactive/moon-phases.zig" ] || [ "$$f" = "components/interactive/openai-anthropic-arr.zig" ] || [ "$$f" = "components/interactive/page-load-waterfall.zig" ] || [ "$$f" = "components/interactive/paint.zig" ] || [ "$$f" = "components/interactive/perlin-noise.zig" ] || [ "$$f" = "components/interactive/photo-light-table.zig" ] || [ "$$f" = "components/interactive/ps2-menu.zig" ] || [ "$$f" = "components/interactive/render-counts.zig" ] || [ "$$f" = "components/interactive/shadow-rendering.zig" ] || [ "$$f" = "components/interactive/shutterstock-earnings.zig" ] || [ "$$f" = "components/interactive/side-scroller-platformer.zig" ] || [ "$$f" = "components/interactive/snake.zig" ] || [ "$$f" = "components/interactive/spreadsheet.zig" ] || [ "$$f" = "components/interactive/sudoku.zig" ] || [ "$$f" = "components/interactive/tetris.zig" ] || [ "$$f" = "components/interactive/tile-world-12x12.zig" ] || [ "$$f" = "components/interactive/vector-editor.zig" ] || [ "$$f" = "components/interactive/web-mechanics.zig" ] || [ "$$f" = "components/interactive/webos-card-view.zig" ] || [ "$$f" = "components/interactive/xbox-dashboard.zig" ] || [ "$$f" = "components/interactive/cover-flow.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
+		elif [ "$$f" = "components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig" ] || [ "$$f" = "components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
+		elif [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb --dep ktx2_rgba32float -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig || status=1; \
+		elif [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep png_encoder_impl -Mroot="$$f" --dep ktx2_rgba8_srgb --dep ktx2_bgra8_srgb -Mpng_encoder_impl=components/image/bmp/bmp-to-png.zig -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig || status=1; \
 		else \
 			$(ZIG_ENV) zig test "$$f" $(ZIG_TEST_FLAGS) || status=1; \
 		fi; \
@@ -821,10 +988,10 @@ test-go:
 	go test $(GO_TOOL_FILES)
 
 site/favicon.ico: qip-logo.svg
-	$(QIP_BIN) run -i qip-logo.svg -- components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > $@
+	$(QIP_BIN) run -i qip-logo.svg -- components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > $@
 
 OG_MD_SOURCES := $(shell find site docs -type f -name '*.md' | sort)
-OG_IMAGE_MODULES := components/text/markdown/extract-title-text.wasm components/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm components/image/svg+xml/svg-rasterize.wasm components/image/bmp/bmp-to-png.wasm
+OG_IMAGE_MODULES := components/text/markdown/extract-title-text.wasm components/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-png.wasm
 
 OG_PNG_TARGETS := $(sort $(patsubst site/_og/%/index.png,site/_og/%.png,$(patsubst docs/%.md,site/_og/docs/%.png,$(patsubst site/%.md,site/_og/%.png,$(OG_MD_SOURCES)))))
 
@@ -832,7 +999,7 @@ site/_og: $(OG_PNG_TARGETS)
 
 define OG_RENDER_PNG_RECIPE
 	@mkdir -p $(dir $@)
-	$(QIP_BIN) run -i "$<" -o "$@" -- components/text/markdown/extract-title-text.wasm components/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' components/image/svg+xml/svg-rasterize.wasm '?background_color_rgba=0xeecc33ff' components/image/bmp/bmp-to-png.wasm
+	$(QIP_BIN) run -i "$<" -o "$@" -- components/text/markdown/extract-title-text.wasm components/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm '?background_color_rgba=0xeecc33ff' components/image/bmp/bmp-to-png.wasm
 endef
 
 site/_og/%.png: site/%.md $(OG_IMAGE_MODULES)
