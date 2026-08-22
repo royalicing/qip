@@ -230,6 +230,7 @@ func runComplyForImplementation(implPath string, compliances []complianceSpec, s
 	}
 	base, err := validateBaseContract(implPath, implWasm)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "comply: %s: %v\n", implPath, err)
 		fmt.Printf("FAIL %s: %v\n", implPath, err)
 		return 0, 1
 	}
@@ -261,6 +262,12 @@ func runComplyForImplementation(implPath string, compliances []complianceSpec, s
 		}
 	}
 	if contractFail {
+		for _, check := range contractChecks {
+			if check.Pass {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "comply: %s: %s (%s): %s\n", implPath, check.Export, check.Kind, check.Reason)
+		}
 		fmt.Printf("FAIL %s: comply: static qip contract checks failed\n", implPath)
 		return 0, 1
 	}

@@ -43,10 +43,13 @@ fn selectedCurrency() ?currency_data.Currency {
 }
 
 fn selectCurrency(currency: currency_data.Currency) void {
-    const name = "currency";
     currency_numeric = currency.numeric;
-    const applied = set_uniform_u32(@intCast(@intFromPtr(name.ptr)), name.len, currency.numeric);
-    if (applied != currency.numeric) @trap();
+}
+
+fn applyCurrency() void {
+    const name = "currency";
+    const applied = set_uniform_u32(@intCast(@intFromPtr(name.ptr)), name.len, currency_numeric);
+    if (applied != currency_numeric) @trap();
 }
 
 const Parsed = struct {
@@ -158,11 +161,13 @@ fn oracle(input: []const u8, output: []u8) ?usize {
 
 fn declareValid(input: []const u8) void {
     const expected_len = oracle(input, expected_buf[0..]) orelse unreachable;
+    applyCurrency();
     _ = must_render_exactly(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len), @intCast(@intFromPtr(&expected_buf)), @intCast(expected_len));
     ordinal += 1;
 }
 
 fn declareInvalid(input: []const u8) void {
+    applyCurrency();
     _ = must_trap(ordinal, @intCast(@intFromPtr(input.ptr)), @intCast(input.len));
     ordinal += 1;
 }
@@ -202,7 +207,7 @@ fn buildFuzzInput(rng: *u32) []const u8 {
 export fn comply() i32 {
     ordinal = 0;
     const valid = [_][]const u8{
-        "0", "-0", "1", "1.2", "1234.5", "1234567.89", "-9876543.21", "0.004", "0.005",
+        "0",   "-0",    "1",       "1.2",      "1234.5",       "1234567.89",                   "-9876543.21", "0.004", "0.005",
         "0.5", "1.999", "999.995", "999.9995", "000001234.50", "999999999999999999999999.995",
     };
     const invalid = [_][]const u8{ "", "-", ".5", "1.", "+1", " 1", "1e3", "1,000", "one", "1.2.3" };

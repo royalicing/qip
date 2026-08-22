@@ -73,7 +73,7 @@ test("duel: currency-format-en-us.wasm is compliant for every supported currency
       return impl.uniform_set_currency(value);
     },
   });
-  assert.deepEqual(configured, currencies.map((currency) => currency.numeric));
+  assert.deepEqual(configured, cases.map((c) => c.uniforms.currency));
   const failures = cases
     .filter((c) => {
       impl.uniform_set_currency(c.uniforms.currency);

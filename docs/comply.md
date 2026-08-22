@@ -33,7 +33,7 @@ runtime can instantiate it and bind the bridge to a local implementation written
 in JavaScript, Go, Rust, Python, or another language.
 
 For example, a JavaScript test can import `compliance/luhn.comply.wasm`, provide
-`must_render_exactly` and `must_trap` imports, and route each declared case to a
+`must_render_exactly`, `must_reject`, and `must_trap` imports, and route each declared case to a
 plain JS `luhn(input)` function. The JS code does not need to become Wasm or
 export the QIP Content ABI. It only needs an adapter that turns an input byte
 slice into output bytes or a trap-like failure. This lets the same oracle guide a
@@ -64,11 +64,14 @@ Options:
 # Expects that components/utf8/e164.wasm produces normalized phone numbers, and preserves empty input.
 qip comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
 
-# Expects that components/utf8/utf8-must-be-valid.wasm traps when provided a range of invalid UTF-8, and also accepts whitespace or empty strings untouched.
-qip comply components/utf8/utf8-must-be-valid.wasm --with compliance/trap-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+# Expects rejection for invalid UTF-8 and accepts whitespace or empty strings unchanged.
+qip comply components/utf8/utf8-must-be-valid.wasm --with compliance/reject-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
 
-# Expects that components/utf8/luhn.wasm accepts normalized Luhn-valid input and traps on invalid input.
+# Expects that components/utf8/luhn.wasm accepts normalized Luhn-valid input and rejects invalid input.
 qip comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
+
+# Expects canonical RFC 4648 output for valid quartets and rejection for malformed Base64.
+qip comply components/utf8/base64-decode.wasm --with compliance/base64-decode.comply.wasm
 ```
 
 ## What It Does
@@ -100,12 +103,17 @@ A Content component requires:
 - `output_ptr() -> i32` as an exported function
 - `output_utf8_cap() -> i32` or `output_bytes_cap() -> i32`
 
+It may export `commit() -> i64`. Compliance calls it after each normal
+`render`. A negative result is rejection; a trapping `commit` is a contract
+failure.
+
 ## Assertions
 
 Content Compliance oracles own their memory and export `comply() -> i32`. They declare cases through imports from the `qip` module rather than importing implementation memory directly:
 
 - `must_render_exactly(ordinal, input_ptr, input_size, expected_ptr, expected_size) -> i32`
 - `must_trap(ordinal, input_ptr, input_size) -> i32`
+- `must_reject(ordinal, input_ptr, input_size) -> i32`
 - `must_render_into(ordinal, input_ptr, input_size, output_ptr, output_capacity) -> i32`
 - `must_render_into_emit_error(ordinal, message_ptr, message_size) -> i32`
 - `must_render_into_finish(ordinal, error_count) -> i32`
@@ -113,7 +121,11 @@ Content Compliance oracles own their memory and export `comply() -> i32`. They d
 
 `set_uniform_u32` lets a Compliance oracle exercise configuration as part of its corpus. The name is a valid uniform key such as `currency` or `font_size`: 1 to 63 characters, starts with `[a-z]`, continues with `[a-z0-9_]*`, does not end with `_`, and does not contain `__`. The host calls `uniform_set_currency(i32) -> i32` on the implementation and returns the applied value to the Compliance oracle. The call must happen between cases, not while a must_render_into case is open. It does not consume an ordinal or count as a case.
 
-The Compliance oracle remains responsible for changing its own oracle state after selecting an implementation uniform. A formatter oracle can therefore select currency `392`, declare its JPY cases, select `840`, and declare its USD cases during one run without exporting a currency uniform itself.
+The Compliance oracle remains responsible for changing its own oracle state.
+It must call `set_uniform_u32` immediately before each assertion that needs a
+non-default value. The bridge does not retain uniforms between cases. A
+formatter oracle can keep `392` as its private JPY selection, but it sets the
+implementation currency again before every JPY case.
 
 Every oracle call has a sequential `u64` ordinal starting at zero. `comply()`
 returns the number of declared cases. Separate `--with` oracles run against
@@ -124,9 +136,47 @@ The bridge owns failure reporting. It retains the failing ordinal and copies the
 declared input, expected output, and actual output while the case is live. A
 Compliance oracle therefore needs no failure-detail exports.
 
+## Content Rejection
+
+`commit` is the acceptance boundary for Content components that can reject.
+Ordinary invalid-input assertions use:
+
+```text
+must_reject(ordinal, input_ptr, input_size) -> i32
+```
+
+The target must export `commit`. The bridge writes the input, calls `render`,
+requires it to return normally, then calls `commit` and requires rejection. A
+trap fails `must_reject`; it is not an alternate successful outcome.
+
+Choose the assertion from the target's declared input domain. A UTF-8 validator
+accepts arbitrary bytes, so malformed UTF-8 uses `must_reject`. A Unicode case
+converter accepts valid UTF-8, so the same malformed bytes violate its
+precondition and may use `must_trap`. A valid-format PNG transform may require a
+PNG validator earlier in its recipe instead of accepting arbitrary claimed-PNG
+bytes itself.
+
+Every negative Content `commit` result satisfies `must_reject`. The bridge may
+record its raw value as debug information, but the oracle does not match a
+specific negative value. `commit` must not trap.
+
+Successful assertions call `commit` when the target exports it.
+`must_render_exactly` and `must_render_into` inspect provisional output only
+after acceptance. For a target without `commit`, the render output is
+immediately valid when `render` returns. A trap still fails the successful
+assertion unless a separate case explicitly expects it. This distinguishes
+accepted zero-byte output from rejection without treating a missing export as a
+nontrapping declaration.
+
+Uniform reset does not add state to the Compliance bridge.
+`set_uniform_u32` applies one value immediately and returns the value applied by
+the implementation. The oracle repeats the call before the next assertion if
+that assertion needs the same non-default value. This keeps each case explicit
+and prevents its meaning from depending on an earlier case.
+
 ## Choose The Narrowest Oracle Call
 
-Most oracles should use `must_render_exactly` or `must_trap`. These calls
+Most oracles should use `must_render_exactly`, `must_reject`, or `must_trap`. These calls
 make the case easy to audit: the oracle gives the host input bytes and either
 an exact expected output or an expected trap. The host runs the implementation,
 compares the result, and records a failure with the ordinal.
@@ -153,7 +203,7 @@ double-entry bookkeeping: it must match the number of emitted errors. Zero means
 pass; a positive count means fail. If `must_render_into` returns `-1` or `-2`,
 the oracle must emit at least one error and finish with a positive
 `error_count`. The oracle must not open another case, declare a
-`must_render_exactly`/`must_trap` case, or set a uniform while a
+`must_render_exactly`/`must_reject`/`must_trap` case, or set a uniform while a
 must_render_into case is open. The host reports a protocol violation if
 `comply()` returns with an
 must_render_into case still open.
@@ -173,12 +223,29 @@ reader should be able to inspect an oracle and see which inputs are declared
 and what each one requires.
 
 Treat branches in an oracle as a source of risk. Most fixture checks should be
-a straight list of `must_render_exactly` or `must_trap` calls. When an
+a straight list of `must_render_exactly`, `must_reject`, or `must_trap` calls. When an
 external corpus requires a small parser or a generated oracle, keep that logic
 mechanical, assert the exact number of cases it declares, and keep the trusted
 source fixture beside the oracle. Do not remove repetition merely to make the
 oracle DRY: duplicated specification code is often easier to audit than a
 general abstraction that can skip or reinterpret cases.
+
+### Keep Component Limits Out Of Oracles
+
+A Compliance oracle checks what a component does with its input. It should not
+depend on the size of one component's buffers. Two correct implementations can
+support different maximum input sizes.
+
+Do not read a component's capacity and use that value to build an oracle case.
+Doing so would require every other implementation to support the same size.
+Use a modest input that tests the behavior instead, unless the component
+contract sets a minimum supported size.
+
+Test `cap - 1`, exact capacity, output-size calculations, and buffer layout in
+the component's source tests. A separate host test can read the capacity and
+verify that `cap + 1` traps before the component processes the input. Keeping
+these checks out of Compliance keeps its interface small and allows each
+implementation to choose suitable buffer sizes.
 
 ### Straight-Line Oracles
 
@@ -224,8 +291,9 @@ Use one directory per case:
 000000_must_render_exactly/input
 000000_must_render_exactly/expected
 000001_must_trap/input
-000002_must_render_exactly__currency.u32=392__font_size.u32=48/input
-000002_must_render_exactly__currency.u32=392__font_size.u32=48/expected
+000002_must_reject/input
+000003_must_render_exactly__currency.u32=392__font_size.u32=48/input
+000003_must_render_exactly__currency.u32=392__font_size.u32=48/expected
 ```
 
 Case directory grammar:
@@ -235,7 +303,7 @@ Case directory grammar:
 ```
 
 - `<ordinal>` is a zero-padded decimal case number, contiguous from `000000`.
-- `<assertion>` is `must_render_exactly` or `must_trap`.
+- `<assertion>` is `must_render_exactly`, `must_reject`, or `must_trap`.
 - `<uniform>` is `<key>.<type>=<value>`.
 - `<key>` is a QIP uniform key: 1 to 63 characters, starts with `[a-z]`,
   continues with `[a-z0-9_]*`, does not end with `_`, and does not contain
@@ -266,6 +334,9 @@ The host renders `input` and requires a trap. Unknown entries are errors, not
 comments. Archive readers sort paths lexicographically before validation, so TAR
 entry order does not affect the result.
 
+A `must_reject` case also contains exactly `input`. The host requires `render`
+to return normally and `commit` to return a negative value.
+
 ## Authoring Strategies
 
 Choose the smallest oracle shape that teaches the contract.
@@ -278,7 +349,7 @@ Choose the smallest oracle shape that teaches the contract.
   generate. `luhn.comply.wat` builds many valid numbers, computes their check
   digit, and expects the implementation to normalize them.
 - Use a **mutation check** when invalid examples are best made from valid ones.
-  Luhn generates a valid number, flips one digit, and requires a trap.
+  Luhn generates a valid number, flips one digit, and requires rejection.
 - Use a **corpus/spec check** when the contract is external and example-heavy.
   The CommonMark oracle embeds the upstream spec examples and runs them as a
   conformance corpus.

@@ -186,21 +186,15 @@ fn followedByCased(bytes: []const u8) bool {
     return false;
 }
 
-// The embedded oracle: full default lowercase with Final_Sigma and
-// invalid-byte passthrough.
+// The embedded oracle covers full default lowercase with Final_Sigma over the
+// valid UTF-8 input domain.
 fn oracleLower(input: []const u8, out: []u8) usize {
     var out_len: usize = 0;
     var prev_cased = false;
     var i: usize = 0;
     while (i < input.len) {
         const d = decode(input[i..]);
-        if (!d.valid) {
-            out[out_len] = input[i];
-            out_len += 1;
-            prev_cased = false;
-            i += 1;
-            continue;
-        }
+        if (!d.valid) @trap();
         if (d.cp == SIGMA) {
             const final = prev_cased and !followedByCased(input[i + d.size ..]);
             const mapped: []const u8 = if (final) &SIGMA_FINAL else &SIGMA_SMALL;
@@ -274,7 +268,7 @@ fn nextRandom(state: *u32) u32 {
 }
 
 // Sigma-heavy alphabet so Final_Sigma boundaries (word-final, before
-// punctuation, across combining marks, next to invalid bytes) come up
+// punctuation, and across combining marks) come up
 // constantly instead of rarely.
 const SIGMA_MIX = [_]u32{ 0x03A3, 0x03A3, 0x03C2, 0x03C3, 0x0301, 0x0307, 0x0345, 0x0391, 0x0041, 0x0020, 0x002E, 0x0027 };
 
@@ -285,8 +279,7 @@ fn buildFuzzInput(rng: *u32) []const u8 {
     while (unit < target and len + 4 <= MAX_INPUT) : (unit += 1) {
         switch (nextRandom(rng) % 5) {
             0 => {
-                // Raw byte: may form invalid UTF-8 — passthrough must hold.
-                input_buf[len] = @intCast(nextRandom(rng) % 256);
+                input_buf[len] = @intCast(0x20 + (nextRandom(rng) % 0x5F));
                 len += 1;
             },
             1 => {

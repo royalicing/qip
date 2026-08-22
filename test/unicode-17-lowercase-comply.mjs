@@ -12,7 +12,7 @@ const wasmBytes = await readFile(
   new URL("../compliance/unicode-17-lowercase.comply.wasm", import.meta.url),
 );
 
-const CURATED_COUNT = 42; // 18 curated + 24 generated inputs from casegen
+const CURATED_COUNT = 37; // 13 curated + 24 generated inputs from casegen
 
 registerGenericComplianceTests(test, wasmBytes, { curatedCount: CURATED_COUNT });
 
@@ -58,7 +58,7 @@ test("duel: JavaScript toLowerCase vs the UCD 17 corpus", async () => {
     try {
       strict.decode(c.input);
     } catch {
-      continue; // JS strings can't represent invalid UTF-8 passthrough.
+      continue;
     }
     dueled++;
     if (!jsLower(c.input).equals(c.expected)) {

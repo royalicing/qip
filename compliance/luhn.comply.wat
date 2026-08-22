@@ -1,8 +1,8 @@
 (module
   (import "qip" "must_render_exactly"
     (func $must_render_exactly (param i64 i32 i32 i32 i32) (result i32)))
-  (import "qip" "must_trap"
-    (func $must_trap (param i64 i32 i32) (result i32)))
+  (import "qip" "must_reject"
+    (func $must_reject (param i64 i32 i32) (result i32)))
 
   (memory (export "memory") 1)
 
@@ -126,9 +126,9 @@
         (global.get $case_expected_size)))
     (global.set $ordinal (i64.add (global.get $ordinal) (i64.const 1))))
 
-  (func $expect_trap (param $in_ptr i32) (param $input_size i32)
+  (func $expect_reject (param $in_ptr i32) (param $input_size i32)
     (drop
-      (call $must_trap
+      (call $must_reject
         (global.get $ordinal)
         (local.get $in_ptr)
         (local.get $input_size)))
@@ -191,17 +191,17 @@
         (br $valid_length_loop)))
 
     ;; Fixed rejection cases: empty, separator-only, and too short.
-    (call $expect_trap (local.get $in_ptr) (i32.const 0))
+    (call $expect_reject (local.get $in_ptr) (i32.const 0))
 
     (global.set $case_input_size (i32.const 0))
     (call $append_input (local.get $in_ptr) (i32.const 32))
     (call $append_input (local.get $in_ptr) (i32.const 45))
     (call $append_input (local.get $in_ptr) (i32.const 32))
-    (call $expect_trap (local.get $in_ptr) (global.get $case_input_size))
+    (call $expect_reject (local.get $in_ptr) (global.get $case_input_size))
 
     (global.set $case_input_size (i32.const 0))
     (call $append_input (local.get $in_ptr) (i32.const 52))
-    (call $expect_trap (local.get $in_ptr) (global.get $case_input_size))
+    (call $expect_reject (local.get $in_ptr) (global.get $case_input_size))
 
     ;; For every generated prefix, reject a bad checksum and a non-digit.
     (local.set $prefix_len (i32.const 1))
@@ -224,7 +224,7 @@
             (call $flip_digit
               (local.get $in_ptr)
               (i32.sub (global.get $case_input_size) (i32.const 1)))
-            (call $expect_trap (local.get $in_ptr) (global.get $case_input_size))
+            (call $expect_reject (local.get $in_ptr) (global.get $case_input_size))
 
             (call $make_valid_case
               (local.get $in_ptr)
@@ -237,7 +237,7 @@
                 (local.get $in_ptr)
                 (i32.shr_u (global.get $case_input_size) (i32.const 1)))
               (i32.const 120))
-            (call $expect_trap (local.get $in_ptr) (global.get $case_input_size))
+            (call $expect_reject (local.get $in_ptr) (global.get $case_input_size))
 
             (local.set $seed (i32.add (local.get $seed) (i32.const 1)))
             (br $invalid_seed_loop)))

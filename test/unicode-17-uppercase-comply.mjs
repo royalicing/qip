@@ -15,7 +15,7 @@ const wasmBytes = await readFile(
   new URL("../compliance/unicode-17-uppercase.comply.wasm", import.meta.url),
 );
 
-const CURATED_COUNT = 16;
+const CURATED_COUNT = 13;
 const ORDINAL = { ascii: 1, sharpS: 2, ligatures: 3, greekAccents: 5, ypogegrammeni: 6 };
 
 registerGenericComplianceTests(test, wasmBytes, { curatedCount: CURATED_COUNT });
@@ -42,7 +42,7 @@ test("duel: JavaScript toUpperCase vs the UCD 17 corpus and properties", async (
     try {
       strict.decode(c.input);
     } catch {
-      continue; // JS strings can't represent invalid UTF-8 passthrough; bridge/CLI duels cover those.
+      continue;
     }
     dueled++;
     if (!jsUpper(c.input).equals(c.expected)) {
@@ -81,4 +81,19 @@ test("duel: components/utf8/unicode-17-uppercase.wasm is fully compliant", async
   assert.deepEqual(failures, [], "equality cases diverged");
   assert.ok(predicates.every((p) => p.ok), "property cases failed");
   console.log(`wasm impl duel: ${cases.length} equality + ${predicates.length} examination cases, fully compliant`);
+});
+
+test("malformed UTF-8 violates the component input precondition", async () => {
+  const implBytes = await readFile(
+    new URL("../components/utf8/unicode-17-uppercase.wasm", import.meta.url),
+  );
+
+  for (const input of [Buffer.from([0xff]), Buffer.from([0xc3]), Buffer.from([0x80])]) {
+    const { instance } = await WebAssembly.instantiate(implBytes);
+    const impl = instance.exports;
+    const readI32 = (name) => (typeof impl[name] === "function" ? impl[name]() : impl[name].value);
+    new Uint8Array(impl.memory.buffer, readI32("input_ptr"), input.length).set(input);
+    assert.throws(() => impl.render(input.length), WebAssembly.RuntimeError);
+    // A host creates another instance after each trap.
+  }
 });

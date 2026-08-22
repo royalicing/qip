@@ -48,14 +48,16 @@ For the bridge ABI and authoring rules, see [`qip comply`](/docs/comply).
 | Preserve empty input | Empty input renders as empty output. | [wasm](/oracles/preserve-empty.wasm) | [wat](/oracles/preserve-empty.wat) |
 | Preserve whitespace | Common whitespace inputs pass through unchanged. | [wasm](/oracles/preserve-whitespace.wasm) | [wat](/oracles/preserve-whitespace.wat) |
 | Preserve ASCII | Printable ASCII passes through unchanged. | [wasm](/oracles/preserve-ascii.wasm) | [wat](/oracles/preserve-ascii.wat) |
-| Trap invalid UTF-8 | Invalid UTF-8 byte sequences trap instead of being repaired silently. | [wasm](/oracles/trap-invalid-utf8.wasm) | [wat](/oracles/trap-invalid-utf8.wat) |
+| Reject invalid UTF-8 | A byte-to-UTF-8 validator rejects malformed sequences through `commit`. | [wasm](/oracles/reject-invalid-utf8.wasm) | [wat](/oracles/reject-invalid-utf8.wat) |
+| Reject non-ASCII | A byte-to-ASCII validator rejects the first byte above `0x7f` through `commit`. | [wasm](/oracles/reject-non-ascii.wasm) | [wat](/oracles/reject-non-ascii.wat) |
+| Trap invalid UTF-8 | A component whose input precondition is valid UTF-8 traps when that precondition is broken. | [wasm](/oracles/trap-invalid-utf8.wasm) | [wat](/oracles/trap-invalid-utf8.wat) |
 | Trap empty input | Empty input must trap. Useful for validators that require a value. | [wasm](/oracles/trap-empty-input.wasm) | [wat](/oracles/trap-empty-input.wat) |
 
 ## Identifiers And Formatting
 
 | Oracle | Checks | Download | Source |
 | --- | --- | --- | --- |
-| Luhn | Normalized Luhn-valid values pass; invalid values trap. | [wasm](/oracles/luhn.comply.wasm) | [wat](/oracles/luhn.comply.wat) |
+| Luhn | Normalized Luhn-valid values pass; invalid values reject. | [wasm](/oracles/luhn.comply.wasm) | [wat](/oracles/luhn.comply.wat) |
 | E.164 phone numbers | Phone numbers normalize to E.164 form. | [wasm](/oracles/e164.comply.wasm) | [wat](/oracles/e164.comply.wat) |
 | ISO 4217 alpha to numeric | Currency alphabetic codes map to numeric codes. | [wasm](/oracles/iso-4217-alpha-to-numeric.comply.wasm) | [zig](/oracles/iso-4217-alpha-to-numeric.comply.zig) |
 | en-US currency | Locale-specific currency formatting. | [wasm](/oracles/currency-format-en-us.comply.wasm) | [zig](/oracles/currency-format-en-us.comply.zig) |
@@ -83,8 +85,8 @@ For the bridge ABI and authoring rules, see [`qip comply`](/docs/comply).
 | SVG to data URI | SVG bytes encode to a safe data URI form. | [wasm](/oracles/svg-to-data-uri.comply.wasm) | [zig](/oracles/svg-to-data-uri.comply.zig) |
 | Data URI to CSS URL | Data URIs wrap correctly for CSS `url(...)`. | [wasm](/oracles/data-uri-to-css-url.comply.wasm) | [zig](/oracles/data-uri-to-css-url.comply.zig) |
 | Mermaid to Unicode HTML | Strict Mermaid subset renders to Unicode diagram HTML. | [wasm](/oracles/mermaid-to-unicode-html.comply.wasm) | [zig](/oracles/mermaid-to-unicode-html.comply.zig) |
-| JPEG to BMP BGRA32 | Baseline JPEG decodes to canonical 32-bit BGRA BMP. | [wasm](/oracles/jpeg-to-bmp-bgra32.comply.wasm) | [zig](/oracles/jpeg-to-bmp-bgra32.comply.zig) |
-| BMP BGRA32 ICC to sRGB | 32-bit BGRA BMP color conversion contract. | [wasm](/oracles/bmp-bgra32-icc-to-srgb.comply.wasm) | [zig](/oracles/bmp-bgra32-icc-to-srgb.comply.zig) |
+| JPEG to BMP B8G8R8A8 sRGB | Baseline JPEG decodes to canonical 32-bit BGRA BMP. | [wasm](/oracles/jpeg-to-bmp-b8g8r8a8-srgb.comply.wasm) | [zig](/oracles/jpeg-to-bmp-b8g8r8a8-srgb.comply.zig) |
+| BMP B8G8R8A8 sRGB ICC to sRGB | 32-bit BGRA BMP color conversion contract. | [wasm](/oracles/bmp-b8g8r8a8-icc-to-srgb.comply.wasm) | [zig](/oracles/bmp-b8g8r8a8-icc-to-srgb.comply.zig) |
 | WARC connected search params | WARC recipe behavior for connected search parameters. | [wasm](/oracles/warc-connect-search-params.comply.wasm) | [zig](/oracles/warc-connect-search-params.comply.zig) |
 
 ## Syntax Highlighting

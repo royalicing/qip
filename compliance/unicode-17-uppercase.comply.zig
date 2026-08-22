@@ -165,19 +165,13 @@ fn lookupUpper(cp: u32) ?[]const u8 {
     return tables.map_blob[off .. off + len];
 }
 
-// The embedded oracle: full default uppercase with invalid bytes passed
-// through unchanged.
+// The embedded oracle covers the valid UTF-8 input domain.
 fn oracleUpper(input: []const u8, out: []u8) usize {
     var out_len: usize = 0;
     var i: usize = 0;
     while (i < input.len) {
         const d = decode(input[i..]);
-        if (!d.valid) {
-            out[out_len] = input[i];
-            out_len += 1;
-            i += 1;
-            continue;
-        }
+        if (!d.valid) @trap();
         if (lookupUpper(d.cp)) |upper| {
             for (upper) |b| {
                 out[out_len] = b;
@@ -243,8 +237,7 @@ fn buildFuzzInput(rng: *u32) []const u8 {
     while (unit < target and len + 4 <= MAX_INPUT) : (unit += 1) {
         switch (nextRandom(rng) % 4) {
             0 => {
-                // Raw byte: may form invalid UTF-8 — passthrough must hold.
-                input_buf[len] = @intCast(nextRandom(rng) % 256);
+                input_buf[len] = @intCast(0x20 + (nextRandom(rng) % 0x5F));
                 len += 1;
             },
             1 => {

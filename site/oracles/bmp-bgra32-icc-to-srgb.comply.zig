@@ -1,1 +1,0 @@
-../../compliance/bmp-bgra32-icc-to-srgb.comply.zig

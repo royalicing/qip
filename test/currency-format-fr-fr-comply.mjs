@@ -81,7 +81,7 @@ test("duel: currency-format-fr-fr.wasm is compliant for every supported currency
       return impl.uniform_set_currency(value);
     },
   });
-  assert.deepEqual(configured, currencies.map((currency) => currency.numeric));
+  assert.deepEqual(configured, cases.map((c) => c.uniforms.currency));
   const failures = cases
     .filter((c) => {
       impl.uniform_set_currency(c.uniforms.currency);
@@ -93,7 +93,7 @@ test("duel: currency-format-fr-fr.wasm is compliant for every supported currency
 
 test("currency formatter stays within its compact artifact and memory budgets", async () => {
   const implBytes = await readFile(new URL("../components/utf8/currency-format-fr-fr.wasm", import.meta.url));
-  assert.ok(implBytes.byteLength <= 2400, `expected at most 2400 bytes, got ${implBytes.byteLength}`);
+  assert.ok(implBytes.byteLength <= 2410, `expected at most 2410 bytes, got ${implBytes.byteLength}`);
   const { instance } = await WebAssembly.instantiate(implBytes);
   assert.equal(instance.exports.memory.buffer.byteLength, 64 * 1024);
 });

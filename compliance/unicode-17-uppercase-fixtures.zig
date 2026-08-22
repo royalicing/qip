@@ -21,7 +21,4 @@ pub const cases = [_]Case{
     .{ .name = "deseret-plane1", .input = "\xF0\x90\x90\xA8\xF0\x90\x90\xA9" },
     .{ .name = "garay-unicode16", .input = "\xF0\x90\xB5\xB0\xF0\x90\xB5\xB1" },
     .{ .name = "mixed-scripts", .input = "\xD0\xBF\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82 \xCE\xB3\xCE\xB5\xCE\xB9\xCE\xB1 hello \xD0\xBC\xD0\xB8\xD1\x80" },
-    .{ .name = "invalid-lone-ff", .input = "a\xFFb" },
-    .{ .name = "invalid-truncated-c3", .input = "caf\xC3" },
-    .{ .name = "invalid-lone-continuation", .input = "\x80\x81\xCF\x83" },
 };
