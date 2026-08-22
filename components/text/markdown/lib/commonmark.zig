@@ -1232,6 +1232,127 @@ pub fn Make(comptime options: Options) type {
             return has_non_ws;
         }
 
+        // Collects reference definitions from inside one list item,
+        // mirroring how the renderer walks item content: definitions parse
+        // only at block-start positions within the item (the marker line's
+        // own content, or after a blank line, or directly after another
+        // definition — they stack), and never inside an open paragraph,
+        // fenced block, or indented code. Definitions inside nested
+        // containers are conservatively not collected, and multi-line
+        // definition tails (title on a following line) are not recognized
+        // inside items. Returns the line index after the walked extent.
+        fn collectListItemDefs(input: []const u8, marker_idx: u32, mark: ListMarker) u32 {
+            const first = trimRightCR(lineSlice(input, marker_idx));
+            const base = listItemContinuationBase(first, mark);
+            var at_block_start = true;
+            var para_open = false;
+            var fence: ?Fence = null;
+
+            if (mark.content_start < first.len and !isBlankLine(first[mark.content_start..])) {
+                const content = first[mark.content_start..];
+                if (parseReferenceDefLine(content)) |p| {
+                    if (!pushReferenceDef(p.label_hash, p.href, p.title)) return marker_idx + 1;
+                } else if (parseFenceOpen(content)) |f| {
+                    fence = f;
+                    at_block_start = false;
+                } else {
+                    para_open = contentOpensParagraph(content);
+                    at_block_start = false;
+                }
+            }
+
+            var i = marker_idx + 1;
+            while (i < lines_count) : (i += 1) {
+                const ln = lineSlice(input, i);
+                if (isBlankLine(ln)) {
+                    if (fence == null) {
+                        at_block_start = true;
+                        para_open = false;
+                    }
+                    continue;
+                }
+                const ind = leadingIndent(ln);
+                if (ind.cols >= base) {
+                    const stripped = stripIndentCols(ln, base);
+                    if (fence) |f| {
+                        if (isFenceClose(stripped, f)) {
+                            fence = null;
+                            at_block_start = true;
+                        }
+                        continue;
+                    }
+                    if (at_block_start) {
+                        if (leadingIndent(stripped).cols >= 4) {
+                            at_block_start = false;
+                            continue;
+                        }
+                        if (parseReferenceDefLine(stripped)) |p| {
+                            if (!pushReferenceDef(p.label_hash, p.href, p.title)) return i + 1;
+                            continue;
+                        }
+                        if (parseFenceOpen(stripped)) |f| {
+                            fence = f;
+                            at_block_start = false;
+                            continue;
+                        }
+                        para_open = contentOpensParagraph(stripped);
+                        at_block_start = false;
+                        continue;
+                    }
+                    if (para_open) {
+                        if (parseSetextUnderline(stripped) != null or parseATXHeading(stripped) != null or
+                            parseThematicBreak(stripped) or canInterruptParagraphWithList(stripped))
+                        {
+                            para_open = false;
+                        } else if (parseFenceOpen(stripped)) |f| {
+                            fence = f;
+                            para_open = false;
+                        }
+                    }
+                    continue;
+                }
+                if (fence != null) break;
+                if (para_open and canLazyContinueListParagraph(ln)) {
+                    if (!contentOpensParagraph(ln)) para_open = false;
+                    continue;
+                }
+                break;
+            }
+            return i;
+        }
+
+        // Whether everything from start_k to the end of an item's content
+        // (indent >= base) consists only of blank lines and reference
+        // definitions. Used for looseness: definitions render nothing, so a
+        // blank followed only by definitions behaves like a trailing blank.
+        fn itemTailIsDefsOnly(input: []const u8, start_k: u32, base: usize) bool {
+            var k = start_k;
+            while (k < lines_count) : (k += 1) {
+                const ln = lineSlice(input, k);
+                if (isBlankLine(ln)) continue;
+                if (leadingIndent(ln).cols < base) {
+                    // A following sibling item means the blank separates items
+                    // (spec example 318: the list is loose); a non-item line
+                    // ends the list, making the blank trailing.
+                    return parseListMarker(ln) == null;
+                }
+                if (parseReferenceDefLine(stripIndentCols(ln, base)) == null) return false;
+            }
+            return true;
+        }
+
+        fn tmpTailIsDefsOnly(text: []const u8, start_cursor: usize, base: usize) bool {
+            var cur = start_cursor;
+            while (nextTmpLine(text, &cur)) |ln| {
+                if (isBlankLine(ln)) continue;
+                if (leadingIndent(ln).cols < base) {
+                    return parseListMarker(ln) == null;
+                }
+                if (parseReferenceDefLine(stripIndentCols(ln, base)) == null) return false;
+            }
+            return true;
+        }
+
         fn collectReferenceDefs(input: []const u8) void {
             ref_defs_count = 0;
             ref_storage_len = 0;
@@ -1304,27 +1425,7 @@ pub fn Make(comptime options: Options) type {
                     continue;
                 }
                 if (parseListMarker(line)) |m| {
-                    i += 1;
-                    const l = trimRightCR(line);
-                    if (m.content_start < l.len and contentOpensParagraph(l[m.content_start..])) {
-                        while (i < lines_count) : (i += 1) {
-                            const ln = lineSlice(input, i);
-                            if (isBlankLine(ln)) break;
-                            if (parseSetextUnderline(ln) != null) {
-                                i += 1;
-                                break;
-                            }
-                            if (parseATXHeading(ln) != null) break;
-                            if (parseThematicBreak(ln)) break;
-                            if (parseFenceOpen(ln) != null) break;
-                            if (canInterruptParagraphWithList(ln)) break;
-                            const pb = if (i == 0) true else isBlankLine(lineSlice(input, i - 1));
-                            const hb = detectHtmlBlockStart(ln, pb);
-                            if (hb != .none and hb != .type7) break;
-                            const li = leadingIndent(ln);
-                            if (li.cols <= 3 and li.idx < ln.len and ln[li.idx] == '>') break;
-                        }
-                    }
+                    i = collectListItemDefs(input, i, m);
                     continue;
                 }
                 if (ind.cols <= 3 and ind.idx < line.len and line[ind.idx] == '>') {
@@ -1469,6 +1570,7 @@ pub fn Make(comptime options: Options) type {
                     switch (b) {
                         '&' => out.writeSlice("&amp;"),
                         '"' => out.writeSlice("&quot;"),
+                        '\'' => out.writeSlice("&#x27;"),
                         else => out.writeByte(b),
                     }
                 } else {
@@ -1486,6 +1588,7 @@ pub fn Make(comptime options: Options) type {
                     switch (b) {
                         '&' => out.writeSlice("&amp;"),
                         '"' => out.writeSlice("&quot;"),
+                        '\'' => out.writeSlice("&#x27;"),
                         else => out.writeByte(b),
                     }
                 } else {
@@ -1546,7 +1649,7 @@ pub fn Make(comptime options: Options) type {
                 return true;
             }
 
-            if (std.mem.indexOfScalar(u8, inner, '@') != null and std.mem.indexOfScalar(u8, inner, '\\') == null) {
+            if (isValidEmailAutolink(inner)) {
                 out.writeSlice("<a href=\"mailto:");
                 writeRawURIAttrEscaped(out, inner);
                 out.writeSlice("\">");
@@ -2097,6 +2200,28 @@ pub fn Make(comptime options: Options) type {
             return idx;
         }
 
+        // Spec email-autolink grammar: atext local part, dot-separated
+        // alphanumeric-and-hyphen labels of at most 63 chars that neither
+        // start nor end with a hyphen.
+        fn isValidEmailAutolink(inner: []const u8) bool {
+            const at = std.mem.indexOfScalar(u8, inner, '@') orelse return false;
+            if (at == 0) return false;
+            for (inner[0..at]) |b| {
+                if (!isAsciiAlnum(b) and std.mem.indexOfScalar(u8, ".!#$%&'*+/=?^_`{|}~-", b) == null) return false;
+            }
+            const domain = inner[at + 1 ..];
+            if (domain.len == 0) return false;
+            var it = std.mem.splitScalar(u8, domain, '.');
+            while (it.next()) |label| {
+                if (label.len == 0 or label.len > 63) return false;
+                if (!isAsciiAlnum(label[0]) or !isAsciiAlnum(label[label.len - 1])) return false;
+                for (label) |b| {
+                    if (!isAsciiAlnum(b) and b != '-') return false;
+                }
+            }
+            return true;
+        }
+
         fn isAutolinkInner(inner: []const u8) bool {
             if (inner.len == 0) return false;
             for (inner) |b| {
@@ -2105,7 +2230,7 @@ pub fn Make(comptime options: Options) type {
             if (std.mem.indexOfScalar(u8, inner, ':')) |colon| {
                 if (isLikelyURIScheme(inner[0..colon])) return true;
             }
-            return std.mem.indexOfScalar(u8, inner, '@') != null and std.mem.indexOfScalar(u8, inner, '\\') == null;
+            return isValidEmailAutolink(inner);
         }
 
         const AngleScan = struct { end: usize, kind: InlineKind };
@@ -2241,7 +2366,7 @@ pub fn Make(comptime options: Options) type {
 
         fn parseInlineLinkRaw(s: []const u8, start: usize) ?InlineLinkRaw {
             var i = start;
-            while (i < s.len and isWhitespace(s[i])) : (i += 1) {}
+            while (i < s.len and (isWhitespace(s[i]) or s[i] == '\n' or s[i] == '\r')) : (i += 1) {}
             if (i >= s.len) return null;
             var href_start: usize = i;
             var href_end: usize = i;
@@ -2307,7 +2432,7 @@ pub fn Make(comptime options: Options) type {
                 if (i >= s.len) return null;
                 title_end = i;
                 i += 1;
-                while (i < s.len and isWhitespace(s[i])) : (i += 1) {}
+                while (i < s.len and (isWhitespace(s[i]) or s[i] == '\n' or s[i] == '\r')) : (i += 1) {}
             }
             if (i >= s.len or s[i] != ')') return null;
             return .{
@@ -2877,6 +3002,8 @@ pub fn Make(comptime options: Options) type {
                 var seg: []const u8 = undefined;
                 if (j != start) {
                     seg = stripAllLeadingSpacesTabs(line);
+                } else if (leadingIndent(line).cols > 3) {
+                    seg = stripAllLeadingSpacesTabs(line);
                 } else {
                     seg = stripBlockIndentUpTo3(line);
                 }
@@ -2992,7 +3119,11 @@ pub fn Make(comptime options: Options) type {
             if (parseATXHeading(line) != null) return false;
             if (parseThematicBreak(line)) return false;
             if (parseFenceOpen(line) != null) return false;
-            if (canInterruptParagraphWithList(line)) return false;
+            // Any list-marker line — even an empty item, which could not
+            // interrupt a paragraph in the same container — starts a block
+            // and therefore cannot be a lazy continuation line. A marker
+            // indented 4+ columns starts nothing and stays lazy.
+            if (leadingIndent(line).cols <= 3 and parseListMarker(line) != null) return false;
             const html_block = detectHtmlBlockStart(line, false);
             if (html_block != .none and html_block != .type7) return false;
             const ind = leadingIndent(line);
@@ -3070,13 +3201,17 @@ pub fn Make(comptime options: Options) type {
             var line = first_line;
             var done = false;
             var list_is_loose = false;
+            // Markers indented less than the previous item's content base are
+            // siblings of this list (cmark), so the acceptance bound has to
+            // follow the previous item rather than the first marker's column.
+            var sibling_limit = listItemContinuationBase(first_line, first_mark) - 1;
             while (!done) {
-                const same_level_limit = first_mark.indent_cols;
                 if (parseThematicBreak(line)) break;
                 const mark = parseListMarker(line) orelse break;
                 if (mark.kind != first_mark.kind or mark.marker != first_mark.marker) break;
-                if (mark.indent_cols > same_level_limit) break;
+                if (mark.indent_cols > sibling_limit) break;
                 const item_content_base = listItemContinuationBase(line, mark);
+                sibling_limit = item_content_base - 1;
 
                 var tmp = Writer.init(tmp_buf[0..]);
                 appendListItemFirstLine(&tmp, line, mark);
@@ -3087,6 +3222,7 @@ pub fn Make(comptime options: Options) type {
                 const first_line_trimmed = trimRightCR(line);
                 var lazy_ok = mark.content_start < first_line_trimmed.len and
                     contentOpensParagraph(first_line_trimmed[mark.content_start..]);
+                var fence_trailing_blank = false;
 
                 while (true) {
                     const save = cursor.*;
@@ -3094,6 +3230,13 @@ pub fn Make(comptime options: Options) type {
                     if (maybe_ln == null) break;
                     const ln = maybe_ln.?;
                     if (isBlankLine(ln)) {
+                        if (saw_nonblank and tmpInsideFence(tmp.buf[0..tmp.idx])) {
+                            // Inside an open fence the blank is fence content
+                            // and cannot end the item.
+                            appendTmp(&tmp, "\n");
+                            fence_trailing_blank = true;
+                            continue;
+                        }
                         if (!saw_nonblank) break;
                         var look = cursor.*;
                         var next_nonblank: ?[]const u8 = null;
@@ -3115,7 +3258,9 @@ pub fn Make(comptime options: Options) type {
                             break;
                         }
                         appendTmp(&tmp, "\n");
-                        if (!tmpInsideFence(tmp.buf[0..tmp.idx]) and (!saw_nested_list or leadingIndent(next_ln).cols <= item_content_base + 1)) {
+                        if (!tmpInsideFence(tmp.buf[0..tmp.idx]) and (!saw_nested_list or leadingIndent(next_ln).cols <= item_content_base + 1) and
+                            !tmpTailIsDefsOnly(text, cursor.*, item_content_base))
+                        {
                             item_has_blank = true;
                         }
                         lazy_ok = false;
@@ -3124,7 +3269,7 @@ pub fn Make(comptime options: Options) type {
 
                     if (parseListMarker(ln)) |nm| {
                         const ind = leadingIndent(ln);
-                        if (ind.cols <= same_level_limit) {
+                        if (ind.cols < item_content_base) {
                             _ = nm;
                             cursor.* = save;
                             break;
@@ -3147,14 +3292,20 @@ pub fn Make(comptime options: Options) type {
                         cursor.* = save;
                         break;
                     }
-                    if (parseListMarker(ln) != null and ind.cols >= item_content_base) saw_nested_list = true;
+                    if (parseListMarker(ln) != null and ind.cols >= item_content_base and
+                        !(lazy_ok and parseSetextUnderline(stripIndentCols(ln, item_content_base)) != null))
+                    {
+                        saw_nested_list = true;
+                    }
 
                     appendTmp(&tmp, "\n");
                     appendListContinuation(&tmp, ln, item_content_base);
                     saw_nonblank = true;
+                    fence_trailing_blank = false;
                     lazy_ok = contentOpensParagraph(stripIndentCols(ln, item_content_base));
                 }
 
+                if (fence_trailing_blank) appendTmp(&tmp, "\n");
                 const item_is_tight = !(list_is_loose or item_has_blank or separator_blank);
                 const item_empty = trimAscii(tmp.buf[0..tmp.idx]).len == 0;
                 if (item_empty) {
@@ -3184,7 +3335,7 @@ pub fn Make(comptime options: Options) type {
 
                     if (parseListMarker(nl)) |nm| {
                         const ind = leadingIndent(nl);
-                        if (nm.kind == first_mark.kind and nm.marker == first_mark.marker and ind.cols <= same_level_limit) {
+                        if (nm.kind == first_mark.kind and nm.marker == first_mark.marker and ind.cols <= sibling_limit) {
                             line = nl;
                             have_next = true;
                             break;
@@ -3244,7 +3395,7 @@ pub fn Make(comptime options: Options) type {
                     if (parseATXHeading(line) != null or
                         parseThematicBreak(line) or
                         parseFenceOpen(line) != null or
-                        canInterruptParagraphWithList(line))
+                        (leadingIndent(line).cols <= 3 and parseListMarker(line) != null))
                     {
                         if (line_start_set) cursor.* = current_line_start;
                         break;
@@ -3278,20 +3429,24 @@ pub fn Make(comptime options: Options) type {
             var cursor: usize = 0;
             var first_block = true;
             var prev_blank = true;
+            var after_def = false;
 
             while (cursor < text.len) {
                 const line = nextTmpLine(text, &cursor) orelse break;
+                const was_after_def = after_def;
+                after_def = false;
                 if (isBlankLine(line)) {
                     prev_blank = true;
                     continue;
                 }
                 if (parseReferenceDefLine(line) != null) {
                     prev_blank = false;
+                    after_def = true;
                     continue;
                 }
 
                 const ind = leadingIndent(line);
-                if (ind.cols >= 4) {
+                if (ind.cols >= 4 and !was_after_def) {
                     if (!first_block and out.idx > 0 and out.buf[out.idx - 1] != '\n') out.writeByte('\n');
                     var code = Writer.init(tmp3_buf[0..]);
                     var code_line = line;
@@ -3350,6 +3505,10 @@ pub fn Make(comptime options: Options) type {
                         const maybe_next = nextTmpLine(text, &cursor);
                         if (maybe_next == null) break;
                         const nl = maybe_next.?;
+                        if ((html_block == .type6 or html_block == .type7) and isBlankLine(nl)) {
+                            prev_blank = true;
+                            break;
+                        }
                         var next_save = cursor;
                         const maybe_after = nextTmpLine(text, &next_save);
                         const next_is_blank = maybe_after == null or isBlankLine(maybe_after.?);
@@ -3633,7 +3792,7 @@ pub fn Make(comptime options: Options) type {
                 if (parseATXHeading(line) != null) break;
                 if (parseThematicBreak(line)) break;
                 if (parseFenceOpen(line) != null) break;
-                if (canInterruptParagraphWithList(line)) break;
+                if (leadingIndent(line).cols <= 3 and parseListMarker(line) != null) break;
                 const prev_blank = if (i == 0) true else isBlankLine(lineSlice(input, i - 1));
                 const html_block = detectHtmlBlockStart(line, prev_blank);
                 if (html_block != .none and html_block != .type7) break;
@@ -3665,13 +3824,14 @@ pub fn Make(comptime options: Options) type {
                 const item_content_base = listItemContinuationBase(line, mark);
                 var saw_nested_list = false;
                 var saw_nonblank = if (mark.content_start < line.len) trimAscii(line[mark.content_start..]).len != 0 else false;
-                const starts_fence = if (mark.content_start < line.len) parseFenceOpen(line[mark.content_start..]) != null else false;
+                var in_fence: ?Fence = if (mark.content_start < line.len) parseFenceOpen(line[mark.content_start..]) else null;
                 var lazy_ok = mark.content_start < line.len and contentOpensParagraph(line[mark.content_start..]);
 
                 var j = i + 1;
                 while (j < lines_count) : (j += 1) {
                     const ln = lineSlice(input, j);
                     if (isBlankLine(ln)) {
+                        if (saw_nonblank and in_fence != null) continue;
                         lazy_ok = false;
                         var k = j + 1;
                         while (k < lines_count and isBlankLine(lineSlice(input, k))) : (k += 1) {}
@@ -3687,7 +3847,8 @@ pub fn Make(comptime options: Options) type {
                         } else if (ni.cols < item_content_base) {
                             break;
                         }
-                        if (!starts_fence and (!saw_nested_list or ni.cols <= item_content_base + 1)) return true;
+                        if (in_fence == null and (!saw_nested_list or ni.cols <= item_content_base + 1) and
+                            !itemTailIsDefsOnly(input, k, item_content_base)) return true;
                         break;
                     }
                     const ind = leadingIndent(ln);
@@ -3702,8 +3863,20 @@ pub fn Make(comptime options: Options) type {
                         if (saw_nonblank and lazy_ok and canLazyContinueListParagraph(ln)) continue;
                         break;
                     }
-                    if (maybe_next != null and ind.cols >= item_content_base) saw_nested_list = true;
+                    if (maybe_next != null and ind.cols >= item_content_base and
+                        !(lazy_ok and parseSetextUnderline(stripIndentCols(ln, item_content_base)) != null))
+                    {
+                        saw_nested_list = true;
+                    }
                     saw_nonblank = true;
+                    if (ind.cols >= item_content_base) {
+                        const stripped = stripIndentCols(ln, item_content_base);
+                        if (in_fence) |f| {
+                            if (isFenceClose(stripped, f)) in_fence = null;
+                        } else if (parseFenceOpen(stripped)) |f| {
+                            in_fence = f;
+                        }
+                    }
                     lazy_ok = contentOpensParagraph(stripIndentCols(ln, item_content_base));
                 }
                 i = j;
@@ -3751,11 +3924,19 @@ pub fn Make(comptime options: Options) type {
                 const first_line_trimmed = trimRightCR(line);
                 var lazy_ok = mark.content_start < first_line_trimmed.len and
                     contentOpensParagraph(first_line_trimmed[mark.content_start..]);
+                var fence_trailing_blank = false;
 
                 var j = i + 1;
                 while (j < lines_count) : (j += 1) {
                     const ln = lineSlice(input, j);
                     if (isBlankLine(ln)) {
+                        if (saw_nonblank and tmpInsideFence(tmp.buf[0..tmp.idx])) {
+                            // Inside an open fence the blank is fence content
+                            // and cannot end the item.
+                            appendTmp(&tmp, "\n");
+                            fence_trailing_blank = true;
+                            continue;
+                        }
                         if (!saw_nonblank) break;
                         var k = j + 1;
                         while (k < lines_count and isBlankLine(lineSlice(input, k))) : (k += 1) {}
@@ -3777,7 +3958,9 @@ pub fn Make(comptime options: Options) type {
                             break;
                         }
                         appendTmp(&tmp, "\n");
-                        if (!tmpInsideFence(tmp.buf[0..tmp.idx]) and (!saw_nested_list or next_ind.cols <= item_content_base + 1)) {
+                        if (!tmpInsideFence(tmp.buf[0..tmp.idx]) and (!saw_nested_list or next_ind.cols <= item_content_base + 1) and
+                            !itemTailIsDefsOnly(input, k, item_content_base))
+                        {
                             item_has_blank = true;
                         }
                         lazy_ok = false;
@@ -3804,14 +3987,20 @@ pub fn Make(comptime options: Options) type {
                         }
                         break;
                     }
-                    if (maybe_next != null and ind.cols >= item_content_base) saw_nested_list = true;
+                    if (maybe_next != null and ind.cols >= item_content_base and
+                        !(lazy_ok and parseSetextUnderline(stripIndentCols(ln, item_content_base)) != null))
+                    {
+                        saw_nested_list = true;
+                    }
 
                     appendTmp(&tmp, "\n");
                     appendListContinuation(&tmp, ln, item_content_base);
                     saw_nonblank = true;
+                    fence_trailing_blank = false;
                     lazy_ok = contentOpensParagraph(stripIndentCols(ln, item_content_base));
                 }
 
+                if (fence_trailing_blank) appendTmp(&tmp, "\n");
                 const item_is_tight = !(list_is_loose or item_has_blank or separator_blank);
                 const item_empty = trimAscii(tmp.buf[0..tmp.idx]).len == 0;
                 if (item_empty) {
@@ -4012,8 +4201,11 @@ pub fn Make(comptime options: Options) type {
 
         fn renderBlocks(input: []const u8, out: *Writer) void {
             var i: u32 = 0;
+            var after_def = false;
             while (i < lines_count and !out.overflow) {
                 const line = lineSlice(input, i);
+                const was_after_def = after_def;
+                after_def = false;
 
                 if (isBlankLine(line)) {
                     i += 1;
@@ -4021,6 +4213,13 @@ pub fn Make(comptime options: Options) type {
                 }
                 const ind = leadingIndent(line);
                 if (ind.cols >= 4) {
+                    if (was_after_def) {
+                        // A reference definition is consumed out of a
+                        // paragraph, so a following indented line continues
+                        // that paragraph rather than opening indented code.
+                        renderParagraph(input, out, &i);
+                        continue;
+                    }
                     renderIndentedCode(input, out, &i);
                     continue;
                 }
@@ -4058,6 +4257,7 @@ pub fn Make(comptime options: Options) type {
 
                 if (parseReferenceDefAt(input, i)) |def| {
                     i = def.next_idx;
+                    after_def = true;
                     continue;
                 }
 
