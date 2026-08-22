@@ -614,13 +614,26 @@ trust a price or availability claim carried in ordinary tuples.
 
 ```mermaid
 graph TD
-    Start[Empty input] --> Journey{Journey valid?}
-    Journey -->|yes| Answers{Answers valid?}
-    Journey -->|no| JourneyError[Journey error and retry]
-    Answers -->|yes| Check(Check availability)
-    Answers -->|no| AnswerError[Prompt error and retry]
-    Check -.-> Failed[Route suspended and restart]
-    Check ==> Complete[Complete and buy ticket]
+    Origin[Choose origin] --> Destination{Destination valid?}
+    Destination -->|yes| Date(Choose date)
+    Destination -->|no| DestinationError[Destination error]
+    Date --> Service(Choose service)
+    Service --> Seat{Seat selected?}
+    Seat -->|yes| Passenger{Passenger name valid?}
+    Seat -->|no| SeatError[Seat error]
+    Passenger -->|yes| Baggage{Baggage selected?}
+    Passenger -->|no| PassengerError[Passenger error]
+    Baggage -->|yes| Route{Route operating?}
+    Baggage -->|no| BaggageError[Baggage error]
+    Route -->|yes| Availability{Service available?}
+    Route -->|no| Failed[Terminal failure and restart]
+    Availability -->|yes| Complete[Complete and buy ticket]
+    Availability -->|no| ServiceError[Service error]
+    DestinationError -->|retry| Destination
+    SeatError -->|retry| Seat
+    PassengerError -->|retry| Passenger
+    BaggageError -->|retry| Baggage
+    ServiceError -->|retry| Service
 ```
 
 ## Repository Status
