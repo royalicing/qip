@@ -219,10 +219,10 @@ components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: components/image/png/pn
 components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
-components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig components/image/svg+xml/lib/svg-rasterize.zig
+components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig components/image/svg+xml/lib/svg-rasterize.zig components/image/lib/ktx2-rgba8-srgb.zig
+components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
 components/interactive/cover-flow.wasm: components/interactive/cover-flow.zig components/image/lib/ktx2-rgba8-srgb.zig
