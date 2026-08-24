@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -12,7 +13,7 @@ function instantiate(bytes) {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(bytes) {
@@ -47,7 +48,7 @@ test("render counts exposes update ordering and keeps render as the only publish
   const counts = instantiate(renderCountsWasm);
   assertUpdateInteractiveABI(counts);
 
-  const size = counts.render(0);
+  const size = qipRenderSize(counts, 0);
   assert.equal(size, 224 + 320 * 220 * 4);
   const initialDigest = digest(output(counts, size));
 
@@ -58,7 +59,7 @@ test("render counts exposes update ordering and keeps render as the only publish
   assert.equal(counts.finish_update(), 32n);
   assert.equal(digest(output(counts, size)), initialDigest);
 
-  assert.equal(counts.render(0), size);
+  assert.equal(qipRenderSize(counts, 0), size);
   const eventDigest = digest(output(counts, size));
   assert.notEqual(eventDigest, initialDigest);
 
@@ -72,7 +73,7 @@ test("mandelbrot retains a viewport update until a separate render", () => {
   const mandelbrot = instantiate(mandelbrotWasm);
   assertUpdateInteractiveABI(mandelbrot);
 
-  const size = mandelbrot.render(0);
+  const size = qipRenderSize(mandelbrot, 0);
   assert.equal(size, 224 + 480 * 320 * 4);
   const initialDigest = digest(output(mandelbrot, size));
   assert.equal(initialDigest, "36dfde725f248b7e7c0d2c5e8c5e50acac8300c8bf0ce5c65611d105cc64c014");
@@ -82,7 +83,7 @@ test("mandelbrot retains a viewport update until a separate render", () => {
   assert.equal(mandelbrot.finish_update(), 1n);
   assert.equal(digest(output(mandelbrot, size)), initialDigest);
 
-  assert.equal(mandelbrot.render(0), size);
+  assert.equal(qipRenderSize(mandelbrot, 0), size);
   assert.notEqual(digest(output(mandelbrot, size)), initialDigest);
 });
 
@@ -90,7 +91,7 @@ test("perlin noise batches held-key time and bounds long catch-up", () => {
   const perlin = instantiate(perlinNoiseWasm);
   assertUpdateInteractiveABI(perlin);
 
-  const size = perlin.render(0);
+  const size = qipRenderSize(perlin, 0);
   assert.equal(size, 224 + 480 * 320 * 4);
   const initialDigest = digest(output(perlin, size));
   assert.equal(initialDigest, "8b5bcb0553f8809c51c62626c85aac4ff4ab22d5509d9ee58d2218e8fe31c8ee");
@@ -104,11 +105,11 @@ test("perlin noise batches held-key time and bounds long catch-up", () => {
   assert.equal(perlin.finish_update(), 33n);
   assert.equal(digest(output(perlin, size)), initialDigest);
 
-  assert.equal(perlin.render(0), size);
+  assert.equal(qipRenderSize(perlin, 0), size);
   assert.notEqual(digest(output(perlin, size)), initialDigest);
 
   const longJump = instantiate(perlinNoiseWasm);
-  longJump.render(0);
+  qipRenderSize(longJump, 0);
   longJump.begin_update_at(1n);
   assert.equal(longJump.key_event(0xff53, 1), 1);
   assert.equal(longJump.finish_update(), 17n);
@@ -120,10 +121,10 @@ test("new update components trap on lifecycle misuse", () => {
   for (const bytes of [renderCountsWasm, mandelbrotWasm, perlinNoiseWasm]) {
     const exports = instantiate(bytes);
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
-    exports.render(0);
+    qipRenderSize(exports, 0);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     exports.finish_update();
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

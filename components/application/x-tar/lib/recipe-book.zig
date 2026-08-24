@@ -378,7 +378,7 @@ fn validateWasm(wasm: []const u8) Error!void {
                     const signature = signatures[functions[index]];
                     const value_sig = exactSignature(signature, 0, 0, 1, 0x7f);
                     if (std.mem.eql(u8, name, "render")) {
-                        if (!exactSignature(signature, 1, 0x7f, 1, 0x7f)) return error.InvalidWasm;
+                        if (!exactSignature(signature, 1, 0x7f, 1, 0x7e)) return error.InvalidWasm;
                         found |= 1 << 0;
                     } else if (std.mem.eql(u8, name, "input_ptr")) {
                         if (!value_sig) return error.InvalidWasm;
@@ -389,9 +389,6 @@ fn validateWasm(wasm: []const u8) Error!void {
                     } else if (std.mem.eql(u8, name, "input_bytes_cap")) {
                         if (!value_sig) return error.InvalidWasm;
                         found |= 1 << 3;
-                    } else if (std.mem.eql(u8, name, "output_ptr")) {
-                        if (!value_sig) return error.InvalidWasm;
-                        found |= 1 << 4;
                     } else if (std.mem.eql(u8, name, "output_utf8_cap")) {
                         if (!value_sig) return error.InvalidWasm;
                         found |= 1 << 5;
@@ -435,7 +432,7 @@ fn validateWasm(wasm: []const u8) Error!void {
     }
 
     if (memory_count != 1 or !memory_exported) return error.MissingWasmExport;
-    if ((found & 0b10011) != 0b10011) return error.MissingWasmExport;
+    if ((found & 0b11) != 0b11) return error.MissingWasmExport;
     if (@popCount(found & 0b1100) != 1 or @popCount(found & 0b1100000) != 1) return error.MissingWasmExport;
     if (@popCount(found & 0b1_1000_0000) == 1 or @popCount(found & 0b110_0000_0000) == 1) {
         return error.MissingWasmExport;

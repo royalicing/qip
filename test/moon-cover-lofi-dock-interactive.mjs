@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -22,7 +23,7 @@ function bytesAt(exports, pointer, size) {
 }
 
 function digestOutput(exports, size) {
-  return createHash("sha256").update(bytesAt(exports, exports.output_ptr(), size)).digest("hex");
+  return createHash("sha256").update(bytesAt(exports, qipRenderedOutputPointer(exports), size)).digest("hex");
 }
 
 function assertABI(exports, inputCapacity) {
@@ -58,7 +59,7 @@ test("moon phases combines initial source input with later navigation updates", 
   assertUpdateABI(moon, 64);
 
   const inputSize = writeInput(moon, "2026-06-15");
-  const size = moon.render(inputSize);
+  const size = qipRenderSize(moon, inputSize);
   assert.equal(size, 224 + 420 * 300 * 4);
   const initial = digestOutput(moon, size);
 
@@ -67,18 +68,18 @@ test("moon phases combines initial source input with later navigation updates", 
   assert.equal(moon.finish_update(), 1n);
   assert.equal(digestOutput(moon, size), initial);
 
-  assert.equal(moon.render(0), size);
+  assert.equal(qipRenderSize(moon, 0), size);
   assert.notEqual(digestOutput(moon, size), initial);
 
   const replacementSize = writeInput(moon, "2026-07-01");
-  assert.throws(() => moon.render(replacementSize), WebAssembly.RuntimeError);
+  assert.throws(() => qipRenderSize(moon, replacementSize), WebAssembly.RuntimeError);
 });
 
 test("cover flow lofi publishes animation only when rendered", () => {
   const cover = instantiate(wasm.cover);
   assertUpdateABI(cover, 0);
 
-  const size = cover.render(0);
+  const size = qipRenderSize(cover, 0);
   assert.equal(size, 224 + 720 * 480 * 4);
   const initial = digestOutput(cover, size);
 
@@ -89,7 +90,7 @@ test("cover flow lofi publishes animation only when rendered", () => {
 
   cover.begin_update_at(17n);
   assert.equal(cover.finish_update(), 33n);
-  assert.equal(cover.render(0), size);
+  assert.equal(qipRenderSize(cover, 0), size);
   assert.notEqual(digestOutput(cover, size), initial);
 });
 
@@ -97,7 +98,7 @@ test("dock hover animation updates independently of output publication", () => {
   const dock = instantiate(wasm.dock);
   assertUpdateABI(dock, 0);
 
-  const size = dock.render(0);
+  const size = qipRenderSize(dock, 0);
   assert.equal(size, 224 + 1800 * 840 * 4);
   const initial = digestOutput(dock, size);
 
@@ -108,7 +109,7 @@ test("dock hover animation updates independently of output publication", () => {
 
   dock.begin_update_at(17n);
   assert.equal(dock.finish_update(), 33n);
-  assert.equal(dock.render(0), size);
+  assert.equal(qipRenderSize(dock, 0), size);
   assert.notEqual(digestOutput(dock, size), initial);
 });
 
@@ -116,10 +117,10 @@ test("all three components trap on update misuse", () => {
   for (const name of ["moon", "cover", "dock"]) {
     const exports = instantiate(wasm[name]);
     const inputSize = name === "moon" ? writeInput(exports, "2026-05-31") : 0;
-    exports.render(inputSize);
+    qipRenderSize(exports, inputSize);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     exports.finish_update();
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

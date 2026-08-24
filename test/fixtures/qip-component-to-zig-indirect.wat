@@ -17,10 +17,9 @@
 
   (func (export "input_ptr") (result i32) i32.const 0)
   (func (export "input_bytes_cap") (result i32) i32.const 1)
-  (func (export "output_ptr") (result i32) i32.const 1024)
   (func (export "output_bytes_cap") (result i32) i32.const 2)
 
-  (func (export "render") (param $size i32) (result i32)
+  (func (export "render") (param $size i32) (result i64)
     i32.const 0
     i32.load8_u
     i32.const 110
@@ -68,4 +67,4 @@
     i32.const 0
     call_indirect (type $unary)
     drop
-    i32.const 2))
+    i64.const 4398046511106))

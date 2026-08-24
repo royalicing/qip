@@ -857,15 +857,7 @@ function qipEditWriteInput(exportsObj, inputBytes) {
   mem.set(inputBytes, start);
 }
 
-function qipEditReadOutputBytes(exportsObj, outputLen) {
-  if (outputLen < 0) {
-    throw new Error("render returned negative output size");
-  }
-  const outputPtr = qipEditReadI32Export(exportsObj, "output_ptr");
-  if (outputPtr < 0) {
-    throw new Error("module returned invalid output pointer");
-  }
-
+function qipEditReadOutputBytes(exportsObj, outputPtr, outputLen) {
   let capName = "";
   if ("output_utf8_cap" in exportsObj) {
     capName = "output_utf8_cap";
@@ -922,32 +914,26 @@ async function qipEditRunStage(stage, input) {
       qipEditApplyUniform(exportsObj, uniform.key, qipEditReadUniformValue(uniform));
     }
 
-    const outputLen = qipEditToI32(exportsObj.render(input.bytes.length), "render");
-    if (typeof exportsObj.commit === "function") {
-      let commitResult;
-      try {
-        commitResult = exportsObj.commit();
-      } catch (cause) {
-        throw new Error(
-          "commit trapped; commit() must not trap: " + (cause && cause.message ? cause.message : String(cause)),
-          { cause: cause },
-        );
-      }
-      if (typeof commitResult !== "bigint") {
-        throw new TypeError("commit export must have signature commit() -> i64");
-      }
-      if (commitResult < 0n) {
-        const bits = BigInt.asUintN(64, commitResult);
-        const invalidInput = (bits & (1n << 62n)) !== 0n;
-        const detail = Number(bits & 0xffff_ffffn);
-        throw new Error(
-          invalidInput
-            ? "component rejected invalid input at byte " + detail + " (commit returned " + commitResult + ")"
-            : "component rejected input (commit returned " + commitResult + ")",
-        );
-      }
+    const renderResult = exportsObj.render(input.bytes.length);
+    if (typeof renderResult !== "bigint") {
+      throw new TypeError("render export must have signature render(i32) -> i64");
     }
-    const outputBytes = qipEditReadOutputBytes(exportsObj, outputLen);
+    const bits = BigInt.asUintN(64, renderResult);
+    const outputLen = Number(bits & 0xffff_ffffn);
+    if ((bits & (1n << 63n)) !== 0n) {
+      if (typeof exportsObj.failure_modes_per_input_offset !== "function") {
+        throw new Error("render returned failure without failure_modes_per_input_offset");
+      }
+      const modes = qipEditReadI32Export(exportsObj, "failure_modes_per_input_offset") >>> 0;
+      if (modes === 0) throw new Error("component rejected input");
+      const position = Math.floor(outputLen / modes);
+      const mode = outputLen % modes;
+      throw new Error(modes === 1
+        ? "component rejected input at input offset " + position
+        : "component rejected input at input offset " + position + " with mode " + mode);
+    }
+    const outputPtr = Number((bits >> 32n) & 0x7fff_ffffn);
+    const outputBytes = qipEditReadOutputBytes(exportsObj, outputPtr, outputLen);
     let outputContentType = qipEditReadDeclaredContentType(exportsObj, "output_content_type_ptr", "output_content_type_size");
     if (outputContentType === "") {
       // A bytes-in, UTF-8-out component produces new text; the incoming

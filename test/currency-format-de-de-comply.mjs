@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -61,15 +62,16 @@ test("duel: Intl.NumberFormat de-DE agrees for every supported ISO 4217 code", a
 test("duel: currency-format-de-de.wasm is compliant for every supported currency", async () => {
   const implBytes = await readFile(new URL("../components/utf8/currency-format-de-de.wasm", import.meta.url));
 
-  const { instance } = await WebAssembly.instantiate(implBytes);
-  const impl = instance.exports;
+  const implModule = await WebAssembly.compile(implBytes);
+  let impl = new WebAssembly.Instance(implModule).exports;
   const readI32 = (name) => (typeof impl[name] === "function" ? impl[name]() : impl[name].value);
   const format = (input) => {
     new Uint8Array(impl.memory.buffer, readI32("input_ptr"), input.length).set(input);
     try {
-      const outputLen = impl.render(input.length);
-      return Buffer.from(new Uint8Array(impl.memory.buffer, readI32("output_ptr"), outputLen));
+      const outputLen = qipRenderSize(impl, input.length);
+      return Buffer.from(new Uint8Array(impl.memory.buffer, qipRenderedOutputPointer(impl), outputLen));
     } catch {
+      impl = new WebAssembly.Instance(implModule).exports;
       return null;
     }
   };
@@ -93,7 +95,7 @@ test("duel: currency-format-de-de.wasm is compliant for every supported currency
 
 test("currency formatter stays within its compact artifact and memory budgets", async () => {
   const implBytes = await readFile(new URL("../components/utf8/currency-format-de-de.wasm", import.meta.url));
-  assert.ok(implBytes.byteLength <= 2310, `expected at most 2310 bytes, got ${implBytes.byteLength}`);
+  assert.ok(implBytes.byteLength <= 2320, `expected at most 2320 bytes, got ${implBytes.byteLength}`);
   const { instance } = await WebAssembly.instantiate(implBytes);
   assert.equal(instance.exports.memory.buffer.byteLength, 64 * 1024);
 });

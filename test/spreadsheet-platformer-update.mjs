@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -12,7 +13,7 @@ function instantiate(bytes) {
 
 function digestOutput(exports, size) {
   return createHash("sha256")
-    .update(new Uint8Array(exports.memory.buffer, exports.output_ptr(), size))
+    .update(new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size))
     .digest("hex");
 }
 
@@ -36,7 +37,7 @@ function assertUpdateKTX2ABI(exports) {
 test("spreadsheet schedules caret updates and presents them separately", () => {
   const sheet = instantiate(spreadsheetWasm);
   assertUpdateKTX2ABI(sheet);
-  const size = sheet.render(0);
+  const size = qipRenderSize(sheet, 0);
   assert.equal(size, 224 + 375 * 667 * 4);
   const initial = digestOutput(sheet, size);
 
@@ -48,7 +49,7 @@ test("spreadsheet schedules caret updates and presents them separately", () => {
   assert.equal(sheet.finish_update(), 502n);
   assert.equal(digestOutput(sheet, size), initial);
 
-  assert.equal(sheet.render(0), size);
+  assert.equal(qipRenderSize(sheet, 0), size);
   const editing = digestOutput(sheet, size);
   assert.notEqual(editing, initial);
 
@@ -60,7 +61,7 @@ test("spreadsheet schedules caret updates and presents them separately", () => {
 test("side scroller uses bounded fixed updates before held-key events", () => {
   const game = instantiate(platformerWasm);
   assertUpdateKTX2ABI(game);
-  const size = game.render(0);
+  const size = qipRenderSize(game, 0);
   assert.equal(size, 224 + 480 * 270 * 4);
   const initial = digestOutput(game, size);
 
@@ -74,7 +75,7 @@ test("side scroller uses bounded fixed updates before held-key events", () => {
 
   game.begin_update_at(32n);
   assert.equal(game.finish_update(), 48n);
-  assert.equal(game.render(0), size);
+  assert.equal(qipRenderSize(game, 0), size);
   assert.notEqual(digestOutput(game, size), initial);
 
   game.begin_update_at(10_000n);
@@ -85,10 +86,10 @@ test("both components trap on update lifecycle misuse", () => {
   for (const bytes of [spreadsheetWasm, platformerWasm]) {
     const exports = instantiate(bytes);
     assert.throws(() => exports.key_event(0x20, 1), WebAssembly.RuntimeError);
-    exports.render(0);
+    qipRenderSize(exports, 0);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     exports.finish_update();
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

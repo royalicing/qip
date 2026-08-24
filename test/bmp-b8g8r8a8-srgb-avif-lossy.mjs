@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -61,8 +62,8 @@ function exportedString(exports, ptrName, sizeName) {
 function encode(exports, bmp) {
   const memory = new Uint8Array(exports.memory.buffer);
   memory.set(bmp, exports.input_ptr());
-  const outputSize = exports.render(bmp.length);
-  return Buffer.from(exports.memory.buffer, exports.output_ptr(), outputSize);
+  const outputSize = qipRenderSize(exports, bmp.length);
+  return Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), outputSize);
 }
 
 test("bmp-b8g8r8a8-srgb-to-avif-lossy emits deterministic AVIF and preserves the input contract", async (t) => {
@@ -92,7 +93,7 @@ test("bmp-b8g8r8a8-srgb-to-avif-lossy emits deterministic AVIF and preserves the
 
   const invalid = new Uint8Array(exports.memory.buffer);
   invalid.fill(0, exports.input_ptr(), exports.input_ptr() + 54);
-  assert.equal(exports.render(54), 0, "invalid BMP must produce no output");
+  assert.equal(qipRenderSize(exports, 54), 0, "invalid BMP must produce no output");
 
   const input = buildBMP(64, 48);
   const first = encode(exports, input);

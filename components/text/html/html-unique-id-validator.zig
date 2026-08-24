@@ -39,10 +39,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return input_ptr();
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -404,7 +400,7 @@ noinline fn checkedInputSize(input_size: u32) usize {
     return @intCast(input_size);
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size = checkedInputSize(input_size_in);
     validateUniqueIds(input_buf[0..input_size]) catch @trap();
     const output_size = input_size_in;
@@ -412,9 +408,21 @@ export fn render(input_size_in: u32) u32 {
     return output_size;
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&input_buf)),
+        .failed = 0,
+    };
+}
+
 test "successful output aliases the unchanged input buffer" {
     if (builtin.target.cpu.arch != .wasm32) return error.SkipZigTest;
-    try std.testing.expectEqual(input_ptr(), output_ptr());
+    try std.testing.expectEqual(input_ptr(), @intFromPtr(&input_buf));
     try std.testing.expectEqual(input_utf8_cap(), output_utf8_cap());
 }
 

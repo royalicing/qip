@@ -20,10 +20,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -330,8 +326,13 @@ fn convert(input: []const u8, output: []u8) ConvertError!usize {
         \\    throw new RangeError(`Component input is too large: ${input.length} > ${inputCapacity}`);
         \\  }
         \\  new Uint8Array(exports.memory.buffer, exports.input_ptr(), input.length).set(input);
-        \\  const outputLength = exports.render(input.length);
-        \\  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), outputLength).slice();
+        \\  const result = exports.render(input.length);
+        \\  if (typeof result !== "bigint") throw new TypeError("Component render must return i64");
+        \\  const bits = BigInt.asUintN(64, result);
+        \\  if ((bits & (1n << 63n)) !== 0n) throw new Error("Component rejected input");
+        \\  const outputLength = Number(bits & 0xffff_ffffn);
+        \\  const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
+        \\  return new Uint8Array(exports.memory.buffer, outputPointer, outputLength).slice();
         \\}
         \\
         \\export function render(value) {
@@ -375,10 +376,22 @@ fn convert(input: []const u8, output: []u8) ConvertError!usize {
     return out.pos;
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > INPUT_CAP) @trap();
     return @intCast(convert(input_buf[0..input_size], &output_buf) catch @trap());
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "generates a direct browser JavaScript recipe" {

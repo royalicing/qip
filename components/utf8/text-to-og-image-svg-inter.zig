@@ -137,10 +137,6 @@ export fn input_utf8_cap() u32 {
     return @intCast(INPUT_CAP);
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return @intCast(OUTPUT_CAP);
 }
@@ -185,12 +181,24 @@ export fn uniform_set_font_max_size(value: u32) u32 {
     return requested_max_font_size;
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > input_buf.len) @trap();
     const output_size = renderSvg(input_buf[0..input_size], &output_buf) catch @trap();
     resetUniforms();
     return @intCast(output_size);
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 fn resetUniforms() void {
@@ -612,14 +620,14 @@ test "render resets all uniforms to authored defaults" {
     _ = uniform_set_background_color(0xaabbccff);
     _ = uniform_set_font_weight(400);
     _ = uniform_set_font_max_size(64);
-    const configured_size = render(input.len);
+    const configured_size = renderImpl(input.len);
     const configured = output_buf[0..configured_size];
     try std.testing.expect(std.mem.indexOf(u8, configured, "fill=\"#aabbcc\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, configured, "fill=\"#11223344\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, configured, "data-font-weight=\"400\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, configured, "data-font-size=\"64\"") != null);
 
-    const default_size = render(input.len);
+    const default_size = renderImpl(input.len);
     const defaults = output_buf[0..default_size];
     try std.testing.expect(std.mem.indexOf(u8, defaults, "fill=\"#eecc33\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, defaults, "fill=\"#101010\"") != null);

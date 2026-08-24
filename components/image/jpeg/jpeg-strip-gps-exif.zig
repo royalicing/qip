@@ -7,7 +7,6 @@ const OUTPUT_CONTENT_TYPE = "image/jpeg";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
-var current_output_ptr: u32 = 0;
 
 const JpegError = error{ InvalidJpeg, OutputOverflow };
 
@@ -125,10 +124,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return current_output_ptr;
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -149,28 +144,52 @@ export fn output_content_type_size() u32 {
     return @as(u32, @intCast(OUTPUT_CONTENT_TYPE.len));
 }
 
-export fn render(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
     const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     const stripped_size = stripGpsExif(input_buf[0..input_size], output_buf[0..]) catch @trap();
     if (stripped_size == 0) {
-        current_output_ptr = @as(u32, @intCast(@intFromPtr(&input_buf)));
-        return @as(u32, @intCast(input_size));
+        return .{
+            .output_size = @intCast(input_size),
+            .output_ptr = @intCast(@intFromPtr(&input_buf)),
+            .failed = 0,
+        };
     }
-    current_output_ptr = @as(u32, @intCast(@intFromPtr(&output_buf)));
-    return @as(u32, @intCast(stripped_size));
+    return .{
+        .output_size = @intCast(stripped_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 fn tinyJpegWithExifGps() []const u8 {
     return &[_]u8{
         0xff, 0xd8,
-        0xff, 0xe1, 0x00, 0x22,
-        'E',  'x',  'i',  'f',  0x00, 0x00,
-        'M',  'M',  0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
+        0xff, 0xe1,
+        0x00, 0x22,
+        'E',  'x',
+        'i',  'f',
+        0x00, 0x00,
+        'M',  'M',
+        0x00, 0x2a,
+        0x00, 0x00,
+        0x00, 0x08,
         0x00, 0x01,
-        0x88, 0x25, 0x00, 0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1a,
-        0x00, 0x00, 0x00, 0x00,
-        0xff, 0xda, 0x00, 0x02,
-        0x11, 0x22, 0xff, 0xd9,
+        0x88, 0x25,
+        0x00, 0x04,
+        0x00, 0x00,
+        0x00, 0x01,
+        0x00, 0x00,
+        0x00, 0x1a,
+        0x00, 0x00,
+        0x00, 0x00,
+        0xff, 0xda,
+        0x00, 0x02,
+        0x11, 0x22,
+        0xff, 0xd9,
     };
 }
 

@@ -43,8 +43,7 @@ public sealed class MarkdownRenderer : IDisposable
     private readonly Wasmtime.Memory memory;
     private readonly Func<int> inputPtr;
     private readonly Func<int> inputCap;
-    private readonly Func<int> outputPtr;
-    private readonly Func<int, int> render;
+    private readonly Func<int, long> render;
 
     public MarkdownRenderer()
     {
@@ -62,10 +61,7 @@ public sealed class MarkdownRenderer : IDisposable
         inputCap = instance.GetFunction<int>("input_utf8_cap")
             ?? throw new InvalidOperationException(
                 "Component does not export input_utf8_cap");
-        outputPtr = instance.GetFunction<int>("output_ptr")
-            ?? throw new InvalidOperationException(
-                "Component does not export output_ptr");
-        render = instance.GetFunction<int, int>("render")
+        render = instance.GetFunction<int, long>("render")
             ?? throw new InvalidOperationException(
                 "Component does not export render");
     }
@@ -86,8 +82,11 @@ public sealed class MarkdownRenderer : IDisposable
         source.AsSpan().CopyTo(
             memory.GetSpan(inputStart, source.Length));
 
-        int outputSize = render(source.Length);
-        int outputStart = outputPtr();
+        ulong packed = unchecked((ulong)render(source.Length));
+        if ((packed >> 63) != 0)
+            throw new ArgumentException("component rejected input");
+        int outputSize = unchecked((int)(uint)packed);
+        int outputStart = (int)((packed >> 32) & 0x7fff_ffffUL);
         return Encoding.UTF8.GetString(
             memory.GetSpan(outputStart, outputSize));
     }
@@ -148,10 +147,13 @@ The loader is runtime-specific; the QIP calls are not:
 2. `linker.Instantiate` instantiates it with no imports.
 3. .NET encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `Memory.GetSpan` exposes the range at `input_ptr()` so the app can copy in the bytes.
-5. `render(input_size)` returns the number of output bytes.
-6. .NET copies that many bytes from `output_ptr()` and decodes UTF-8.
+5. `render(input_size)` returns the rejection bit, output pointer, and size in
+   one packed `i64` value.
+6. .NET copies the accepted output range and decodes UTF-8.
 
-The code asks for typed delegates such as `Func<int, int>` when resolving exports. A missing export or mismatched WebAssembly signature therefore fails during setup rather than at the first render.
+The code asks for typed delegates such as `Func<int, long>` when resolving
+exports. A missing export or mismatched WebAssembly signature therefore fails
+during setup rather than at the first render.
 
 This wrapper trusts the known-valid GFM component and checks only the
 caller-controlled input size. A host accepting arbitrary Wasm has a different

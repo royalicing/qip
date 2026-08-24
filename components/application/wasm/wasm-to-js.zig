@@ -21,10 +21,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -177,7 +173,6 @@ const Contract = struct {
     output_type: ?[]const u8,
     input_ptr: ExportRef,
     input_cap: ExportRef,
-    output_ptr: ExportRef,
     output_cap: ExportRef,
 };
 
@@ -381,9 +376,6 @@ fn analyzeContract(info: *const ModuleInfo) ParseError!Contract {
 
     const input_ptr_exp = findExport(info, "input_ptr") orelse return ParseError.MissingInput;
     if (input_ptr_exp.kind != @intFromEnum(ExportKind.func)) return ParseError.MissingInput;
-    const output_ptr_exp = findExport(info, "output_ptr") orelse return ParseError.MissingOutput;
-    if (output_ptr_exp.kind != @intFromEnum(ExportKind.func)) return ParseError.MissingOutput;
-
     const input_utf8 = findExport(info, "input_utf8_cap");
     const input_bytes = findExport(info, "input_bytes_cap");
     const output_utf8 = findExport(info, "output_utf8_cap");
@@ -405,7 +397,6 @@ fn analyzeContract(info: *const ModuleInfo) ParseError!Contract {
         .output_type = try detectContentType(info, "output_content_type_ptr", "output_content_type_size"),
         .input_ptr = input_ptr_exp,
         .input_cap = input_cap_exp,
-        .output_ptr = output_ptr_exp,
         .output_cap = output_cap_exp,
     };
 }
@@ -567,7 +558,23 @@ fn appendGeneratedJs(out_pos: *usize, wasm: []const u8, contract: Contract) Pars
         \\, "{s}");
         \\  if (inputBytes.length > inputCap) throw new Error("input exceeds component capacity: " + inputBytes.length + " > " + inputCap);
         \\  new Uint8Array(e.memory.buffer).set(inputBytes, checkSlice(e.memory, inputPtr, inputBytes.length, "input_ptr"));
-        \\  const outputLen = i32(e.render(inputBytes.length), "render");
+        \\  const renderValue = e.render(inputBytes.length);
+        \\  if (typeof renderValue !== "bigint") throw new Error("render must return i64");
+        \\  const renderResult = BigInt.asUintN(64, renderValue);
+        \\  const outputLen = Number(renderResult & 0xffff_ffffn);
+        \\  if (renderResult >> 63n) {{
+        \\    if (typeof e.failure_modes_per_input_offset !== "function") throw new Error("component returned failure without failure_modes_per_input_offset");
+        \\    const failureModes = i32(e.failure_modes_per_input_offset(), "failure_modes_per_input_offset") >>> 0;
+        \\    const error = new Error("component rejected input");
+        \\    error.failureDetail = outputLen;
+        \\    error.failureModesPerInputOffset = failureModes;
+        \\    if (failureModes > 0) {{
+        \\      error.inputOffset = Math.floor(outputLen / failureModes);
+        \\      error.failureMode = outputLen % failureModes;
+        \\    }}
+        \\    throw error;
+        \\  }}
+        \\  const outputPtr = Number((renderResult >> 32n) & 0x7fff_ffffn);
         \\
     , .{contract.input_cap_name});
 
@@ -575,14 +582,11 @@ fn appendGeneratedJs(out_pos: *usize, wasm: []const u8, contract: Contract) Pars
     try accessor(out_pos, contract.output_cap);
     try appendFmt(out_pos,
         \\, "{s}");
-        \\  if (outputLen < 0) throw new Error("render returned negative output size");
         \\  if (outputLen > outputCap) throw new Error("render output exceeds component capacity: " + outputLen + " > " + outputCap);
-        \\  const outputPtr = i32(
+        \\
     , .{contract.output_cap_name});
-    try accessor(out_pos, contract.output_ptr);
     try append(out_pos,
-        \\, "output_ptr");
-        \\  const outputStart = checkSlice(e.memory, outputPtr, outputLen, "output_ptr");
+        \\  const outputStart = checkSlice(e.memory, outputPtr, outputLen, "render");
         \\  const outputBytes = new Uint8Array(e.memory.buffer).slice(outputStart, outputStart + outputLen);
         \\
     );
@@ -606,11 +610,23 @@ fn appendGeneratedJs(out_pos: *usize, wasm: []const u8, contract: Contract) Pars
     );
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const size: usize = @min(@as(usize, @intCast(input_size)), INPUT_CAP);
     var out_pos: usize = 0;
     const info = parseWasm(input_buf[0..size]) catch @trap();
     const contract = analyzeContract(&info) catch @trap();
     appendGeneratedJs(&out_pos, input_buf[0..size], contract) catch @trap();
     return @intCast(out_pos);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

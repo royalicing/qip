@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -43,13 +44,13 @@ async function renderTwice(component) {
   memory.set(input, e.input_ptr());
   const decode = (size) =>
     new TextDecoder("utf-8", { fatal: true }).decode(
-      memory.subarray(e.output_ptr(), e.output_ptr() + size),
+      memory.subarray(qipRenderedOutputPointer(e), qipRenderedOutputPointer(e) + size),
     );
 
   e.uniform_set_first_codepoint(65);
   e.uniform_set_last_codepoint(65);
-  const configured = decode(e.render(input.length));
-  const defaults = decode(e.render(input.length));
+  const configured = decode(qipRenderSize(e, input.length));
+  const defaults = decode(qipRenderSize(e, input.length));
   return { configured, defaults };
 }
 

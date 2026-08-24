@@ -14,10 +14,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -962,7 +958,7 @@ fn isShortcodeChar(ch: u8) bool {
     return std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '+' or ch == '-';
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const input = input_buf[0..@as(usize, @intCast(input_size))];
     var w = Writer.init(output_buf[0..]);
     var i: usize = 0;
@@ -990,6 +986,18 @@ export fn render(input_size: u32) u32 {
     return @as(u32, @intCast(w.idx));
 }
 
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 test "shortcode replace" {
     var out: [256]u8 = undefined;
     const input = "Hello :smile: world";
@@ -1013,7 +1021,7 @@ test "custom emoji remains" {
 
 fn runString(input: []const u8, out: []u8) usize {
     @memcpy(input_buf[0..input.len], input);
-    const written = render(@as(u32, @intCast(input.len)));
+    const written = renderImpl(@as(u32, @intCast(input.len)));
     @memcpy(out[0..written], output_buf[0..written]);
     return @as(usize, @intCast(written));
 }

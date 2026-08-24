@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -108,10 +109,17 @@ test("RGBA8 to RGBA32F to RGBA8 is byte-exact", async (t) => {
 
 test("KTX2 bit-depth converters use one in-place buffer", async (t) => {
   await ensurePrerequisites(t);
-  for (const module of [rgba8ToFloat, floatToRgba8]) {
+  const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-in-place-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(1, 1, () => [64, 96, 128, 255]));
+  const rgba8 = await runPipeline([bmpToRgba8], bmpPath, join(dir, "rgba8.ktx2"));
+  const rgba32 = await runPipeline([rgba8ToFloat], join(dir, "rgba8.ktx2"), join(dir, "rgba32.ktx2"));
+  for (const [module, input] of [[rgba8ToFloat, rgba8], [floatToRgba8, rgba32]]) {
     const bytes = await readFile(module);
     const { instance } = await WebAssembly.instantiate(bytes, {});
-    assert.equal(instance.exports.input_ptr(), instance.exports.output_ptr());
+    new Uint8Array(instance.exports.memory.buffer, instance.exports.input_ptr(), input.length).set(input);
+    qipRenderSize(instance.exports, input.length);
+    assert.equal(instance.exports.input_ptr(), qipRenderedOutputPointer(instance.exports));
     assert.equal(instance.exports.input_bytes_cap(), instance.exports.output_bytes_cap());
   }
 });

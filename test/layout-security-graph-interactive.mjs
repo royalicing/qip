@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -17,7 +18,7 @@ function instantiate(bytes) {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(exports, size) {
@@ -43,7 +44,7 @@ function assertABI(exports) {
 
 function initialFrame(exports, pixelBytes) {
   assertABI(exports);
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   assert.equal(size, 224 + pixelBytes);
   assert.equal(exports.begin_at, undefined);
   assert.equal(exports.commit, undefined);
@@ -60,7 +61,7 @@ test("layout controls update without publishing until render", () => {
   assert.equal(layout.finish_update(), 1n);
   assert.equal(digest(layout, initial.size), initial.digest);
 
-  assert.equal(layout.render(0), initial.size);
+  assert.equal(qipRenderSize(layout, 0), initial.size);
   assert.notEqual(digest(layout, initial.size), initial.digest);
 });
 
@@ -74,7 +75,7 @@ test("browser security retains its selected topic across updates", () => {
   assert.equal(security.finish_update(), 1n);
   assert.equal(digest(security, initial.size), initial.digest);
 
-  assert.equal(security.render(0), initial.size);
+  assert.equal(qipRenderSize(security, 0), initial.size);
   assert.notEqual(digest(security, initial.size), initial.digest);
 });
 
@@ -86,13 +87,13 @@ test("graph calculator distinguishes cleared input from uninitialized state", ()
   assert.equal(graph.key_event("C".codePointAt(0), 1), 1);
   assert.equal(graph.finish_update(), 1n);
   assert.equal(digest(graph, initial.size), initial.digest);
-  assert.equal(graph.render(0), initial.size);
+  assert.equal(qipRenderSize(graph, 0), initial.size);
   const cleared = digest(graph, initial.size);
   assert.notEqual(cleared, initial.digest);
 
   graph.begin_update_at(2n);
   assert.equal(graph.finish_update(), 2n);
-  assert.equal(graph.render(0), initial.size);
+  assert.equal(qipRenderSize(graph, 0), initial.size);
   assert.equal(digest(graph, initial.size), cleared);
 });
 
@@ -100,10 +101,10 @@ test("all three trap on lifecycle misuse", () => {
   for (const bytes of Object.values(wasm)) {
     const exports = instantiate(bytes);
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
-    exports.render(0);
+    qipRenderSize(exports, 0);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     exports.finish_update();
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

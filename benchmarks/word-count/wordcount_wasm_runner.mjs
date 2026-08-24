@@ -106,12 +106,10 @@ async function main() {
   if (typeof render !== "function") {
     throw new Error("missing export: render");
   }
-  const outputSize = Number(render(input.length));
-  if (!Number.isFinite(outputSize) || outputSize < 0) {
-    throw new Error(`invalid output size: ${outputSize}`);
-  }
-
-  const outputPtr = getExportI32(exportsObj, "output_ptr");
+  const result = BigInt.asUintN(64, render(input.length));
+  if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+  const outputSize = Number(result & 0xffff_ffffn);
+  const outputPtr = Number((result >> 32n) & 0x7fff_ffffn);
   const outputCap = getOutputCap(exportsObj);
   if (outputSize > outputCap) {
     throw new Error(`output too large: ${outputSize} > ${outputCap}`);

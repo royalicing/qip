@@ -148,10 +148,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -627,7 +623,7 @@ fn emitTokenBuffer(
     return true;
 }
 /// Writes zlib stream with one final dynamic-Huffman DEFLATE block.
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
@@ -708,6 +704,18 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(writer.out_i));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn decompressZlib(compressed: []const u8, out: []u8) !usize {
     var in: std.Io.Reader = .fixed(compressed);
     var decompress: std.compress.flate.Decompress = .init(&in, .zlib, &.{});
@@ -724,7 +732,7 @@ test "round trips short text" {
     const plain = "dynamic huffman in qip";
     @memcpy(input_buf[0..plain.len], plain);
 
-    const written = render(@intCast(plain.len));
+    const written = renderImpl(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     // Verify dynamic block type: lower 3 bits should be BFINAL=1,BTYPE=10 => 0b101.
@@ -736,7 +744,7 @@ test "round trips short text" {
 }
 
 test "round trips empty input" {
-    const written = render(0);
+    const written = renderImpl(0);
     try std.testing.expect(written > 0);
 
     var out: [1]u8 = undefined;
@@ -751,7 +759,7 @@ test "round trips repetitive data" {
     }
     @memcpy(input_buf[0..plain.len], &plain);
 
-    const written = render(@intCast(plain.len));
+    const written = renderImpl(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     var out: [65536]u8 = undefined;
@@ -762,7 +770,7 @@ test "round trips repetitive data" {
 
 test "maximum input stays within the derived output capacity" {
     @memset(input_buf[0..], 0);
-    const written = render(@intCast(INPUT_CAP));
+    const written = renderImpl(@intCast(INPUT_CAP));
     try std.testing.expect(written > 0);
     try std.testing.expect(written <= OUTPUT_CAP);
 }

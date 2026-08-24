@@ -32,15 +32,15 @@ const USE_SIMD = @hasDecl(root, "PNG_TO_BMP_SIMD") and root.PNG_TO_BMP_SIMD;
 
 const Vec16 = @Vector(16, u8);
 const RGB_TO_BGRA = @Vector(16, i32){
-    2, 1, 0, -1,
-    5, 4, 3, -1,
-    8, 7, 6, -1,
+    2,  1,  0, -1,
+    5,  4,  3, -1,
+    8,  7,  6, -1,
     11, 10, 9, -1,
 };
 const RGBA_TO_BGRA = @Vector(16, i32){
-    2, 1, 0, 3,
-    6, 5, 4, 7,
-    10, 9, 8, 11,
+    2,  1,  0,  3,
+    6,  5,  4,  7,
+    10, 9,  8,  11,
     14, 13, 12, 15,
 };
 const OPAQUE = @as(Vec16, @splat(255));
@@ -59,10 +59,6 @@ export fn input_ptr() u32 {
 
 export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
-}
-
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
 }
 
 export fn output_bytes_cap() u32 {
@@ -257,7 +253,7 @@ fn consumeRows(context: *DecodeContext, batch: []u8) bool {
     return true;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     const input = input_buf[0..input_size];
 
@@ -378,6 +374,18 @@ export fn render(input_size_in: u32) u32 {
     if (inflated != raw_len or context.next_y != h.height) return 0;
 
     return @as(u32, @intCast(out_total));
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "crc32 matches the PNG check value" {

@@ -226,7 +226,6 @@ function validateWasmComponent(input, module, output) {
   requireExportedFunction(moduleExports, "render");
   requireExportedFunction(moduleExports, "input_ptr");
   requireExportedFunction(moduleExports, capName(input, "input"));
-  requireExportedFunction(moduleExports, "output_ptr");
   requireExportedFunction(moduleExports, capName(output, "output"));
 
   const exportsObj = new WebAssembly.Instance(module, {}).exports;
@@ -289,41 +288,25 @@ function wasmComponent(input, module, output) {
 
       writeSlice(exportsObj.memory, inputPtr, inputBytes, "input_ptr");
 
-      const outputLen = toI32(render(inputBytes.length), "render");
-      if (outputLen < 0) {
-        throw Error("render returned negative output size");
+      const renderResult = render(inputBytes.length);
+      if (typeof renderResult !== "bigint") {
+        throw TypeError("render export must have signature render(i32) -> i64");
       }
-
-      if (typeof exportsObj.commit === "function") {
-        let commitResult;
-        try {
-          commitResult = exportsObj.commit();
-        } catch (cause) {
-          throw Error(
-            "commit trapped; commit() must not trap: " +
-              (cause?.message ?? cause),
-            { cause },
-          );
+      const bits = BigInt.asUintN(64, renderResult);
+      const outputLen = Number(bits & 0xffff_ffffn);
+      if ((bits & (1n << 63n)) !== 0n) {
+        if (typeof exportsObj.failure_modes_per_input_offset !== "function") {
+          throw Error("render returned failure without failure_modes_per_input_offset");
         }
-        if (typeof commitResult !== "bigint") {
-          throw TypeError("commit export must have signature commit() -> i64");
-        }
-        if (commitResult < 0n) {
-          const bits = BigInt.asUintN(64, commitResult);
-          const invalidInput = (bits & (1n << 62n)) !== 0n;
-          const detail = Number(bits & 0xffff_ffffn);
-          throw Error(
-            invalidInput
-              ? "component rejected invalid input at byte " +
-                  String(detail) +
-                  " (commit returned " +
-                  String(commitResult) +
-                  ")"
-              : "component rejected input (commit returned " +
-                  String(commitResult) +
-                  ")",
-          );
-        }
+        const modes = readI32Export(exportsObj, "failure_modes_per_input_offset") >>> 0;
+        if (modes === 0) throw Error("component rejected input");
+        const position = Math.floor(outputLen / modes);
+        const mode = outputLen % modes;
+        throw Error(
+          modes === 1
+            ? "component rejected input at input offset " + String(position)
+            : "component rejected input at input offset " + String(position) + " with mode " + String(mode),
+        );
       }
 
       const outputCap = readI32Export(exportsObj, capName(output, "output"));
@@ -336,7 +319,7 @@ function wasmComponent(input, module, output) {
         );
       }
 
-      const outputPtr = readI32Export(exportsObj, "output_ptr");
+      const outputPtr = Number((bits >> 32n) & 0x7fff_ffffn);
       return outputForBytes(
         readSlice(exportsObj.memory, outputPtr, outputLen, "output_ptr"),
         output,

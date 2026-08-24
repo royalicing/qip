@@ -2,7 +2,8 @@
 
 `html-id-reference-validator.wasm` accepts a UTF-8 `text/html` document and
 traps when a same-document ID reference does not resolve. On success it returns
-the input unchanged from the same address: `output_ptr()` equals `input_ptr()`.
+the input unchanged from the same address: the returned output pointer equals
+`input_ptr()`.
 
 The validator checks HTML references in `for`, `headers`, `form`, `list`,
 `itemref`, `popovertarget`, and `commandfor`; WAI-ARIA ID references in

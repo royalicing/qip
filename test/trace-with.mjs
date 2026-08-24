@@ -81,13 +81,12 @@ test("qip run --trace-with reports the load that traps out of bounds", async (t)
     "oob-load",
     `(module
       (memory (export "memory") 1)
-      (func (export "render") (param i32) (result i32)
+      (func (export "render") (param i32) (result i64)
         (i32.load (i32.const 65536))
         drop
-        (i32.const 0))
+        (i64.const 137438953472))
       (func (export "input_ptr") (result i32) (i32.const 0))
       (func (export "input_bytes_cap") (result i32) (i32.const 16))
-      (func (export "output_ptr") (result i32) (i32.const 32))
       (func (export "output_bytes_cap") (result i32) (i32.const 16)))`,
   );
 
@@ -107,14 +106,13 @@ test("qip run --trace-with reports store bytes before and after mutation", async
     `(module
       (memory (export "memory") 1)
       (data (i32.const 8) "ABCD")
-      (func (export "render") (param i32) (result i32)
+      (func (export "render") (param i32) (result i64)
         (i32.store (i32.const 8) (i32.const 0x11223344))
         (i32.load (i32.const 65536))
         drop
-        (i32.const 0))
+        (i64.const 137438953472))
       (func (export "input_ptr") (result i32) (i32.const 0))
       (func (export "input_bytes_cap") (result i32) (i32.const 16))
-      (func (export "output_ptr") (result i32) (i32.const 32))
       (func (export "output_bytes_cap") (result i32) (i32.const 16)))`,
   );
 

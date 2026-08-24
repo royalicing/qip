@@ -23,10 +23,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -227,7 +223,7 @@ fn formatColorHex(rgba: u32, out: *[9]u8) usize {
     return 9;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     const replacement = color_css_buf[0..color_css_len];
@@ -236,15 +232,27 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(out_len));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 test "render resets the color uniform to opaque black" {
     const input = "<svg fill=\"currentColor\"/>";
     @memcpy(input_buf[0..input.len], input);
 
     _ = uniform_set_color_rgba(0xff0000ff);
-    const red_len: usize = @intCast(render(input.len));
+    const red_len: usize = @intCast(renderImpl(input.len));
     try std.testing.expectEqualStrings("<svg fill=\"#ff0000\"/>", output_buf[0..red_len]);
 
-    const default_len: usize = @intCast(render(input.len));
+    const default_len: usize = @intCast(renderImpl(input.len));
     try std.testing.expectEqualStrings("<svg fill=\"#000000\"/>", output_buf[0..default_len]);
 }
 

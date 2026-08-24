@@ -13,8 +13,8 @@ a finite input-to-output transformation and no state must survive for a later
 event or time update.
 
 Time does not imply interaction. A Timed component can omit all event exports.
-The GIF player is the repository example: its initial `image/gif` render is a
-fallible Content transaction, and later updates select frames at their GIF
+The GIF player is the repository example: its initial `image/gif` render can
+reject invalid input, and later updates select frames at their GIF
 deadlines. Keyboard and pointer input would add no useful capability, so the
 player stops at Timed. Eventful applications and games add the event functions
 defined below.

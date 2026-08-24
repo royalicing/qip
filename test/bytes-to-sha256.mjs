@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -16,11 +17,11 @@ test("bytes-to-sha256 returns the raw 32-byte digest", async () => {
     instance.exports.input_ptr(),
     input.length,
   ).set(input);
-  const outputSize = instance.exports.render(input.length);
+  const outputSize = qipRenderSize(instance.exports, input.length);
   const output = Buffer.from(
     new Uint8Array(
       instance.exports.memory.buffer,
-      instance.exports.output_ptr(),
+      qipRenderedOutputPointer(instance.exports),
       outputSize,
     ),
   );

@@ -24,10 +24,12 @@ int main(void) {
     memory = w2c_qipbench_memory(&instance);
     input_ptr = w2c_qipbench_input_ptr(&instance);
     memcpy(memory->data + input_ptr, input, input_size);
-    output_size = w2c_qipbench_render(&instance, (uint32_t)input_size);
-    output_ptr = w2c_qipbench_output_ptr(&instance);
+    uint64_t result = w2c_qipbench_render(&instance, (uint32_t)input_size);
+    if ((result >> 63) != 0) return 4;
+    output_size = (uint32_t)result;
+    output_ptr = (uint32_t)((result >> 32) & UINT64_C(0x7fffffff));
     if (fwrite(memory->data + output_ptr, 1, output_size, stdout) !=
-        output_size) return 4;
+        output_size) return 5;
     wasm2c_qipbench_free(&instance);
     wasm_rt_free();
     free(input);

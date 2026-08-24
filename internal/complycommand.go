@@ -345,7 +345,7 @@ func validateBaseContract(label string, implWasm []byte) (baseValidationResult, 
 	if !ok {
 		return baseValidationResult{}, fmt.Errorf("%s must export render", label)
 	}
-	if err := requireSignature(runDef, []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}, complyExportRun); err != nil {
+	if err := requireSignature(runDef, []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI64}, complyExportRun); err != nil {
 		return baseValidationResult{}, err
 	}
 	if _, ok, err := getExportedI32(ctx, mod, complyExportInputPtr); err != nil {
@@ -367,11 +367,6 @@ func validateBaseContract(label string, implWasm []byte) (baseValidationResult, 
 	}
 	if hasInputUTF8 == hasInputBytes {
 		return baseValidationResult{}, fmt.Errorf("%s must export exactly one input capacity: input_utf8_cap or input_bytes_cap", label)
-	}
-	if _, ok, err := getExportedI32(ctx, mod, "output_ptr"); err != nil {
-		return baseValidationResult{}, err
-	} else if !ok {
-		return baseValidationResult{}, fmt.Errorf("%s must export output_ptr", label)
 	}
 	hasOutputUTF8 := false
 	if _, ok, err := getExportedI32(ctx, mod, "output_utf8_cap"); err != nil {

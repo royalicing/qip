@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 const wasm = readFileSync("components/interactive/gif-player.wasm");
 const gif = Uint8Array.from([
@@ -32,14 +33,14 @@ function contentType(exports, prefix) {
 
 test("GIF player rejects malformed initialization and recovers in place", () => {
   const exports = instantiate();
-  assert.ok(exports.commit() < 0n);
+  assert.equal(decodeRenderResult(exports.render(0)).failed, true);
   bytes(exports, exports.input_ptr(), 1)[0] = 0;
-  assert.equal(exports.render(1), 0);
-  assert.ok(exports.commit() < 0n);
+  assert.equal(decodeRenderResult(exports.render(1)).failed, true);
 
   bytes(exports, exports.input_ptr(), gif.length).set(gif);
-  assert.equal(exports.render(gif.length), 228);
-  assert.equal(exports.commit(), 0n);
+  const accepted = decodeRenderResult(exports.render(gif.length));
+  assert.equal(accepted.failed, false);
+  assert.equal(accepted.value, 228);
   assert.equal(contentType(exports, "input"), "image/gif");
   assert.equal(contentType(exports, "output"), "image/ktx2");
 });
@@ -47,18 +48,20 @@ test("GIF player rejects malformed initialization and recovers in place", () => 
 test("GIF player schedules and presents GIF frames", () => {
   const exports = instantiate();
   bytes(exports, exports.input_ptr(), gif.length).set(gif);
-  const size = exports.render(gif.length);
-  assert.equal(exports.commit(), 0n);
-  assert.deepEqual([...bytes(exports, exports.output_ptr() + 224, 4)], [0, 0, 0, 255]);
+  let rendered = decodeRenderResult(exports.render(gif.length));
+  const size = rendered.value;
+  assert.equal(rendered.failed, false);
+  assert.deepEqual([...bytes(exports, rendered.outputPointer + 224, 4)], [0, 0, 0, 255]);
 
   exports.begin_update_at(1n);
   assert.equal(exports.finish_update(), 20n);
   // Updates do not publish output.
-  assert.deepEqual([...bytes(exports, exports.output_ptr() + 224, 4)], [0, 0, 0, 255]);
+  assert.deepEqual([...bytes(exports, rendered.outputPointer + 224, 4)], [0, 0, 0, 255]);
 
   exports.begin_update_at(20n);
   assert.equal(exports.finish_update(), 50n);
-  assert.deepEqual([...bytes(exports, exports.output_ptr() + 224, 4)], [0, 0, 0, 255]);
-  assert.equal(exports.render(0), size);
-  assert.deepEqual([...bytes(exports, exports.output_ptr() + 224, 4)], [255, 0, 0, 255]);
+  assert.deepEqual([...bytes(exports, rendered.outputPointer + 224, 4)], [0, 0, 0, 255]);
+  rendered = decodeRenderResult(exports.render(0));
+  assert.equal(rendered.value, size);
+  assert.deepEqual([...bytes(exports, rendered.outputPointer + 224, 4)], [255, 0, 0, 255]);
 });

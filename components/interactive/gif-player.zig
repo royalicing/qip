@@ -8,13 +8,16 @@ const MAX_FRAMES: usize = 256;
 const OUTPUT_CAP: usize = ktx.HEADER_SIZE + MAX_PIXELS * 4;
 const INPUT_CONTENT_TYPE = "image/gif";
 const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
-const ERROR_BIT: u64 = 1 << 63;
-const INVALID_INPUT_BIT: u64 = 1 << 62;
-const NO_RENDER: i64 = 1;
 const MIN_FRAME_DELAY_MS: u64 = 20;
 
 const GifError = error{InvalidGif};
-const Phase = enum { initializing, awaiting_input_commit, ready, updating };
+const Phase = enum { initializing, ready, updating };
+
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
 
 const Frame = struct {
     left: usize,
@@ -41,7 +44,6 @@ var indices: [MAX_PIXELS]u8 = undefined;
 var frames: [MAX_FRAMES]Frame = undefined;
 
 var phase: Phase = .initializing;
-var pending_commit_result: i64 = NO_RENDER;
 var reject_offset: u32 = 0;
 var source_size: usize = 0;
 var screen_width: usize = 0;
@@ -59,10 +61,6 @@ export fn input_ptr() u32 {
 
 export fn input_bytes_cap() u32 {
     return INPUT_CAP;
-}
-
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
 }
 
 export fn output_bytes_cap() u32 {
@@ -85,49 +83,49 @@ export fn output_content_type_size() u32 {
     return OUTPUT_CONTENT_TYPE.len;
 }
 
-fn invalidInput(offset: u32) i64 {
-    return @bitCast(ERROR_BIT | INVALID_INPUT_BIT | @as(u64, offset));
+export fn failure_modes_per_input_offset() u32 {
+    return 1;
 }
 
-export fn render(input_size: u32) u32 {
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+fn renderOutcome(input_size: u32) RenderOutcome {
     switch (phase) {
         .initializing => {
             if (input_size > INPUT_CAP) @trap();
-            pending_commit_result = invalidInput(0);
             reject_offset = 0;
             parseAndValidate(input_buf[0..input_size]) catch {
-                pending_commit_result = invalidInput(reject_offset);
-                phase = .awaiting_input_commit;
-                return 0;
+                const failure_offset = reject_offset;
+                resetSourceState();
+                return .{ .output_size_or_failure = failure_offset, .output_ptr = 0, .failed = 1 };
             };
             source_size = input_size;
             current_frame = 0;
             renderCurrentFrame() catch @trap();
-            pending_commit_result = 0;
-            phase = .awaiting_input_commit;
-            return @intCast(ktx.HEADER_SIZE + screen_width * screen_height * 4);
+            committed_at_ms = 0;
+            phase = .ready;
+            return .{ .output_size_or_failure = @intCast(ktx.HEADER_SIZE + screen_width * screen_height * 4), .output_ptr = @intFromPtr(&output_buf), .failed = 0 };
         },
         .ready => {
             if (input_size != 0) @trap();
             renderCurrentFrame() catch @trap();
-            return @intCast(ktx.HEADER_SIZE + screen_width * screen_height * 4);
+            return .{ .output_size_or_failure = @intCast(ktx.HEADER_SIZE + screen_width * screen_height * 4), .output_ptr = @intFromPtr(&output_buf), .failed = 0 };
         },
         else => @trap(),
     }
 }
 
-export fn commit() i64 {
-    if (phase != .awaiting_input_commit) return invalidInput(0);
-    const result = pending_commit_result;
-    pending_commit_result = NO_RENDER;
-    if (result < 0) {
-        resetSourceState();
-        phase = .initializing;
-    } else {
-        committed_at_ms = 0;
-        phase = .ready;
-    }
-    return result;
+export fn render(input_size: u32) RenderResult {
+    const result = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = result.output_size_or_failure,
+        .output_ptr = if (result.failed == 1) 0 else @intCast(result.output_ptr),
+        .failed = result.failed,
+    };
 }
 
 export fn begin_update_at(now_ms: i64) void {
@@ -491,7 +489,6 @@ const TWO_FRAME_GIF = [_]u8{
 
 fn resetForTest() void {
     phase = .initializing;
-    pending_commit_result = NO_RENDER;
     committed_at_ms = 0;
     resetSourceState();
 }
@@ -499,11 +496,11 @@ fn resetForTest() void {
 test "fallible GIF initialization recovers and exposes image/gif" {
     resetForTest();
     input_buf[0] = 0;
-    try std.testing.expectEqual(@as(u32, 0), render(1));
-    try std.testing.expect(commit() < 0);
+    try std.testing.expectEqual(@as(u1, 1), renderOutcome(1).failed);
     @memcpy(input_buf[0..TWO_FRAME_GIF.len], &TWO_FRAME_GIF);
-    try std.testing.expectEqual(@as(u32, ktx.HEADER_SIZE + 4), render(TWO_FRAME_GIF.len));
-    try std.testing.expectEqual(@as(i64, 0), commit());
+    const accepted = renderOutcome(TWO_FRAME_GIF.len);
+    try std.testing.expectEqual(@as(u1, 0), accepted.failed);
+    try std.testing.expectEqual(@as(u32, ktx.HEADER_SIZE + 4), accepted.output_size_or_failure);
     try std.testing.expectEqualStrings("image/gif", INPUT_CONTENT_TYPE);
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 255 }, output_buf[ktx.HEADER_SIZE .. ktx.HEADER_SIZE + 4]);
 }
@@ -511,12 +508,11 @@ test "fallible GIF initialization recovers and exposes image/gif" {
 test "timed updates select frames and request GIF deadlines" {
     resetForTest();
     @memcpy(input_buf[0..TWO_FRAME_GIF.len], &TWO_FRAME_GIF);
-    _ = render(TWO_FRAME_GIF.len);
-    try std.testing.expectEqual(@as(i64, 0), commit());
+    try std.testing.expectEqual(@as(u1, 0), renderOutcome(TWO_FRAME_GIF.len).failed);
     begin_update_at(1);
     try std.testing.expectEqual(@as(i64, 20), finish_update());
     begin_update_at(20);
     try std.testing.expectEqual(@as(i64, 50), finish_update());
-    _ = render(0);
+    _ = renderOutcome(0);
     try std.testing.expectEqualSlices(u8, &.{ 255, 0, 0, 255 }, output_buf[ktx.HEADER_SIZE .. ktx.HEADER_SIZE + 4]);
 }

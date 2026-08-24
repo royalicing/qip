@@ -12,14 +12,28 @@ const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
-export fn input_ptr() u32 { return @intCast(@intFromPtr(&input_buf)); }
-export fn input_bytes_cap() u32 { return INPUT_CAP; }
-export fn output_ptr() u32 { return @intCast(@intFromPtr(&output_buf)); }
-export fn output_bytes_cap() u32 { return OUTPUT_CAP; }
-export fn input_content_type_ptr() u32 { return @intCast(@intFromPtr(INPUT_CONTENT_TYPE.ptr)); }
-export fn input_content_type_size() u32 { return INPUT_CONTENT_TYPE.len; }
-export fn output_content_type_ptr() u32 { return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr)); }
-export fn output_content_type_size() u32 { return OUTPUT_CONTENT_TYPE.len; }
+export fn input_ptr() u32 {
+    return @intCast(@intFromPtr(&input_buf));
+}
+export fn input_bytes_cap() u32 {
+    return INPUT_CAP;
+}
+
+export fn output_bytes_cap() u32 {
+    return OUTPUT_CAP;
+}
+export fn input_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(INPUT_CONTENT_TYPE.ptr));
+}
+export fn input_content_type_size() u32 {
+    return INPUT_CONTENT_TYPE.len;
+}
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
 
 fn readU16(offset: usize) u16 {
     return std.mem.readInt(u16, input_buf[offset..][0..2], .little);
@@ -29,7 +43,7 @@ fn readU32(offset: usize) u32 {
     return std.mem.readInt(u32, input_buf[offset..][0..4], .little);
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = input_size_in;
     if (input_size > INPUT_CAP or input_size < 54) @trap();
     if (input_buf[0] != 'B' or input_buf[1] != 'M') @trap();
@@ -66,4 +80,16 @@ export fn render(input_size_in: u32) u32 {
         }
     }
     return @intCast(output_size);
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

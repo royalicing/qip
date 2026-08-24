@@ -41,10 +41,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -119,7 +115,7 @@ fn writeDump(db: *sqlite.Db, out: *sqlite.Output) void {
     sqlite.walkTableRows(db, selected.root_page, &ctx, onRow);
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_u32)), INPUT_CAP);
     const input = input_buf[0..input_size];
 
@@ -153,4 +149,16 @@ export fn render(input_size_u32: u32) u32 {
     }
 
     return @as(u32, @intCast(out.index));
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

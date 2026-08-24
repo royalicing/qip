@@ -1,43 +1,43 @@
 const std = @import("std");
 
 const KeywordSet = std.StaticStringMap(void).initComptime(.{
-    .{ "abstract", {} }, .{ "as", {} }, .{ "asserts", {} }, .{ "async", {} },
-    .{ "await", {} }, .{ "break", {} }, .{ "case", {} }, .{ "catch", {} },
-    .{ "class", {} }, .{ "const", {} }, .{ "continue", {} }, .{ "debugger", {} },
-    .{ "declare", {} }, .{ "default", {} }, .{ "delete", {} }, .{ "do", {} },
-    .{ "else", {} }, .{ "enum", {} }, .{ "export", {} }, .{ "extends", {} },
-    .{ "finally", {} }, .{ "for", {} }, .{ "from", {} }, .{ "function", {} },
-    .{ "get", {} }, .{ "if", {} }, .{ "implements", {} }, .{ "import", {} },
-    .{ "in", {} }, .{ "infer", {} }, .{ "instanceof", {} }, .{ "interface", {} },
-    .{ "is", {} }, .{ "keyof", {} }, .{ "let", {} }, .{ "module", {} },
-    .{ "namespace", {} }, .{ "new", {} }, .{ "of", {} }, .{ "override", {} },
-    .{ "package", {} }, .{ "private", {} }, .{ "protected", {} }, .{ "public", {} },
-    .{ "readonly", {} }, .{ "return", {} }, .{ "satisfies", {} }, .{ "set", {} },
-    .{ "static", {} }, .{ "super", {} }, .{ "switch", {} }, .{ "this", {} },
-    .{ "throw", {} }, .{ "try", {} }, .{ "type", {} }, .{ "typeof", {} },
-    .{ "using", {} }, .{ "var", {} }, .{ "void", {} }, .{ "while", {} },
-    .{ "with", {} }, .{ "yield", {} },
+    .{ "abstract", {} },  .{ "as", {} },      .{ "asserts", {} },    .{ "async", {} },
+    .{ "await", {} },     .{ "break", {} },   .{ "case", {} },       .{ "catch", {} },
+    .{ "class", {} },     .{ "const", {} },   .{ "continue", {} },   .{ "debugger", {} },
+    .{ "declare", {} },   .{ "default", {} }, .{ "delete", {} },     .{ "do", {} },
+    .{ "else", {} },      .{ "enum", {} },    .{ "export", {} },     .{ "extends", {} },
+    .{ "finally", {} },   .{ "for", {} },     .{ "from", {} },       .{ "function", {} },
+    .{ "get", {} },       .{ "if", {} },      .{ "implements", {} }, .{ "import", {} },
+    .{ "in", {} },        .{ "infer", {} },   .{ "instanceof", {} }, .{ "interface", {} },
+    .{ "is", {} },        .{ "keyof", {} },   .{ "let", {} },        .{ "module", {} },
+    .{ "namespace", {} }, .{ "new", {} },     .{ "of", {} },         .{ "override", {} },
+    .{ "package", {} },   .{ "private", {} }, .{ "protected", {} },  .{ "public", {} },
+    .{ "readonly", {} },  .{ "return", {} },  .{ "satisfies", {} },  .{ "set", {} },
+    .{ "static", {} },    .{ "super", {} },   .{ "switch", {} },     .{ "this", {} },
+    .{ "throw", {} },     .{ "try", {} },     .{ "type", {} },       .{ "typeof", {} },
+    .{ "using", {} },     .{ "var", {} },     .{ "void", {} },       .{ "while", {} },
+    .{ "with", {} },      .{ "yield", {} },
 });
 
 const TypeSet = std.StaticStringMap(void).initComptime(.{
-    .{ "any", {} }, .{ "Array", {} }, .{ "bigint", {} }, .{ "boolean", {} },
-    .{ "Date", {} }, .{ "Error", {} }, .{ "Map", {} }, .{ "never", {} },
-    .{ "number", {} }, .{ "object", {} }, .{ "Promise", {} }, .{ "ReadonlyArray", {} },
-    .{ "Record", {} }, .{ "RegExp", {} }, .{ "Set", {} }, .{ "string", {} },
+    .{ "any", {} },    .{ "Array", {} },      .{ "bigint", {} },  .{ "boolean", {} },
+    .{ "Date", {} },   .{ "Error", {} },      .{ "Map", {} },     .{ "never", {} },
+    .{ "number", {} }, .{ "object", {} },     .{ "Promise", {} }, .{ "ReadonlyArray", {} },
+    .{ "Record", {} }, .{ "RegExp", {} },     .{ "Set", {} },     .{ "string", {} },
     .{ "symbol", {} }, .{ "Uint8Array", {} }, .{ "unknown", {} },
 });
 
 const LiteralSet = std.StaticStringMap(void).initComptime(.{
-    .{ "false", {} }, .{ "Infinity", {} }, .{ "NaN", {} }, .{ "null", {} },
-    .{ "true", {} }, .{ "undefined", {} },
+    .{ "false", {} }, .{ "Infinity", {} },  .{ "NaN", {} }, .{ "null", {} },
+    .{ "true", {} },  .{ "undefined", {} },
 });
 
 const BuiltinSet = std.StaticStringMap(void).initComptime(.{
-    .{ "Array", {} }, .{ "Boolean", {} }, .{ "clearInterval", {} }, .{ "clearTimeout", {} },
-    .{ "console", {} }, .{ "Date", {} }, .{ "document", {} }, .{ "fetch", {} },
-    .{ "globalThis", {} }, .{ "JSON", {} }, .{ "Map", {} }, .{ "Math", {} },
-    .{ "Number", {} }, .{ "Object", {} }, .{ "Promise", {} }, .{ "RegExp", {} },
-    .{ "setInterval", {} }, .{ "setTimeout", {} }, .{ "String", {} }, .{ "Symbol", {} },
+    .{ "Array", {} },       .{ "Boolean", {} },    .{ "clearInterval", {} }, .{ "clearTimeout", {} },
+    .{ "console", {} },     .{ "Date", {} },       .{ "document", {} },      .{ "fetch", {} },
+    .{ "globalThis", {} },  .{ "JSON", {} },       .{ "Map", {} },           .{ "Math", {} },
+    .{ "Number", {} },      .{ "Object", {} },     .{ "Promise", {} },       .{ "RegExp", {} },
+    .{ "setInterval", {} }, .{ "setTimeout", {} }, .{ "String", {} },        .{ "Symbol", {} },
     .{ "window", {} },
 });
 

@@ -21,10 +21,6 @@ export fn input_bytes_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_bytes_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -153,8 +149,12 @@ const RUNTIME_SUFFIX =
     \\      throw new RangeError(`${stage.path} input exceeds its capacity`);
     \\    }
     \\    new Uint8Array(exports.memory.buffer, pointer, bytes.byteLength).set(bytes);
-    \\    const outputLength = exports.render(bytes.byteLength);
-    \\    const outputPointer = value(exports, "output_ptr");
+    \\    const result = exports.render(bytes.byteLength);
+    \\    if (typeof result !== "bigint") throw new TypeError(`${stage.path} render must return i64`);
+    \\    const bits = BigInt.asUintN(64, result);
+    \\    if ((bits & (1n << 63n)) !== 0n) throw new Error(`${stage.path} rejected input`);
+    \\    const outputLength = Number(bits & 0xffff_ffffn);
+    \\    const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
     \\    const outputCapacity = value(exports, stage.outputCapName);
     \\    if (outputLength > outputCapacity || outputPointer + outputLength > exports.memory.buffer.byteLength) {
     \\      throw new RangeError(`${stage.path} returned an invalid output length`);
@@ -238,8 +238,20 @@ fn convert(input: []const u8, output: []u8) !usize {
     return tar.finish();
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > INPUT_CAP) @trap();
     return @intCast(convert(input_buf[0..input_size], &output_buf) catch @trap());
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

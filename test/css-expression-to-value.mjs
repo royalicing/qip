@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -18,9 +19,9 @@ function render(exports, input, uniforms = {}) {
   for (const [name, value] of Object.entries(uniforms)) {
     exports[`uniform_set_${name}`](value);
   }
-  const outputLen = exports.render(bytes.length);
-  const outputPtr = readI32Export(exports, "output_ptr");
-  return decoder.decode(new Uint8Array(exports.memory.buffer, outputPtr, outputLen));
+  const result = decodeRenderResult(exports.render(bytes.length));
+  assert.equal(result.failed, false);
+  return decoder.decode(new Uint8Array(exports.memory.buffer, result.outputPointer, result.value));
 }
 
 async function load() {

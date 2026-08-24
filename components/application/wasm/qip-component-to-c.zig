@@ -107,10 +107,6 @@ export fn input_bytes_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -576,7 +572,6 @@ fn sameFunctionType(a_index: u32, b_index: u32) bool {
 const Contract = struct {
     input_ptr: u32,
     input_cap: u32,
-    output_ptr: u32,
     output_cap: u32,
     render: u32,
     input_offset: u32,
@@ -635,7 +630,6 @@ fn readContract() Error!Contract {
     return .{
         .input_ptr = input_ptr_export,
         .input_cap = selected_input_cap,
-        .output_ptr = try findFunctionExport("output_ptr"),
         .output_cap = selected_output_cap,
         .render = try findFunctionExport("render"),
         .input_offset = input_offset,
@@ -1303,6 +1297,7 @@ fn writePreamble(out: *Writer, prefix: []const u8, hash_hex: []const u8, contrac
         \\  {P}_INVALID_ARGUMENT = 3,
         \\  {P}_MEMORY_TOO_SMALL = 4,
         \\  {P}_STALE_INSTANCE = 5,
+        \\  {P}_REJECTED = 6,
         \\  {P}_TRAP_UNREACHABLE = 16,
         \\  {P}_TRAP_OOB = 17,
         \\  {P}_TRAP_CALL_DEPTH = 18,
@@ -1634,6 +1629,7 @@ fn writeWrapper(out: *Writer, prefix: []const u8, contract: Contract) Error!void
         \\    uint32_t *output_offset, uint32_t *output_size) {{
         \\  {s}_val arg, result;
         \\  qip_render_workspace_private *private_data;
+        \\  uint64_t render_result;
         \\  uint32_t output_ptr, n;
         \\  int trapped;
         \\  if (!i || !i->workspace || !i->memory || !output_offset || !output_size) return {s}_INVALID_ARGUMENT;
@@ -1646,8 +1642,15 @@ fn writeWrapper(out: *Writer, prefix: []const u8, contract: Contract) Error!void
         \\  {s}_mark_dirty(i, {s}_INPUT_OFFSET, input_size);
         \\  arg.u32 = input_size;
         \\  result = {s}_f{d}(i, &arg);
-        \\  n = result.u32;
-        \\  output_ptr = {s}_f{d}(i, NULL).u32;
+        \\  render_result = result.u64;
+        \\  n = (uint32_t)render_result;
+        \\  if (render_result >> 63) {{
+        \\    *output_offset = 0;
+        \\    *output_size = n;
+        \\    i->trap_active = 0;
+        \\    return {s}_REJECTED;
+        \\  }}
+        \\  output_ptr = (uint32_t)((render_result >> 32) & UINT64_C(0x7fffffff));
         \\  if (n > {s}_OUTPUT_CAPACITY ||
         \\      (uint64_t)output_ptr + n > {s}_MEMORY_SIZE) {{
         \\    i->trap_active = 0;
@@ -1671,11 +1674,11 @@ fn writeWrapper(out: *Writer, prefix: []const u8, contract: Contract) Error!void
         \\#endif
         \\
     , .{
-        prefix,          prefix, prefix,              prefix,
-        prefix,          prefix, prefix,              prefix,
-        prefix,          prefix, prefix,              prefix,
-        contract.render, prefix, contract.output_ptr, prefix,
-        prefix,          prefix, prefix,
+        prefix,          prefix, prefix, prefix,
+        prefix,          prefix, prefix, prefix,
+        prefix,          prefix, prefix, prefix,
+        contract.render, prefix, prefix, prefix,
+        prefix,          prefix,
     });
 }
 
@@ -1700,7 +1703,19 @@ fn generate(wasm: []const u8) Error!usize {
     return out.pos;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size > INPUT_CAP) @trap();
     return @intCast(generate(input_buf[0..input_size]) catch @trap());
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

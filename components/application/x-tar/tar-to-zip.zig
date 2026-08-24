@@ -38,10 +38,6 @@ export fn input_bytes_cap() u32 {
     return @intCast(INPUT_CAP);
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_bytes_cap() u32 {
     return @intCast(OUTPUT_CAP);
 }
@@ -534,7 +530,7 @@ fn convertTarToZip(input: []const u8, output: []u8, tokens: []u32, entry_table: 
     return error.InvalidTar;
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > INPUT_CAP) @trap();
     const written = convertTarToZip(
@@ -544,6 +540,18 @@ export fn render(input_size_u32: u32) u32 {
         &entries,
     ) catch @trap();
     return @intCast(written);
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "CRC-32 matches the ZIP check value" {

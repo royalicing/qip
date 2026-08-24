@@ -54,10 +54,6 @@ export fn input_bytes_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_bytes_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -275,13 +271,25 @@ fn process(input: []const u8, out: *Output) void {
     }
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = input_size_u32;
     if (input_size > input_buf.len) @trap();
     var out = Output{};
     process(input_buf[0..input_size], &out);
     if (out.overflow or !warc.validateArchive(output_buf[0..out.idx])) @trap();
     return @intCast(out.idx);
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 fn appendResponse(out: []u8, target_uri: []const u8, content_type: []const u8, body: []const u8) ![]const u8 {
@@ -303,7 +311,7 @@ test "converts first URI-list target to a redirect" {
     var source: [4096]u8 = undefined;
     const input = try appendResponse(&source, "http://qip.local/old", "text/uri-list", "\xef\xbb\xbf# old\r\n \r\n /new \r\n/ignored");
     @memcpy(input_buf[0..input.len], input);
-    const output_len = render(@intCast(input.len));
+    const output_len = renderImpl(@intCast(input.len));
     const output = output_buf[0..output_len];
     try std.testing.expect(std.mem.indexOf(u8, output, "HTTP/1.1 302 Found\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "Location: /new\r\n") != null);
@@ -315,7 +323,7 @@ test "leaves other response types unchanged" {
     var source: [4096]u8 = undefined;
     const input = try appendResponse(&source, "http://qip.local/plain", "text/plain", "/new");
     @memcpy(input_buf[0..input.len], input);
-    const output_len = render(@intCast(input.len));
+    const output_len = renderImpl(@intCast(input.len));
     try std.testing.expectEqualSlices(u8, input, output_buf[0..output_len]);
 }
 

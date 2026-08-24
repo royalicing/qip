@@ -343,8 +343,11 @@ async function browserJavaScriptFor(recipe) {
   const inputCapacity = exports.input_utf8_cap();
   if (input.length > inputCapacity) throw new RangeError(`Content Recipe CSV is too large: ${input.length} > ${inputCapacity}`);
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), input.length).set(input);
-  const outputLength = exports.render(input.length);
-  return textDecoder.decode(new Uint8Array(exports.memory.buffer, exports.output_ptr(), outputLength));
+  const result = BigInt.asUintN(64, exports.render(input.length));
+  if ((result >> 63n) !== 0n) throw new Error("generator rejected recipe");
+  const outputLength = Number(result & 0xffff_ffffn);
+  const outputPointer = Number((result >> 32n) & 0x7fff_ffffn);
+  return textDecoder.decode(new Uint8Array(exports.memory.buffer, outputPointer, outputLength));
 }
 
 async function copyText(button, defaultLabel, makeText) {

@@ -871,11 +871,6 @@ input_utf8_cap :: proc "contextless" () -> u32 {
 }
 
 @(export)
-output_ptr :: proc "contextless" () -> u32 {
-	return u32(uintptr(&output_buf[0]))
-}
-
-@(export)
 output_utf8_cap :: proc "contextless" () -> u32 {
 	return OUTPUT_CAP
 }
@@ -965,7 +960,7 @@ write_slice :: proc "contextless" (index: ^u32, value: string) {
 }
 
 @(export)
-render :: proc "contextless" (input_size: u32) -> u32 {
+render :: proc "contextless" (input_size: u32) -> u64 {
 	if input_size > INPUT_CAP {
 		intrinsics.trap()
 	}
@@ -995,5 +990,5 @@ render :: proc "contextless" (input_size: u32) -> u32 {
 		write_byte(&out, input_buf[i])
 		i += 1
 	}
-	return out
+	return (u64(u32(uintptr(&output_buf[0]))) << 32) | u64(out)
 }

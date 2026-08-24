@@ -18,11 +18,12 @@ A text/binary QIP component exports a small ABI:
 
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`
-- `render(input_size)`
-- `output_ptr`
+- `render(input_size) -> i64`
 - `output_utf8_cap` or `output_bytes_cap`
 
-The host validates capacities and boundaries before writing/reading memory.
+The `render` result contains the output pointer, the output size, and a failure
+bit. The host validates capacities and boundaries before it writes or reads
+memory.
 
 This keeps QIP components interchangeable and predictable.
 

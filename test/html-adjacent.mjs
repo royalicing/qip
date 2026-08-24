@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -23,9 +24,9 @@ function writeInput(exports, text) {
 }
 
 function render(exports, text) {
-  const outputLength = exports.render(writeInput(exports, text));
-  const ptr = readI32Export(exports, "output_ptr");
-  return decoder.decode(new Uint8Array(exports.memory.buffer, ptr, outputLength));
+  const result = decodeRenderResult(exports.render(writeInput(exports, text)));
+  assert.equal(result.failed, false);
+  return decoder.decode(new Uint8Array(exports.memory.buffer, result.outputPointer, result.value));
 }
 
 test("css-minify preserves whitespace required by CSS math", async () => {

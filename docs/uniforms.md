@@ -57,9 +57,8 @@ Returning the applied value lets a host observe clamping or normalization. A set
 Content uniforms apply to one render only. Each render starts with authored
 defaults plus the setters called for that render. Each normal return from
 `render` resets every public uniform to its authored default, whether the render
-produced bytes, produced valid empty output, or marked a failable transaction
-for rejection. Private candidate state may remain until `commit`, but a later
-render does not inherit the preceding call's public uniform values.
+produced bytes, produced valid empty output, or rejected input. A later render
+does not inherit the preceding call's public uniform values.
 
 Hosts which reuse a Content instance therefore apply every non-default uniform
 before each render. A Compliance oracle must set the uniforms needed by each

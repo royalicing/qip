@@ -442,15 +442,11 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     var result = evaluate(input_buf[0..input_size]) catch @trap();
@@ -465,6 +461,18 @@ export fn render(input_size_in: u32) u32 {
         output_size += 2;
     }
     return @intCast(output_size);
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "render resets every uniform to its authored default" {
@@ -494,10 +502,10 @@ test "render resets every uniform to its authored default" {
     _ = uniform_set_keyboard_inset_width(13);
     _ = uniform_set_keyboard_inset_height(14);
 
-    const configured_len: usize = @intCast(render(input.len));
+    const configured_len: usize = @intCast(renderImpl(input.len));
     try std.testing.expectEqualStrings("186px", output_buf[0..configured_len]);
 
-    const default_len: usize = @intCast(render(input.len));
+    const default_len: usize = @intCast(renderImpl(input.len));
     try std.testing.expectEqualStrings("95.2px", output_buf[0..default_len]);
 }
 

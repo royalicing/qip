@@ -28,11 +28,16 @@ import {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   render,
 } from "/components/gfm-commonmark.0.31.2.wasm";
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
+
+function decodeRenderResult(value) {
+  const bits = BigInt.asUintN(64, value);
+  if ((bits >> 63n) !== 0n) throw new Error("component rejected input");
+  return [Number((bits >> 32n) & 0x7fff_ffffn), Number(bits & 0xffff_ffffn)];
+}
 
 function renderMarkdown(source) {
   const input = encoder.encode(source);
@@ -41,9 +46,9 @@ function renderMarkdown(source) {
   }
 
   new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
-  const outputSize = render(input.length);
+  const [outputPtr, outputSize] = decodeRenderResult(render(input.length));
   return decoder.decode(
-    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+    new Uint8Array(memory.buffer, outputPtr, outputSize),
   );
 }
 
@@ -64,7 +69,6 @@ const {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   render,
 } = markdownRenderer.instance.exports;
 ```
@@ -106,7 +110,6 @@ function renderMarkdown(source) {
     memory,
     input_ptr,
     input_utf8_cap,
-    output_ptr,
     render,
   } = exports;
 
@@ -116,9 +119,9 @@ function renderMarkdown(source) {
   }
 
   new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
-  const outputSize = render(input.length);
+  const [outputPtr, outputSize] = decodeRenderResult(render(input.length));
   return decoder.decode(
-    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+    new Uint8Array(memory.buffer, outputPtr, outputSize),
   );
 }
 

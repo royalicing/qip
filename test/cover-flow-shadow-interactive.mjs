@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -11,7 +12,7 @@ function instantiate(bytes) {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(bytes) {
@@ -44,7 +45,7 @@ test("shadow rendering keeps its controls as update component state", () => {
   assert.equal(shadow.begin_at, undefined);
   assert.equal(shadow.commit, undefined);
 
-  const size = shadow.render(0);
+  const size = qipRenderSize(shadow, 0);
   assert.equal(size, 224 + 1120 * 720 * 4);
   const initialDigest = digest(output(shadow, size));
 
@@ -52,7 +53,7 @@ test("shadow rendering keeps its controls as update component state", () => {
   assert.equal(shadow.key_event(0xff51, 1), 1);
   assert.equal(shadow.finish_update(), 1n);
   assert.equal(digest(output(shadow, size)), initialDigest);
-  assert.equal(shadow.render(0), size);
+  assert.equal(qipRenderSize(shadow, 0), size);
   const adjustedDigest = digest(output(shadow, size));
   assert.notEqual(adjustedDigest, initialDigest);
 
@@ -61,7 +62,7 @@ test("shadow rendering keeps its controls as update component state", () => {
   assert.equal(shadow.finish_update(), 2n);
   assert.equal(digest(output(shadow, size)), adjustedDigest);
 
-  assert.equal(shadow.render(0), size);
+  assert.equal(qipRenderSize(shadow, 0), size);
   assert.equal(digest(output(shadow, size)), initialDigest);
 });
 
@@ -72,7 +73,7 @@ test("cover flow finishes event state and schedules animation without publishing
   assert.equal(cover.begin_at, undefined);
   assert.equal(cover.commit, undefined);
 
-  const size = cover.render(0);
+  const size = qipRenderSize(cover, 0);
   assert.equal(size, 224 + 1440 * 960 * 4);
   const initialDigest = digest(output(cover, size));
 
@@ -83,7 +84,7 @@ test("cover flow finishes event state and schedules animation without publishing
 
   cover.begin_update_at(17n);
   assert.equal(cover.finish_update(), 33n);
-  assert.equal(cover.render(0), size);
+  assert.equal(qipRenderSize(cover, 0), size);
   assert.notEqual(digest(output(cover, size)), initialDigest);
 });
 
@@ -91,10 +92,10 @@ test("cover flow and shadow rendering trap on lifecycle misuse", () => {
   for (const bytes of [coverFlowWasm, shadowRenderingWasm]) {
     const exports = instantiate(bytes);
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
-    exports.render(0);
+    qipRenderSize(exports, 0);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     exports.finish_update();
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

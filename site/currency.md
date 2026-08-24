@@ -344,12 +344,15 @@ const currencyFormatter = await WebAssembly.instantiateStreaming(
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 
 function formatCurrency(amount, currency) {
-  const { memory, input_ptr, output_ptr, uniform_set_currency, render } = currencyFormatter.instance.exports;
+  const { memory, input_ptr, uniform_set_currency, render } = currencyFormatter.instance.exports;
   const input = encoder.encode(amount);
   uniform_set_currency(currency);
   new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
-  const outputSize = render(input.length);
-  return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
+  const result = BigInt.asUintN(64, render(input.length));
+  if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+  const outputSize = Number(result & 0xffff_ffffn);
+  const outputPtr = Number((result >> 32n) & 0x7fff_ffffn);
+  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputSize));
 }
 
 console.log(formatCurrency("1234567.895", 840));

@@ -15,10 +15,6 @@ export fn input_utf8_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -78,9 +74,21 @@ fn escapeHtml(input: []const u8, out: []u8) usize {
     return index;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     return @as(u32, @intCast(escapeHtml(input_buf[0..input_size], output_buf[0..])));
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 pub const native_output_capacity: usize = OUTPUT_CAP;
@@ -88,7 +96,7 @@ pub const native_output_capacity: usize = OUTPUT_CAP;
 pub fn nativeRender(input: []const u8, output: []u8) u32 {
     if (input.len > INPUT_CAP) @trap();
     @memcpy(input_buf[0..input.len], input);
-    const output_size = render(@intCast(input.len));
+    const output_size = renderImpl(@intCast(input.len));
     if (output_size > output.len) @trap();
     @memcpy(output[0..output_size], output_buf[0..output_size]);
     return output_size;

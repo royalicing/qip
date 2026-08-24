@@ -1,7 +1,7 @@
 # Shadow Rendering Comparison
 
-The sliders are retained component state. Pointer and keyboard events update
-them inside a transaction, and `render` publishes the committed view as KTX2.
+The sliders are retained as component state. Pointer and keyboard events update
+them during an update, and `render` publishes the current view as KTX2.
 The component does not expose the slider values as uniforms.
 
 <qip-play canvas-width="1120px" canvas-height="auto">

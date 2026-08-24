@@ -43,7 +43,6 @@ public final class MarkdownRenderer {
     private final Memory memory;
     private final ExportFunction inputPtr;
     private final ExportFunction inputCap;
-    private final ExportFunction outputPtr;
     private final ExportFunction render;
 
     public MarkdownRenderer() {
@@ -53,7 +52,6 @@ public final class MarkdownRenderer {
         memory = instance.exports().memory("memory");
         inputPtr = instance.export("input_ptr");
         inputCap = instance.export("input_utf8_cap");
-        outputPtr = instance.export("output_ptr");
         render = instance.export("render");
     }
 
@@ -74,8 +72,10 @@ public final class MarkdownRenderer {
         int inputStart = callI32(inputPtr);
         memory.write(inputStart, source);
 
-        int outputSize = callI32(render, source.length);
-        int outputStart = callI32(outputPtr);
+        long packed = render.apply(source.length)[0];
+        if (packed < 0) throw new IllegalArgumentException("component rejected input");
+        int outputSize = (int) packed;
+        int outputStart = (int) ((packed >>> 32) & 0x7fff_ffffL);
         byte[] output = memory.readBytes(outputStart, outputSize);
         return new String(output, StandardCharsets.UTF_8);
     }
@@ -126,8 +126,9 @@ The loader is runtime-specific; the QIP calls are not:
 2. `Instance.builder(module).build()` instantiates it with no imports.
 3. Java encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `memory.write` copies those bytes to `input_ptr()`.
-5. `render(input_size)` returns the number of output bytes.
-6. Java copies that many bytes from `output_ptr()` and decodes UTF-8.
+5. `render(input_size)` returns the rejection bit, output pointer, and size in
+   one packed `i64` value.
+6. Java copies the accepted output range and decodes UTF-8.
 
 This wrapper trusts the known-valid GFM component and checks only the
 caller-controlled input size. A host accepting arbitrary Wasm has a different

@@ -147,6 +147,15 @@ uploaded.
 <script type="module">
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
+
+function renderOutput(exports, inputSize) {
+  const result = BigInt.asUintN(64, exports.render(inputSize));
+  if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+  return {
+    size: Number(result & 0xffff_ffffn),
+    ptr: Number((result >> 32n) & 0x7fff_ffffn),
+  };
+}
 const form = document.getElementById("og-form");
 const textColor = document.getElementById("og-text-color");
 const backgroundColor = document.getElementById("og-background-color");
@@ -222,8 +231,8 @@ function renderSVG(exports, input) {
   exports.uniform_set_background_color(rgba(backgroundColor.value));
   exports.uniform_set_font_max_size(selectedMaxFontSize());
   exports.uniform_set_font_weight(Number(fontWeight.value));
-  const outputSize = exports.render(written);
-  return decoder.decode(new Uint8Array(exports.memory.buffer, exports.output_ptr(), outputSize));
+  const output = renderOutput(exports, written);
+  return decoder.decode(new Uint8Array(exports.memory.buffer, output.ptr, output.size));
 }
 
 function showSVG(preview, svg) {
@@ -256,14 +265,14 @@ async function rasterBytes(svg, format) {
   );
   const { read, written } = encoder.encodeInto(svg, svgInput);
   if (read !== svg.length) throw new RangeError("The SVG is too large to rasterize.");
-  const bmpSize = svgRasterizer.render(written);
-  if (bmpSize > svgRasterizer.output_bytes_cap()) {
+  const bmpOutput = renderOutput(svgRasterizer, written);
+  if (bmpOutput.size > svgRasterizer.output_bytes_cap()) {
     throw new RangeError("The rasterized BMP is too large.");
   }
   const bmp = new Uint8Array(
     svgRasterizer.memory.buffer,
-    svgRasterizer.output_ptr(),
-    bmpSize,
+    bmpOutput.ptr,
+    bmpOutput.size,
   );
   if (bmp.length > imageEncoder.input_bytes_cap()) {
     throw new RangeError("The BMP is too large to encode.");
@@ -273,14 +282,14 @@ async function rasterBytes(svg, format) {
     imageEncoder.input_ptr(),
     bmp.length,
   ).set(bmp);
-  const outputSize = imageEncoder.render(bmp.length);
-  if (outputSize > imageEncoder.output_bytes_cap()) {
+  const output = renderOutput(imageEncoder, bmp.length);
+  if (output.size > imageEncoder.output_bytes_cap()) {
     throw new RangeError(`The ${format.toUpperCase()} output is too large.`);
   }
   return new Uint8Array(
     imageEncoder.memory.buffer,
-    imageEncoder.output_ptr(),
-    outputSize,
+    output.ptr,
+    output.size,
   ).slice();
 }
 
@@ -416,6 +425,15 @@ import * as webpEncoder from "./bmp-b8g8r8a8-srgb-to-webp-lossless.wasm";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
+function renderOutput(exports, inputSize) {
+  const result = BigInt.asUintN(64, exports.render(inputSize));
+  if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+  return {
+    size: Number(result & 0xffff_ffffn),
+    ptr: Number((result >> 32n) & 0x7fff_ffffn),
+  };
+}
+
 export function renderOGImageToSVG({
   title = "",
   subtitle = "",
@@ -439,14 +457,14 @@ export function renderOGImageToSVG({
   ogImageRenderer.uniform_set_font_max_size(fontMaxSize);
   ogImageRenderer.uniform_set_font_weight(fontWeight);
 
-  const outputSize = ogImageRenderer.render(written);
-  if (outputSize > ogImageRenderer.output_utf8_cap()) {
+  const output = renderOutput(ogImageRenderer, written);
+  if (output.size > ogImageRenderer.output_utf8_cap()) {
     throw new RangeError("Open Graph image output is too large");
   }
   return decoder.decode(new Uint8Array(
     ogImageRenderer.memory.buffer,
-    ogImageRenderer.output_ptr(),
-    outputSize,
+    output.ptr,
+    output.size,
   ));
 }
 
@@ -461,14 +479,14 @@ export function renderOGImageToPNG(options) {
   if (read !== svg.length) {
     throw new RangeError("Open Graph SVG is too large to rasterize");
   }
-  const bmpSize = svgRasterizer.render(written);
-  if (bmpSize > svgRasterizer.output_bytes_cap()) {
+  const bmpOutput = renderOutput(svgRasterizer, written);
+  if (bmpOutput.size > svgRasterizer.output_bytes_cap()) {
     throw new RangeError("Open Graph BMP output is too large");
   }
   const bmp = new Uint8Array(
     svgRasterizer.memory.buffer,
-    svgRasterizer.output_ptr(),
-    bmpSize,
+    bmpOutput.ptr,
+    bmpOutput.size,
   );
   if (bmp.length > pngEncoder.input_bytes_cap()) {
     throw new RangeError("Open Graph BMP input is too large");
@@ -478,14 +496,14 @@ export function renderOGImageToPNG(options) {
     pngEncoder.input_ptr(),
     bmp.length,
   ).set(bmp);
-  const pngSize = pngEncoder.render(bmp.length);
-  if (pngSize > pngEncoder.output_bytes_cap()) {
+  const pngOutput = renderOutput(pngEncoder, bmp.length);
+  if (pngOutput.size > pngEncoder.output_bytes_cap()) {
     throw new RangeError("Open Graph PNG output is too large");
   }
   return new Uint8Array(
     pngEncoder.memory.buffer,
-    pngEncoder.output_ptr(),
-    pngSize,
+    pngOutput.ptr,
+    pngOutput.size,
   ).slice();
 }
 
@@ -500,14 +518,14 @@ export function renderOGImageToWebp(options) {
   if (read !== svg.length) {
     throw new RangeError("Open Graph SVG is too large to rasterize");
   }
-  const bmpSize = svgRasterizer.render(written);
-  if (bmpSize > svgRasterizer.output_bytes_cap()) {
+  const bmpOutput = renderOutput(svgRasterizer, written);
+  if (bmpOutput.size > svgRasterizer.output_bytes_cap()) {
     throw new RangeError("Open Graph BMP output is too large");
   }
   const bmp = new Uint8Array(
     svgRasterizer.memory.buffer,
-    svgRasterizer.output_ptr(),
-    bmpSize,
+    bmpOutput.ptr,
+    bmpOutput.size,
   );
   if (bmp.length > webpEncoder.input_bytes_cap()) {
     throw new RangeError("Open Graph BMP input is too large");
@@ -517,14 +535,14 @@ export function renderOGImageToWebp(options) {
     webpEncoder.input_ptr(),
     bmp.length,
   ).set(bmp);
-  const webpSize = webpEncoder.render(bmp.length);
-  if (webpSize > webpEncoder.output_bytes_cap()) {
+  const webpOutput = renderOutput(webpEncoder, bmp.length);
+  if (webpOutput.size > webpEncoder.output_bytes_cap()) {
     throw new RangeError("Open Graph WebP output is too large");
   }
   return new Uint8Array(
     webpEncoder.memory.buffer,
-    webpEncoder.output_ptr(),
-    webpSize,
+    webpOutput.ptr,
+    webpOutput.size,
   ).slice();
 }
 

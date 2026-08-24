@@ -54,10 +54,11 @@ For Wasm modules, the runner validates the declared QIP exports up front:
 - `render`
 - `input_ptr`
 - `input_utf8_cap` or `input_bytes_cap`, matching the input contract
-- `output_ptr`
 - `output_utf8_cap` or `output_bytes_cap`, matching the output contract
 
-If the module declares content-type exports, they must match the supplied contracts.
+The runner reads the output pointer, output size, and failure bit from the
+packed `render` result. If the module declares content-type exports, they must
+match the supplied contracts.
 
 The implementation can also be a JavaScript function:
 

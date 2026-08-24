@@ -868,7 +868,6 @@ class QIPPlayElement extends HTMLElement {
     this._imageData = null;
     this._stats = null;
 
-    this._outputPtr = 0;
     this._outputBytes = 0;
     this._outputCapacity = 0;
     this._renderWidth = 0;
@@ -981,7 +980,6 @@ class QIPPlayElement extends HTMLElement {
     }
 
     const requiredExports = [
-      "output_ptr",
       "output_bytes_cap",
       "output_content_type_ptr",
       "output_content_type_size",
@@ -998,7 +996,6 @@ class QIPPlayElement extends HTMLElement {
     this._exports = exportsObj;
     this._memory = exportsObj.memory;
     this._uniforms = qipPlayExtractUniforms(sourceElement);
-    this._outputPtr = qipPlayReadI32Export(exportsObj, "output_ptr");
     this._debugStats = this.hasAttribute("debug");
     this._logTimings = this.hasAttribute("log");
 
@@ -1014,11 +1011,11 @@ class QIPPlayElement extends HTMLElement {
       throw new Error("qip-play pixel output must declare image/ktx2");
     }
     const initial = this._runInitialContentRender();
-    const parsed = this._readKTX2Output(initial.outputLen);
+    const parsed = this._readKTX2Output(initial.rendered);
     this._renderWidth = parsed.width;
     this._renderHeight = parsed.height;
     this._expectedOutputBytes = parsed.pixels.byteLength;
-    this._outputBytes = initial.outputLen;
+    this._outputBytes = initial.rendered.outputLen;
     this._initialFrame = { ...initial, parsed };
 
     this._canvas = document.createElement("canvas");
@@ -1156,50 +1153,54 @@ class QIPPlayElement extends HTMLElement {
     }
   }
 
-  _readKTX2Output(outputLen) {
+  _decodeRenderResult(renderResult) {
+    if (typeof renderResult !== "bigint") {
+      throw new TypeError("qip-play render export must have signature render(i32) -> i64");
+    }
+    const bits = BigInt.asUintN(64, renderResult);
+    const outputLen = Number(bits & 0xffff_ffffn);
+    if ((bits & (1n << 63n)) !== 0n) {
+      if (typeof this._exports.failure_modes_per_input_offset !== "function") {
+        throw new Error("qip-play render returned failure without failure_modes_per_input_offset");
+      }
+      const modes = qipPlayReadI32Export(this._exports, "failure_modes_per_input_offset") >>> 0;
+      if (modes === 0) throw new Error("qip-play input was rejected");
+      const position = Math.floor(outputLen / modes);
+      const mode = outputLen % modes;
+      throw new Error(modes === 1
+        ? "qip-play input was rejected at input offset " + position
+        : "qip-play input was rejected at input offset " + position + " with mode " + mode);
+    }
+    return {
+      outputLen,
+      outputPtr: Number((bits >> 32n) & 0x7fff_ffffn),
+    };
+  }
+
+  _readKTX2Output(rendered) {
+    const { outputLen, outputPtr } = rendered;
     if (outputLen < 0 || outputLen > this._outputCapacity) {
       throw new Error("qip-play Timed render returned output outside output_bytes_cap");
     }
     const bytes = qipPlayReadSlice(
       this._memory,
-      this._outputPtr,
+      outputPtr,
       outputLen,
       "output_ptr/output_bytes_cap",
     );
     return qipPlayParseKTX2RGBA8(bytes);
   }
 
-  _readInitialContentCommit() {
-    let result;
-    try {
-      result = this._exports.commit();
-    } catch (cause) {
-      throw new Error("qip-play initial Content commit trapped; commit() must not trap: " + (cause?.message ?? cause), { cause });
-    }
-    if (typeof result !== "bigint") {
-      throw new TypeError("qip-play commit export must have signature commit() -> i64");
-    }
-    if (result < 0n) {
-      throw new Error("qip-play initial Content input was rejected (commit returned " + result + ")");
-    }
-    if (result !== 0n) {
-      throw new Error("qip-play Content commit must return zero on acceptance");
-    }
-  }
-
   _runInitialContentRender() {
     this._applyUniforms();
     const renderStart = qipPlayPerfNow();
-    const outputLen = qipPlayToI32(this._exports.render(this._inputSize), "render");
+    const rendered = this._decodeRenderResult(this._exports.render(this._inputSize));
     const renderMS = qipPlayPerfNow() - renderStart;
-    if (typeof this._exports.commit === "function") {
-      this._readInitialContentCommit();
-    }
     this._renderN++;
     this._lastRenderMS = renderMS;
     this._finishedAtMS = 0;
     this._nextWakeAtMS = 0;
-    return { outputLen, renderMS };
+    return { rendered, renderMS };
   }
 
   _readFinishedUpdate(begunAtMS) {
@@ -1237,13 +1238,13 @@ class QIPPlayElement extends HTMLElement {
     this._applyUniforms();
     const eventResult = this._drainEvents(nowMS);
     const shouldRender = renderRequested || (!document.hidden && eventResult.accepted);
-    let outputLen = 0;
+    let rendered = null;
     let renderMS = 0;
     const nextWakeAtMS = this._readFinishedUpdate(begunAtMS);
     if (shouldRender) {
       this._applyUniforms();
       const renderStart = qipPlayPerfNow();
-      outputLen = qipPlayToI32(this._exports.render(0), "render");
+      rendered = this._decodeRenderResult(this._exports.render(0));
       renderMS = qipPlayPerfNow() - renderStart;
     }
     const updateMS = qipPlayPerfNow() - updateStart - renderMS;
@@ -1252,7 +1253,7 @@ class QIPPlayElement extends HTMLElement {
     this._finishedAtMS = begunAtMS;
     this._nextWakeAtMS = nextWakeAtMS;
     if (shouldRender) {
-      const parsed = this._readKTX2Output(outputLen);
+      const parsed = this._readKTX2Output(rendered);
       this._presentKTX2Output(parsed, renderMS);
     } else {
       this._updateStats();
@@ -1663,9 +1664,9 @@ class QIPPlayElement extends HTMLElement {
       this._needsRender = false;
       this._applyUniforms();
       const renderStart = qipPlayPerfNow();
-      const outputLen = qipPlayToI32(this._exports.render(0), "render");
+      const rendered = this._decodeRenderResult(this._exports.render(0));
       const renderMS = qipPlayPerfNow() - renderStart;
-      this._presentKTX2Output(this._readKTX2Output(outputLen), renderMS);
+      this._presentKTX2Output(this._readKTX2Output(rendered), renderMS);
       return;
     }
     const renderRequested = this._needsRender || (wakeDue && !document.hidden);

@@ -9,15 +9,16 @@ This page covers implementation patterns. The
 [Content Component Contract](/docs/content-component) defines the ABI and host
 call flow.
 
-An optional `commit` export lets a component reject expected input without
-trapping. A missing `commit` export does not prove that a component cannot trap;
-static analysis must inspect the compiled Wasm to prove that.
+An optional `failure_modes_per_input_offset` export declares that a component
+can reject expected input without trapping. Its absence does not prove that a
+component cannot trap; static analysis must inspect the compiled Wasm to prove
+that.
 
 ## Choose By Purpose
 
 | Purpose | Successful output | Reject with | Repository example |
 | --- | --- | --- | --- |
-| Assertion gate | Original input unchanged | `commit` rejection | [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) |
+| Assertion gate | Original input unchanged | `render` rejection | [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) |
 | Transformer | Replacement content | Trap | [`json-prettify.wasm`](/components/text/json/json-prettify.wasm) |
 | Converter | Content in a different format | Trap | [`svg-to-data-uri.wasm`](/components/image/svg+xml/svg-to-data-uri.wasm) |
 | Reporter | Counts, scores, or diagnostics | Trap | [`wasm-counts.wasm`](/components/application/wasm/wasm-counts.wasm) |
@@ -30,7 +31,7 @@ ABI choice, covered under [Choose The Byte Contract](#choose-the-byte-contract).
 
 Use an assertion gate to enforce an invariant without changing the payload. On
 success, return the original bytes and byte count. On failure, reject through
-`commit` so the pipeline stops before an unsafe value reaches another component.
+the `render` result so the pipeline stops before an unsafe value reaches another component.
 
 [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) checks
 every UTF-8 sequence and preserves valid input. The
@@ -146,34 +147,23 @@ if (invalid_input || output_overflow) __builtin_trap();
   (then unreachable))
 ```
 
-## Commit Rejects Expected Input
+## Render Rejects Expected Input
 
-A Content component that can reject recoverably exports `commit`. Without that
-export, successful `render` output is
-immediately valid, but `render` may still trap. A host discards the instance
-after a trap.
+A Content component that can reject recoverably exports
+`failure_modes_per_input_offset`. Without that export, a successful `render`
+result is valid output, but `render` may still trap. A host discards the
+instance after a trap.
 
 Nontrapping behavior is not declared through export absence. A static analyzer
 must inspect the compiled Wasm and prove that valid Content calls cannot trap.
-It can prove this for a component with or without `commit`.
+It can prove this for fallible and infallible components.
 
-For a failable component, `render` writes provisional output and returns
-normally, then `commit` accepts or rejects the invocation:
-
-```text
-output_size = render(input_size)
-result = commit()
-
-result == 0  accepted Content output
-result < 0   rejected Content input
-```
-
-Use commit when a conforming call can still be rejected. A validator which
-accepts arbitrary bytes can reject malformed content this way. A transform
-which requires already validated input may instead treat malformed content as a
-precondition violation. The host ignores provisional output after rejection,
-so a partial result cannot enter the next pipeline stage. A zero-byte render
-remains a valid result when commit accepts it.
+Use recoverable rejection when a conforming call can still be rejected. A
+validator which accepts arbitrary bytes can reject malformed content this way.
+A transform which requires already validated input may instead treat malformed
+content as a precondition violation. The host ignores the output fields after
+rejection, so a partial result cannot enter the next pipeline stage. An
+accepted zero-byte output remains distinct from rejection.
 
 A trap becomes an emergency stop for a narrower set of failures:
 
@@ -181,57 +171,75 @@ A trap becomes an emergency stop for a narrower set of failures:
 - an internal invariant that valid control flow must preserve was broken; or
 - the component encountered an unrecoverable implementation defect.
 
-The host does not call `commit` after a trap. It ignores output, discards the
-Wasm instance, and creates another instance before a later call. `commit` must
-not trap.
+After a trap, the host ignores output, discards the Wasm instance, and creates
+another instance before a later call.
 
 `input_utf8_cap` makes valid UTF-8 a host-enforced precondition; malformed
 UTF-8 is not an allowed input. `input_bytes_cap` allows every byte string within
 capacity unless an exact format adds a narrower precondition. Exact content
 type metadata requires or guarantees a valid supported instance of that format.
-At an untrusted boundary, use a pass-through validator with `commit` before
+At an untrusted boundary, use a pass-through validator with recoverable
+rejection before
 components which rely on that guarantee.
 
 For example, an assertion gate can use this shape:
 
 ```zig
-var pending_result: i64 = -1;
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
 
-export fn render(input_size: u32) u32 {
-    pending_result = -1;
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
 
-    if (input_size > INPUT_CAP) @trap();
-    const size: usize = @intCast(input_size);
-    if (!validate(input_buf[0..size])) return 0;
-
-    @memcpy(output_buf[0..size], input_buf[0..size]);
-    pending_result = 0;
-    return input_size;
+export fn failure_modes_per_input_offset() u32 {
+    return 1;
 }
 
-export fn commit() i64 {
-    const result = pending_result;
-    pending_result = -1;
-    return result;
+fn renderOutcome(input_size: u32) RenderOutcome {
+    if (input_size > INPUT_CAP) @trap();
+    const size: usize = @intCast(input_size);
+    if (firstInvalidOffset(input_buf[0..size])) |input_offset| {
+        return .{ .output_size_or_failure = input_offset, .output_ptr = 0, .failed = 1 };
+    }
+    return .{
+        .output_size_or_failure = input_size,
+        .output_ptr = @intFromPtr(&input_buf),
+        .failed = 0,
+    };
+}
+
+export fn render(input_size: u32) RenderResult {
+    const result = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = result.output_size_or_failure,
+        .output_ptr = if (result.failed == 1) 0 else @intCast(result.output_ptr),
+        .failed = result.failed,
+    };
 }
 ```
 
-Initializing `pending_result` to rejection makes every ordinary early return
-reject by default. Only the complete success path changes it to acceptance.
-Valid empty input still reaches that success state even though `render` returns
-zero. A component with uniforms resets their public values before `render`
-returns.
+`RenderOutcome` is private. It exists because this component has two normal
+outcomes that native Zig tests must inspect: accepted output and recoverable
+rejection. Its pointer uses `usize` in native tests. The exported `RenderResult`
+packs that outcome into the WebAssembly ABI. Do not add either named type to an
+infallible component; return its output size from a private transform when a
+test seam is useful, or put a short operation directly in `render`.
 
-Every negative Content result is rejection. Its exact value is advisory. A
-component may construct the result as a `u64` bitfield and return its `i64`
-bitcast. Bit 63 marks an error, bit 62 marks invalid input, bits 61 through 32
-are reserved, and the low 32 bits hold an input byte offset or consumed byte
-count. A truncated input points to its end. Precise offsets are optional. Hosts
-may highlight or log them but must not assign them application semantics yet.
+This sketch uses one failure mode per input offset. The low 32 bits therefore
+hold the rejected input offset directly. A component which provides no offset
+detail exports a mode count of zero and sets the low bits to zero. See the
+[Content Component Contract](/docs/content-component#optional-failure-detail)
+for the complete encoding.
 
 Testing changes with this boundary. A recoverable invalid case must prove that
-`render` returns normally, `commit` rejects, provisional output is ignored, and
-a later valid transaction succeeds on the same instance. A precondition case
+`render` returns normally with the failure bit set, output is ignored, and a
+later valid render succeeds on the same instance. A precondition case
 may use `must_trap`; a validator failure inside its declared byte domain uses
 `must_reject`.
 

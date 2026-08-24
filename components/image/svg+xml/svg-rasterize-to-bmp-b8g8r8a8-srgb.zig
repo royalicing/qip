@@ -31,10 +31,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -1596,7 +1592,7 @@ fn writeU32LE(buf: []u8, off: u32, value: u32) void {
     buf[off + 3] = @intCast((value >> 24) & 0xFF);
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const size = if (input_size > INPUT_CAP) INPUT_CAP else input_size;
     const input = input_buf[0..size];
 
@@ -1663,10 +1659,22 @@ export fn render(input_size: u32) u32 {
     return ctx.out_len;
 }
 
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 pub fn renderForTest(input: []const u8) []const u8 {
     const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
     @memcpy(input_buf[0..size], input[0..size]);
-    const out_len = render(@as(u32, @intCast(size)));
+    const out_len = renderImpl(@as(u32, @intCast(size)));
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 
@@ -1685,7 +1693,7 @@ pub fn renderForTestWithBackground(input: []const u8, bg_rgba: u32) []const u8 {
     defer background_color_rgba = prev;
     const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
     @memcpy(input_buf[0..size], input[0..size]);
-    const out_len = render(@as(u32, @intCast(size)));
+    const out_len = renderImpl(@as(u32, @intCast(size)));
     return output_buf[0..@as(usize, @intCast(out_len))];
 }
 

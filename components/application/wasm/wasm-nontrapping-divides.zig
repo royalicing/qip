@@ -7,7 +7,7 @@
 //! that the operands cannot be MIN / -1. Unrecognized dynamic divisors are
 //! rejected.
 //!
-//! Input is a Wasm module; output is the same bytes on success. `commit`
+//! Input is a Wasm module; output is the same bytes on success. `render`
 //! rejects when any division or remainder is not proven non-trapping.
 
 const std = @import("std");
@@ -18,14 +18,16 @@ const Instr = wasm_reader.Instr;
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
-const NO_RENDER: i64 = 1;
-const ERROR_BIT: u64 = 1 << 63;
-const INVALID_INPUT_BIT: u64 = 1 << 62;
 const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var pending_commit_result: i64 = NO_RENDER;
+
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
 
 const CheckError = wasm_reader.Error || error{
     FunctionCodeMismatch,
@@ -119,10 +121,6 @@ export fn input_ptr() u32 {
 
 export fn input_bytes_cap() u32 {
     return INPUT_CAP;
-}
-
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&input_buf));
 }
 
 export fn output_bytes_cap() u32 {
@@ -752,25 +750,32 @@ fn checkModule(wasm: []const u8) CheckError!void {
     if (have_function_section != have_code_section) return CheckError.FunctionCodeMismatch;
 }
 
-export fn render(input_size: u32) u32 {
-    if (pending_commit_result != NO_RENDER) @trap();
-    if (input_size > INPUT_CAP) @trap();
-    const size: usize = @intCast(input_size);
-
-    pending_commit_result = @bitCast(ERROR_BIT | INVALID_INPUT_BIT);
-    checkModule(input_buf[0..size]) catch return 0;
-    pending_commit_result = 0;
-    return input_size;
+export fn failure_modes_per_input_offset() u32 {
+    return 0;
 }
 
-/// Close the policy-check transaction. This function does not trap.
-export fn commit() i64 {
-    const result = if (pending_commit_result == NO_RENDER)
-        @as(i64, @bitCast(ERROR_BIT | INVALID_INPUT_BIT))
-    else
-        pending_commit_result;
-    pending_commit_result = NO_RENDER;
-    return result;
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+fn renderOutcome(input_size: u32) RenderOutcome {
+    if (input_size > INPUT_CAP) @trap();
+
+    checkModule(input_buf[0..input_size]) catch {
+        return .{ .output_size_or_failure = 0, .output_ptr = 0, .failed = 1 };
+    };
+    return .{ .output_size_or_failure = input_size, .output_ptr = @intFromPtr(&input_buf), .failed = 0 };
+}
+
+export fn render(input_size: u32) RenderResult {
+    const result = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = result.output_size_or_failure,
+        .output_ptr = if (result.failed == 1) 0 else @intCast(result.output_ptr),
+        .failed = result.failed,
+    };
 }
 
 fn expectBodyPasses(comptime body: []const u8) !void {
@@ -791,14 +796,15 @@ test "accepts nonzero constant divisors" {
 test "render rejects an unsafe divide and the instance recovers" {
     const unsafe_module = wasm_reader.moduleWithBody(&.{ 0x41, 42, 0x41, 0, 0x6e, 0x1a, 0x0b });
     @memcpy(input_buf[0..unsafe_module.len], &unsafe_module);
-    try std.testing.expectEqual(@as(u32, 0), render(unsafe_module.len));
-    try std.testing.expect(commit() < 0);
+    const rejected = renderOutcome(unsafe_module.len);
+    try std.testing.expectEqual(@as(u1, 1), rejected.failed);
 
     const safe_module = wasm_reader.moduleWithBody(&.{ 0x41, 42, 0x41, 3, 0x6e, 0x1a, 0x0b });
     @memcpy(input_buf[0..safe_module.len], &safe_module);
-    try std.testing.expectEqual(@as(u32, safe_module.len), render(safe_module.len));
+    const accepted = renderOutcome(safe_module.len);
+    try std.testing.expectEqual(@as(u1, 0), accepted.failed);
+    try std.testing.expectEqual(@as(u32, safe_module.len), accepted.output_size_or_failure);
     try std.testing.expectEqualSlices(u8, &safe_module, input_buf[0..safe_module.len]);
-    try std.testing.expectEqual(@as(i64, 0), commit());
 }
 
 test "rejects zero and dynamic divisors" {

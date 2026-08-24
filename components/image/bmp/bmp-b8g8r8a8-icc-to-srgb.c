@@ -286,7 +286,7 @@ static void lcms_log_error(cmsContext context, cmsUInt32Number code,
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 static const char input_content_type[] = "image/bmp";
@@ -419,7 +419,7 @@ static void write_bmp_header(int32_t width, uint32_t height,
   write_u32_le(output_buf + 34, pixel_bytes);
 }
 
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
   int32_t width;
   uint32_t height;
@@ -435,10 +435,10 @@ uint32_t render(uint32_t input_size_value) {
   cmsHTRANSFORM transform = NULL;
 
   arena_reset();
-  if (input_size > INPUT_CAP) return 0;
+  if (input_size > INPUT_CAP) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   if (!parse_bmp(input_size, &width, &height, &top_down, &pixel_offset,
                  &pixel_bytes, &profile_data, &profile_size)) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
 
   write_bmp_header(width, height, (uint32_t)pixel_bytes);
@@ -452,7 +452,7 @@ uint32_t render(uint32_t input_size_value) {
   // A legacy BMP and a V5 BMP marked sRGB already use the canonical QIP
   // interchange space. Copy those pixels without a color-management round
   // trip so the component remains lossless for the common case.
-  if (profile_data == NULL) return 54u + (uint32_t)pixel_bytes;
+  if (profile_data == NULL) return ((uint64_t)output_ptr() << 32) | (uint32_t)(54u + (uint32_t)pixel_bytes);
 
   cmsSetLogErrorHandler(lcms_log_error);
   input_profile = cmsOpenProfileFromMem(profile_data, profile_size);
@@ -470,7 +470,7 @@ cleanup:
   if (output_profile != NULL) cmsCloseProfile(output_profile);
   if (input_profile != NULL) cmsCloseProfile(input_profile);
   if (transform == NULL || input_profile == NULL || output_profile == NULL) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
-  return 54u + (uint32_t)pixel_bytes;
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)(54u + (uint32_t)pixel_bytes);
 }

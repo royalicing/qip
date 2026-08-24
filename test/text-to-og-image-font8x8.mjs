@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -30,13 +31,13 @@ for (const component of components) {
 
     e.uniform_set_text_color(0xff0000ff);
     e.uniform_set_background_color(0x0000ffff);
-    const configuredSize = e.render(1);
-    const configured = memory.slice(e.output_ptr(), e.output_ptr() + configuredSize);
+    const configuredSize = qipRenderSize(e, 1);
+    const configured = memory.slice(qipRenderedOutputPointer(e), qipRenderedOutputPointer(e) + configuredSize);
     assert.equal(hasPixel(configured, 0, 0, 255, 255), true);
     assert.equal(hasPixel(configured, 255, 0, 0, 255), true);
 
-    const defaultSize = e.render(1);
-    const defaults = memory.slice(e.output_ptr(), e.output_ptr() + defaultSize);
+    const defaultSize = qipRenderSize(e, 1);
+    const defaults = memory.slice(qipRenderedOutputPointer(e), qipRenderedOutputPointer(e) + defaultSize);
     assert.equal(hasPixel(defaults, 0, 0, 0, 255), true);
     assert.equal(hasPixel(defaults, 255, 255, 255, 255), true);
   });
@@ -44,6 +45,6 @@ for (const component of components) {
   test(`${component} traps above its advertised input capacity`, async () => {
     const { instance } = await WebAssembly.instantiate(await readFile(component));
     const e = instance.exports;
-    assert.throws(() => e.render(e.input_utf8_cap() + 1), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(e, e.input_utf8_cap() + 1), WebAssembly.RuntimeError);
   });
 }

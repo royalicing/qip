@@ -130,10 +130,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -292,7 +288,7 @@ fn emitMatch(writer: *BitWriter, length: usize, distance: usize) bool {
 }
 
 /// Writes zlib (RFC1950) with DEFLATE fixed-Huffman block(s) (RFC1951).
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
@@ -341,6 +337,18 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(writer.out_i));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn decompressZlib(compressed: []const u8, out: []u8) !usize {
     var in: std.Io.Reader = .fixed(compressed);
     var window: [std.compress.flate.max_window_len]u8 = undefined;
@@ -355,7 +363,7 @@ fn decompressZlib(compressed: []const u8, out: []u8) !usize {
 }
 
 test "round trips empty input" {
-    const written = render(0);
+    const written = renderImpl(0);
     try std.testing.expect(written > 0);
 
     var out: [1]u8 = undefined;
@@ -367,7 +375,7 @@ test "round trips short text" {
     const plain = "qip + wasm";
     @memcpy(input_buf[0..plain.len], plain);
 
-    const written = render(@intCast(plain.len));
+    const written = renderImpl(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     var out: [64]u8 = undefined;
@@ -382,7 +390,7 @@ test "compresses repetitive data well" {
     }
     @memcpy(input_buf[0..plain.len], &plain);
 
-    const written = render(@intCast(plain.len));
+    const written = renderImpl(@intCast(plain.len));
     try std.testing.expect(written > 0);
     try std.testing.expect(written < plain.len / 2);
 
@@ -394,7 +402,7 @@ test "compresses repetitive data well" {
 
 test "maximum input stays within the derived output capacity" {
     @memset(input_buf[0..], 0);
-    const written = render(@intCast(INPUT_CAP));
+    const written = renderImpl(@intCast(INPUT_CAP));
     try std.testing.expect(written > 0);
     try std.testing.expect(written <= OUTPUT_CAP);
 }

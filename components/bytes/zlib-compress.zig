@@ -16,10 +16,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -39,7 +35,7 @@ fn writeU32BE(off: usize, value: u32) void {
 /// Writes a valid zlib stream using stored (uncompressed) DEFLATE blocks.
 /// This keeps the implementation tiny and deterministic while still producing
 /// standards-compliant zlib bytes.
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
@@ -87,6 +83,18 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(out_i));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn decompressZlib(compressed: []const u8, out: []u8) !usize {
     var in: std.Io.Reader = .fixed(compressed);
     var window: [std.compress.flate.max_window_len]u8 = undefined;
@@ -101,7 +109,7 @@ fn decompressZlib(compressed: []const u8, out: []u8) !usize {
 }
 
 test "compresses empty input to valid zlib stream" {
-    const written = render(0);
+    const written = renderImpl(0);
     try std.testing.expectEqual(@as(u32, 11), written);
 
     var out: [1]u8 = undefined;
@@ -113,7 +121,7 @@ test "round trips short text" {
     const plain = "qip wasm";
     @memcpy(input_buf[0..plain.len], plain);
 
-    const written = render(@intCast(plain.len));
+    const written = renderImpl(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     var out: [64]u8 = undefined;
@@ -126,7 +134,7 @@ test "round trips across multiple stored blocks" {
     for (&plain, 0..) |*b, i| b.* = @intCast(i % 251);
     @memcpy(input_buf[0..plain.len], &plain);
 
-    const written = render(@intCast(plain.len));
+    const written = renderImpl(@intCast(plain.len));
     try std.testing.expect(written > 0);
 
     var out: [70000]u8 = undefined;
@@ -139,6 +147,6 @@ test "maximum input exactly fits the derived output capacity" {
     @memset(input_buf[0..], 0);
     try std.testing.expectEqual(
         @as(u32, @intCast(OUTPUT_CAP)),
-        render(@intCast(INPUT_CAP)),
+        renderImpl(@intCast(INPUT_CAP)),
     );
 }

@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 // Component-specific checks for the Unicode 17 uppercase Content Compliance
 // component. The generic meta-contract (determinism, seed behavior, ordinal
 // and examination protocol discipline) is verified by the shared harness in
@@ -72,8 +73,8 @@ test("duel: components/utf8/unicode-17-uppercase.wasm is fully compliant", async
   const readI32 = (name) => (typeof impl[name] === "function" ? impl[name]() : impl[name].value);
   const wasmUpper = (input) => {
     new Uint8Array(impl.memory.buffer, readI32("input_ptr"), input.length).set(input);
-    const outLen = impl.render(input.length);
-    return Buffer.from(new Uint8Array(impl.memory.buffer, readI32("output_ptr"), outLen));
+    const outLen = qipRenderSize(impl, input.length);
+    return Buffer.from(new Uint8Array(impl.memory.buffer, qipRenderedOutputPointer(impl), outLen));
   };
 
   const { cases, predicates } = await runComplianceComponent(wasmBytes, { impl: wasmUpper });

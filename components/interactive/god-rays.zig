@@ -125,10 +125,6 @@ export fn input_bytes_cap() u32 {
     return 0;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -150,13 +146,25 @@ export fn begin_update_at(now_ms: i64) void {
     phase = .updating;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0) @trap();
     if (phase != .initializing and phase != .ready) @trap();
     _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     renderFrame();
     finishUniforms();
     return OUTPUT_BYTES;
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf[0])),
+        .failed = 0,
+    };
 }
 
 export fn finish_update() i64 {
@@ -608,7 +616,7 @@ test "default preset renders opaque KTX2 frame" {
     phase = .initializing;
     begun_at_ms = 0;
     committed_at_ms = 0;
-    const output_size = render(0);
+    const output_size = renderImpl(0);
     try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), output_size);
     const image = ktx.parse(output_buf[0..output_size]).?;
     try std.testing.expectEqual(@as(u32, RENDER_W), image.width);

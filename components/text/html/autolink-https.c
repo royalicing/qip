@@ -18,8 +18,8 @@ uint32_t input_utf8_cap() {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
+static uint32_t
+output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
@@ -193,7 +193,7 @@ static int write_escaped_attr(uint32_t *out_idx, const unsigned char *s, uint32_
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }
@@ -213,7 +213,7 @@ uint32_t render(uint32_t input_size) {
         unsigned char c = input_buffer[i];
 
         if (in_tag) {
-            if (!write_slice(&out_idx, &c, 1)) return 0;
+            if (!write_slice(&out_idx, &c, 1)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
             if (tag_quote != 0) {
                 if (c == tag_quote) {
                     tag_quote = 0;
@@ -234,7 +234,7 @@ uint32_t render(uint32_t input_size) {
             tag_start = i;
             in_tag = 1;
             tag_quote = 0;
-            if (!write_slice(&out_idx, &c, 1)) return 0;
+            if (!write_slice(&out_idx, &c, 1)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
             i++;
             continue;
         }
@@ -250,21 +250,21 @@ uint32_t render(uint32_t input_size) {
             uint32_t url_end = trim_url_end(input_buffer, start, j);
             uint32_t url_len = url_end - start;
             if (url_len == 8) {
-                if (!write_slice(&out_idx, &c, 1)) return 0;
+                if (!write_slice(&out_idx, &c, 1)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
                 i++;
                 continue;
             }
-            if (!write_slice(&out_idx, (const unsigned char *)"<a href=\"", 9)) return 0;
-            if (!write_escaped_attr(&out_idx, input_buffer + start, url_len)) return 0;
-            if (!write_slice(&out_idx, (const unsigned char *)"\">", 2)) return 0;
-            if (!write_slice(&out_idx, input_buffer + start, url_len)) return 0;
-            if (!write_slice(&out_idx, (const unsigned char *)"</a>", 4)) return 0;
+            if (!write_slice(&out_idx, (const unsigned char *)"<a href=\"", 9)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+            if (!write_escaped_attr(&out_idx, input_buffer + start, url_len)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+            if (!write_slice(&out_idx, (const unsigned char *)"\">", 2)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+            if (!write_slice(&out_idx, input_buffer + start, url_len)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+            if (!write_slice(&out_idx, (const unsigned char *)"</a>", 4)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
             i = url_end;
             continue;
         }
-        if (!write_slice(&out_idx, &c, 1)) return 0;
+        if (!write_slice(&out_idx, &c, 1)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
         i++;
     }
 
-    return out_idx;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(out_idx);
 }

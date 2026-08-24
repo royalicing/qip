@@ -381,7 +381,6 @@ var qipContractExports = []string{
 	"input_ptr",
 	"input_utf8_cap",
 	"input_bytes_cap",
-	"output_ptr",
 	"output_utf8_cap",
 	"output_bytes_cap",
 	"input_content_type_ptr",

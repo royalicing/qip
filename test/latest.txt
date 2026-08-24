@@ -152,7 +152,7 @@ hi
 module: utf8-must-be-valid.wasm
 hello
 module: wasm-to-js.wasm
-const wasmBytes = Uint8Array.from(atob("AGFzbQEAAAABCgJgAAF/YAF/AX8DBgUAAAAAAQUEAQEDAwYdBH8AQYCABAt/AEGAgAQLfwBBgIAIC38AQYCABAsHTwYGbWVtb3J5AgAJaW5wdXRfcHRyAAAOaW5wdXRfdXRmOF9jYXAAAQpvdXRwdXRfcHRyAAIPb3V0cHV0X3V0ZjhfY2FwAAMGcmVuZGVyAAQKewUEACMACwQAIwELBAAjAgsEACMDC2UBAn8jAkLIyrHj9o2LkNcANwMAIwJBCGpB7+SxowY2AgBBDCECIABBAEsEQEEAIQFBByECAkADQCABIABPDQEjAiACaiMAIAFqLQAAOgAAIAFBAWohASACQQFqIQIMAAsLCyACCw=="), c => c.charCodeAt(0));
+const wasmBytes = Uint8Array.from(atob("AGFzbQEAAAABDwNgAAF/YAF/AX9gAX8BfgMGBQAAAAECBQQBAQMDBh0EfwBBgIAEC38AQYCABAt/AEGAgAgLfwBBgIAECwdCBQZtZW1vcnkCAAlpbnB1dF9wdHIAAA5pbnB1dF91dGY4X2NhcAABD291dHB1dF91dGY4X2NhcAACBnJlbmRlcgAECoUBBQQAIwALBAAjAQsEACMDC2UBAn8jAkLIyrHj9o2LkNcANwMAIwJBCGpB7+SxowY2AgBBDCECIABBAEsEQEEAIQFBByECAkADQCABIABPDQEjAiACaiMAIAFqLQAAOgAAIAFBAWohASACQQFqIQIMAAsLCyACCw4AIwKtQiCGIAAQA62ECw=="), c => c.charCodeAt(0));
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const wasmModule = await WebAssembly.compile(wasmBytes);
@@ -187,12 +187,26 @@ export function render(value) {
   const inputCap = i32(e.input_utf8_cap(), "input_utf8_cap");
   if (inputBytes.length > inputCap) throw new Error("input exceeds component capacity: " + inputBytes.length + " > " + inputCap);
   new Uint8Array(e.memory.buffer).set(inputBytes, checkSlice(e.memory, inputPtr, inputBytes.length, "input_ptr"));
-  const outputLen = i32(e.render(inputBytes.length), "render");
+  const renderValue = e.render(inputBytes.length);
+  if (typeof renderValue !== "bigint") throw new Error("render must return i64");
+  const renderResult = BigInt.asUintN(64, renderValue);
+  const outputLen = Number(renderResult & 0xffff_ffffn);
+  if (renderResult >> 63n) {
+    if (typeof e.failure_modes_per_input_offset !== "function") throw new Error("component returned failure without failure_modes_per_input_offset");
+    const failureModes = i32(e.failure_modes_per_input_offset(), "failure_modes_per_input_offset") >>> 0;
+    const error = new Error("component rejected input");
+    error.failureDetail = outputLen;
+    error.failureModesPerInputOffset = failureModes;
+    if (failureModes > 0) {
+      error.inputOffset = Math.floor(outputLen / failureModes);
+      error.failureMode = outputLen % failureModes;
+    }
+    throw error;
+  }
+  const outputPtr = Number((renderResult >> 32n) & 0x7fff_ffffn);
   const outputCap = i32(e.output_utf8_cap(), "output_utf8_cap");
-  if (outputLen < 0) throw new Error("render returned negative output size");
   if (outputLen > outputCap) throw new Error("render output exceeds component capacity: " + outputLen + " > " + outputCap);
-  const outputPtr = i32(e.output_ptr(), "output_ptr");
-  const outputStart = checkSlice(e.memory, outputPtr, outputLen, "output_ptr");
+  const outputStart = checkSlice(e.memory, outputPtr, outputLen, "render");
   const outputBytes = new Uint8Array(e.memory.buffer).slice(outputStart, outputStart + outputLen);
   return textDecoder.decode(outputBytes);
 }

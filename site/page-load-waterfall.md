@@ -4,9 +4,9 @@
 
 Visit a web page and watch the user-goal timeline change as the page shape changes. Toggle landing pages versus search results, server rendering versus SPA rendering, and then vary TLS, CDN assets, API domain/path, cache state, server distance, Wi-Fi quality, device speed, database latency, N+1 queries, chat widgets and UX interruptions.
 
-Playback uses the Timed transaction contract. `commit` returns the next frame
-time while playback is active, and the current transaction time when no wake is
-needed.
+Playback uses the Timed component contract. `finish_update` returns the next
+frame time while playback is active, and the current update time when no wake
+is needed.
 
 <qip-play>
   <source src="/components/interactive/page-load-waterfall.wasm" type="application/wasm" />

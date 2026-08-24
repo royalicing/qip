@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -65,13 +66,13 @@ function encode(bmp, { quality = 85, subsample = 2, background = 0xffffff } = {}
   exports.uniform_set_subsample(subsample);
   exports.uniform_set_background_color(background);
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), bmp.length).set(bmp);
-  const size = exports.render(bmp.length);
+  const size = qipRenderSize(exports, bmp.length);
   assert.ok(size > 100);
   assert.ok(exports.arena_peak_bytes() > 0);
   assert.equal(exports.arena_live_bytes(), 0);
   assert.equal(exports.arena_failed_allocation(), 0);
   assert.equal(exports.arena_free_unmatched_count(), 0);
-  return Buffer.from(new Uint8Array(exports.memory.buffer, exports.output_ptr(), size));
+  return Buffer.from(new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size));
 }
 
 function sof(jpeg) {
@@ -91,9 +92,9 @@ function sof(jpeg) {
 function decodeJpeg(jpeg) {
   const { exports } = new WebAssembly.Instance(decoderModule, {});
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), jpeg.length).set(jpeg);
-  const size = exports.render(jpeg.length);
+  const size = qipRenderSize(exports, jpeg.length);
   assert.ok(size > 54);
-  return Buffer.from(new Uint8Array(exports.memory.buffer, exports.output_ptr(), size));
+  return Buffer.from(new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size));
 }
 
 test("MozJPEG emits deterministic baseline JPEG that QIP decodes", () => {

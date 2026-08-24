@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -18,7 +19,7 @@ function instantiate(bytes) {
 }
 
 function digest(exports, size) {
-  const bytes = new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  const bytes = new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
   return createHash("sha256").update(bytes).digest("hex");
 }
 
@@ -39,7 +40,7 @@ for (const [name, width, height, key] of specs) {
   test(`${name} retains a selection until a separate render`, () => {
     const exports = instantiate(modules[name]);
     assertABI(exports);
-    const size = exports.render(0);
+    const size = qipRenderSize(exports, 0);
     assert.equal(size, 224 + width * height * 4);
     const initial = digest(exports, size);
 
@@ -49,7 +50,7 @@ for (const [name, width, height, key] of specs) {
     assert.equal(exports.key_event(key.codePointAt(0), 1), 1);
     assert.equal(exports.finish_update(), 1n);
     assert.equal(digest(exports, size), initial);
-    assert.equal(exports.render(0), size);
+    assert.equal(qipRenderSize(exports, 0), size);
     assert.notEqual(digest(exports, size), initial);
   });
 }
@@ -58,10 +59,10 @@ test("all three components trap on update lifecycle misuse", () => {
   for (const bytes of Object.values(modules)) {
     const exports = instantiate(bytes);
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
-    exports.render(0);
+    qipRenderSize(exports, 0);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     exports.finish_update();
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

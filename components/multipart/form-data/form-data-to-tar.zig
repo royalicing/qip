@@ -27,10 +27,6 @@ export fn input_bytes_cap() u32 {
     return @intCast(INPUT_CAP);
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_bytes_cap() u32 {
     return @intCast(OUTPUT_CAP);
 }
@@ -269,7 +265,19 @@ fn run(input: []const u8) ConvertError!usize {
     }
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size > INPUT_CAP) @trap();
     return @intCast(run(input_buf[0..input_size]) catch @trap());
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

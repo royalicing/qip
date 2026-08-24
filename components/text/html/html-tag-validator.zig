@@ -3,12 +3,14 @@ const std = @import("std");
 const INPUT_CAP: usize = 64 * 1024;
 const OUTPUT_CAP: usize = 16;
 
-const no_render: i64 = 1;
-const invalid_input: i64 = -0x4000000000000000;
-
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
-var pending_commit_result: i64 = no_render;
+
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
 
 export fn input_ptr() u32 {
     return @intCast(@intFromPtr(&input_buf));
@@ -16,10 +18,6 @@ export fn input_ptr() u32 {
 
 export fn input_utf8_cap() u32 {
     return INPUT_CAP;
-}
-
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
 }
 
 export fn output_utf8_cap() u32 {
@@ -114,55 +112,63 @@ fn emit(value: []const u8) u32 {
     return @intCast(value.len);
 }
 
-export fn render(input_size: u32) u32 {
+export fn failure_modes_per_input_offset() u32 {
+    return 0;
+}
+
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+fn renderOutcome(input_size: u32) RenderOutcome {
     const size: usize = @intCast(input_size);
-    if (pending_commit_result != no_render) @trap();
     if (size > INPUT_CAP) @trap();
     const input = input_buf[0..size];
 
     // The input_utf8_cap export makes valid UTF-8 a caller precondition.
     if (!validUtf8(input)) @trap();
 
-    pending_commit_result = invalid_input;
-    if (size == 0) return 0;
+    if (size == 0) return .{ .output_size_or_failure = 0, .output_ptr = 0, .failed = 1 };
     if (isBuiltin(input)) {
-        pending_commit_result = 0;
-        return emit("builtin");
+        return .{ .output_size_or_failure = emit("builtin"), .output_ptr = @intFromPtr(&output_buf), .failed = 0 };
     }
     if (isCustom(input)) {
-        pending_commit_result = 0;
-        return emit("custom");
+        return .{ .output_size_or_failure = emit("custom"), .output_ptr = @intFromPtr(&output_buf), .failed = 0 };
     }
 
     // TODO: Report the first byte which rules out a built-in or custom name.
-    return 0;
+    return .{ .output_size_or_failure = 0, .output_ptr = 0, .failed = 1 };
 }
 
-/// Close the render transaction. This function does not trap.
-export fn commit() i64 {
-    const result = if (pending_commit_result == no_render)
-        invalid_input
-    else
-        pending_commit_result;
-    pending_commit_result = no_render;
-    return result;
+export fn render(input_size: u32) RenderResult {
+    const result = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = result.output_size_or_failure,
+        .output_ptr = if (result.failed == 1) 0 else @intCast(result.output_ptr),
+        .failed = result.failed,
+    };
 }
 
 test "classifies accepted names and recovers after rejection" {
     const builtin = "section";
     @memcpy(input_buf[0..builtin.len], builtin);
-    try std.testing.expectEqual(@as(u32, 7), render(builtin.len));
+    const accepted_builtin = renderOutcome(builtin.len);
+    try std.testing.expectEqual(@as(u1, 0), accepted_builtin.failed);
+    try std.testing.expectEqual(@as(u32, 7), accepted_builtin.output_size_or_failure);
     try std.testing.expectEqualStrings("builtin", output_buf[0..7]);
-    try std.testing.expectEqual(@as(i64, 0), commit());
 
     const invalid = "frobnicate";
     @memcpy(input_buf[0..invalid.len], invalid);
-    try std.testing.expectEqual(@as(u32, 0), render(invalid.len));
-    try std.testing.expectEqual(invalid_input, commit());
+    const rejected = renderOutcome(invalid.len);
+    try std.testing.expectEqual(@as(u1, 1), rejected.failed);
+    try std.testing.expectEqual(@as(u32, 0), rejected.output_size_or_failure);
 
     const custom = "qip-widget";
     @memcpy(input_buf[0..custom.len], custom);
-    try std.testing.expectEqual(@as(u32, 6), render(custom.len));
+    const recovered = renderOutcome(custom.len);
+    try std.testing.expectEqual(@as(u1, 0), recovered.failed);
+    try std.testing.expectEqual(@as(u32, 6), recovered.output_size_or_failure);
     try std.testing.expectEqualStrings("custom", output_buf[0..6]);
-    try std.testing.expectEqual(@as(i64, 0), commit());
 }

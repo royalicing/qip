@@ -8,10 +8,6 @@ export fn input_utf8_cap() u32 {
     return accessibility.INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&accessibility.output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return accessibility.OUTPUT_CAP;
 }
@@ -32,6 +28,18 @@ export fn output_content_type_size() u32 {
     return accessibility.OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     return accessibility.render(input_size);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&accessibility.output_buf)),
+        .failed = 0,
+    };
 }

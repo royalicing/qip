@@ -25,7 +25,6 @@ const (
 	exportInputPtr         = "input_ptr"
 	exportInputUTF8Cap     = "input_utf8_cap"
 	exportRender           = "render"
-	exportOutputPtr        = "output_ptr"
 	exportOutputUTF8Cap    = "output_utf8_cap"
 	exportInputKeyPtr      = "input_key_ptr"
 	exportInputKeySize     = "input_key_size"
@@ -40,7 +39,6 @@ type formModule struct {
 	fnInputPtr       api.Function
 	fnInputUTF8Cap   api.Function
 	fnRender         api.Function
-	fnOutputPtr      api.Function
 	fnOutputUTF8Cap  api.Function
 	fnInputKeyPtr    api.Function
 	fnInputKeySize   api.Function
@@ -137,7 +135,6 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 		{name: exportInputPtr},
 		{name: exportInputUTF8Cap},
 		{name: exportRender},
-		{name: exportOutputPtr},
 		{name: exportOutputUTF8Cap},
 		{name: exportInputKeyPtr},
 		{name: exportInputKeySize},
@@ -160,8 +157,6 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 			out.fnInputUTF8Cap = fn
 		case exportRender:
 			out.fnRender = fn
-		case exportOutputPtr:
-			out.fnOutputPtr = fn
 		case exportOutputUTF8Cap:
 			out.fnOutputUTF8Cap = fn
 		case exportInputKeyPtr:
@@ -183,7 +178,7 @@ func resolveFormModule(mod api.Module) (formModule, error) {
 
 func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, stdout io.Writer) error {
 	reader := bufio.NewReader(stdin)
-	var lastOutputSize int32
+	var lastRender formRenderResult
 	hasRun := false
 
 	for {
@@ -204,13 +199,13 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 		key = strings.TrimSpace(key)
 		if key == "" {
 			if !hasRun {
-				lastOutputSize, err = callRenderSize(ctx, fm.fnRender, 0)
+				lastRender, err = callFormRender(ctx, fm.fnRender, 0)
 				if err != nil {
 					return err
 				}
 				hasRun = true
 			}
-			outBytes, err := readOutputBytes(ctx, fm, lastOutputSize)
+			outBytes, err := readOutputBytes(ctx, fm, lastRender)
 			if err != nil {
 				return err
 			}
@@ -267,7 +262,7 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 			return errors.New("failed to write form input to wasm memory")
 		}
 
-		lastOutputSize, err = callRenderSize(ctx, fm.fnRender, int32(len(valueBytes)))
+		lastRender, err = callFormRender(ctx, fm.fnRender, int32(len(valueBytes)))
 		if err != nil {
 			return err
 		}
@@ -275,29 +270,28 @@ func runFormInteractive(ctx context.Context, fm formModule, stdin io.Reader, std
 	}
 }
 
-func readOutputBytes(ctx context.Context, fm formModule, outputSize int32) ([]byte, error) {
-	if outputSize < 0 {
-		return nil, fmt.Errorf("render returned negative output size: %d", outputSize)
-	}
+type formRenderResult struct {
+	outputPtr  uint32
+	outputSize uint32
+}
+
+func readOutputBytes(ctx context.Context, fm formModule, rendered formRenderResult) ([]byte, error) {
+	outputSize := rendered.outputSize
 	if outputSize == 0 {
 		return nil, nil
 	}
 
-	outPtr, err := callNoArgI32(ctx, fm.fnOutputPtr, exportOutputPtr)
-	if err != nil {
-		return nil, err
-	}
 	outCap, err := callNoArgI32(ctx, fm.fnOutputUTF8Cap, exportOutputUTF8Cap)
 	if err != nil {
 		return nil, err
 	}
-	if outPtr < 0 || outCap < 0 {
-		return nil, fmt.Errorf("module returned invalid output memory values: ptr=%d cap=%d", outPtr, outCap)
+	if outCap < 0 {
+		return nil, fmt.Errorf("module returned invalid output capacity: %d", outCap)
 	}
-	if outputSize > outCap {
+	if outputSize > uint32(outCap) {
 		return nil, fmt.Errorf("render output size exceeds output_utf8_cap (%d > %d)", outputSize, outCap)
 	}
-	b, ok := fm.mem.Read(uint32(outPtr), uint32(outputSize))
+	b, ok := fm.mem.Read(rendered.outputPtr, outputSize)
 	if !ok {
 		return nil, errors.New("output bytes exceed wasm memory bounds")
 	}
@@ -334,15 +328,22 @@ func readExportedString(ctx context.Context, mem api.Memory, ptrFn api.Function,
 	return string(b), nil
 }
 
-func callRenderSize(ctx context.Context, fn api.Function, inputSize int32) (int32, error) {
+func callFormRender(ctx context.Context, fn api.Function, inputSize int32) (formRenderResult, error) {
 	res, err := fn.Call(ctx, uint64(uint32(inputSize)))
 	if err != nil {
-		return 0, fmt.Errorf("render() failed: %w", err)
+		return formRenderResult{}, fmt.Errorf("render() failed: %w", err)
 	}
 	if len(res) != 1 {
-		return 0, errors.New("render() returned unexpected result arity")
+		return formRenderResult{}, errors.New("render() returned unexpected result arity")
 	}
-	return int32(uint32(res[0])), nil
+	bits := res[0]
+	if bits&(uint64(1)<<63) != 0 {
+		return formRenderResult{}, errors.New("form render rejected input")
+	}
+	return formRenderResult{
+		outputPtr:  uint32((bits >> 32) & 0x7fff_ffff),
+		outputSize: uint32(bits),
+	}, nil
 }
 
 func callNoArgI32(ctx context.Context, fn api.Function, name string) (int32, error) {

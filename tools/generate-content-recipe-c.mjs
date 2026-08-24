@@ -353,9 +353,11 @@ function wasm2cSource() {
   input_offset = ${prefix}_input_ptr(&r->step_${n});
   if ((uint64_t)input_offset + size > memory->size) return 0;
   memcpy(memory->data + input_offset, bytes, size);
-  size = ${prefix}_render(&r->step_${n}, size);
+  result = ${prefix}_render(&r->step_${n}, size);
+  if ((result >> 63) != 0) return 0;
+  size = (uint32_t)result;
   if (size > ${outputCap}(&r->step_${n})) return 0;
-  output_offset = ${prefix}_output_ptr(&r->step_${n});
+  output_offset = (uint32_t)((result >> 32) & UINT64_C(0x7fffffff));
   if ((uint64_t)output_offset + size > memory->size) return 0;
   bytes = memory->data + output_offset;`;
     })
@@ -402,6 +404,7 @@ static int recipe_render(
   const uint8_t *bytes = input;
   uint32_t size = input_size;
   uint32_t input_offset, output_offset;
+  uint64_t result;
   wasm_rt_memory_t *memory;
 ${renders}
   *output = bytes;

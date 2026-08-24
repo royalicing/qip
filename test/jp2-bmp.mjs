@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -51,19 +52,19 @@ test("JP2 decodes losslessly to the expected 25 MP BGRA BMP", async () => {
   );
   input.set(fixture);
   input[0] ^= 1;
-  assert.equal(exports.render(fixture.length), 0);
+  assert.equal(qipRenderSize(exports, fixture.length), 0);
   input.set(fixture);
 
-  const outputSize = exports.render(fixture.length);
+  const outputSize = qipRenderSize(exports, fixture.length);
   assert.equal(outputSize, 100_000_054);
   const output = new Uint8Array(
     exports.memory.buffer,
-    exports.output_ptr(),
+    qipRenderedOutputPointer(exports),
     outputSize,
   );
   const view = new DataView(
     exports.memory.buffer,
-    exports.output_ptr(),
+    qipRenderedOutputPointer(exports),
     outputSize,
   );
   assert.equal(String.fromCharCode(output[0], output[1]), "BM");

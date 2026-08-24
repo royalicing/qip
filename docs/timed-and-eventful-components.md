@@ -6,10 +6,10 @@ presentation as separate operations:
 
 ```text
 Content                 render input -> output
-Fallible Content        render input -> provisional output -> commit input
+Fallible Content        render input -> accepted output or rejection
 Timed                    begin_update_at -> finish_update
 Eventful                 Timed + key, pointer, or other events
-Presentation             uniforms -> render committed state
+Presentation             uniforms -> render current state
 ```
 
 A component first initializes as Content at time zero. After initialization,
@@ -26,7 +26,7 @@ God Rays is Timed but has no event exports.
 
 `components/interactive/gif-player.wasm` is a Timed component with fallible
 Content initialization. It declares `image/gif` input, validates and indexes
-the complete animation before `commit` accepts it, and renders canonical KTX2.
+the complete animation before `render` accepts it, and renders canonical KTX2.
 This up-front work means a later update cannot discover a malformed frame and
 need a failure path. The player accepts GIF87a and GIF89a files up to 4 MiB,
 256 frames, 2048 pixels in either dimension, and 1,048,576 logical-screen
@@ -38,7 +38,8 @@ skipping that block would change the animation.
 
 ## Initialization Has Two Alternatives
 
-An infallible initialization does not export `commit`. Its state machine is:
+An infallible initialization does not export
+`failure_modes_per_input_offset`. Its state machine is:
 
 ```text
 initializing
@@ -49,28 +50,22 @@ If `render` returns, the returned output is valid and initialization is
 complete. A trap means that the host broke a precondition or the component
 failed unexpectedly. The host discards that instance.
 
-A component which can reject allowed source input exports `commit`. It uses a
-different initialization state machine:
+A component which can reject allowed source input exports
+`failure_modes_per_input_offset`. It uses this initialization state machine:
 
 ```text
 initializing
-  `-- uniforms -> render(input_size) --> awaiting_input_commit
-
-awaiting_input_commit
-  |-- commit accepts --> ready
-  `-- commit rejects --> initializing
+  |-- uniforms -> render accepts --> ready
+  `-- uniforms -> render rejects --> initializing
 ```
 
-`render` writes provisional output. The host reads it only after `commit`
-accepts. Rejection is for correctable source input, such as a validator finding
+The host reads output only after `render` accepts. Rejection is for correctable
+source input, such as a validator finding
 malformed data inside its declared input domain. It is not for key presses,
 pointer actions, or host lifecycle mistakes.
 
-These alternatives do not share a combined initialization phase. The
-commit-less component cannot reject and recover. The fallible component must
-retain its pending input result until `commit`, which must return without
-trapping. Both alternatives converge on `ready` after successful
-initialization.
+The component makes the acceptance decision before `render` returns. Both
+alternatives converge on `ready` after successful initialization.
 
 Initialization occurs once per instance. This revision does not use
 `begin_update_at(0)` for reset. A host creates a fresh instance when it needs a
@@ -269,8 +264,8 @@ times and wake deadlines so each component can choose its own method.
 `components/interactive/gif-player.zig` demonstrates capability composition:
 
 1. The host supplies an `image/gif` source to the Content `render` call.
-2. `commit` rejects malformed or unsupported GIF data without destroying the
-   instance, or accepts the decoded first frame.
+2. `render` rejects malformed or unsupported GIF data without destroying the
+   instance, or accepts and returns the decoded first frame.
 3. A Content-only host can stop there and use that KTX2 output.
 4. A Timed host calls `begin_update_at` and `finish_update` to select later GIF
    frames and receive the next frame deadline.
@@ -282,7 +277,7 @@ components. It does not implement superseded alpha ABIs.
 
 ## Migration TODO
 
-- [x] Implement the commit-less initialization and common update state machine
+- [x] Implement infallible initialization and the common update state machine
   in `calculator`, `snake`, `god-rays-optimized`, `tic-tac-toe-sun-moon`,
   `spreadsheet`, and `side-scroller-platformer`.
 - [x] Separate `render(0)` from updates and keep output unchanged until render.
@@ -291,7 +286,7 @@ components. It does not implement superseded alpha ABIs.
 - [x] Test regular and irregular fixed-step schedules, exact event times, late
   wakes, and bounded catch-up.
 - [x] Add one Timed component with fallible Content initialization to exercise
-  `render(input_size) -> commit() -> bootstrap update` in a real component.
+  `render(input_size) -> bootstrap update` in a real component.
 - [x] Make uniforms optional overrides with authored defaults, so hosts do not
   need to discover or prove complete update and presentation sets.
 - [x] Port every repository Interactive component to

@@ -275,7 +275,7 @@ time_t time(time_t* value) {
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 #ifdef QIP_AVIF_DECODE_TO_KTX2
@@ -361,7 +361,7 @@ static int has_transparency(const uint8_t* pixels, size_t pixel_bytes) {
 }
 
 #ifdef QIP_AVIF_DECODE_TO_KTX2
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
   avifDecoder* decoder = NULL;
   avifRGBImage rgb;
@@ -369,9 +369,9 @@ uint32_t render(uint32_t input_size_value) {
   size_t output_size = 0;
 
   arena_reset();
-  if (input_size == 0 || input_size > INPUT_CAP) return 0;
+  if (input_size == 0 || input_size > INPUT_CAP) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   decoder = avifDecoderCreate();
-  if (decoder == NULL) return 0;
+  if (decoder == NULL) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   decoder->codecChoice = AVIF_CODEC_CHOICE_AOM;
   decoder->maxThreads = 1;
   decoder->allowProgressive = AVIF_FALSE;
@@ -422,11 +422,11 @@ uint32_t render(uint32_t input_size_value) {
 
 cleanup_decoder:
   avifDecoderDestroy(decoder);
-  if (result != AVIF_RESULT_OK || output_size > OUTPUT_CAP) return 0;
-  return (uint32_t)output_size;
+  if (result != AVIF_RESULT_OK || output_size > OUTPUT_CAP) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)output_size);
 }
 #else
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
 #ifndef QIP_AVIF_INPUT_KTX2_SRGB8_EITHER
   uint32_t pixel_offset;
@@ -453,12 +453,12 @@ uint32_t render(uint32_t input_size_value) {
   size_t output_size = 0;
 
   arena_reset();
-  if (input_size > INPUT_CAP) return 0;
+  if (input_size > INPUT_CAP) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
 #ifdef QIP_AVIF_INPUT_KTX2_SRGB8_EITHER
   if (!qip_ktx2_srgb8_parse(input_buf, input_size, &ktx_image) ||
       ktx_image.width > MAX_DIMENSION || ktx_image.height > MAX_DIMENSION ||
       (uint64_t)ktx_image.width * ktx_image.height > MAX_PIXELS) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   width = (int32_t)ktx_image.width;
   height = ktx_image.height;
@@ -466,7 +466,7 @@ uint32_t render(uint32_t input_size_value) {
   row_bytes = (size_t)width * 4u;
   pixels = ktx_image.pixels;
 #else
-  if (input_size < 54 || input_buf[0] != 'B' || input_buf[1] != 'M') return 0;
+  if (input_size < 54 || input_buf[0] != 'B' || input_buf[1] != 'M') return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   pixel_offset = read_u32_le(input_buf + 10);
   dib_size = read_u32_le(input_buf + 14);
   width_u = read_u32_le(input_buf + 18);
@@ -479,7 +479,7 @@ uint32_t render(uint32_t input_size_value) {
       read_u16_le(input_buf + 28) != 32 || width <= 0 ||
       (uint32_t)width > MAX_DIMENSION || height_signed == 0 ||
       height_signed == INT32_MIN) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   if (compression != 0 &&
       (compression != 3 || dib_size < 124 || pixel_offset < 138 ||
@@ -487,18 +487,18 @@ uint32_t render(uint32_t input_size_value) {
        read_u32_le(input_buf + 58) != 0x0000ff00u ||
        read_u32_le(input_buf + 62) != 0x000000ffu ||
        read_u32_le(input_buf + 66) != 0xff000000u)) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   height = (uint32_t)(height_signed < 0 ? -height_signed : height_signed);
   if (height > MAX_DIMENSION ||
       (uint64_t)(uint32_t)width * height > MAX_PIXELS ||
       (size_t)width > SIZE_MAX / 4u / height) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   row_bytes = (size_t)width * 4u;
   pixel_bytes = row_bytes * height;
   if (pixel_offset > input_size || pixel_bytes > input_size - pixel_offset) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
 
   // The input is disposable. Move pixels to an aligned base and normalize
@@ -520,7 +520,7 @@ uint32_t render(uint32_t input_size_value) {
   transparent = has_transparency(pixels, pixel_bytes);
 
   image = avifImageCreate(width, height, 8, pixel_format());
-  if (image == NULL) return 0;
+  if (image == NULL) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   // Both accepted input profiles contain BT.709-primary sRGB samples. Record
   // that interpretation explicitly instead of emitting unspecified CICP.
   // libavif's RGB-to-YUV path uses BT.601 matrix coefficients for ordinary
@@ -559,7 +559,7 @@ cleanup:
   avifRWDataFree(&encoded);
   if (encoder != NULL) avifEncoderDestroy(encoder);
   if (image != NULL) avifImageDestroy(image);
-  if (result != AVIF_RESULT_OK || output_size > OUTPUT_CAP) return 0;
-  return (uint32_t)output_size;
+  if (result != AVIF_RESULT_OK || output_size > OUTPUT_CAP) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)output_size);
 }
 #endif

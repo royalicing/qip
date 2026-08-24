@@ -14,10 +14,6 @@ export fn input_utf8_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -231,10 +227,22 @@ fn extractAll(input: []const u8, output: []u8) u32 {
     return @as(u32, @intCast(out));
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     return extractAll(input_buf[0..input_size], output_buf[0..]);
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "extracts watch URL id" {

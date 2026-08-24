@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -18,8 +19,8 @@ async function generate(csv) {
   const input = encoder.encode(csv);
   assert.ok(input.length <= exports.input_utf8_cap());
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), input.length).set(input);
-  const outputLength = exports.render(input.length);
-  return decoder.decode(new Uint8Array(exports.memory.buffer, exports.output_ptr(), outputLength));
+  const outputLength = qipRenderSize(exports, input.length);
+  return decoder.decode(new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), outputLength));
 }
 
 test("generated browser JavaScript runs a multi-component recipe", async () => {

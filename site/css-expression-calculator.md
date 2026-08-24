@@ -149,8 +149,10 @@ function calculate() {
     const inputPointer = exports.input_ptr();
     if (bytes.length > exports.input_utf8_cap()) throw new Error("Expression is too long.");
     new Uint8Array(exports.memory.buffer, inputPointer, bytes.length).set(bytes);
-    const outputLength = exports.render(bytes.length);
-    const outputPointer = exports.output_ptr();
+    const packed = BigInt.asUintN(64, exports.render(bytes.length));
+    if ((packed >> 63n) !== 0n) throw new Error("Expression is invalid.");
+    const outputLength = Number(packed & 0xffff_ffffn);
+    const outputPointer = Number((packed >> 32n) & 0x7fff_ffffn);
     const computed = decoder.decode(new Uint8Array(exports.memory.buffer, outputPointer, outputLength));
     result.textContent = computed;
     resultPanel.classList.remove("mobile-value-error");

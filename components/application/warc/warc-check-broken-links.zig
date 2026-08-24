@@ -24,11 +24,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    // Pass-through: successful validation returns the original input bytes.
-    return @as(u32, @intCast(@intFromPtr(&input_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
@@ -723,7 +718,7 @@ fn validateInternalLinks(input: []const u8) ValidationSummary {
     };
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 
@@ -731,6 +726,18 @@ export fn render(input_size_u32: u32) u32 {
     const summary = validateInternalLinks(input);
     if (summary.broken_links != 0) @trap();
     return input_size_u32;
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&input_buf)),
+        .failed = 0,
+    };
 }
 
 fn appendWARCRecord(
@@ -789,7 +796,7 @@ test "all internal links resolve" {
     );
 
     @memcpy(input_buf[0..n], build_buf[0..n]);
-    const out_len = render(@as(u32, @intCast(n)));
+    const out_len = renderImpl(@as(u32, @intCast(n)));
     try std.testing.expectEqual(@as(u32, @intCast(n)), out_len);
     try std.testing.expectEqualSlices(u8, build_buf[0..n], input_buf[0..@as(usize, @intCast(out_len))]);
 }

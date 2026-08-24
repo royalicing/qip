@@ -61,9 +61,6 @@ const Instr = wasm_reader.Instr;
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
-const NO_RENDER: i64 = 1;
-const ERROR_BIT: u64 = 1 << 63;
-const INVALID_INPUT_BIT: u64 = 1 << 62;
 const MAX_DEFINED_FUNCS: usize = 8192;
 const MAX_TYPES: usize = MAX_DEFINED_FUNCS;
 const MAX_GLOBALS: usize = MAX_DEFINED_FUNCS;
@@ -73,7 +70,12 @@ const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var pending_commit_result: i64 = NO_RENDER;
+
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
 
 var edge_head_buf: [MAX_DEFINED_FUNCS]i32 = undefined;
 var edge_to_buf: [MAX_CALL_EDGES]u32 = undefined;
@@ -166,10 +168,6 @@ export fn input_ptr() u32 {
 
 export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
-}
-
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
 
 export fn output_bytes_cap() u32 {
@@ -752,25 +750,32 @@ fn checkModule(wasm: []const u8) CheckError!void {
     try validateContentTypePair(metadata.output_ptr, metadata.output_size, function_body_buf[0..defined_func_count], type_count, global_count, memory_min_bytes);
 }
 
-export fn render(input_size: u32) u32 {
-    const input_len: usize = @intCast(input_size);
-    if (pending_commit_result != NO_RENDER) @trap();
-    if (input_len > INPUT_CAP) @trap();
-
-    pending_commit_result = @bitCast(ERROR_BIT | INVALID_INPUT_BIT);
-    checkModule(input_buf[0..input_len]) catch return 0;
-    pending_commit_result = 0;
-    return input_size;
+export fn failure_modes_per_input_offset() u32 {
+    return 0;
 }
 
-/// Close the policy-check transaction. This function does not trap.
-export fn commit() i64 {
-    const result = if (pending_commit_result == NO_RENDER)
-        @as(i64, @bitCast(ERROR_BIT | INVALID_INPUT_BIT))
-    else
-        pending_commit_result;
-    pending_commit_result = NO_RENDER;
-    return result;
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+fn renderOutcome(input_size: u32) RenderOutcome {
+    if (input_size > INPUT_CAP) @trap();
+
+    checkModule(input_buf[0..input_size]) catch {
+        return .{ .output_size_or_failure = 0, .output_ptr = 0, .failed = 1 };
+    };
+    return .{ .output_size_or_failure = input_size, .output_ptr = @intFromPtr(&input_buf), .failed = 0 };
+}
+
+export fn render(input_size: u32) RenderResult {
+    const result = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = result.output_size_or_failure,
+        .output_ptr = if (result.failed == 1) 0 else @intCast(result.output_ptr),
+        .failed = result.failed,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -798,13 +803,14 @@ const no_memory_max_module = [_]u8{
 
 const two_memory_sections_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
-    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+    0x05, 0x04, 0x01, 0x01, 0x01, 0x01, 0x05, 0x04,
+    0x01, 0x01, 0x01, 0x01,
 };
 
 const two_memories_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    0x05, 0x07, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x05, 0x07, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x01,
 };
 
 const shared_memory_module = [_]u8{
@@ -819,29 +825,26 @@ const memory64_module = [_]u8{
 
 const start_function_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
-    0x03, 0x02, 0x01, 0x00,
-    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
-    0x08, 0x01, 0x00,
-    0x0a, 0x04, 0x01, 0x02, 0x00, 0x0b,
+    0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03, 0x02,
+    0x01, 0x00, 0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+    0x08, 0x01, 0x00, 0x0a, 0x04, 0x01, 0x02, 0x00,
+    0x0b,
 };
 
 const recursion_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
-    0x03, 0x03, 0x02, 0x00, 0x00,
-    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
-    0x0a, 0x0b, 0x02,
-    0x04, 0x00, 0x10, 0x01, 0x0b,
-    0x04, 0x00, 0x10, 0x00, 0x0b,
+    0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03, 0x03,
+    0x02, 0x00, 0x00, 0x05, 0x04, 0x01, 0x01, 0x01,
+    0x01, 0x0a, 0x0b, 0x02, 0x04, 0x00, 0x10, 0x01,
+    0x0b, 0x04, 0x00, 0x10, 0x00, 0x0b,
 };
 
 const memory_grow_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f,
-    0x03, 0x02, 0x01, 0x00,
-    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
-    0x0a, 0x08, 0x01, 0x06, 0x00, 0x41, 0x00, 0x40, 0x00, 0x0b,
+    0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, 0x03,
+    0x02, 0x01, 0x00, 0x05, 0x04, 0x01, 0x01, 0x01,
+    0x01, 0x0a, 0x08, 0x01, 0x06, 0x00, 0x41, 0x00,
+    0x40, 0x00, 0x0b,
 };
 
 // (func (param i32) (result i32) (i32.trunc_sat_f32_s (f32.const 1.5)))
@@ -919,13 +922,14 @@ test "accepts a module with fixed memory and no calls" {
 
 test "render rejects a policy failure and the instance recovers" {
     @memcpy(input_buf[0..atomics_module.len], &atomics_module);
-    try std.testing.expectEqual(@as(u32, 0), render(atomics_module.len));
-    try std.testing.expect(commit() < 0);
+    const rejected = renderOutcome(atomics_module.len);
+    try std.testing.expectEqual(@as(u1, 1), rejected.failed);
 
     @memcpy(input_buf[0..ok_module.len], &ok_module);
-    try std.testing.expectEqual(@as(u32, ok_module.len), render(ok_module.len));
+    const accepted = renderOutcome(ok_module.len);
+    try std.testing.expectEqual(@as(u1, 0), accepted.failed);
+    try std.testing.expectEqual(@as(u32, ok_module.len), accepted.output_size_or_failure);
     try std.testing.expectEqualSlices(u8, &ok_module, input_buf[0..ok_module.len]);
-    try std.testing.expectEqual(@as(i64, 0), commit());
 }
 
 test "accepts static Content buffer metadata with disjoint active data" {

@@ -83,7 +83,8 @@ qip comply components/utf8/base64-decode.wasm --with compliance/base64-decode.co
 
 2. Static qip contract checks (always, when qip exports are present):
 
-- checks exported qip contract functions such as `input_ptr`, `output_ptr`, and capacity exports
+- checks exported QIP contract functions such as `input_ptr`, capacity exports,
+  and optional failure metadata
 - function exports must be vanilla sequences: no calls, no loops, no dynamic control flow
 
 3. Optional behavior checks (`--with`):
@@ -97,15 +98,14 @@ qip comply components/utf8/base64-decode.wasm --with compliance/base64-decode.co
 
 A Content component requires:
 
-- `render(i32) -> i32`
+- `render(i32) -> i64`
 - `input_ptr() -> i32` as an exported function
 - `input_utf8_cap() -> i32` or `input_bytes_cap() -> i32`
-- `output_ptr() -> i32` as an exported function
 - `output_utf8_cap() -> i32` or `output_bytes_cap() -> i32`
 
-It may export `commit() -> i64`. Compliance calls it after each normal
-`render`. A negative result is rejection; a trapping `commit` is a contract
-failure.
+It may export `failure_modes_per_input_offset() -> i32`. Its presence declares
+that `render` can reject input without trapping. See the [Content Component
+Contract](/docs/content-component#optional-failure-detail).
 
 ## Assertions
 
@@ -138,15 +138,15 @@ Compliance oracle therefore needs no failure-detail exports.
 
 ## Content Rejection
 
-`commit` is the acceptance boundary for Content components that can reject.
-Ordinary invalid-input assertions use:
+The `render` result is the acceptance boundary for Content components that can
+reject. Ordinary invalid-input assertions use:
 
 ```text
 must_reject(ordinal, input_ptr, input_size) -> i32
 ```
 
-The target must export `commit`. The bridge writes the input, calls `render`,
-requires it to return normally, then calls `commit` and requires rejection. A
+The target must export `failure_modes_per_input_offset`. The bridge writes the
+input, calls `render`, and requires a normal return with the failure bit set. A
 trap fails `must_reject`; it is not an alternate successful outcome.
 
 Choose the assertion from the target's declared input domain. A UTF-8 validator
@@ -156,17 +156,14 @@ precondition and may use `must_trap`. A valid-format PNG transform may require a
 PNG validator earlier in its recipe instead of accepting arbitrary claimed-PNG
 bytes itself.
 
-Every negative Content `commit` result satisfies `must_reject`. The bridge may
-record its raw value as debug information, but the oracle does not match a
-specific negative value. `commit` must not trap.
+Every Content result with bit 63 set satisfies `must_reject`. The bridge may
+record its failure detail as debug information, but the oracle does not match a
+specific detail value.
 
-Successful assertions call `commit` when the target exports it.
-`must_render_exactly` and `must_render_into` inspect provisional output only
-after acceptance. For a target without `commit`, the render output is
-immediately valid when `render` returns. A trap still fails the successful
-assertion unless a separate case explicitly expects it. This distinguishes
-accepted zero-byte output from rejection without treating a missing export as a
-nontrapping declaration.
+`must_render_exactly` and `must_render_into` inspect output only after an
+accepted render. A trap still fails the successful assertion unless a separate
+case explicitly expects it. This distinguishes accepted zero-byte output from
+rejection.
 
 Uniform reset does not add state to the Compliance bridge.
 `set_uniform_u32` applies one value immediately and returns the value applied by
@@ -335,7 +332,7 @@ comments. Archive readers sort paths lexicographically before validation, so TAR
 entry order does not affect the result.
 
 A `must_reject` case also contains exactly `input`. The host requires `render`
-to return normally and `commit` to return a negative value.
+to return normally with the failure bit set.
 
 ## Authoring Strategies
 

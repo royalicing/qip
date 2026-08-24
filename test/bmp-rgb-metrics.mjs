@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -71,8 +72,8 @@ async function loadComponent(t) {
 
 function render(exports, input) {
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), input.length).set(input);
-  const size = exports.render(input.length);
-  return Buffer.from(exports.memory.buffer, exports.output_ptr(), size).toString("utf8");
+  const size = qipRenderSize(exports, input.length);
+  return Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), size).toString("utf8");
 }
 
 function compare(exports, first, second, reversed = false) {

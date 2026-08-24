@@ -19,8 +19,8 @@ uint32_t input_utf8_cap() {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
+static uint32_t
+output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
@@ -697,7 +697,7 @@ static void finalize_anchor(TextState *st, int emit, int name_mode,
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     uint32_t pos = 0;
     int inside_a = 0;
     int emit = 0;
@@ -820,5 +820,5 @@ uint32_t render(uint32_t input_size) {
                         labelledby_start, labelledby_len, input_size);
     }
 
-    return state.out;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(state.out);
 }

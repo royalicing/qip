@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/royalicing/qip/internal/wasmruntime"
+	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
 
@@ -60,9 +61,11 @@ type bridgeFailure struct {
 }
 
 type bridgeState struct {
+	runtime                wazero.Runtime
+	implWasm               []byte
 	implMod                api.Module
 	renderFn               api.Function
-	commitFn               api.Function
+	hasFailure             bool
 	implInPtr              uint32
 	implInCap              uint32
 	next                   uint64
@@ -72,6 +75,37 @@ type bridgeState struct {
 	failures               []bridgeFailure
 	failCount              int
 	protocolErr            error
+}
+
+func (s *bridgeState) instantiateImplementation(ctx context.Context) error {
+	if s.implMod != nil {
+		_ = s.implMod.Close(ctx)
+		s.implMod = nil
+	}
+	implMod, err := s.runtime.Instantiate(ctx, s.implWasm)
+	if err != nil {
+		return errors.New("implementation module could not be instantiated")
+	}
+	s.implMod = implMod
+	s.renderFn = implMod.ExportedFunction(complyExportRun)
+	if s.renderFn == nil {
+		return errors.New("bridge compliance requires implementation export render(i32) -> i64")
+	}
+	s.hasFailure = implMod.ExportedFunction("failure_modes_per_input_offset") != nil
+	inPtr, ok, err := getExportedI32(ctx, implMod, complyExportInputPtr)
+	if err != nil || !ok {
+		return errors.New("implementation input_ptr unavailable")
+	}
+	s.implInPtr = uint32(inPtr)
+	inCap, ok, err := getExportedI32(ctx, implMod, complyExportInputUTF8Cap)
+	if err != nil || !ok {
+		inCap, ok, err = getExportedI32(ctx, implMod, complyExportInputBytesCap)
+		if err != nil || !ok {
+			return errors.New("implementation input cap unavailable")
+		}
+	}
+	s.implInCap = uint32(inCap)
+	return nil
 }
 
 func (s *bridgeState) protocolViolation(format string, args ...any) {
@@ -92,15 +126,14 @@ func (s *bridgeState) recordFailureNote(f bridgeFailure) {
 }
 
 type bridgeRender struct {
-	output       []byte
-	rejected     bool
-	commitResult int64
-	renderTrap   error
-	commitTrap   error
+	output        []byte
+	rejected      bool
+	failureDetail uint32
+	renderTrap    error
 }
 
-// renderImpl runs one complete content transaction. Rejection and traps stay
-// distinct so an oracle must state which behavior it expects.
+// renderImpl runs one render. Rejection and traps stay distinct so an oracle
+// must state which behavior it expects.
 func (s *bridgeState) renderImpl(ctx context.Context, input []byte) (bridgeRender, error) {
 	if uint32(len(input)) > s.implInCap {
 		return bridgeRender{}, fmt.Errorf("input length %d exceeds implementation input cap %d", len(input), s.implInCap)
@@ -110,23 +143,21 @@ func (s *bridgeState) renderImpl(ctx context.Context, input []byte) (bridgeRende
 	}
 	res, err := s.renderFn.Call(ctx, uint64(uint32(len(input))))
 	if err != nil {
-		return bridgeRender{renderTrap: err}, nil
-	}
-	if s.commitFn != nil {
-		committed, err := s.commitFn.Call(ctx)
-		if err != nil {
-			return bridgeRender{commitTrap: err}, nil
+		trapErr := err
+		if resetErr := s.instantiateImplementation(ctx); resetErr != nil {
+			return bridgeRender{}, fmt.Errorf("reinstantiate implementation after trap: %w", resetErr)
 		}
-		commitResult := int64(committed[0])
-		if commitResult < 0 {
-			return bridgeRender{rejected: true, commitResult: commitResult}, nil
+		return bridgeRender{renderTrap: trapErr}, nil
+	}
+	renderResult := res[0]
+	if renderResult&(uint64(1)<<63) != 0 {
+		if !s.hasFailure {
+			return bridgeRender{}, errors.New("implementation returned failure without failure_modes_per_input_offset")
 		}
+		return bridgeRender{rejected: true, failureDetail: uint32(renderResult)}, nil
 	}
-	outLen := api.DecodeU32(res[0])
-	outPtr, ok, err := getExportedI32(ctx, s.implMod, "output_ptr")
-	if err != nil || !ok {
-		return bridgeRender{}, errors.New("implementation output_ptr unavailable after render")
-	}
+	outLen := uint32(renderResult)
+	outPtr := uint32((renderResult >> 32) & 0x7fff_ffff)
 	out, ok := s.implMod.Memory().Read(uint32(outPtr), outLen)
 	if !ok {
 		return bridgeRender{}, errors.New("implementation output out of range")
@@ -145,41 +176,12 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 	r := wasmruntime.NewRunToCompletion(ctx)
 	defer r.Close(ctx)
 
-	implMod, err := r.Instantiate(ctx, implWasm)
-	if err != nil {
-		out.err = errors.New("implementation module could not be instantiated")
+	state := &bridgeState{runtime: r, implWasm: implWasm}
+	if err := state.instantiateImplementation(ctx); err != nil {
+		out.err = err
 		return out
 	}
-	defer implMod.Close(ctx)
-
-	state := &bridgeState{implMod: implMod}
-	state.renderFn = implMod.ExportedFunction(complyExportRun)
-	if state.renderFn == nil {
-		out.err = errors.New("bridge compliance requires implementation export render(i32) -> i32")
-		return out
-	}
-	state.commitFn = implMod.ExportedFunction("commit")
-	if state.commitFn != nil {
-		if err := requireSignature(state.commitFn.Definition(), nil, []api.ValueType{api.ValueTypeI64}, "commit"); err != nil {
-			out.err = err
-			return out
-		}
-	}
-	inPtr, ok, err := getExportedI32(ctx, implMod, complyExportInputPtr)
-	if err != nil || !ok {
-		out.err = errors.New("implementation input_ptr unavailable")
-		return out
-	}
-	state.implInPtr = uint32(inPtr)
-	inCap, ok, err := getExportedI32(ctx, implMod, complyExportInputUTF8Cap)
-	if err != nil || !ok {
-		inCap, ok, err = getExportedI32(ctx, implMod, complyExportInputBytesCap)
-		if err != nil || !ok {
-			out.err = errors.New("implementation input cap unavailable")
-			return out
-		}
-	}
-	state.implInCap = uint32(inCap)
+	defer func() { _ = state.implMod.Close(ctx) }()
 
 	readOracle := func(m api.Module, ptr, length uint32) ([]byte, bool) {
 		return m.Memory().Read(ptr, length)
@@ -233,7 +235,7 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 		return api.DecodeU32(result[0])
 	}
 
-	_, err = r.NewHostModuleBuilder(bridgeHostModuleName).
+	_, err := r.NewHostModuleBuilder(bridgeHostModuleName).
 		NewFunctionBuilder().
 		WithFunc(setUniformU32).
 		Export("set_uniform_u32").
@@ -258,12 +260,8 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "trapped: " + actual.renderTrap.Error(), input: bytes.Clone(input), expected: bytes.Clone(expected)})
 				return 0
 			}
-			if actual.commitTrap != nil {
-				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "commit trapped: " + actual.commitTrap.Error(), input: bytes.Clone(input), expected: bytes.Clone(expected)})
-				return 0
-			}
 			if actual.rejected {
-				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: fmt.Sprintf("unexpected rejection (commit returned %d)", actual.commitResult), input: bytes.Clone(input), expected: bytes.Clone(expected)})
+				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: fmt.Sprintf("unexpected rejection (failure detail %d)", actual.failureDetail), input: bytes.Clone(input), expected: bytes.Clone(expected)})
 				return 0
 			}
 			if !bytes.Equal(actual.output, expected) {
@@ -292,9 +290,7 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 			if actual.renderTrap == nil {
 				kind := "expected trap, got output"
 				if actual.rejected {
-					kind = fmt.Sprintf("expected trap, got rejection (commit returned %d)", actual.commitResult)
-				} else if actual.commitTrap != nil {
-					kind = "expected render trap, but commit trapped: " + actual.commitTrap.Error()
+					kind = fmt.Sprintf("expected trap, got rejection (failure detail %d)", actual.failureDetail)
 				}
 				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: kind, input: bytes.Clone(input), actual: bytes.Clone(actual.output)})
 				return 0
@@ -313,8 +309,8 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 				state.protocolViolation("must_reject pointer out of range at ordinal %d", ordinal)
 				return 0
 			}
-			if state.commitFn == nil {
-				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "expected rejection, but implementation does not export commit", input: bytes.Clone(input)})
+			if !state.hasFailure {
+				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "expected rejection, but implementation does not export failure_modes_per_input_offset", input: bytes.Clone(input)})
 				return 0
 			}
 			actual, err := state.renderImpl(callCtx, input)
@@ -326,12 +322,8 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "expected rejection, render trapped: " + actual.renderTrap.Error(), input: bytes.Clone(input)})
 				return 0
 			}
-			if actual.commitTrap != nil {
-				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "expected rejection, commit trapped: " + actual.commitTrap.Error(), input: bytes.Clone(input)})
-				return 0
-			}
 			if !actual.rejected {
-				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "expected rejection, transaction was accepted", input: bytes.Clone(input), actual: bytes.Clone(actual.output)})
+				state.recordFailure(bridgeFailure{ordinal: ordinal, kind: "expected rejection, render was accepted", input: bytes.Clone(input), actual: bytes.Clone(actual.output)})
 				return 0
 			}
 			return 1
@@ -362,7 +354,7 @@ func runBridgeComplianceModule(implWasm []byte, compliance complianceSpec, seed 
 				state.openRenderIntoFailed = true
 				return -1
 			}
-			if output.renderTrap != nil || output.commitTrap != nil || output.rejected {
+			if output.renderTrap != nil || output.rejected {
 				state.openRenderIntoFailed = true
 				return -1
 			}

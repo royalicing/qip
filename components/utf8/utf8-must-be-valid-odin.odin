@@ -6,7 +6,6 @@ INPUT_CAP :: 1024 * 1024
 OUTPUT_CAP :: INPUT_CAP
 
 input_buf: [INPUT_CAP]u8
-output_buf: [OUTPUT_CAP]u8
 
 @(export)
 input_ptr :: proc "contextless" () -> u32 {
@@ -19,11 +18,6 @@ input_utf8_cap :: proc "contextless" () -> u32 {
 }
 
 @(export)
-output_ptr :: proc "contextless" () -> u32 {
-	return u32(uintptr(&output_buf[0]))
-}
-
-@(export)
 output_utf8_cap :: proc "contextless" () -> u32 {
 	return OUTPUT_CAP
 }
@@ -33,7 +27,7 @@ is_continuation :: proc "contextless" (b: u8) -> bool {
 }
 
 @(export)
-render :: proc "contextless" (input_size: u32) -> u32 {
+render :: proc "contextless" (input_size: u32) -> u64 {
 	if input_size > INPUT_CAP {
 		intrinsics.trap()
 	}
@@ -100,6 +94,5 @@ render :: proc "contextless" (input_size: u32) -> u32 {
 		intrinsics.trap()
 	}
 
-	intrinsics.mem_copy_non_overlapping(&output_buf[0], &input_buf[0], int(input_size))
-	return input_size
+	return (u64(input_ptr()) << 32) | u64(input_size)
 }

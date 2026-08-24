@@ -1,18 +1,38 @@
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 const utf8Encoder = new TextEncoder();
+const lastOutputPointers = new WeakMap();
+
+export function decodeRenderResult(value) {
+  if (typeof value !== "bigint") throw new TypeError("render must return i64");
+  const bits = BigInt.asUintN(64, value);
+  return Object.freeze({
+    failed: (bits & (1n << 63n)) !== 0n,
+    value: Number(bits & 0xffff_ffffn),
+    outputPointer: Number((bits >> 32n) & 0x7fff_ffffn),
+  });
+}
+
+export function renderSize(exports, inputSize) {
+  const result = decodeRenderResult(exports.render(inputSize));
+  if (result.failed) {
+    const error = new Error("component rejected input");
+    error.failureDetail = result.value;
+    throw error;
+  }
+  lastOutputPointers.set(exports, result.outputPointer);
+  return result.value;
+}
+
+export function renderedOutputPointer(exports) {
+  const pointer = lastOutputPointers.get(exports);
+  if (pointer === undefined) throw new Error("render has not returned output");
+  return pointer;
+}
 
 export class ContentRenderTrap extends Error {
   constructor(label, cause) {
     super(`${label} render trapped: ${cause?.message ?? cause}`);
     this.name = "ContentRenderTrap";
-    this.cause = cause;
-  }
-}
-
-export class ContentCommitTrap extends Error {
-  constructor(label, cause) {
-    super(`${label} commit trapped; commit() must not trap: ${cause?.message ?? cause}`);
-    this.name = "ContentCommitTrap";
     this.cause = cause;
   }
 }
@@ -72,42 +92,41 @@ export class ContentComponentHost {
       }
     }
 
-    let outputSize;
+    let renderResult;
     try {
-      outputSize = Number(exports.render(inputBytes.byteLength)) >>> 0;
+      renderResult = exports.render(inputBytes.byteLength);
     } catch (error) {
       this.discard();
       throw new ContentRenderTrap(this.label, error);
     }
 
-    if (typeof exports.commit === "function") {
-      let result;
-      try {
-        result = exports.commit();
-      } catch (error) {
-        this.discard();
-        throw new ContentCommitTrap(this.label, error);
-      }
-      if (typeof result !== "bigint") {
-        this.discard();
-        throw new TypeError(`${this.label} commit export must have signature commit() -> i64`);
-      }
-      if (result < 0n) {
-        const bits = BigInt.asUintN(64, result);
-        return Object.freeze({
-          status: "rejected",
-          commitResult: result,
-          invalidInput: (bits & (1n << 62n)) !== 0n,
-          detail: Number(bits & 0xffff_ffffn),
-        });
-      }
+    if (typeof renderResult !== "bigint") {
+      this.discard();
+      throw new TypeError(`${this.label} render export must have signature render(i32) -> i64`);
     }
+    const bits = BigInt.asUintN(64, renderResult);
+    const detail = Number(bits & 0xffff_ffffn);
+    if ((bits & (1n << 63n)) !== 0n) {
+      if (typeof exports.failure_modes_per_input_offset !== "function") {
+        this.discard();
+        throw new TypeError(`${this.label} returned failure without exporting failure_modes_per_input_offset`);
+      }
+      const modes = Number(exports.failure_modes_per_input_offset()) >>> 0;
+      return Object.freeze({
+        status: "rejected",
+        detail,
+        inputOffset: modes === 0 ? undefined : Math.floor(detail / modes),
+        failureMode: modes === 0 ? undefined : detail % modes,
+      });
+    }
+
+    const outputSize = detail;
 
     const hasOutputUTF8 = typeof exports.output_utf8_cap === "function";
     const hasOutputBytes = typeof exports.output_bytes_cap === "function";
     if (hasOutputUTF8 === hasOutputBytes) throw new TypeError(`${this.label} must export exactly one output capacity`);
     const outputCapacity = Number((hasOutputUTF8 ? exports.output_utf8_cap : exports.output_bytes_cap)()) >>> 0;
-    const outputPointer = Number(exports.output_ptr()) >>> 0;
+    const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
     if (outputSize > outputCapacity || outputPointer + outputSize > exports.memory.buffer.byteLength) {
       this.discard();
       throw new RangeError(`${this.label} returned output outside its declared capacity`);

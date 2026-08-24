@@ -48,10 +48,6 @@ export fn input_bytes_cap() u32 {
     return 0;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -99,7 +95,7 @@ fn eventPhaseIsValid() bool {
     return true;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0) @trap();
     if (phase != .initializing and phase != .ready) @trap();
     state.total_render_count +%= 1;
@@ -108,6 +104,18 @@ export fn render(input_size: u32) u32 {
     @memcpy(output_buf[ktx.HEADER_SIZE..], pixel_buf[0..]);
     phase = .ready;
     return @intCast(OUTPUT_BYTES);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf[0])),
+        .failed = 0,
+    };
 }
 
 export fn finish_update() i64 {

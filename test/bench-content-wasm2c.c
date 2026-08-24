@@ -74,20 +74,23 @@ static void current_process_memory(
     *virtual_bytes = 0;
 }
 
-static uint32_t render_once(
+static int render_once(
     w2c_qipbench *instance,
     const uint8_t *input,
     uint32_t input_size,
-    uint8_t *output) {
+    uint8_t *output,
+    uint32_t *output_size) {
     wasm_rt_memory_t *memory = w2c_qipbench_memory(instance);
     uint32_t input_ptr = w2c_qipbench_input_ptr(instance);
     uint32_t output_ptr;
-    uint32_t output_size;
+    uint64_t result;
     memcpy(memory->data + input_ptr, input, input_size);
-    output_size = w2c_qipbench_render(instance, input_size);
-    output_ptr = w2c_qipbench_output_ptr(instance);
-    memcpy(output, memory->data + output_ptr, output_size);
-    return output_size;
+    result = w2c_qipbench_render(instance, input_size);
+    if ((result >> 63) != 0) return 0;
+    *output_size = (uint32_t)result;
+    output_ptr = (uint32_t)((result >> 32) & UINT64_C(0x7fffffff));
+    memcpy(output, memory->data + output_ptr, *output_size);
+    return 1;
 }
 
 int main(int argc, char **argv) {
@@ -132,15 +135,15 @@ int main(int argc, char **argv) {
     wasm_rt_init();
     wasm2c_qipbench_instantiate(instance);
     current_process_memory(&initial_rss_bytes, &initial_virtual_bytes);
-    output_size = render_once(instance, input, (uint32_t)file_size, output);
+    if (!render_once(instance, input, (uint32_t)file_size, output, &output_size)) return 6;
     current_process_memory(&first_render_rss_bytes, &first_render_virtual_bytes);
     for (i = 1; i < 20; ++i)
-        output_size = render_once(instance, input, (uint32_t)file_size, output);
+        if (!render_once(instance, input, (uint32_t)file_size, output, &output_size)) return 6;
 
     deadline = now_ms() + duration_ms;
     do {
         double start = now_ms();
-        output_size = render_once(instance, input, (uint32_t)file_size, output);
+        if (!render_once(instance, input, (uint32_t)file_size, output, &output_size)) return 7;
         warm_samples[warm_count++] = now_ms() - start;
     } while (warm_count < MAX_SAMPLES && now_ms() < deadline);
     wasm2c_qipbench_free(instance);
@@ -149,13 +152,13 @@ int main(int argc, char **argv) {
     do {
         double start = now_ms();
         wasm2c_qipbench_instantiate(instance);
-        output_size = render_once(instance, input, (uint32_t)file_size, output);
+        if (!render_once(instance, input, (uint32_t)file_size, output, &output_size)) return 8;
         wasm2c_qipbench_free(instance);
         cold_samples[cold_count++] = now_ms() - start;
     } while (cold_count < MAX_SAMPLES && now_ms() < deadline);
 
     wasm2c_qipbench_instantiate(instance);
-    output_size = render_once(instance, input, (uint32_t)file_size, output);
+    if (!render_once(instance, input, (uint32_t)file_size, output, &output_size)) return 8;
     if (argc > 3) {
         file = fopen(argv[3], "wb");
         if (!file || fwrite(output, 1, output_size, file) != output_size) return 9;

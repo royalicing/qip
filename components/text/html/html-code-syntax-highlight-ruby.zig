@@ -9,20 +9,20 @@ var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 const KeywordSet = std.StaticStringMap(void).initComptime(.{
-    .{ "BEGIN", {} },      .{ "END", {} },       .{ "alias", {} },
-    .{ "and", {} },        .{ "begin", {} },     .{ "break", {} },
-    .{ "case", {} },       .{ "class", {} },     .{ "def", {} },
-    .{ "defined?", {} },   .{ "do", {} },        .{ "else", {} },
-    .{ "elsif", {} },      .{ "end", {} },       .{ "ensure", {} },
-    .{ "extend", {} },     .{ "for", {} },       .{ "if", {} },
-    .{ "in", {} },         .{ "include", {} },   .{ "module", {} },
-    .{ "next", {} },       .{ "not", {} },       .{ "or", {} },
-    .{ "prepend", {} },    .{ "private", {} },   .{ "protected", {} },
-    .{ "public", {} },     .{ "raise", {} },     .{ "redo", {} },
-    .{ "require", {} },    .{ "rescue", {} },    .{ "retry", {} },
-    .{ "return", {} },     .{ "then", {} },      .{ "throw", {} },
-    .{ "undef", {} },      .{ "unless", {} },    .{ "until", {} },
-    .{ "when", {} },       .{ "while", {} },     .{ "yield", {} },
+    .{ "BEGIN", {} },    .{ "END", {} },     .{ "alias", {} },
+    .{ "and", {} },      .{ "begin", {} },   .{ "break", {} },
+    .{ "case", {} },     .{ "class", {} },   .{ "def", {} },
+    .{ "defined?", {} }, .{ "do", {} },      .{ "else", {} },
+    .{ "elsif", {} },    .{ "end", {} },     .{ "ensure", {} },
+    .{ "extend", {} },   .{ "for", {} },     .{ "if", {} },
+    .{ "in", {} },       .{ "include", {} }, .{ "module", {} },
+    .{ "next", {} },     .{ "not", {} },     .{ "or", {} },
+    .{ "prepend", {} },  .{ "private", {} }, .{ "protected", {} },
+    .{ "public", {} },   .{ "raise", {} },   .{ "redo", {} },
+    .{ "require", {} },  .{ "rescue", {} },  .{ "retry", {} },
+    .{ "return", {} },   .{ "then", {} },    .{ "throw", {} },
+    .{ "undef", {} },    .{ "unless", {} },  .{ "until", {} },
+    .{ "when", {} },     .{ "while", {} },   .{ "yield", {} },
 });
 
 const ConstantVariableSet = std.StaticStringMap(void).initComptime(.{
@@ -43,8 +43,8 @@ const LiteralSet = std.StaticStringMap(void).initComptime(.{
 });
 
 const BuiltinSet = std.StaticStringMap(void).initComptime(.{
-    .{ "attr_accessor", {} }, .{ "attr_reader", {} }, .{ "attr_writer", {} },
-    .{ "define_method", {} }, .{ "lambda", {} },      .{ "module_function", {} },
+    .{ "attr_accessor", {} },    .{ "attr_reader", {} }, .{ "attr_writer", {} },
+    .{ "define_method", {} },    .{ "lambda", {} },      .{ "module_function", {} },
     .{ "private_constant", {} }, .{ "proc", {} },
 });
 
@@ -111,9 +111,7 @@ export fn input_ptr() u32 {
 export fn input_utf8_cap() u32 {
     return @intCast(INPUT_CAP);
 }
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
+
 export fn output_utf8_cap() u32 {
     return @intCast(OUTPUT_CAP);
 }
@@ -677,7 +675,7 @@ fn transform(input: []const u8, writer: *Writer) void {
     writer.writeSlice(input[copied..]);
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const len: usize = @intCast(input_size);
     if (len > INPUT_CAP) @trap();
     var writer = Writer{};
@@ -686,9 +684,21 @@ export fn render(input_size: u32) u32 {
     return @intCast(writer.idx);
 }
 
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn runForTest(input: []const u8) []const u8 {
     @memcpy(input_buf[0..input.len], input);
-    return output_buf[0..render(@intCast(input.len))];
+    return output_buf[0..renderImpl(@intCast(input.len))];
 }
 
 test "highlights Ruby declarations variables symbols and interpolation" {

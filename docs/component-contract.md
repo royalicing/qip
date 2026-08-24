@@ -30,14 +30,14 @@ it. A component exports only the later capabilities it needs:
 
 ```text
 Content            render input -> output
-Fallible Content   Content + commit input
+Fallible Content   Content + recoverable rejection in the render result
 Timed              Content + begin_update_at + finish_update
 Eventful           Timed + key, pointer, or other events
 ```
 
 `components/interactive/gif-player.wasm` demonstrates the split. It first acts
-as fallible Content: the host supplies `image/gif`, `render` validates and
-decodes it, and `commit` accepts or rejects the source. After acceptance it is
+as fallible Content: the host supplies `image/gif`, and `render` accepts or
+rejects it while it decodes the first frame. After acceptance it is
 Timed because GIF frames have deadlines. It is not Eventful because playback
 does not need keyboard or pointer input. A Content-only host can still run its
 initial render and receive the first KTX2 frame; a Timed host can continue the
@@ -121,7 +121,7 @@ render through the Content contract; it does not open updates or send events.
 Content and Tile can also share exports. The presence of `tile_rgba32float_64x64` wins during pipeline classification, so combine the two interfaces only when Tile behavior is intentional.
 
 Compliance oracles target Content implementations because their bridge
-drives `render(i32) -> i32`. They are test artifacts rather than Content
+drives `render(i32) -> i64`. They are test artifacts rather than Content
 pipeline stages and should be passed with `qip comply --with`, not `qip run`.
 
 The component interface is only the first compatibility boundary. Components must not assume unbounded memory, long-running execution, imports outside their documented contract, filesystem access, network access, or a larger runtime around them. See [Hard Limits](/docs/hard-limits) for the constraints that apply after choosing a contract.

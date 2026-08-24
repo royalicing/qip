@@ -26,10 +26,6 @@ export fn input_utf8_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -61,7 +57,7 @@ fn emit(out: *usize, bytes: []const u8) void {
     }
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
 
@@ -86,6 +82,18 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(out));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn utf8Len(cp: u32) usize {
     if (cp <= 0x7f) return 1;
     if (cp <= 0x7ff) return 2;
@@ -107,5 +115,5 @@ test "maximum input fits at the worst-case uppercase expansion" {
         input_buf[i + 1] = 0x90; // U+0390
     }
 
-    try std.testing.expectEqual(@as(u32, OUTPUT_CAP), render(INPUT_CAP));
+    try std.testing.expectEqual(@as(u32, OUTPUT_CAP), renderImpl(INPUT_CAP));
 }

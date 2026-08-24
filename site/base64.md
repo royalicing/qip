@@ -143,8 +143,8 @@ qip run components/utf8/base64-decode.wasm < image.png.b64 > image.png
 
 The decoder accepts canonical RFC 4648 Base64. The input length must be a
 multiple of four. Padding is allowed only in the final group, and unused pad
-bits must be zero. Malformed input is rejected through the Content `commit`
-contract instead of producing partial bytes.
+bits must be zero. A failed `render` rejects malformed input instead of
+producing partial bytes.
 
 The decoder treats every input byte as Base64 data, so strip whitespace first
 when a file wraps its lines. Add `=` padding when the source omitted it before

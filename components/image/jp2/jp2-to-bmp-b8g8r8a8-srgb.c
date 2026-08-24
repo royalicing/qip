@@ -413,7 +413,7 @@ static int write_bmp_pixels(const opj_image_t* image,
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 static const char input_content_type[] = "image/jp2";
@@ -450,7 +450,7 @@ uint32_t arena_free_unmatched_count(void) {
   return (uint32_t)arena_free_unmatched_count_value;
 }
 
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   opj_dparameters_t parameters;
   opj_codec_t* codec = NULL;
   opj_stream_t* stream = NULL;
@@ -462,12 +462,12 @@ uint32_t render(uint32_t input_size_value) {
   uint32_t pixel_bytes;
   uint32_t output_size = 0;
 
-  if (input_size_value > INPUT_CAP || input_size_value < 12u) return 0;
+  if (input_size_value > INPUT_CAP || input_size_value < 12u) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   if (!(input_buf[0] == 0 && input_buf[1] == 0 && input_buf[2] == 0 &&
         input_buf[3] == 12 && input_buf[4] == 'j' && input_buf[5] == 'P' &&
         input_buf[6] == ' ' && input_buf[7] == ' ' && input_buf[8] == 13 &&
         input_buf[9] == 10 && input_buf[10] == 0x87 && input_buf[11] == 10)) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
 
   arena_reset();
@@ -524,6 +524,6 @@ cleanup:
   if (image != NULL) opj_image_destroy(image);
   if (stream != NULL) opj_stream_destroy(stream);
   if (codec != NULL) opj_destroy_codec(codec);
-  if (arena_failed_size != 0 || arena_free_unmatched_count_value != 0) return 0;
-  return output_size;
+  if (arena_failed_size != 0 || arena_free_unmatched_count_value != 0) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)(output_size);
 }

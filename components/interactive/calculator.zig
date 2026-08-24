@@ -58,10 +58,6 @@ export fn input_bytes_cap() u32 {
     return 0;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -116,13 +112,25 @@ fn requireEventPhase() void {
     if (phase != .updating) @trap();
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0) @trap();
     if (phase != .initializing and phase != .ready) @trap();
     _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
     phase = .ready;
     return @intCast(OUTPUT_BYTES);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf[0])),
+        .failed = 0,
+    };
 }
 
 export fn finish_update() i64 {
@@ -372,7 +380,7 @@ fn resetTransactionStateForTest() void {
 
 test "calculator updates state separately from presentation" {
     resetTransactionStateForTest();
-    const size = render(0);
+    const size = renderImpl(0);
     try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), size);
     const initial_hash = std.hash.Wyhash.hash(0, &output_buf);
 
@@ -385,10 +393,10 @@ test "calculator updates state separately from presentation" {
     try std.testing.expectEqual(@as(i32, 5), state.current);
     try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
 
-    try std.testing.expectEqual(size, render(0));
+    try std.testing.expectEqual(size, renderImpl(0));
     const result_hash = std.hash.Wyhash.hash(0, &output_buf);
     try std.testing.expect(initial_hash != result_hash);
-    try std.testing.expectEqual(size, render(0));
+    try std.testing.expectEqual(size, renderImpl(0));
     try std.testing.expectEqual(result_hash, std.hash.Wyhash.hash(0, &output_buf));
 
     begin_update_at(2);

@@ -47,7 +47,7 @@ More interactive pages:
   <source src="/components/interactive/tile-world-12x12.wasm" type="application/wasm" />
 </qip-play>
 
-Movement keys are retained transaction state. A late transaction replays at
+Movement keys are retained as component state. A late update replays at
 most 24 movement steps before it discards older backlog, so resuming a hidden
 tab cannot start an unbounded loop. Frames are published as KTX2 only by
 `render`.

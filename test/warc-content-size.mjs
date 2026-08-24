@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -43,8 +44,8 @@ async function transform(input) {
   const wasm = instance.exports;
   const inputPtr = wasm.input_ptr();
   new Uint8Array(wasm.memory.buffer, inputPtr, input.length).set(input);
-  const outputLength = wasm.render(input.length);
-  return Buffer.from(new Uint8Array(wasm.memory.buffer, wasm.output_ptr(), outputLength));
+  const outputLength = qipRenderSize(wasm, input.length);
+  return Buffer.from(new Uint8Array(wasm.memory.buffer, qipRenderedOutputPointer(wasm), outputLength));
 }
 
 function firstRecordPayload(warc) {

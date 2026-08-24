@@ -5,7 +5,6 @@ const qipFormRequiredExports = [
   "input_ptr",
   "input_utf8_cap",
   "render",
-  "output_ptr",
   "output_utf8_cap",
   "input_key_ptr",
   "input_key_size",
@@ -48,14 +47,26 @@ function qipFormReadExportedString(exportsObj, ptrExport, lenExport) {
   return qipFormTextDecoder.decode(bytes);
 }
 
-function qipFormReadOutput(exportsObj, outLen) {
-  if (outLen < 0) {
-    throw new Error("render returned negative output size: " + String(outLen));
+function qipFormRender(exportsObj, inputLen) {
+  const result = exportsObj.render(inputLen);
+  if (typeof result !== "bigint") {
+    throw new TypeError("render export must have signature render(i32) -> i64");
   }
+  const bits = BigInt.asUintN(64, result);
+  if ((bits & (1n << 63n)) !== 0n) {
+    throw new Error("form render rejected input");
+  }
+  return {
+    outLen: Number(bits & 0xffff_ffffn),
+    outPtr: Number((bits >> 32n) & 0x7fff_ffffn),
+  };
+}
+
+function qipFormReadOutput(exportsObj, rendered) {
+  const { outPtr, outLen } = rendered;
   if (outLen === 0) {
     return "";
   }
-  const outPtr = qipFormCallI32(exportsObj, "output_ptr");
   const outCap = qipFormCallI32(exportsObj, "output_utf8_cap");
   if (outPtr < 0 || outCap < 0) {
     throw new Error("module returned invalid output pointer/capacity");
@@ -94,7 +105,7 @@ class QIPFormElement extends HTMLElement {
     this._started = false;
     this._exports = null;
     this._hasRun = false;
-    this._lastOutputLen = 0;
+    this._lastRender = null;
   }
 
   async connectedCallback() {
@@ -151,10 +162,10 @@ class QIPFormElement extends HTMLElement {
     const inputKey = qipFormReadExportedString(exportsObj, "input_key_ptr", "input_key_size").trim();
     if (inputKey === "") {
       if (!this._hasRun) {
-        this._lastOutputLen = qipFormCallI32(exportsObj, "render", [0]);
+        this._lastRender = qipFormRender(exportsObj, 0);
         this._hasRun = true;
       }
-      const outputText = qipFormReadOutput(exportsObj, this._lastOutputLen);
+      const outputText = qipFormReadOutput(exportsObj, this._lastRender);
       const pre = document.createElement("pre");
       pre.textContent = outputText;
       this.replaceChildren(pre);
@@ -195,7 +206,7 @@ class QIPFormElement extends HTMLElement {
       event.preventDefault();
       try {
         const inputLen = qipFormWriteInput(exportsObj, inputNode.value);
-        this._lastOutputLen = qipFormCallI32(exportsObj, "render", [inputLen]);
+        this._lastRender = qipFormRender(exportsObj, inputLen);
         this._hasRun = true;
         this._render();
       } catch (err) {

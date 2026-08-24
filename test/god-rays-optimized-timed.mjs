@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -44,7 +45,7 @@ function setDefaults(exports, speed = 0.75) {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(bytes) {
@@ -73,7 +74,7 @@ test("god-rays-optimized exposes the Timed KTX2 contract", () => {
 test("initial Content render produces a canonical 640x360 KTX2 frame", () => {
   const exports = instantiate();
   setDefaults(exports);
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   const bytes = output(exports, size);
   assert.equal(size, 224 + 640 * 360 * 4);
   assert.deepEqual([...bytes.subarray(0, 12)], [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -88,7 +89,7 @@ test("initial Content render produces a canonical 640x360 KTX2 frame", () => {
 test("renderless updates preserve output and schedule from speed", () => {
   const exports = instantiate();
   setDefaults(exports, 0);
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   const initialDigest = digest(output(exports, size));
 
   exports.begin_update_at(1n);
@@ -105,7 +106,7 @@ test("renderless updates preserve output and schedule from speed", () => {
 test("uniforms are optional and non-increasing time is host protocol misuse", () => {
   const exports = instantiate();
   setDefaults(exports, 0);
-  exports.render(0);
+  qipRenderSize(exports, 0);
   exports.begin_update_at(1n);
   setDefaults(exports, 0);
   assert.equal(exports.finish_update(), 1n);
@@ -113,13 +114,13 @@ test("uniforms are optional and non-increasing time is host protocol misuse", ()
 
   const missing = instantiate();
   for (const key of ["density", "spotty"]) missing[`uniform_set_${key}`](0.3);
-  assert.equal(missing.render(0), missing.output_bytes_cap());
+  assert.equal(qipRenderSize(missing, 0), missing.output_bytes_cap());
 });
 
 test("presentation is separate and deterministic after updates", () => {
   const exports = instantiate();
   setDefaults(exports);
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   const initialDigest = digest(output(exports, size));
 
   exports.begin_update_at(1n);
@@ -128,13 +129,13 @@ test("presentation is separate and deterministic after updates", () => {
   assert.equal(digest(output(exports, size)), initialDigest);
 
   setDefaults(exports);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   const updatedDigest = digest(output(exports, size));
   assert.notEqual(updatedDigest, initialDigest);
 
   setDefaults(exports);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.equal(digest(output(exports, size)), updatedDigest);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.equal(digest(output(exports, size)), updatedDigest);
 });

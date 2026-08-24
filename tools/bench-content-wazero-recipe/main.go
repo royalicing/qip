@@ -54,11 +54,13 @@ func render(ctx context.Context, s stage, input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	outputPtr, err := exportedI32(ctx, s.module, "output_ptr")
-	if err != nil {
-		return nil, err
+	result := values[0]
+	if result>>63 != 0 {
+		return nil, fmt.Errorf("component rejected input")
 	}
-	output, ok := memory.Read(outputPtr, uint32(values[0]))
+	outputPtr := uint32((result >> 32) & 0x7fff_ffff)
+	outputSize := uint32(result)
+	output, ok := memory.Read(outputPtr, outputSize)
 	if !ok {
 		return nil, fmt.Errorf("output read exceeds memory")
 	}

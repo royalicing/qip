@@ -100,12 +100,14 @@ function extractText(exports, input) {
 
   const inputPointer = exports.input_ptr() >>> 0;
   new Uint8Array(exports.memory.buffer, inputPointer, input.length).set(input);
-  const outputLength = exports.render(input.length) >>> 0;
+  const packed = BigInt.asUintN(64, exports.render(input.length));
+  if ((packed >> 63n) !== 0n) throw new Error("The component rejected the PDF.");
+  const outputLength = Number(packed & 0xffff_ffffn);
   const outputCapacity = exports.output_utf8_cap() >>> 0;
   if (outputLength > outputCapacity) {
     throw new RangeError("The component returned more text than its output capacity.");
   }
-  const outputPointer = exports.output_ptr() >>> 0;
+  const outputPointer = Number((packed >> 32n) & 0x7fff_ffffn);
   return decoder.decode(
     new Uint8Array(exports.memory.buffer, outputPointer, outputLength),
   );

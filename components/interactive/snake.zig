@@ -66,10 +66,6 @@ export fn input_bytes_cap() u32 {
     return 0;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -158,7 +154,7 @@ fn advanceTransactionTime() void {
     next_wake_at_ms = if (paused or game_over) begun_at_ms else last_step_ms +| STEP_MS;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0) @trap();
     if (phase != .initializing and phase != .ready) @trap();
     if (phase == .initializing) resetGame(0);
@@ -166,6 +162,18 @@ export fn render(input_size: u32) u32 {
     drawFrame();
     phase = .ready;
     return @intCast(OUTPUT_BYTES);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf[0])),
+        .failed = 0,
+    };
 }
 
 export fn finish_update() i64 {
@@ -383,7 +391,7 @@ fn resetTransactionStateForTest() void {
 
 test "snake advances before events at the update boundary" {
     resetTransactionStateForTest();
-    const size = render(0);
+    const size = renderImpl(0);
     try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), size);
     try std.testing.expectEqual(@as(i32, 6), snake_x[0]);
     try std.testing.expectEqual(@as(i32, 6), snake_y[0]);
@@ -402,7 +410,7 @@ test "snake advances before events at the update boundary" {
 
 test "snake updates preserve output until a separate render" {
     resetTransactionStateForTest();
-    const size = render(0);
+    const size = renderImpl(0);
     const initial_hash = std.hash.Wyhash.hash(0, &output_buf);
 
     begin_update_at(STEP_MS);
@@ -415,7 +423,7 @@ test "snake updates preserve output until a separate render" {
     try std.testing.expect(paused);
     try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
 
-    try std.testing.expectEqual(size, render(0));
+    try std.testing.expectEqual(size, renderImpl(0));
     try std.testing.expect(initial_hash != std.hash.Wyhash.hash(0, &output_buf));
 
     begin_update_at(1000);
@@ -426,7 +434,7 @@ test "snake updates preserve output until a separate render" {
 
 test "snake bounds fixed-step catch-up after a long pause" {
     resetTransactionStateForTest();
-    _ = render(0);
+    _ = renderImpl(0);
 
     begin_update_at(10_000);
     try std.testing.expectEqual(@as(i64, 10_000 + STEP_MS), finish_update());
@@ -435,7 +443,7 @@ test "snake bounds fixed-step catch-up after a long pause" {
 
 test "snake accepts the largest update time without overflowing its wake" {
     resetTransactionStateForTest();
-    _ = render(0);
+    _ = renderImpl(0);
 
     begin_update_at(std.math.maxInt(i64));
     try std.testing.expectEqual(@as(i64, std.math.maxInt(i64)), finish_update());

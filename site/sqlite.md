@@ -154,9 +154,12 @@ async function runComponent(dbBytes) {
 
   t = performance.now();
   exports.uniform_set_table(0);
-  const outputLen = exports.render(dbBytes.length) >>> 0;
+  const packed = BigInt.asUintN(64, exports.render(dbBytes.length));
+  if ((packed >> 63n) !== 0n) throw new Error("component rejected database");
+  const outputLen = Number(packed & 0xffff_ffffn);
+  const outputPtr = Number((packed >> 32n) & 0x7fff_ffffn);
   const csv = new TextDecoder().decode(
-    new Uint8Array(exports.memory.buffer, exports.output_ptr(), outputLen),
+    new Uint8Array(exports.memory.buffer, outputPtr, outputLen),
   );
   const readMs = performance.now() - t;
 

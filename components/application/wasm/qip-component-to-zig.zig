@@ -54,10 +54,6 @@ export fn input_bytes_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -523,7 +519,6 @@ fn sameFunctionType(a_index: u32, b_index: u32) bool {
 const Contract = struct {
     input_ptr: u32,
     input_cap: u32,
-    output_ptr: u32,
     output_cap: u32,
     render: u32,
     input_offset: u32,
@@ -582,7 +577,6 @@ fn readContract() Error!Contract {
     return .{
         .input_ptr = input_ptr_export,
         .input_cap = selected_input_cap,
-        .output_ptr = try findFunctionExport("output_ptr"),
         .output_cap = selected_output_cap,
         .render = try findFunctionExport("render"),
         .input_offset = input_offset,
@@ -1081,6 +1075,7 @@ fn writePreamble(out: *Writer, hash_hex: []const u8, contract: Contract) Error!v
         \\    invalid_argument = 3,
         \\    memory_too_small = 4,
         \\    stale_instance = 5,
+        \\    rejected = 6,
         \\    trap_unreachable = 16,
         \\    trap_out_of_bounds = 17,
         \\    trap_call_depth = 18,
@@ -1405,14 +1400,15 @@ fn writeWrapper(out: *Writer, contract: Contract) Error!void {
         \\    markDirty(instance, INPUT_OFFSET, input_size);
         \\    const args = [_]Val{{.{{ .u32_ = input_size }}}};
         \\    const result = qipWasmFunction{d}(instance, &args) catch {{ instance.call_depth = 0; return instance.trap_status; }};
-        \\    const output = qipWasmFunction{d}(instance, &[_]Val{{}}) catch {{ instance.call_depth = 0; return instance.trap_status; }};
-        \\    if (result.u32_ > OUTPUT_CAPACITY or @as(u64, output.u32_) + result.u32_ > MEMORY_SIZE) return .output_too_large;
-        \\    output_offset.* = output.u32_;
-        \\    output_size.* = result.u32_;
+        \\    const bits = result.u64_;
+        \\    output_size.* = @truncate(bits);
+        \\    if (bits >> 63 != 0) {{ output_offset.* = 0; return .rejected; }}
+        \\    output_offset.* = @truncate((bits >> 32) & 0x7fff_ffff);
+        \\    if (output_size.* > OUTPUT_CAPACITY or @as(u64, output_offset.*) + output_size.* > MEMORY_SIZE) return .output_too_large;
         \\    return .ok;
         \\}}
         \\
-    , .{ contract.render, contract.output_ptr });
+    , .{contract.render});
 }
 
 fn generate(wasm: []const u8) Error!usize {
@@ -1432,7 +1428,19 @@ fn generate(wasm: []const u8) Error!usize {
     return out.pos;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size > INPUT_CAP) @trap();
     return @intCast(generate(input_buf[0..input_size]) catch @trap());
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

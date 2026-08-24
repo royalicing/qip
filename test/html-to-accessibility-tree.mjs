@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -21,10 +22,10 @@ function renderText(exports, text) {
   assert.ok(input.length <= inputCap);
   new Uint8Array(exports.memory.buffer, inputPtr, input.length).set(input);
 
-  const outputLen = exports.render(input.length);
-  const outputPtr = readI32Export(exports, "output_ptr");
+  const result = decodeRenderResult(exports.render(input.length));
+  assert.equal(result.failed, false);
   return decoder.decode(
-    new Uint8Array(exports.memory.buffer, outputPtr, outputLen),
+    new Uint8Array(exports.memory.buffer, result.outputPointer, result.value),
   );
 }
 

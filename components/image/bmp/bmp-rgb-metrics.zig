@@ -22,10 +22,6 @@ export fn input_bytes_cap() u32 {
     return @intCast(INPUT_CAP);
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return @intCast(OUTPUT_CAP);
 }
@@ -217,7 +213,7 @@ fn psnrFromSse(sse: u64, samples: u64) f64 {
     return 10.0 * @log(65025.0 / mse) / @log(10.0);
 }
 
-export fn render(input_size_value: u32) u32 {
+fn renderImpl(input_size_value: u32) u32 {
     const input_size: usize = @min(@as(usize, input_size_value), INPUT_CAP);
     const pair = parseTarPair(input_buf[0..input_size]) orelse return 0;
     const first = parseBmp(pair.reference) orelse return 0;
@@ -284,4 +280,16 @@ export fn render(input_size_value: u32) u32 {
             .{ first.width, first.height, mse_rgb, psnr_rgb, ssim_r, ssim_g, ssim_b, ssim_rgb },
         ) catch return 0;
     return @intCast(output.len);
+}
+
+export fn render(input_size_value: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_value),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

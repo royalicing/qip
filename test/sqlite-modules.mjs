@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
@@ -61,11 +62,11 @@ async function instantiateWithInput(modulePath, inputPath) {
 }
 
 function renderUtf8(instance, inputSize) {
-  const outputSize = instance.exports.render(inputSize);
+  const outputSize = qipRenderSize(instance.exports, inputSize);
   return new TextDecoder("utf-8", { fatal: true }).decode(
     new Uint8Array(
       instance.exports.memory.buffer,
-      instance.exports.output_ptr(),
+      qipRenderedOutputPointer(instance.exports),
       outputSize,
     ),
   );

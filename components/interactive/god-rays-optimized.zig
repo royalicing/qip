@@ -136,10 +136,6 @@ export fn input_bytes_cap() u32 {
     return 0;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -161,13 +157,25 @@ export fn begin_update_at(now_ms: i64) void {
     phase = .updating;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0) @trap();
     if (phase != .initializing and phase != .ready) @trap();
     _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     renderFrame();
     finishUniforms();
     return OUTPUT_BYTES;
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf[0])),
+        .failed = 0,
+    };
 }
 
 export fn finish_update() i64 {
@@ -662,7 +670,7 @@ fn renderFrame() void {
 test "default preset renders opaque KTX2 frame" {
     resetForTest();
     setEveryDefaultUniform(0.75);
-    const output_size = render(0);
+    const output_size = renderImpl(0);
     const image = ktx.parse(output_buf[0..output_size]).?;
     try std.testing.expectEqual(RENDER_W, image.width);
     try std.testing.expectEqual(RENDER_H, image.height);
@@ -672,7 +680,7 @@ test "default preset renders opaque KTX2 frame" {
 test "renderless Timed update leaves output bytes unchanged" {
     resetForTest();
     setEveryDefaultUniform(0.75);
-    const output_size = render(0);
+    const output_size = renderImpl(0);
     const before = std.hash.Wyhash.hash(0, output_buf[0..output_size]);
 
     begin_update_at(1);
@@ -684,7 +692,7 @@ test "renderless Timed update leaves output bytes unchanged" {
 test "same presentation uniforms render deterministically after an update" {
     resetForTest();
     setEveryDefaultUniform(0.0);
-    const first_size = render(0);
+    const first_size = renderImpl(0);
     const first = std.hash.Wyhash.hash(0, output_buf[0..first_size]);
 
     begin_update_at(1);
@@ -692,7 +700,7 @@ test "same presentation uniforms render deterministically after an update" {
     try std.testing.expectEqual(@as(i64, 1), finish_update());
 
     setEveryDefaultUniform(0.0);
-    const second_size = render(0);
+    const second_size = renderImpl(0);
     const second = std.hash.Wyhash.hash(0, output_buf[0..second_size]);
     try std.testing.expectEqual(first_size, second_size);
     try std.testing.expectEqual(first, second);
@@ -701,10 +709,10 @@ test "same presentation uniforms render deterministically after an update" {
 test "render resets presentation uniforms" {
     resetForTest();
     setEveryDefaultUniform(0.0);
-    const output_size = render(0);
+    const output_size = renderImpl(0);
     try std.testing.expectEqual(@as(u32, 0), uniform_mask);
     setEveryDefaultUniform(0.0);
-    try std.testing.expectEqual(output_size, render(0));
+    try std.testing.expectEqual(output_size, renderImpl(0));
     try std.testing.expectEqual(@as(u32, 0), uniform_mask);
 }
 

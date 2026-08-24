@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -11,7 +12,7 @@ function instantiate() {
 
 function digest(exports, size) {
   return createHash("sha256")
-    .update(new Uint8Array(exports.memory.buffer, exports.output_ptr(), size))
+    .update(new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size))
     .digest("hex");
 }
 
@@ -25,7 +26,7 @@ test("WebOS Card View advances animation without replacing its KTX2 frame", () =
   assert.equal(exports.begin_at, undefined);
   assert.equal(exports.commit, undefined);
 
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   assert.equal(size, 224 + 320 * 220 * 4);
   const initial = digest(exports, size);
 
@@ -36,17 +37,17 @@ test("WebOS Card View advances animation without replacing its KTX2 frame", () =
 
   exports.begin_update_at(32n);
   assert.equal(exports.finish_update(), 48n);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.notEqual(digest(exports, size), initial);
 });
 
 test("WebOS Card View traps on lifecycle misuse", () => {
   const exports = instantiate();
   assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
-  exports.render(0);
+  qipRenderSize(exports, 0);
   assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
   exports.begin_update_at(1n);
-  assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+  assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
   exports.finish_update();
   assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
 });

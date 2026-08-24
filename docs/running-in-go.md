@@ -50,7 +50,6 @@ type MarkdownRenderer struct {
 	memory    api.Memory
 	inputPtr  api.Function
 	inputCap  api.Function
-	outputPtr api.Function
 	render    api.Function
 }
 
@@ -99,10 +98,6 @@ func NewMarkdownRenderer(
 	if err != nil {
 		return nil, err
 	}
-	outputPtr, err := exportedFunction(module, "output_ptr")
-	if err != nil {
-		return nil, err
-	}
 	render, err := exportedFunction(module, "render")
 	if err != nil {
 		return nil, err
@@ -113,7 +108,6 @@ func NewMarkdownRenderer(
 		memory:    memory,
 		inputPtr:  inputPtr,
 		inputCap:  inputCap,
-		outputPtr: outputPtr,
 		render:    render,
 	}, nil
 }
@@ -152,15 +146,15 @@ func (r *MarkdownRenderer) MarkdownToHTML(
 		return "", fmt.Errorf("render Markdown: %w", err)
 	}
 	if len(results) != 1 {
-		return "", errors.New("render must return one i32")
+		return "", errors.New("render must return one i64")
 	}
-	outputSize := uint32(results[0])
-
-	outputStart, err := callI32(ctx, r.outputPtr)
-	if err != nil {
-		return "", fmt.Errorf("read output pointer: %w", err)
+	result := results[0]
+	if result>>63 != 0 {
+		return "", errors.New("component rejected input")
 	}
-	output, ok := r.memory.Read(uint32(outputStart), outputSize)
+	outputSize := uint32(result)
+	outputStart := uint32((result >> 32) & 0x7fff_ffff)
+	output, ok := r.memory.Read(outputStart, outputSize)
 	if !ok {
 		return "", errors.New("output range is outside component memory")
 	}
@@ -258,15 +252,15 @@ The loader is runtime-specific; the QIP calls are not:
 3. `InstantiateModule` creates an instance with no imports.
 4. Go converts the Markdown to UTF-8 bytes and checks `input_utf8_cap()`.
 5. `Memory.Write` copies those bytes to `input_ptr()`.
-6. `render(input_size)` returns the provisional number of output bytes.
-7. When `commit() -> i64` is exported, the host calls it and stops on a
-   negative result.
-8. `Memory.Read` exposes accepted output at `output_ptr()`, and conversion to
-   `string` copies it out of component memory.
+6. `render(input_size)` returns one packed `i64` value.
+7. Bit 63 reports rejection. Bits 32 through 62 contain the output pointer, and
+   the low 32 bits contain the output size.
+8. `Memory.Read` exposes accepted output at the returned pointer, and
+   conversion to `string` copies it out of component memory.
 
-Wazero represents the raw `i64` result as `uint64`; convert it to `int64` before
-testing whether it is negative. If `render` traps, do not call `commit`. Discard
-the instance because memory and globals may contain partial changes.
+Wazero represents the raw `i64` result as `uint64`, so the host can test bit 63
+directly. If `render` traps, discard the instance because memory and globals may
+contain partial changes.
 
 Converting a Go string to bytes produces valid UTF-8 only when the string itself
 contains valid UTF-8; Go strings can also contain arbitrary bytes. A generic

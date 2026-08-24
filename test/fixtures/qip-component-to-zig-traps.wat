@@ -5,10 +5,8 @@
     i32.const 0)
   (func (export "input_bytes_cap") (result i32)
     i32.const 16)
-  (func (export "output_ptr") (result i32)
-    i32.const 32)
   (func (export "output_bytes_cap") (result i32)
     i32.const 16)
 
-  (func (export "render") (param i32) (result i32)
+  (func (export "render") (param i32) (result i64)
     unreachable))

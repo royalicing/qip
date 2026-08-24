@@ -14,7 +14,6 @@ pub const LATIN1_COUNT: usize = 96;
 pub const GLYPH_COUNT: usize = ASCII_COUNT + LATIN1_COUNT;
 
 pub const glyph_rows = [_][GLYPH_H]u64{
-
     .{
         0x0000000000000000,
         0x0000000000000000,

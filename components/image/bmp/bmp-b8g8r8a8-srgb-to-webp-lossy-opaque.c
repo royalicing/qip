@@ -209,7 +209,7 @@ static int write_output(const uint8_t* data, size_t data_size,
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 static const char input_content_type[] = "image/bmp";
@@ -273,7 +273,7 @@ uint32_t arena_allocation_free_event(uint32_t index) {
   return arena_free_events[index];
 }
 
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
   uint32_t pixel_offset, dib_size, width_u, height_bits;
   uint32_t compression, bpp;
@@ -289,7 +289,7 @@ uint32_t render(uint32_t input_size_value) {
 
   arena_reset();
   if (input_size > INPUT_CAP) input_size = INPUT_CAP;
-  if (input_size < 54 || input_buf[0] != 'B' || input_buf[1] != 'M') return 0;
+  if (input_size < 54 || input_buf[0] != 'B' || input_buf[1] != 'M') return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   pixel_offset = read_u32_le(input_buf + 10);
   dib_size = read_u32_le(input_buf + 14);
   width_u = read_u32_le(input_buf + 18);
@@ -303,10 +303,10 @@ uint32_t render(uint32_t input_size_value) {
       read_u16_le(input_buf + 26) != 1 ||
       width <= 0 || (uint32_t)width > MAX_DIMENSION || height_signed == 0 ||
       height_signed == INT32_MIN) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   if (bpp == 24) {
-    if (compression != 0) return 0;
+    if (compression != 0) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   } else if (bpp == 32) {
     if (compression == 3) {
       if (dib_size < 124 || pixel_offset < 138 ||
@@ -314,7 +314,7 @@ uint32_t render(uint32_t input_size_value) {
           read_u32_le(input_buf + 58) != 0x0000ff00u ||
           read_u32_le(input_buf + 62) != 0x000000ffu ||
           read_u32_le(input_buf + 66) != 0xff000000u) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
       }
       has_explicit_alpha = 1;
     } else if (compression == 0) {
@@ -327,21 +327,21 @@ uint32_t render(uint32_t input_size_value) {
             !((red == 0 && green == 0 && blue == 0) ||
               (red == 0x00ff0000u && green == 0x0000ff00u &&
                blue == 0x000000ffu))) {
-          return 0;
+          return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
         }
         has_explicit_alpha = 1;
       }
     } else {
-      return 0;
+      return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
   } else {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
 
   height = (uint32_t)(height_signed < 0 ? -height_signed : height_signed);
   if (height > MAX_DIMENSION ||
       (uint64_t)(uint32_t)width * height > MAX_PIXELS) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   src_stride =
       (uint32_t)((((uint64_t)(uint32_t)width * bpp + 31u) / 32u) * 4u);
@@ -349,7 +349,7 @@ uint32_t render(uint32_t input_size_value) {
   pixel_bytes = (size_t)(uint32_t)width * 4u * height;
   if (pixel_offset > input_size || source_bytes > input_size - pixel_offset ||
       pixel_bytes > INPUT_CAP) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
 
   memmove(input_buf, input_buf + pixel_offset, source_bytes);
@@ -405,7 +405,7 @@ uint32_t render(uint32_t input_size_value) {
     }
   }
 
-  if (!WebPConfigInit(&config) || !WebPPictureInit(&picture)) return 0;
+  if (!WebPConfigInit(&config) || !WebPPictureInit(&picture)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   config.lossless = 0;
   config.quality = (float)quality;
   config.method = (int)method;
@@ -421,9 +421,9 @@ uint32_t render(uint32_t input_size_value) {
   picture.writer = write_output;
   picture.custom_ptr = &writer;
 
-  if (!WebPValidateConfig(&config)) return 0;
+  if (!WebPValidateConfig(&config)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   ok = WebPEncode(&config, &picture);
   WebPPictureFree(&picture);
-  if (!ok || writer.overflow || writer.size > UINT32_MAX) return 0;
-  return (uint32_t)writer.size;
+  if (!ok || writer.overflow || writer.size > UINT32_MAX) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)writer.size);
 }

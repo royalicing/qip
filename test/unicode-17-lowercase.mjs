@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 function readI32Export(exports, name) {
   const value = exports[name];
@@ -18,9 +19,9 @@ function renderBytes(exports, bytes) {
   const inputCap = readI32Export(exports, "input_utf8_cap");
   assert.ok(bytes.length <= inputCap);
   new Uint8Array(exports.memory.buffer, inputPtr, bytes.length).set(bytes);
-  const outputLen = exports.render(bytes.length);
-  const outputPtr = readI32Export(exports, "output_ptr");
-  return Buffer.from(new Uint8Array(exports.memory.buffer, outputPtr, outputLen));
+  const result = decodeRenderResult(exports.render(bytes.length));
+  assert.equal(result.failed, false);
+  return Buffer.from(new Uint8Array(exports.memory.buffer, result.outputPointer, result.value));
 }
 
 test("lowercase matches the UCD 17 fixtures byte for byte", async () => {

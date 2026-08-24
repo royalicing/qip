@@ -63,7 +63,7 @@ func TestGoHostDecisionsMatchSharedInteractiveTrace(t *testing.T) {
 	}
 	callRender := func(fn api.Function) uint64 {
 		trace.WriteString("call render input_size=0\n")
-		result := callOne(fn, 0)
+		result := callOne(fn, 0) & 0xffff_ffff
 		fmt.Fprintf(&trace, "return output_bytes=%d\n", result)
 		return result
 	}

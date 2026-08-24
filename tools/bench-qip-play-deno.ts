@@ -45,13 +45,12 @@ async function bench(path: string) {
   const exports = instance.exports;
 
   const memory = requiredExport<WebAssembly.Memory>(exports, "memory");
-  const outputPtr = requiredExport<() => number>(exports, "output_ptr");
   const outputBytesCap = requiredExport<() => number>(exports, "output_bytes_cap");
   const outputContentTypePtr = requiredExport<() => number>(exports, "output_content_type_ptr");
   const outputContentTypeSize = requiredExport<() => number>(exports, "output_content_type_size");
   requiredExport<(nowMS: bigint) => void>(exports, "begin_update_at");
   requiredExport<() => bigint>(exports, "finish_update");
-  const render = requiredExport<(inputSize: number) => number>(exports, "render");
+  const render = requiredExport<(inputSize: number) => bigint>(exports, "render");
 
   const contentType = new TextDecoder("utf-8", { fatal: true }).decode(
     new Uint8Array(memory.buffer, outputContentTypePtr(), outputContentTypeSize()),
@@ -60,25 +59,28 @@ async function bench(path: string) {
     throw new Error(`${path}: qip-play output must be image/ktx2`);
   }
 
-  let outputLength = render(0);
-  const commit = exports.commit;
-  if (typeof commit === "function" && (commit as () => bigint)() < 0n) {
+  let packed = render(0);
+  if ((packed & 0x8000_0000_0000_0000n) !== 0n) {
     throw new Error(`${path}: initial Content input was rejected`);
   }
-  for (let i = 0; i < warmup; i++) outputLength = render(0);
+  for (let i = 0; i < warmup; i++) packed = render(0);
 
   const samples: number[] = [];
   for (let i = 0; i < runs; i++) {
     const start = performance.now();
-    outputLength = render(0);
+    packed = render(0);
     samples.push(performance.now() - start);
   }
   samples.sort((a, b) => a - b);
-  if (outputLength < 0 || outputLength > outputBytesCap()) {
+  if ((packed & 0x8000_0000_0000_0000n) !== 0n) {
+    throw new Error(`${path}: Content input was rejected`);
+  }
+  const outputLength = Number(packed & 0xffff_ffffn);
+  if (outputLength > outputBytesCap()) {
     throw new Error(`${path}: render returned output outside output_bytes_cap`);
   }
 
-  const ptr = outputPtr();
+  const ptr = Number((packed >> 32n) & 0x7fff_ffffn);
   const output = new Uint8Array(memory.buffer, ptr, outputLength);
   const outputView = new DataView(memory.buffer, ptr, outputLength);
   const avg = mean(samples);

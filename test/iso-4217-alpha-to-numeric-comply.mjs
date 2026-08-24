@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -37,8 +38,8 @@ test("duel: iso-4217-alpha-to-numeric.wasm satisfies all 186 cases", async () =>
   const convert = (input) => {
     new Uint8Array(impl.memory.buffer, readI32("input_ptr"), input.length).set(input);
     try {
-      const outputLen = impl.render(input.length);
-      return Buffer.from(new Uint8Array(impl.memory.buffer, readI32("output_ptr"), outputLen));
+      const outputLen = qipRenderSize(impl, input.length);
+      return Buffer.from(new Uint8Array(impl.memory.buffer, qipRenderedOutputPointer(impl), outputLen));
     } catch {
       return null;
     }

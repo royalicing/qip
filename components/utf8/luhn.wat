@@ -1,23 +1,21 @@
 (module $LuhnValidator
-  (memory (export "memory") 2 2)
+  (memory (export "memory") 3 3)
   (global $input_ptr i32 (i32.const 0x10000))
   (func (export "input_ptr") (result i32)
     (global.get $input_ptr))
   (global $input_utf8_cap i32 (i32.const 0x10000))
   (func (export "input_utf8_cap") (result i32)
     (global.get $input_utf8_cap))
-  (func (export "output_ptr") (result i32)
-    (global.get $input_ptr))
+  (global $output_ptr i32 (i32.const 0x20000))
   (global $output_utf8_cap i32 (i32.const 0x10000))
   (func (export "output_utf8_cap") (result i32)
     (global.get $output_utf8_cap))
-  (global $pending_commit_result (mut i64) (i64.const 1))
+  (func (export "failure_modes_per_input_offset") (result i32)
+    (i32.const 1))
+  (global $failure_offset (mut i32) (i32.const -1))
 
   (func $reject (param $offset i32) (result i32)
-    (global.set $pending_commit_result
-      (i64.add
-        (i64.const -4611686018427387904)
-        (i64.extend_i32_u (local.get $offset))))
+    (global.set $failure_offset (local.get $offset))
     (i32.const 0))
 
   (func $is_trim_whitespace (param $c i32) (result i32)
@@ -31,7 +29,7 @@
             (i32.eq (local.get $c) (i32.const 12))
             (i32.eq (local.get $c) (i32.const 13)))))))
 
-  (func (export "render") (param $input_size i32) (result i32)
+  (func (export "render") (param $input_size i32) (result i64)
     (local $start i32)
     (local $end i32)
     (local $i i32)
@@ -42,12 +40,10 @@
     (local $sum_even_len i32)
     (local $sum_odd_len i32)
 
-    (if (i64.ne (global.get $pending_commit_result) (i64.const 1))
-      (then unreachable))
     (if (i32.gt_u (local.get $input_size) (global.get $input_utf8_cap))
       (then unreachable))
 
-    (global.set $pending_commit_result (i64.const -4611686018427387904))
+    (global.set $failure_offset (i32.const -1))
 
     (block $finish
       (if (i32.eqz (local.get $input_size))
@@ -97,7 +93,7 @@
                 (br $finish)))
 
             (i32.store8
-              (i32.add (global.get $input_ptr) (local.get $out_i))
+              (i32.add (global.get $output_ptr) (local.get $out_i))
               (local.get $c))
 
             (local.set $doubled
@@ -137,21 +133,20 @@
         (then
           (local.set $out_i (call $reject (local.get $input_size)))
           (br $finish)))
-
-      (global.set $pending_commit_result (i64.const 0)))
+)
 
     ;; Every normal exit, including provisional rejection, crosses the same
     ;; statically recognizable output-capacity proof.
     (if (i32.gt_u (local.get $out_i) (global.get $output_utf8_cap))
       (then unreachable))
-    (local.get $out_i))
+    (if (result i64) (i32.ge_s (global.get $failure_offset) (i32.const 0))
+      (then
+        (i64.or
+          (i64.const -9223372036854775808)
+          (i64.extend_i32_u (global.get $failure_offset))))
+      (else
+        (i64.or
+          (i64.shl (i64.extend_i32_u (global.get $output_ptr)) (i64.const 32))
+          (i64.extend_i32_u (local.get $out_i))))))
 
-  ;; commit never traps. A negative result rejects the normalized candidate.
-  (func (export "commit") (result i64)
-    (local $result i64)
-    (local.set $result (global.get $pending_commit_result))
-    (if (i64.eq (local.get $result) (i64.const 1))
-      (then (local.set $result (i64.const -4611686018427387904))))
-    (global.set $pending_commit_result (i64.const 1))
-    (local.get $result))
 )

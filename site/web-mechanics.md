@@ -4,7 +4,7 @@
 
 Use this Zig QIP component to compare TLS handshakes, DNS resolution, browser page loading, and SameSite cookie behavior. These are the browser and network sequences that are easiest to misread when they are only described in prose.
 
-Topic and scenario selections are retained transaction state. The component
+Topic and scenario selections are retained as component state. The component
 has no animation wake and publishes a new KTX2 frame only from `render`.
 
 <qip-play>

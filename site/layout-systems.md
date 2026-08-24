@@ -4,7 +4,7 @@
 
 Increase child widths and compare how Flexbox and SwiftUI arrange the same items. This explainer is a QIP interactive component written in Zig; the page only mounts it.
 
-Mode and slider changes are retained as transaction state. The component does
+Mode and slider changes are retained as component state. The component does
 not schedule wakes because it has no animation, and only `render` publishes a
 new KTX2 frame.
 

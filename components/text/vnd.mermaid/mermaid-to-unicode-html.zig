@@ -52,9 +52,7 @@ export fn input_ptr() u32 {
 export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buffer));
-}
+
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -71,7 +69,7 @@ export fn output_content_type_size() u32 {
     return OUTPUT_CONTENT_TYPE.len;
 }
 
-export fn render(input_size_raw: u32) u32 {
+fn renderImpl(input_size_raw: u32) u32 {
     const input_size: usize = @intCast(input_size_raw);
     if (input_size > INPUT_CAP) @trap();
     const source = input_buffer[0..input_size];
@@ -98,6 +96,18 @@ export fn render(input_size_raw: u32) u32 {
         @trap();
     }
     return serializeHtml();
+}
+
+export fn render(input_size_raw: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_raw),
+        .output_ptr = @intCast(@intFromPtr(&output_buffer)),
+        .failed = 0,
+    };
 }
 
 fn clearCanvas() void {

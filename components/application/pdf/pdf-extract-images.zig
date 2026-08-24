@@ -34,10 +34,6 @@ export fn input_bytes_cap() u32 {
     return @intCast(INPUT_CAP);
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_bytes_cap() u32 {
     return @intCast(OUTPUT_CAP);
 }
@@ -1310,7 +1306,7 @@ fn writeCcittEntry(out: *Output, number: usize, info: ImageInfo, stream: []const
     return finishTarEntry(out, entry.header, entry.body, path);
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP or input_size < 5) return 0;
     const input = input_buf[0..input_size];
@@ -1343,6 +1339,18 @@ export fn render(input_size_u32: u32) u32 {
     out.writeZeros(TAR_BLOCK * 2);
     if (out.overflow) return 0;
     return @intCast(out.index);
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "run length decoder handles literal and repeated runs" {

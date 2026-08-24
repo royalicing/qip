@@ -11,7 +11,8 @@ const CONTENT_TYPE = ktx.CONTENT_TYPE;
 const LUT_SIZE: usize = 17;
 const LUT_ENTRIES: usize = LUT_SIZE * LUT_SIZE * LUT_SIZE;
 
-var io_buf: [CAP]u8 = undefined;
+var input_buf: [CAP]u8 = undefined;
+var output_buf: [CAP]u8 = undefined;
 var strength: f32 = 1.0;
 
 const Color = @Vector(3, f32);
@@ -62,15 +63,11 @@ const LUT = blk: {
 };
 
 export fn input_ptr() u32 {
-    return @intCast(@intFromPtr(&io_buf));
+    return @intCast(@intFromPtr(&input_buf));
 }
 
 export fn input_bytes_cap() u32 {
     return CAP;
-}
-
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&io_buf));
 }
 
 export fn output_bytes_cap() u32 {
@@ -127,23 +124,38 @@ fn lookup(input: Color) Color {
     return mapped + (input - clamped);
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = input_size_in;
     if (input_size > CAP) @trap();
-    const image = ktx.parse(io_buf[0..input_size]) orelse @trap();
+    const input_image = ktx.parse(input_buf[0..input_size]) orelse @trap();
+    _ = ktx.writeHeader(&output_buf, input_image.width, input_image.height) orelse @trap();
+    const output_image = ktx.parse(output_buf[0..input_size]) orelse @trap();
     const amount = strength;
     const inverse = 1.0 - amount;
     var pixel: usize = 0;
-    const pixel_count = image.width * image.height;
+    const pixel_count = input_image.width * input_image.height;
     while (pixel < pixel_count) : (pixel += 1) {
         const offset = pixel * 4;
-        const original = Color{ image.pixels[offset], image.pixels[offset + 1], image.pixels[offset + 2] };
+        const original = Color{ input_image.pixels[offset], input_image.pixels[offset + 1], input_image.pixels[offset + 2] };
         if (!std.math.isFinite(original[0]) or !std.math.isFinite(original[1]) or !std.math.isFinite(original[2])) @trap();
         const mapped = lookup(original);
         const result = original * @as(Color, @splat(inverse)) + mapped * @as(Color, @splat(amount));
-        image.pixels[offset] = result[0];
-        image.pixels[offset + 1] = result[1];
-        image.pixels[offset + 2] = result[2];
+        output_image.pixels[offset] = result[0];
+        output_image.pixels[offset + 1] = result[1];
+        output_image.pixels[offset + 2] = result[2];
+        output_image.pixels[offset + 3] = input_image.pixels[offset + 3];
     }
     return input_size_in;
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

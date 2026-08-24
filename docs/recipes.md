@@ -216,31 +216,28 @@ When a recipe step fails, the host reports its one-based position and component
 path before the component error:
 
 ```text
-step 2 (components/bytes/zlib-decompress.wasm): rejected input (commit returned -9223372036854775808)
+step 2 (components/bytes/zlib-decompress.wasm): rejected input
 ```
 
 The same format applies to `qip run` pipelines and router recipe chains. This
 lets a log identify the failing component even when a recipe uses the same
 component more than once.
 
-A component with `commit() -> i64` can reject expected input without trapping.
-The CLI calls `commit` after `render` and before it reads output. A negative
-result produces `rejected input`. If the component sets the invalid-input bit
-and supplies an offset, the message is more specific:
+A component can reject expected input without trapping. Its `render` result
+sets the failure bit. The CLI does not read output from a rejected result. If
+the component supplies an input offset, the message is more specific:
 
 ```text
-step 3 (components/utf8/utf8-must-be-valid.wasm): rejected invalid input at byte 17 (commit returned -4611686018427387887)
+step 3 (components/utf8/utf8-must-be-valid.wasm): rejected input at input offset 17
 ```
 
-The byte offset and numeric commit result are diagnostics. Recipe logic must
-not parse them as stable error codes. Every negative commit result rejects the
-step, no output from that step is used, and the recipe stops.
+The input offset is diagnostic data. Recipe logic must not treat it as a stable
+error code. Every rejected result stops the recipe, and no output from that
+step is used.
 
 A trap is different. The CLI reports `render trapped` and discards the Wasm
-instance because its memory may contain partial output or state. If `commit`
-traps, the component has broken the Content contract; the message states that
-`commit()` must not trap. Capacity, content-type, and uniform failures use the
-same `step N (component)` prefix.
+instance because its memory may contain partial output or state. Capacity,
+content-type, and uniform failures use the same `step N (component)` prefix.
 
 Use `--capacities-must-fit` to turn capacity warnings into errors:
 

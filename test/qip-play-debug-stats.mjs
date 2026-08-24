@@ -328,11 +328,10 @@ test("qip-play runs initial Content render and separate Timed KTX2 updates", () 
   element._exports = instance.exports;
   element._memory = instance.exports.memory;
   element._uniforms = godRaysUniforms();
-  element._outputPtr = instance.exports.output_ptr();
   element._outputCapacity = instance.exports.output_bytes_cap();
 
   const initial = element._runInitialContentRender();
-  const parsed = element._readKTX2Output(initial.outputLen);
+  const parsed = element._readKTX2Output(initial.rendered);
   assert.equal(parsed.width, 640);
   assert.equal(parsed.height, 360);
   assert.equal(parsed.pixels.byteLength, 640 * 360 * 4);
@@ -349,7 +348,7 @@ test("qip-play runs initial Content render and separate Timed KTX2 updates", () 
   assert.equal(element._finishedAtMS, 17);
   assert.equal(element._updateN, 2);
   assert.equal(element._renderN, 1);
-  assert.deepEqual(Buffer.from(element._readKTX2Output(initial.outputLen).pixels), before);
+  assert.deepEqual(Buffer.from(element._readKTX2Output(initial.rendered).pixels), before);
 
   let drawN = 0;
   element._renderWidth = parsed.width;
@@ -381,12 +380,11 @@ test("qip-play batches timestamp-free Interactive events inside an update", () =
   element._exports = instance.exports;
   element._memory = instance.exports.memory;
   element._uniforms = [];
-  element._outputPtr = instance.exports.output_ptr();
   element._outputCapacity = instance.exports.output_bytes_cap();
 
   const initial = element._runInitialContentRender();
   element._runBootstrapUpdate();
-  const parsed = element._readKTX2Output(initial.outputLen);
+  const parsed = element._readKTX2Output(initial.rendered);
   let drawN = 0;
   element._renderWidth = parsed.width;
   element._renderHeight = parsed.height;
@@ -427,11 +425,10 @@ test("qip-play combines a scheduled Timed wake with an Interactive event", () =>
   element._exports = instance.exports;
   element._memory = instance.exports.memory;
   element._uniforms = [];
-  element._outputPtr = instance.exports.output_ptr();
   element._outputCapacity = instance.exports.output_bytes_cap();
 
   const initial = element._runInitialContentRender();
-  const parsed = element._readKTX2Output(initial.outputLen);
+  const parsed = element._readKTX2Output(initial.rendered);
   assert.equal(element._nextWakeAtMS, 0);
   element._runBootstrapUpdate();
   assert.equal(element._nextWakeAtMS, 120);
@@ -460,24 +457,18 @@ test("qip-play combines a scheduled Timed wake with an Interactive event", () =>
   assert.equal(drawN, 1);
 });
 
-test("qip-play commits fallible Content input before bootstrapping updates", () => {
+test("qip-play accepts fallible Content input before bootstrapping updates", () => {
   const element = new QIPPlayElement();
-  let commitN = 0;
   element._inputSize = 3;
   element._uniforms = [];
   element._exports = {
     render(inputSize) {
       assert.equal(inputSize, 3);
-      return 0;
-    },
-    commit() {
-      commitN++;
       return 0n;
     },
   };
 
   const initial = element._runInitialContentRender();
-  assert.equal(initial.outputLen, 0);
-  assert.equal(commitN, 1);
+  assert.equal(initial.rendered.outputLen, 0);
   assert.equal(element._nextWakeAtMS, 0);
 });

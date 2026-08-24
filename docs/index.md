@@ -23,7 +23,7 @@ Components, AI coding, security: you can pick all three.
 
 QIP is the portable standard of component contracts, documented in these pages.
 
-[`qip`](/docs/qip-cli) is the command-line host implemented in this repo. It also serves as a reference implementation of QIP. This repo also contains browser JavaScript hosts such as `<qip-edit>` and `<qip-play>`. Native implementations such as in Swift are also available on request.
+[`qipx`](/docs/qipx) is the focused Node.js command-line host for Content components and Compliance oracles. This repo also contains browser JavaScript hosts such as `<qip-edit>` and `<qip-play>`, a Go host for repository and router workflows, and native implementations such as Swift.
 
 ## QIP Spec
 
@@ -46,7 +46,7 @@ The current Tile and Form interfaces are evolving:
 defines initialization, timed updates, events, presentation, scheduled wakes,
 and fixed-step simulation.
 
-[`qip` CLI](/docs/qip-cli), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Elements](/docs/qip-elements) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
+[`qipx` CLI](/docs/qipx), [Router](/docs/router), [Recipes](/docs/recipes), and [Browser Elements](/docs/qip-elements) are reference implementation and tooling docs. They are useful when building with this repo, but they are not the core QIP component spec.
 
 ## Why WebAssembly
 
@@ -97,7 +97,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 </li>
 <li><span class="docs-section">Running</span>
 <ol>
-<li><a href="/docs/qip-cli">qip cli</a></li>
+<li><a href="/docs/qipx">qipx CLI</a></li>
 <li><a href="/docs/qip-elements">Browser Elements</a></li>
 <li><a hidden href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
 <li><a href="/docs/running-in-javascript">Running In JavaScript</a></li>
@@ -138,9 +138,9 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 </li>
 <li><span class="docs-section">Router</span>
 <ol>
+<li><a href="/docs/router">Router</a></li>
 <li><a href="/docs/content">Content Layout</a></li>
 <li><a href="/docs/recipes">Recipe Layout</a></li>
-<li><a href="/docs/router">Router</a></li>
 <li><a href="/docs/warc-counts">Counting A WARC Archive</a></li>
 <li><a href="/docs/routing-recipes">File Routing & Recipe Orchestration</a></li>
 <li><a hidden href="/docs/visitor_router_abi_v0">Visitor Router ABI v0</a></li>

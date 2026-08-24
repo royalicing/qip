@@ -35,11 +35,6 @@ uint32_t input_bytes_cap(void) {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr(void) {
-    return (uint32_t)(uintptr_t)output_buf;
-}
-
 __attribute__((export_name("output_bytes_cap")))
 uint32_t output_bytes_cap(void) {
     return OUTPUT_CAP;
@@ -197,7 +192,7 @@ static void clear_state(void) {
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     uint32_t i;
     uint32_t token_len = 0;
     Entry *top[10];
@@ -265,5 +260,5 @@ uint32_t render(uint32_t input_size) {
     write_u32(unique_count);
     write_byte((unsigned char)'\n');
 
-    return out_pos;
+    return ((uint64_t)(uint32_t)(uintptr_t)output_buf << 32) | out_pos;
 }

@@ -11,8 +11,6 @@
   (func (export "input_utf8_cap") (result i32)
     (global.get $input_utf8_cap))
   (global $output_ptr i32 (i32.const 0x20000))
-  (func (export "output_ptr") (result i32)
-    (global.get $output_ptr))
   (global $output_utf8_cap i32 (i32.const 0x10000))
   (func (export "output_utf8_cap") (result i32)
     (global.get $output_utf8_cap))
@@ -20,7 +18,7 @@
   ;; Required export: render(input_size) -> output_size
   ;; Input is at input_ptr, output goes to output_ptr
   ;; Return 0 for no output, or the length of output written
-  (func $render (export "render") (param $input_size i32) (result i32)
+  (func $render_size (param $input_size i32) (result i32)
     (local $i i32)
     (local $out_pos i32)
 
@@ -54,4 +52,8 @@
     ;; Return output length
     (local.get $out_pos)
   )
+  (func (export "render") (param $input_size i32) (result i64)
+    (i64.or
+      (i64.shl (i64.extend_i32_u (global.get $output_ptr)) (i64.const 32))
+      (i64.extend_i32_u (call $render_size (local.get $input_size)))))
 )

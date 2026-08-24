@@ -52,8 +52,11 @@ async function loadComponent(name) {
     run(input) {
       if (input.length > this.inputCap) throw new Error(`${name}: input exceeds cap`);
       new Uint8Array(ex.memory.buffer, ex.input_ptr(), input.length).set(input);
-      const n = ex.render(input.length) >>> 0;
-      return Buffer.from(new Uint8Array(ex.memory.buffer, ex.output_ptr(), n));
+      const result = BigInt.asUintN(64, ex.render(input.length));
+      if ((result >> 63n) !== 0n) return null;
+      const n = Number(result & 0xffff_ffffn);
+      const ptr = Number((result >> 32n) & 0x7fff_ffffn);
+      return Buffer.from(new Uint8Array(ex.memory.buffer, ptr, n));
     },
   };
 }
@@ -75,10 +78,9 @@ function nodeInflate(buf) {
   }
 }
 
-// Our decoder returns 0 for both rejection and a legitimately empty payload,
-// so resolve the ambiguity against node before calling it a rejection.
 function oursInflate(buf) {
   const out = decompressor.run(buf);
+  if (out === null) return null;
   if (out.length > 0) return out;
   const ref = nodeInflate(buf);
   if (ref !== null && ref.out.length === 0 && ref.consumed === buf.length) {

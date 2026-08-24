@@ -21,10 +21,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -101,7 +97,7 @@ fn storeU64LE(off: u32, value: u64) void {
     storeU32LE(off + 4, hi);
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     var input_size = input_size_in;
     if (input_size > INPUT_CAP) {
         input_size = @intCast(INPUT_CAP);
@@ -212,4 +208,16 @@ export fn render(input_size_in: u32) u32 {
     }
 
     return @intCast(out_size);
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

@@ -2,7 +2,7 @@
 
 # Image content components
 
-These components accept an `image/*` MIME type. Common web and camera formats come first. Download a `.wasm` file and run it with [`qip run`](/docs/qip-cli), or use the [recipe finder](/recipes) to connect compatible decoders, transforms, and encoders.
+These components accept an `image/*` MIME type. Common web and camera formats come first. Download a `.wasm` file and run it with [`qipx run`](/docs/qipx), or use the [recipe finder](/recipes) to connect compatible decoders, transforms, and encoders.
 
 ## JPEG (`image/jpeg`)
 

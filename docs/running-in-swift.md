@@ -64,6 +64,7 @@ enum MarkdownRendererError: Error {
     case missingResource
     case missingExport(String)
     case invalidResult(String)
+    case rejectedInput
     case inputTooLarge(actual: Int, capacity: Int)
 }
 
@@ -71,7 +72,6 @@ final class MarkdownRenderer {
     private let memory: Memory
     private let inputPtr: Function
     private let inputCap: Function
-    private let outputPtr: Function
     private let render: Function
 
     init(wasmURL: URL) throws {
@@ -89,9 +89,6 @@ final class MarkdownRenderer {
         guard let inputCap = instance.exports[function: "input_utf8_cap"] else {
             throw MarkdownRendererError.missingExport("input_utf8_cap")
         }
-        guard let outputPtr = instance.exports[function: "output_ptr"] else {
-            throw MarkdownRendererError.missingExport("output_ptr")
-        }
         guard let render = instance.exports[function: "render"] else {
             throw MarkdownRendererError.missingExport("render")
         }
@@ -99,7 +96,6 @@ final class MarkdownRenderer {
         self.memory = memory
         self.inputPtr = inputPtr
         self.inputCap = inputCap
-        self.outputPtr = outputPtr
         self.render = render
     }
 
@@ -124,12 +120,15 @@ final class MarkdownRenderer {
             }
         }
 
-        let outputSize = try callI32(
-            render,
-            named: "render",
-            arguments: [.i32(UInt32(source.count))]
-        )
-        let outputStart = try callI32(outputPtr, named: "output_ptr")
+        let results = try render([.i32(UInt32(source.count))])
+        guard results.count == 1, case .i64(let packed) = results[0] else {
+            throw MarkdownRendererError.invalidResult("render")
+        }
+        guard packed >> 63 == 0 else {
+            throw MarkdownRendererError.rejectedInput
+        }
+        let outputSize = Int(UInt32(truncatingIfNeeded: packed))
+        let outputStart = Int((packed >> 32) & 0x7fff_ffff)
 
         return memory.withUnsafeBufferPointer(
             offset: UInt(outputStart),
@@ -205,8 +204,9 @@ The loader is runtime-specific; the QIP calls are not:
 3. `module.instantiate` creates an instance with no imports.
 4. Swift encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 5. `withUnsafeMutableBufferPointer` copies those bytes to `input_ptr()`.
-6. `render(input_size)` returns the number of output bytes.
-7. Swift copies that many bytes from `output_ptr()` into a `String`.
+6. `render(input_size)` returns the rejection bit, output pointer, and size in
+   one packed `i64` value.
+7. Swift copies the accepted output range into a `String`.
 
 The unsafe buffer pointers do not escape their closures. In particular, the input view is gone before calling `render`; WebAssembly execution may grow memory and invalidate an earlier view.
 
@@ -245,7 +245,8 @@ Wasmtime's Pulley interpreter avoids the native-code compiler requirement and is
 
 Apple's [App Review Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/) restricts downloading or executing code that introduces or changes app functionality. Keeping fixed QIP components in the submitted app bundle is a different boundary from downloading new modules after release, but App Review remains the authority for a particular product.
 
-The QIP wrapper does not otherwise change: load a Core module with no imports, write bytes at `input_ptr()`, call `render`, and read the result at `output_ptr()`.
+The QIP wrapper does not otherwise change: load a Core module with no imports,
+write bytes at `input_ptr()`, call `render`, and read the returned output range.
 
 ## When To Use Something Else
 

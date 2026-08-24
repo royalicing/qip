@@ -174,14 +174,14 @@ const luhnModule = await WebAssembly.compile(
 );
 const luhn = contentComponent(text, luhnModule, text);
 if (luhn(" 4992-7398 716 ") !== "49927398716") {
-  throw new Error("Wasm-backed component did not accept committed output");
+  throw new Error("Wasm-backed component did not accept valid output");
 }
-let rejectedByCommit = false;
+let rejected = false;
 try {
   luhn("49927398717");
 } catch (error) {
-  rejectedByCommit = /rejected invalid input at byte 11/.test(error.message);
+  rejected = /component rejected input at input offset 11/.test(error.message);
 }
-if (!rejectedByCommit) {
-  throw new Error("Wasm-backed component did not report commit rejection");
+if (!rejected) {
+  throw new Error("Wasm-backed component did not report input rejection");
 }

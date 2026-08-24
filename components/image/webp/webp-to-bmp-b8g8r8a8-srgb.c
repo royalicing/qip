@@ -163,7 +163,7 @@ static void write_u32_le(uint8_t* p, uint32_t value) {
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 static const char input_content_type[] = "image/webp";
@@ -204,7 +204,7 @@ uint32_t arena_free_unmatched_count(void) {
   return (uint32_t)arena_free_unmatched_count_value;
 }
 
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   WebPBitstreamFeatures features;
   VP8StatusCode status;
   uint64_t pixel_count;
@@ -212,18 +212,18 @@ uint32_t render(uint32_t input_size_value) {
   uint32_t output_size;
   uint8_t* decoded;
 
-  if (input_size_value > INPUT_CAP) return 0;
+  if (input_size_value > INPUT_CAP) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   arena_reset();
 
   status = WebPGetFeatures(input_buf, input_size_value, &features);
   if (status != VP8_STATUS_OK || features.width <= 0 || features.height <= 0 ||
       (uint32_t)features.width > MAX_DIMENSION ||
       (uint32_t)features.height > MAX_DIMENSION || features.has_animation) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   pixel_count = (uint64_t)(uint32_t)features.width *
                 (uint64_t)(uint32_t)features.height;
-  if (pixel_count > MAX_PIXELS) return 0;
+  if (pixel_count > MAX_PIXELS) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   pixel_bytes = (uint32_t)(pixel_count * 4u);
   output_size = OUTPUT_HEADER_SIZE + pixel_bytes;
 
@@ -236,13 +236,13 @@ uint32_t render(uint32_t input_size_value) {
                                output_buf + OUTPUT_HEADER_SIZE, pixel_bytes,
                                features.width * 4);
 #endif
-  if (decoded == NULL || arena_failed_size != 0) return 0;
+  if (decoded == NULL || arena_failed_size != 0) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
 
 #ifdef QIP_WEBP_OUTPUT_KTX2_RGBA8
   if (qip_ktx2_rgba8_write_header(output_buf, OUTPUT_CAP,
                                    (uint32_t)features.width,
                                    (uint32_t)features.height) != output_size) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
 #else
   memset(output_buf, 0, OUTPUT_HEADER_SIZE);
@@ -259,5 +259,5 @@ uint32_t render(uint32_t input_size_value) {
   write_u32_le(output_buf + 38, 2835);
   write_u32_le(output_buf + 42, 2835);
 #endif
-  return output_size;
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)(output_size);
 }

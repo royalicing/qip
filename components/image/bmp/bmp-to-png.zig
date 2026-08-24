@@ -40,10 +40,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -145,7 +141,7 @@ fn writeFiltered(filter: u8, cur: []const u8, prior: []const u8, bpp: usize, out
     }
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     var pixel_offset: u64 = 0;
     var width: u64 = 0;
@@ -288,12 +284,24 @@ export fn render(input_size_in: u32) u32 {
     return @as(u32, @intCast(iend_start + 12));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 pub const native_output_capacity: usize = OUTPUT_CAP;
 
 pub fn nativeRender(input: []const u8, output: []u8) u32 {
     if (input.len > INPUT_CAP) @trap();
     @memcpy(input_buf[0..input.len], input);
-    const output_size = render(@intCast(input.len));
+    const output_size = renderImpl(@intCast(input.len));
     if (output_size > output.len) @trap();
     @memcpy(output[0..output_size], output_buf[0..output_size]);
     return output_size;

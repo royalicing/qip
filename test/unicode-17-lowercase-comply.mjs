@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 // Component-specific checks for the Unicode 17 lowercase Content Compliance
 // component. Generic meta-contract checks come from the shared harness.
 import assert from "node:assert/strict";
@@ -35,8 +36,8 @@ test("duel: components/utf8/unicode-17-lowercase.wasm is fully compliant", async
   const readI32 = (name) => (typeof impl[name] === "function" ? impl[name]() : impl[name].value);
   const wasmLower = (input) => {
     new Uint8Array(impl.memory.buffer, readI32("input_ptr"), input.length).set(input);
-    const outLen = impl.render(input.length);
-    return Buffer.from(new Uint8Array(impl.memory.buffer, readI32("output_ptr"), outLen));
+    const outLen = qipRenderSize(impl, input.length);
+    return Buffer.from(new Uint8Array(impl.memory.buffer, qipRenderedOutputPointer(impl), outLen));
   };
 
   const { cases, predicates } = await runComplianceComponent(wasmBytes, { impl: wasmLower });

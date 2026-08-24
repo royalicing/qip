@@ -85,10 +85,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -176,7 +172,7 @@ fn incrementInteger(len: *usize) void {
     len.* += 1;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const currency = selectedCurrency() orelse @trap();
     currency_numeric = DEFAULT_CURRENCY_NUMERIC;
     const input_size: usize = @intCast(input_size_in);
@@ -250,6 +246,18 @@ export fn render(input_size_in: u32) u32 {
     return @intCast(out);
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 test "currency uniform resets to USD after render" {
     const std = @import("std");
     const input = "1234.5";
@@ -258,9 +266,9 @@ test "currency uniform resets to USD after render" {
     @memcpy(input_buf[0..input.len], input);
 
     _ = uniform_set_currency(978);
-    const euro_len: usize = @intCast(render(input.len));
+    const euro_len: usize = @intCast(renderImpl(input.len));
     try std.testing.expectEqualStrings(expected_eur, output_buf[0..euro_len]);
 
-    const usd_len: usize = @intCast(render(input.len));
+    const usd_len: usize = @intCast(renderImpl(input.len));
     try std.testing.expectEqualStrings(expected_usd, output_buf[0..usd_len]);
 }

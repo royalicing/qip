@@ -4,7 +4,7 @@
 
 Use this Zig QIP component to build intuition for CORS, CSRF, and XSS. The diagrams focus on what the browser sends, what JavaScript is allowed to read, and where attacker-controlled input crosses a trust boundary.
 
-Topic and scenario selections are retained as transaction state. The component
+Topic and scenario selections are retained as component state. The component
 has no timed animation and publishes a new KTX2 frame only from `render`.
 
 <qip-play>

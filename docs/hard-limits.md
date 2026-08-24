@@ -160,18 +160,18 @@ calls, recursion, and statically readable content-type metadata.
 host to enforce the structural profile while using a runtime mechanism for
 execution, such as a timeout or fuel meter.
 
-These policy components accept the original module unchanged or reject it
-through `commit()`. A failed proof is an expected policy result, so it does not
-trap or invalidate the checker instance. They assume that the input is valid
+These policy components accept the original module unchanged or reject it with
+the `failed` bit in the `render` result. A failed proof is an expected policy
+result, so it does not trap or invalidate the checker instance. They assume that the input is valid
 Wasm; place `wasm-validate-core-1.0.wasm` first when bytes enter from an
 untrusted source.
 
 ## Bounded Output Proofs
 
 `wasm-bounded-output` certifies that every successful exit from a Content
-component's `render(i32) -> i32` returns no more than its static
-`output_utf8_cap()` or `output_bytes_cap()`. Run it independently after normal
-Wasm and QIP contract validation:
+component's `render(i32) -> i64` packs an output size that is no more than its
+static `output_utf8_cap()` or `output_bytes_cap()`. Run it independently after
+normal Wasm and QIP contract validation:
 
 ```bash
 qip run -i component.wasm -- \
@@ -189,7 +189,7 @@ i32.gt_u
 if
   unreachable
 end
-local.get $output_size
+;; Pack output_ptr and the unchanged output_size into the i64 result.
 ```
 
 The capacity operand may instead be a `global.get` of an immutable constant
@@ -198,11 +198,14 @@ no earlier `return` or branch may escape to the function label. These rules
 make the proof local and mechanically checkable: every normal exit crosses the
 guard, while an excessive value traps inside the component.
 
-This certificate covers the returned byte count only. It does not prove that
-the component wrote meaningful output, stayed within the output buffer while
-writing, or returned a valid output pointer. Those remain QIP contract and
-component-correctness concerns. Modules without the recognized proof may still
-be correct; the checker fails closed when it cannot establish the property.
+The checker requires the guarded local in the low 32 bits of the packed result.
+It also requires the pointer expression to be extended to 64 bits and shifted
+left by 32 bits before the fields are combined. This certificate covers the
+returned byte count only. It does not prove that the component wrote meaningful
+output, stayed within the output buffer while writing, or returned a valid
+output pointer. Those remain QIP contract and component-correctness concerns.
+Modules without the recognized proof may still be correct; the checker fails
+closed when it cannot establish the property.
 
 For a readable inspection report, use:
 
@@ -285,7 +288,6 @@ clang --target=wasm32 -nostdlib -Oz component.c \
   -Wl,--export=render \
   -Wl,--export=input_ptr \
   -Wl,--export=input_utf8_cap \
-  -Wl,--export=output_ptr \
   -Wl,--export=output_utf8_cap \
   -Wl,--export-memory \
   -o component.wasm

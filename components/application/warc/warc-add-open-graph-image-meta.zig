@@ -82,10 +82,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -503,7 +499,7 @@ fn processWARC(input: []const u8, out: *Output) void {
     }
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 
@@ -512,6 +508,18 @@ export fn render(input_size_u32: u32) u32 {
     if (out.overflow) @trap();
     if (!warc.validateArchive(output_buf[0..out.idx])) @trap();
     return @as(u32, @intCast(out.idx));
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 fn appendWARCRecord(out_buf: []u8, cursor: *usize, warc_type: []const u8, target_uri: []const u8, payload: []const u8) !void {
@@ -526,7 +534,7 @@ fn appendWARCRecord(out_buf: []u8, cursor: *usize, warc_type: []const u8, target
 fn runTransform(input: []const u8, out: []u8) ![]const u8 {
     @memset(out, 0);
     @memcpy(input_buf[0..input.len], input);
-    const n = render(@as(u32, @intCast(input.len)));
+    const n = renderImpl(@as(u32, @intCast(input.len)));
     if (n > out.len) return error.OutputTooSmall;
     @memcpy(out[0..n], output_buf[0..n]);
     return out[0..n];

@@ -103,10 +103,6 @@ const stamp_labels = [_][]const u8{
     "SMILE",
 };
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&ktx_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -212,7 +208,7 @@ export fn finish_update() i64 {
     return if (begun_at_ms <= std.math.maxInt(i64) - 16) begun_at_ms + 16 else begun_at_ms;
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0 or (lifecycle_state != .initializing and lifecycle_state != .ready)) @trap();
     ensureInit();
     drawFrame();
@@ -221,6 +217,18 @@ export fn render(input_size: u32) u32 {
     @memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);
     lifecycle_state = .ready;
     return @intCast(OUTPUT_BYTES);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&ktx_buf[0])),
+        .failed = 0,
+    };
 }
 
 fn ensureInit() void {

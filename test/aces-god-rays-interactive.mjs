@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -14,7 +15,7 @@ function instantiate(name) {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(exports, size) {
@@ -76,7 +77,7 @@ test("Aces Up advances deal animation without replacing published output", () =>
   assert.equal(exports.key_event.length, 2);
   assert.equal(exports.pointer_event.length, 3);
 
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   assert.equal(size, 224 + 470 * 364 * 4);
   const firstCard = digest(exports, size);
 
@@ -86,17 +87,17 @@ test("Aces Up advances deal animation without replacing published output", () =>
 
   exports.begin_update_at(150n);
   assert.equal(exports.finish_update(), 225n);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.notEqual(digest(exports, size), firstCard);
 });
 
 test("Aces Up traps on update lifecycle misuse", () => {
   const exports = instantiate("aces-up");
   assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
-  exports.render(0);
+  qipRenderSize(exports, 0);
   assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
   exports.begin_update_at(1n);
-  assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+  assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
   exports.finish_update();
   assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
 });
@@ -105,7 +106,7 @@ test("God Rays is an event-free Timed KTX2 component", () => {
   const exports = instantiate("god-rays");
   assertContentABI(exports, false);
   setGodRaysUniforms(exports);
-  const size = exports.render(0);
+  const size = qipRenderSize(exports, 0);
   assert.equal(size, 224 + 640 * 360 * 4);
   const initial = digest(exports, size);
 
@@ -114,7 +115,7 @@ test("God Rays is an event-free Timed KTX2 component", () => {
   assert.equal(exports.finish_update(), 32n);
   assert.equal(digest(exports, size), initial);
   setGodRaysUniforms(exports);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.notEqual(digest(exports, size), initial);
 });
 
@@ -122,10 +123,10 @@ test("God Rays uses defaults for omitted uniforms", () => {
   const exports = instantiate("god-rays");
   exports.uniform_set_density(0.3);
   exports.uniform_set_spotty(0.3);
-  assert.equal(exports.render(0), 224 + 640 * 360 * 4);
+  assert.equal(qipRenderSize(exports, 0), 224 + 640 * 360 * 4);
 
   const update = instantiate("god-rays");
-  update.render(0);
+  qipRenderSize(update, 0);
   update.begin_update_at(1n);
   update.uniform_set_density(0.3);
   assert.equal(update.finish_update(), 17n);

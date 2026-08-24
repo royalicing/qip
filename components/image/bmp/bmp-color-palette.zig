@@ -29,10 +29,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -209,19 +205,30 @@ fn paletteJSON(input: []const u8) BmpError!usize {
     return out;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     return @as(u32, @intCast(paletteJSON(input_buf[0..input_size]) catch @trap()));
 }
 
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 test "extracts dominant colors from a tiny bmp" {
     const bmp = [_]u8{
-        'B',  'M',  70,   0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0,
-        40,   0,    0,    0, 2, 0, 0, 0, 2, 0, 0, 0,
-        1,    0,    24,   0, 0, 0, 0, 0, 16, 0, 0, 0,
-        0,    0,    0,    0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0,
-        0,    0,    255,  0, 0, 255, 0, 0,
-        255,  0,    0,    255, 0, 0, 0, 0,
+        'B', 'M', 70, 0,   0, 0, 0,   0, 0, 0,   54, 0, 0, 0,
+        40,  0,   0,  0,   2, 0, 0,   0, 2, 0,   0,  0, 1, 0,
+        24,  0,   0,  0,   0, 0, 16,  0, 0, 0,   0,  0, 0, 0,
+        0,   0,   0,  0,   0, 0, 0,   0, 0, 0,   0,  0, 0, 0,
+        255, 0,   0,  255, 0, 0, 255, 0, 0, 255, 0,  0, 0, 0,
     };
     const len = try paletteJSON(bmp[0..]);
     try std.testing.expect(std.mem.indexOf(u8, output_buf[0..len], "#ff0000") != null);

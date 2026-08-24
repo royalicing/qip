@@ -19,8 +19,8 @@ uint32_t input_bytes_cap() {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
+static uint32_t
+output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
@@ -77,18 +77,18 @@ static void write_u32_le(uint32_t off, uint32_t value) {
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     if (input_size < 54) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
     if (input_buffer[0] != 'B' || input_buffer[1] != 'M') {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
 
     uint32_t pixel_offset = read_u32_le(10);
     uint32_t dib_size = read_u32_le(14);
     if (pixel_offset < 54 || dib_size < 40) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
 
     int32_t width = read_i32_le(18);
@@ -98,10 +98,10 @@ uint32_t render(uint32_t input_size) {
     uint32_t compression = read_u32_le(30);
 
     if (planes != 1 || bpp != 32 || compression != 0) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
     if (width <= 0 || height == 0) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
 
     int top_down = 0;
@@ -115,7 +115,7 @@ uint32_t render(uint32_t input_size) {
     uint32_t src_stride = uwidth * 4u;
     uint64_t src_pixels = (uint64_t)src_stride * (uint64_t)abs_height;
     if (pixel_offset + src_pixels > input_size) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
 
     uint32_t out_width = uwidth * 2u;
@@ -124,7 +124,7 @@ uint32_t render(uint32_t input_size) {
     uint64_t out_pixels = (uint64_t)out_stride * (uint64_t)out_height;
     uint64_t out_size = (uint64_t)pixel_offset + out_pixels;
     if (out_size > OUTPUT_CAP) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
 
     // Copy header and update size fields.
@@ -163,5 +163,5 @@ uint32_t render(uint32_t input_size) {
         }
     }
 
-    return (uint32_t)out_size;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)out_size);
 }

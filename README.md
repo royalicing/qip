@@ -31,8 +31,9 @@ go install github.com/royalicing/qip@latest
 QIP does not use WASI or WIT, standards that have ballooned in complexity from scope creep. We want to get stuff done in today’s browsers so we pick a much smaller contract between hosts and modules:
 
 - `input_ptr()` / `input_bytes_cap()`: where the host writes input.
-- `output_ptr()` / `output_bytes_cap()`: where your module writes its output.
-- `render(input_size)`: function to transform input and return output length in bytes.
+- `output_bytes_cap()`: the maximum output size.
+- `render(input_size) -> i64`: transform input and return its output pointer and
+  size, or reject the input.
 - Optional `uniform_set_<key>(value)`: primitive integer or float parameters applied explicitly before rendering.
 
 You can read more about the [Content component contract in our docs](./docs/content-component.md).
@@ -80,9 +81,12 @@ echo "x" | qip run components/utf8/infinite-loop.wasm
 
 There are a few recommended languages for writing QIP components: Zig, C, or raw WebAssembly text format.
 
-### Zig
+### Zig: infallible component
 
-Here we’ll write a QIP component for an E.164 canonicalizer that takes a phone number and converts it into a canonical international form.
+Here we’ll write an infallible QIP component for an E.164 canonicalizer. It
+takes a phone number and converts it into a canonical international form. It
+does not export `failure_modes_per_input_offset`, and every successful call
+sets `failed` to zero.
 
 - `+1 (212) 555-0100` -> `+12125550100`
 - `  1212-555-0100  ` -> `+12125550100`
@@ -98,18 +102,13 @@ const OUTPUT_CAP: usize = 64 * 1024;
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
-// Export functions so qip runner can read these values.
-// WebAssembly supports multiple return values but Zig and C unfortunately don’t.
+// Export functions so the QIP host can read these static values.
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
 
 export fn input_utf8_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
-}
-
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
 }
 
 export fn output_utf8_cap() u32 {
@@ -120,9 +119,13 @@ fn isDigit(c: u8) bool {
     return c >= '0' and c <= '9';
 }
 
-export fn render(input_size_in: u32) u32 {
-    // TODO: we should trap if input is too large
-    const input_size: usize = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    if (input_size_in > INPUT_CAP) @trap();
+    const input_size: usize = @intCast(input_size_in);
 
     // Emit '+' then append only digits.
     output_buf[0] = '+';
@@ -134,16 +137,20 @@ export fn render(input_size_in: u32) u32 {
 
         if (!isDigit(c)) continue;
 
-        if (output_size >= OUTPUT_CAP) @panic("output buffer overflow");
+        if (output_size >= OUTPUT_CAP) @trap();
 
         output_buf[output_size] = c;
         output_size += 1;
     }
 
     // If just '+' then return empty string.
-    if (output_size == 1) return 0;
+    if (output_size == 1) output_size = 0;
 
-    return @as(u32, @intCast(output_size));
+    return .{
+        .output_size = @intCast(output_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 ```
 
@@ -157,7 +164,6 @@ zig build-exe e164.zig \
   --export=render \
   --export=input_ptr \
   --export=input_utf8_cap \
-  --export=output_ptr \
   --export=output_utf8_cap \
   -femit-bin=e164.wasm
 ```
@@ -183,7 +189,6 @@ import {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   render,
 } from "./e164.wasm";
 
@@ -201,9 +206,12 @@ export function normalizeE164(phoneNumber) {
     throw new RangeError("phone number exceeds input capacity");
   }
 
-  const outputSize = render(written);
+  const result = BigInt.asUintN(64, render(written));
+  if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+  const outputSize = Number(result & 0xffff_ffffn);
+  const outputPtr = Number((result >> 32n) & 0x7fff_ffffn);
   return decoder.decode(
-    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+    new Uint8Array(memory.buffer, outputPtr, outputSize),
   );
 }
 
@@ -212,7 +220,7 @@ console.log(normalizeE164("+1 (212) 555-0100"));
 ```
 
 This uses the component directly: encode the input, write it at `input_ptr()`,
-call `render()`, then decode the bytes at `output_ptr()`. There is no QIP
+call `render()`, then decode the pointer and size in its result. There is no QIP
 JavaScript runtime or reusable wrapper involved. It assumes `e164.wasm` is the
 known-valid component built above; hosts accepting arbitrary Wasm need a
 separate validation boundary described by the [Content Component
@@ -231,10 +239,7 @@ We’ll write some C to trim leading and trailing whitespace.
 #include <stdint.h>
 
 #define INPUT_CAP (4u * 1024u * 1024u)
-#define OUTPUT_CAP (4u * 1024u * 1024u)
-
 static char input_buffer[INPUT_CAP];
-static char output_buffer[OUTPUT_CAP];
 
 __attribute__((export_name("input_ptr")))
 uint32_t input_ptr() {
@@ -246,14 +251,9 @@ uint32_t input_utf8_cap() {
     return sizeof(input_buffer);
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
-    return (uint32_t)(uintptr_t)output_buffer;
-}
-
 __attribute__((export_name("output_utf8_cap")))
 uint32_t output_utf8_cap() {
-    return sizeof(output_buffer);
+    return sizeof(input_buffer);
 }
 
 static int is_space(char c) {
@@ -261,11 +261,8 @@ static int is_space(char c) {
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
-    if (input_size > INPUT_CAP) {
-        // TODO: we should trap if input is too large
-        input_size = INPUT_CAP;
-    }
+uint64_t render(uint32_t input_size) {
+    if (input_size > INPUT_CAP) __builtin_trap();
 
     uint32_t start = 0;
     while (start < input_size && is_space(input_buffer[start])) {
@@ -277,17 +274,9 @@ uint32_t render(uint32_t input_size) {
         end--;
     }
 
-    uint32_t out_len = end - start;
-    if (out_len > OUTPUT_CAP) {
-        // TODO: We should trap.
-        return 0;
-    }
-
-    for (uint32_t i = 0; i < out_len; i++) {
-        output_buffer[i] = input_buffer[start + i];
-    }
-
-    return out_len;
+    uint32_t output_size = end - start;
+    uint32_t output_ptr = (uint32_t)(uintptr_t)(input_buffer + start);
+    return ((uint64_t)output_ptr << 32) | output_size;
 }
 ```
 
@@ -302,7 +291,6 @@ zig cc trim.c \
   -Wl,--export-memory \
   -Wl,--export=input_ptr \
   -Wl,--export=input_utf8_cap \
-  -Wl,--export=output_ptr \
   -Wl,--export=output_utf8_cap \
   -Oz \
   -o trim.wasm
@@ -340,22 +328,22 @@ You can also write raw WebAssembly text format which compiles directly to `.wasm
     (global.get $input_ptr))
   (func (export "input_utf8_cap") (result i32)
     (global.get $input_utf8_cap))
-  (func (export "output_ptr") (result i32)
-    (global.get $output_ptr))
   (func (export "output_utf8_cap") (result i32)
     (global.get $output_utf8_cap))
 
-  ;; Required export: render(input_size) -> output_size
-  ;; Input is at input_ptr, output goes to output_ptr
-  ;; Return length of output written
-  (func (export "render") (param i32 $input_size) (result i32)
+  ;; Required export: render(input_size) -> packed output pointer and size
+  (func (export "render") (param i32 $input_size) (result i64)
     ;; Write "Hello, World" as i64 + i32
     ;; "Hello, W" as i64 (little-endian: 0x57202c6f6c6c6548)
     (i64.store (global.get $output_ptr) (i64.const 0x57202c6f6c6c6548))
     ;; "orld" as i32 (little-endian: 0x646c726f)
     (i32.store (i32.add (global.get $output_ptr) (i32.const 8)) (i32.const 0x646c726f))
-    ;; Return size of output: 12 UTF-8 octets
-    (i32.const 12)
+    ;; Put the pointer in bits 32..62 and the size in bits 0..31.
+    (i64.or
+      (i64.shl
+        (i64.extend_i32_u (global.get $output_ptr))
+        (i64.const 32))
+      (i64.const 12))
   )
 )
 ```
@@ -647,7 +635,7 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
   - [ ] Corpus extraction for non-QIP implementations: run the oracle against a null impl (host records every declared case instead of executing anything) and export the ordered corpus as a tar archive (simple, streaming, ordered, arbitrary binary entries; the repo already speaks tar). Any external harness — a Go test dueling x/text, a Node script dueling `toLocaleLowerCase`, a CLI duel over stdin/stdout — consumes the tar. This makes the emit-a-corpus design a *host feature* of the bridge design rather than a separate module shape.
   - [x] Migrate all repository oracles, including Luhn, E.164, `preserve-*`, and `trap-*`, to the bridge.
   - [ ] Move the Compliance oracle meta-contract checks into `qip comply` base validation (the way static contract checks already run for render components): deterministic declarations across a double null-impl run, sequential u64 ordinals, must_render_into open/emit/finish discipline, and seed-varies-fuzz-only. Per-component harnesses must not each re-verify these; `test/lib/compliance-harness.mjs` is the interim JS reference implementation of both the bridge and the generic checks.
-- [ ] Add optimization where if the `output_ptr >= input_ptr && (output_ptr + output_size < input_ptr + input_cap)` then we can do a slice of our existing input we passed in instead of copying out the output. This would need an update to docs/component-contract.md where `output_ptr()` MUST be read only after calling `run` to allow. This is because this optimization from the module might depend on what input is passed in.
+- [x] Permit accepted output to be an immutable slice of the input region.
 - [ ] Revisit numeric outputs as SIMD-aware tensors instead of restoring the old `output_i32_cap` directly. Useful proof cases are batched CRC, histograms, offset arrays, masks, and matrices. Keep element type, logical shape, and physical layout separate; Mojo's scalar-as-one-lane-SIMD and explicit layout model is pertinent prior art.
 
 ![qip logo](qip-logo.svg)

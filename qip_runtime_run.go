@@ -158,7 +158,8 @@ type runModuleContract struct {
 	hasDeclaredInputContentType  bool
 	declaredOutputContentType    string
 	hasDeclaredOutputContentType bool
-	hasCommit                    bool
+	hasFailure                   bool
+	failureModesPerInputOffset   uint32
 }
 
 func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleContract, error) {
@@ -169,21 +170,21 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 
 	renderFunc := mod.ExportedFunction("render")
 	if renderFunc == nil {
-		return contract, errors.New("Wasm module must export render(i32) -> i32")
+		return contract, errors.New("Wasm module must export render(i32) -> i64")
 	}
 	params := renderFunc.Definition().ParamTypes()
 	results := renderFunc.Definition().ResultTypes()
-	if len(params) != 1 || params[0] != api.ValueTypeI32 || len(results) != 1 || results[0] != api.ValueTypeI32 {
-		return contract, errors.New("Wasm module must export render(i32) -> i32")
+	if len(params) != 1 || params[0] != api.ValueTypeI32 || len(results) != 1 || results[0] != api.ValueTypeI64 {
+		return contract, errors.New("Wasm module must export render(i32) -> i64")
 	}
 
-	if commitFunc := mod.ExportedFunction("commit"); commitFunc != nil {
-		params := commitFunc.Definition().ParamTypes()
-		results := commitFunc.Definition().ResultTypes()
-		if len(params) != 0 || len(results) != 1 || results[0] != api.ValueTypeI64 {
-			return contract, errors.New("Wasm module commit export must have signature commit() -> i64")
-		}
-		contract.hasCommit = true
+	failureModes, ok, err := getExportedValue(ctx, mod, "failure_modes_per_input_offset")
+	if err != nil {
+		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
+	}
+	if ok {
+		contract.hasFailure = true
+		contract.failureModesPerInputOffset = uint32(failureModes)
 	}
 
 	inputPtr, ok, err := getExportedValue(ctx, mod, "input_ptr")
@@ -210,8 +211,12 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 	}
 	contract.inputCapBytes = inputCap
 
-	hasOutputPtr := hasExportedValue(mod, "output_ptr")
-	if hasOutputPtr {
+	hasOutputUTF8Cap := hasExportedValue(mod, "output_utf8_cap")
+	hasOutputBytesCap := hasExportedValue(mod, "output_bytes_cap")
+	if hasOutputUTF8Cap && hasOutputBytesCap {
+		return contract, errors.New("Wasm module must export exactly one output capacity")
+	}
+	if hasOutputUTF8Cap || hasOutputBytesCap {
 		contract.hasOutput = true
 		outputCap, ok, err := getExportedValue(ctx, mod, "output_utf8_cap")
 		if err != nil {
@@ -345,7 +350,6 @@ func executeModuleWithInput(
 	inputPtr := contract.inputPtr
 	inputCap := contract.inputCapBytes
 	outputCap := uint32(contract.outputCapBytes)
-	var outputPtr uint32
 	runFunc := mod.ExportedFunction("render")
 
 	var inputSize = uint64(len(inputBytes))
@@ -367,36 +371,35 @@ func executeModuleWithInput(
 		returnErr = &contentRenderTrapError{cause: wasmruntime.HumanizeExecutionError(ctx, returnErr)}
 		return
 	}
-	if contract.hasCommit {
-		commitResult, err := mod.ExportedFunction("commit").Call(ctx)
-		if err != nil {
-			returnErr = fmt.Errorf("commit trapped; the Content contract requires commit() not to trap: %w", wasmruntime.HumanizeExecutionError(ctx, err))
+	renderResult := runResult[0]
+	if renderResult&(uint64(1)<<63) != 0 {
+		if !contract.hasFailure {
+			returnErr = errors.New("render returned failure but failure_modes_per_input_offset is not exported")
 			return
 		}
-		if result := int64(commitResult[0]); result < 0 {
-			bits := uint64(result)
-			if bits&(uint64(1)<<62) != 0 {
-				returnErr = fmt.Errorf("rejected invalid input at byte %d (commit returned %d)", uint32(bits), result)
-			} else {
-				returnErr = fmt.Errorf("rejected input (commit returned %d)", result)
-			}
+		detail := uint32(renderResult)
+		if contract.failureModesPerInputOffset == 0 {
+			returnErr = errors.New("component rejected input")
 			return
 		}
+		inputOffset := detail / contract.failureModesPerInputOffset
+		mode := detail % contract.failureModesPerInputOffset
+		if uint64(inputOffset) > inputSize {
+			returnErr = fmt.Errorf("render returned input failure offset %d beyond input size %d", inputOffset, inputSize)
+			return
+		}
+		if contract.failureModesPerInputOffset == 1 {
+			returnErr = fmt.Errorf("component rejected input at input offset %d", inputOffset)
+		} else {
+			returnErr = fmt.Errorf("component rejected input at input offset %d with mode %d", inputOffset, mode)
+		}
+		return
 	}
 
-	outputCount := uint32(runResult[0])
+	outputCount := uint32(renderResult)
+	outputPtr := uint32((renderResult >> 32) & 0x7fff_ffff)
 
-	if outputCap > 0 {
-		ptr, ok, err := getExportedValue(ctx, mod, "output_ptr")
-		if err != nil {
-			returnErr = wasmruntime.HumanizeExecutionError(ctx, err)
-			return
-		}
-		if !ok {
-			returnErr = errors.New("Wasm module must export output_ptr() -> i32")
-			return
-		}
-		outputPtr = uint32(ptr)
+	if contract.hasOutput {
 
 		if outputCount > outputCap {
 			returnErr = errors.New("Module returned more bytes than its stated capacity")
@@ -414,7 +417,7 @@ func executeModuleWithInput(
 			vlogf(opts, "output sha256: %x", sum)
 		}
 	} else {
-		fmt.Printf("Ran: %d\n", runResult[0])
+		fmt.Printf("Ran: %d\n", outputCount)
 	}
 
 	exec.memoryBytes = memorySizeBytes(mem)

@@ -9,25 +9,25 @@ var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 const KeywordSet = std.StaticStringMap(void).initComptime(.{
-    .{ "break", {} },       .{ "default", {} }, .{ "func", {} },
-    .{ "interface", {} },   .{ "select", {} },  .{ "case", {} },
-    .{ "defer", {} },       .{ "go", {} },       .{ "map", {} },
-    .{ "struct", {} },      .{ "chan", {} },     .{ "else", {} },
-    .{ "goto", {} },        .{ "package", {} },  .{ "switch", {} },
-    .{ "const", {} },       .{ "fallthrough", {} },
-    .{ "if", {} },          .{ "range", {} },    .{ "type", {} },
-    .{ "continue", {} },    .{ "for", {} },      .{ "import", {} },
-    .{ "return", {} },      .{ "var", {} },
+    .{ "break", {} },     .{ "default", {} },     .{ "func", {} },
+    .{ "interface", {} }, .{ "select", {} },      .{ "case", {} },
+    .{ "defer", {} },     .{ "go", {} },          .{ "map", {} },
+    .{ "struct", {} },    .{ "chan", {} },        .{ "else", {} },
+    .{ "goto", {} },      .{ "package", {} },     .{ "switch", {} },
+    .{ "const", {} },     .{ "fallthrough", {} }, .{ "if", {} },
+    .{ "range", {} },     .{ "type", {} },        .{ "continue", {} },
+    .{ "for", {} },       .{ "import", {} },      .{ "return", {} },
+    .{ "var", {} },
 });
 
 const TypeSet = std.StaticStringMap(void).initComptime(.{
-    .{ "any", {} },        .{ "bool", {} },       .{ "byte", {} },
-    .{ "comparable", {} }, .{ "complex64", {} },  .{ "complex128", {} },
-    .{ "error", {} },      .{ "float32", {} },    .{ "float64", {} },
-    .{ "int", {} },        .{ "int8", {} },       .{ "int16", {} },
-    .{ "int32", {} },      .{ "int64", {} },      .{ "rune", {} },
-    .{ "string", {} },     .{ "uint", {} },       .{ "uint8", {} },
-    .{ "uint16", {} },     .{ "uint32", {} },     .{ "uint64", {} },
+    .{ "any", {} },        .{ "bool", {} },      .{ "byte", {} },
+    .{ "comparable", {} }, .{ "complex64", {} }, .{ "complex128", {} },
+    .{ "error", {} },      .{ "float32", {} },   .{ "float64", {} },
+    .{ "int", {} },        .{ "int8", {} },      .{ "int16", {} },
+    .{ "int32", {} },      .{ "int64", {} },     .{ "rune", {} },
+    .{ "string", {} },     .{ "uint", {} },      .{ "uint8", {} },
+    .{ "uint16", {} },     .{ "uint32", {} },    .{ "uint64", {} },
     .{ "uintptr", {} },
 });
 
@@ -110,10 +110,6 @@ export fn input_ptr() u32 {
 
 export fn input_utf8_cap() u32 {
     return @intCast(INPUT_CAP);
-}
-
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
 }
 
 export fn output_utf8_cap() u32 {
@@ -522,7 +518,7 @@ fn transform(input: []const u8, writer: *Writer) void {
     writer.writeSlice(input[copied..]);
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const len: usize = @intCast(input_size);
     if (len > INPUT_CAP) @trap();
     var writer = Writer{};
@@ -531,9 +527,21 @@ export fn render(input_size: u32) u32 {
     return @intCast(writer.idx);
 }
 
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn runForTest(input: []const u8) []const u8 {
     @memcpy(input_buf[0..input.len], input);
-    return output_buf[0..render(@intCast(input.len))];
+    return output_buf[0..renderImpl(@intCast(input.len))];
 }
 
 test "highlights Go declarations types builtins and literals" {

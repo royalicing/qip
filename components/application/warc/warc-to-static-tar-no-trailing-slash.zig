@@ -17,10 +17,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -474,7 +470,7 @@ fn writeRedirectsTarEntry(out: *Output, input: []const u8) void {
     if (rem != 0) out.writeZeros(TAR_BLOCK - rem);
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 
@@ -509,6 +505,18 @@ export fn render(input_size_u32: u32) u32 {
     out.writeZeros(TAR_BLOCK * 2);
     if (out.overflow) @trap();
     return @as(u32, @intCast(out.index));
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "path mapping no trailing slash" {
@@ -565,7 +573,7 @@ test "render writes redirects tar entry" {
         "\r\n\r\n";
 
     @memcpy(input_buf[0..warc.len], warc);
-    const size = render(@intCast(warc.len));
+    const size = renderImpl(@intCast(warc.len));
     const tar = output_buf[0..size];
     try std.testing.expect(std.mem.indexOf(u8, tar, "index.html") != null);
     try std.testing.expect(std.mem.indexOf(u8, tar, "_redirects") != null);

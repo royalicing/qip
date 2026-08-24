@@ -7,7 +7,7 @@ more than once. Links must be unique within their nearest `nav` or
 or ordinary document content. Native `h2` headings must have unique accessible
 names across the page. Other structural and document roles are excluded because
 repeated names are normal in nested headings and tables. On success it returns
-the input unchanged and aliases the input buffer through `output_ptr()`.
+the input unchanged and returns the input buffer address in the render result.
 
 The calculation is shared with `html-to-accessibility-tree.wasm`. It follows
 the Accessible Name and Description Computation precedence for

@@ -22,8 +22,8 @@ uint32_t input_bytes_cap() {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
+static uint32_t
+output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
@@ -302,7 +302,7 @@ static void parse_table_leaf(uint32_t page_num, uint32_t input_size) {
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }
@@ -310,19 +310,19 @@ uint32_t render(uint32_t input_size) {
     output_overflow = 0;
 
     if (input_size < 100) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
     const char magic[] = "SQLite format 3\000";
     for (uint32_t i = 0; i < 16; i++) {
         if (input_buffer[i] != (unsigned char)magic[i]) {
-            return 0;
+            return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
         }
     }
 
     int ok = 0;
     uint16_t ps = read_u16_be(16, input_size, &ok);
     if (!ok) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
     if (ps == 1) {
         page_size = 65536u;
@@ -330,7 +330,7 @@ uint32_t render(uint32_t input_size) {
         page_size = ps;
     }
     if (page_size == 0) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
     page_count = (input_size + page_size - 1) / page_size;
 
@@ -339,5 +339,5 @@ uint32_t render(uint32_t input_size) {
     if (output_len > 0 && output_buffer[output_len - 1] == '\n') {
         output_len--;
     }
-    return output_len;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(output_len);
 }

@@ -1,6 +1,9 @@
 # Content Component Contract
 
-Content components perform finite transformations over text or bytes. The host writes input into WebAssembly memory, applies any uniforms, calls `render(input_size)`, and reads the returned output bytes. A component which can reject allowed input also exports `commit()`.
+Content components perform finite transformations over text or bytes. The host
+writes input into WebAssembly memory, applies any uniforms, calls
+`render(input_size)`, and decodes the returned output pointer and size. A
+component can use the same result to reject input without trapping.
 
 Use this contract for converters, validators, formatters, document renderers,
 generators, and pipeline stages. A component can retain this Content interface
@@ -18,8 +21,8 @@ Every Content component exports:
 - `memory`
 - `input_ptr() -> i32`: offset where the host writes input.
 - Either `input_utf8_cap() -> i32` or `input_bytes_cap() -> i32`: maximum input bytes.
-- `render(input_size: i32) -> i32`: transform the input and return the output byte count.
-- `output_ptr() -> i32`: offset where the host reads output. The host calls this only after a successful `render`.
+- `render(input_size: i32) -> i64`: transform the input and return the output
+  pointer and byte count, or reject the input.
 - Either `output_utf8_cap() -> i32` or `output_bytes_cap() -> i32`: maximum output bytes.
 
 Every pointer and capacity export is a zero-argument function returning `i32`.
@@ -28,30 +31,59 @@ internal global when its value is module-constant.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
 
-## Optional Commit Export
+## Render Result
 
-A component which can reject a value inside its declared input domain exports:
+Interpret the `i64` result as 64 unsigned bits.
 
-- `commit() -> i64`
+On success, bit 63 is clear:
 
-The host calls `commit` after `render` returns normally and before it reads
-output. A nonnegative result accepts the output. A negative result rejects the
-input, and the host ignores the provisional output size and bytes. `commit`
-must not trap.
+```text
+ 63            32 31                             0
++----------------+--------------------------------+
+| output pointer |          output size           |
++----------------+--------------------------------+
+```
 
-Only `render` may modify the output buffer. `commit` may update private
-transaction state, but it leaves output bytes unchanged whether it accepts or
-rejects. No uniform setter is legal between `render` and `commit`.
+The output pointer uses 31 bits and must be less than `0x80000000`. The output
+size uses all 32 bits. Thus, output can start only in the first 2 GiB of memory,
+but its size is not limited to 2 GiB. The complete output range must be in
+memory and the output size must not exceed the declared output capacity.
 
-Do not export `commit` when every conforming call which returns normally has
-accepted its output. A missing export does not prove that the Wasm cannot trap;
-static analysis must establish that property from the artifact.
+Bit 63 marks recoverable rejection. Bits 32 through 62 are reserved and must be
+zero. The low 32 bits contain optional failure detail. The host must not read
+output after rejection.
 
-Return `0` for ordinary acceptance. Negative values may contain diagnostic
-bits: bit 63 marks an error, bit 62 marks invalid input, and the low 32 bits may
-contain an input byte offset or consumed byte count. Hosts treat every negative
-value as rejection. Components may report zero detail when an exact position is
-not available.
+This result makes the output pointer part of the operation that produced it.
+The component does not keep a last-output pointer for a later getter call.
+
+## Optional Failure Detail
+
+A component which can reject input without trapping exports:
+
+- `failure_modes_per_input_offset() -> i32`
+
+The export is a static getter. If it is absent, `render` must not return a
+result with bit 63 set. A trap is still possible when the caller violates a
+precondition or the component has a defect.
+
+A value of `0` means that rejection has no position detail. The low 32 result
+bits must be zero. The result reports only accepted or rejected.
+
+A value of `N`, where `N > 0`, defines `N` component-specific failure modes for
+each input offset. On rejection, decode the low 32 bits as follows:
+
+```text
+input_offset = failure_detail / N
+failure_mode = failure_detail % N
+```
+
+`input_offset` is in `0..input_size`, inclusive. `input_size` identifies
+the position after the final byte. A parser can use the last offset for an
+unexpected EOF end of input.
+
+The component defines the meaning of each failure mode. Mode values are from
+`0` through `N - 1`. The product of every possible position and `N`, plus its mode, must fit
+in 32 bits. A future API could provide message strings for each mode but currently they are just numeric and private to the component.
 
 ## UTF-8 Is Validated At Pipeline Edges
 
@@ -85,9 +117,9 @@ it must be a small, mechanically inspectable function:
 - `input_ptr()`
 - `input_utf8_cap()`
 - `input_bytes_cap()`
-- `output_ptr()`
 - `output_utf8_cap()`
 - `output_bytes_cap()`
+- `failure_modes_per_input_offset()`
 - `input_content_type_ptr()`
 - `input_content_type_size()`
 - `output_content_type_ptr()`
@@ -116,23 +148,19 @@ For each render request using a known-valid QIP component, the host:
 3. Writes the input bytes at `input_ptr`.
 4. Applies any requested [uniforms](/docs/uniforms).
 5. Calls `render(input_size)`.
-6. If the component exports `commit`, calls it and stops if it rejects.
-7. Calls `output_ptr` and reads exactly the returned number of bytes.
+6. Stops if the result reports rejection.
+7. Decodes the output pointer and size and reads exactly that output range.
 
-If `render` traps, the request fails. The host must not read `output_ptr`; the
-buffer may contain stale or partial output. A trap does not undo memory or
+If `render` traps, the request fails. The host must not read output; memory may
+contain stale or partial output. A trap does not undo memory or
 global changes, so the host discards that Wasm instance and creates a new one
-before another render. The host does not call `commit` after a trap.
+before another render. A recoverable rejection closes normally, so the host may
+reuse the instance for another request.
 
-If `commit` traps, the component has violated this contract. The host discards
-the instance. If `commit` rejects, the transaction has closed normally and the
-host may reuse the instance for another request.
-
-A valid component guarantees that a successful `render` returns a byte count
-within its declared output capacity and that `output_ptr` identifies a region
-large enough for those bytes. Application wrappers for a component they trust
-may rely on those guarantees. They still check input size because the caller,
-not the component, chooses the input.
+A valid component guarantees that a successful `render` returns a pointer and
+byte count within memory and its declared output capacity. Application wrappers
+for a component they trust may rely on those guarantees. They still check input
+size because the caller, not the component, chooses the input.
 
 ## Known And Untrusted Components
 
@@ -166,19 +194,18 @@ limits.
 ## Repeated Renders
 
 Hosts may run more than one request on the same component instance. Each
-request uses the bytes currently at `input_ptr`. When `commit` exists, the host
-completes it before starting another request.
+request uses the bytes currently at `input_ptr`.
 
 Component authors should make repeated renders deliberate:
 
 - Treat the input region as host-owned for the duration of each call.
 - Return the byte length of the current output, not a cumulative length.
-- Expect the host to read `output_ptr` after every accepted render.
+- Return the current output pointer and size from every accepted render.
 - Keep caches and scratch state consistent when input bytes or uniforms change.
 - Reset every public uniform to its authored default before each normal return
   from `render`, including provisional failure.
-- Use `commit` for expected rejection inside the declared input domain. Trap
-  for a caller precondition violation or an internal defect.
+- Return recoverable rejection for expected failure inside the declared input
+  domain. Trap for a caller precondition violation or an internal defect.
 
 This lets browser hosts retain an instance for many requests and lets wrappers set uniforms immediately before rendering without reinstantiation.
 
@@ -311,17 +338,18 @@ These rules let generic operations such as UTF-8 validation or byte-preserving t
 
 ## Memory And Failure Behavior
 
-- Keep input and output buffers disjoint unless overlap is an intentional, tested optimization.
+- Keep input and output buffers disjoint when `render` modifies output bytes.
+- If the returned output pointer is in the declared input region, `render` must
+  not modify input. The output is an immutable slice of the supplied input. The
+  complete slice must be within the current input size.
 - Validate `input_size` inside the component even when the host also checks it.
 - Reserve explicit scratch space rather than assuming unused capacity belongs to the component.
-- Use `commit` when a conforming call can reject expected input. Set rejection
-  state before parsing so an ordinary early return rejects by default.
+- Return a failure result when a conforming call can reject expected input.
 - Trap when the caller violates a declared precondition or an internal
   invariant fails. The host discards the instance after a trap.
-- Do not trap from `commit`.
 - Prefer a trap over silent truncation for data-preserving transforms.
-- Return `0` from `render` for successful empty output or provisional failure;
-  `commit` distinguishes these outcomes.
+- A successful empty output has an output size of zero. Bit 63 distinguishes it
+  from rejection.
 - For Zig components, compile with an explicit Wasm memory maximum. See [Writing QIP Components In Zig](/docs/zig-components) and [Hard Limits](/docs/hard-limits).
 
 ## Future Numeric Output Shapes

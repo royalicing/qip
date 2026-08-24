@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -119,7 +120,7 @@ test("KTX2 WebP encoder swaps disposable input R/B bytes in place", async (t) =>
   const memory = new Uint8Array(exports.memory.buffer);
   memory.set(ktx, exports.input_ptr());
   const before = [...ktx.subarray(224, 228)];
-  assert.ok(exports.render(ktx.length) > 0);
+  assert.ok(qipRenderSize(exports, ktx.length) > 0);
   const after = [...memory.subarray(exports.input_ptr() + 224, exports.input_ptr() + 228)];
   assert.deepEqual(after, [before[2], before[1], before[0], before[3]]);
 });
@@ -137,7 +138,7 @@ test("lossless KTX2 WebP encoder leaves BGRA payload bytes unchanged", async (t)
   const memory = new Uint8Array(exports.memory.buffer);
   memory.set(ktx, exports.input_ptr());
   const before = [...ktx.subarray(224, 232)];
-  assert.ok(exports.render(ktx.length) > 0);
+  assert.ok(qipRenderSize(exports, ktx.length) > 0);
   const after = [...memory.subarray(exports.input_ptr() + 224, exports.input_ptr() + 232)];
   assert.deepEqual(after, before);
 });
@@ -154,5 +155,5 @@ test("KTX2 WebP encoders reject a mismatched Vulkan format and DFD", async (t) =
   const wasm = await readFile(ktxToLossy);
   const { instance: { exports } } = await WebAssembly.instantiate(wasm, {});
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), ktx.length).set(ktx);
-  assert.equal(exports.render(ktx.length), 0);
+  assert.equal(qipRenderSize(exports, ktx.length), 0);
 });

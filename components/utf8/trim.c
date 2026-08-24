@@ -4,7 +4,6 @@
 #define OUTPUT_CAP (4u * 1024u * 1024u)
 
 static char input_buffer[INPUT_CAP];
-static char output_buffer[OUTPUT_CAP];
 
 __attribute__((export_name("input_ptr")))
 uint32_t input_ptr() {
@@ -16,14 +15,9 @@ uint32_t input_utf8_cap() {
     return sizeof(input_buffer);
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
-    return (uint32_t)(uintptr_t)output_buffer;
-}
-
 __attribute__((export_name("output_utf8_cap")))
 uint32_t output_utf8_cap() {
-    return sizeof(output_buffer);
+    return OUTPUT_CAP;
 }
 
 static int is_space(char c) {
@@ -31,7 +25,7 @@ static int is_space(char c) {
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         __builtin_trap();
     }
@@ -48,9 +42,5 @@ uint32_t render(uint32_t input_size) {
 
     uint32_t out_len = end - start;
 
-    for (uint32_t i = 0; i < out_len; i++) {
-        output_buffer[i] = input_buffer[start + i];
-    }
-
-    return out_len;
+    return ((uint64_t)(input_ptr() + start) << 32) | out_len;
 }

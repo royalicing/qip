@@ -98,9 +98,15 @@ static uint64_t current_rss(void) {
         uint32_t input_ptr = STEP_##number##_INPUT_PTR(instance);                 \
         uint32_t output_size;                                                     \
         uint32_t output_ptr;                                                      \
+        uint64_t result;                                                          \
         memcpy(memory->data + input_ptr, input, input_size);                      \
-        output_size = STEP_##number##_RENDER(instance, input_size);               \
-        output_ptr = STEP_##number##_OUTPUT_PTR(instance);                        \
+        result = STEP_##number##_RENDER(instance, input_size);                    \
+        if ((result >> 63) != 0) {                                                \
+            fputs("recipe component rejected its input\n", stderr);              \
+            exit(7);                                                              \
+        }                                                                         \
+        output_size = (uint32_t)result;                                           \
+        output_ptr = (uint32_t)((result >> 32) & UINT64_C(0x7fffffff));           \
         memcpy(output, memory->data + output_ptr, output_size);                   \
         return output_size;                                                       \
     }
@@ -125,9 +131,17 @@ DEFINE_RENDER(5)
         wasm_rt_memory_t *memory = STEP_##number##_MEMORY(instance);             \
         uint32_t input_ptr = STEP_##number##_INPUT_PTR(instance);                \
         uint32_t output_size;                                                    \
+        uint32_t output_ptr;                                                     \
+        uint64_t result;                                                         \
         memcpy(memory->data + input_ptr, input, input_size);                     \
-        output_size = STEP_##number##_RENDER(instance, input_size);              \
-        *output = memory->data + STEP_##number##_OUTPUT_PTR(instance);           \
+        result = STEP_##number##_RENDER(instance, input_size);                   \
+        if ((result >> 63) != 0) {                                               \
+            fputs("recipe component rejected its input\n", stderr);             \
+            exit(7);                                                             \
+        }                                                                        \
+        output_size = (uint32_t)result;                                          \
+        output_ptr = (uint32_t)((result >> 32) & UINT64_C(0x7fffffff));          \
+        *output = memory->data + output_ptr;                                     \
         return output_size;                                                      \
     }
 

@@ -119,10 +119,6 @@ export fn input_utf8_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -152,7 +148,10 @@ fn eqlIgnoreCase(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     var i: usize = 0;
     var steps: usize = 0;
-    while (i < a.len and steps < INPUT_CAP * 2) : ({ i += 1; steps += 1 + (i & 1); }) {
+    while (i < a.len and steps < INPUT_CAP * 2) : ({
+        i += 1;
+        steps += 1 + (i & 1);
+    }) {
         if (asciiLower(a[i]) != asciiLower(b[i])) return false;
     }
     return i == a.len;
@@ -194,7 +193,10 @@ fn trim(s: []const u8) []const u8 {
 fn indexOfByte(s: []const u8, byte: u8) ?usize {
     var i: usize = 0;
     var fuel: usize = INPUT_CAP * 2;
-    while (i < s.len and fuel > 0) : ({ i += 1; fuel -= 1; }) {
+    while (i < s.len and fuel > 0) : ({
+        i += 1;
+        fuel -= 1;
+    }) {
         if (s[i] == byte) return i;
     }
     return null;
@@ -203,7 +205,10 @@ fn indexOfByte(s: []const u8, byte: u8) ?usize {
 fn indexOfCommentEnd(s: []const u8) ?usize {
     var i: usize = 0;
     var fuel: usize = INPUT_CAP * 2;
-    while (i + 2 < s.len and fuel > 0) : ({ i += 1; fuel -= 1; }) {
+    while (i + 2 < s.len and fuel > 0) : ({
+        i += 1;
+        fuel -= 1;
+    }) {
         if (s[i] == '-' and s[i + 1] == '-' and s[i + 2] == '>') return i;
     }
     return null;
@@ -212,7 +217,10 @@ fn indexOfCommentEnd(s: []const u8) ?usize {
 fn hasVisibleText(s: []const u8) bool {
     var i: usize = 0;
     var steps: usize = 0;
-    while (i < s.len and steps < INPUT_CAP * 2) : ({ i += 1; steps += 1 + (i & 1); }) {
+    while (i < s.len and steps < INPUT_CAP * 2) : ({
+        i += 1;
+        steps += 1 + (i & 1);
+    }) {
         if (!isSpace(s[i])) return true;
     }
     return false;
@@ -247,17 +255,26 @@ fn parseHexColor(s_in: []const u8) ?Color {
 
 fn parseU8Token(s: []const u8, index: *usize) ?u8 {
     var leading_steps: usize = 0;
-    while (index.* < s.len and isSpace(s[index.*]) and leading_steps < INPUT_CAP * 2) { index.* += 1; leading_steps += 1 + (index.* & 1); }
+    while (index.* < s.len and isSpace(s[index.*]) and leading_steps < INPUT_CAP * 2) {
+        index.* += 1;
+        leading_steps += 1 + (index.* & 1);
+    }
     var value: u32 = 0;
     const start = index.*;
     var digit_steps: usize = 0;
-    while (index.* < s.len and s[index.*] >= '0' and s[index.*] <= '9' and digit_steps < INPUT_CAP * 2) : ({ index.* += 1; digit_steps += 1 + (index.* & 1); }) {
+    while (index.* < s.len and s[index.*] >= '0' and s[index.*] <= '9' and digit_steps < INPUT_CAP * 2) : ({
+        index.* += 1;
+        digit_steps += 1 + (index.* & 1);
+    }) {
         value = value * 10 + (s[index.*] - '0');
         if (value > 255) return null;
     }
     if (index.* == start) return null;
     var trailing_steps: usize = 0;
-    while (index.* < s.len and isSpace(s[index.*]) and trailing_steps < INPUT_CAP * 2) { index.* += 1; trailing_steps += 1 + (index.* & 1); }
+    while (index.* < s.len and isSpace(s[index.*]) and trailing_steps < INPUT_CAP * 2) {
+        index.* += 1;
+        trailing_steps += 1 + (index.* & 1);
+    }
     if (index.* < s.len and s[index.*] == '%') return null;
     return @as(u8, @intCast(value));
 }
@@ -275,7 +292,10 @@ fn parseRgbColor(s_in: []const u8) ?Color {
     i += 1;
     const b = parseU8Token(inner, &i) orelse return null;
     var steps: usize = 0;
-    while (i < inner.len and isSpace(inner[i]) and steps < INPUT_CAP * 2) { i += 1; steps += 1 + (i & 1); }
+    while (i < inner.len and isSpace(inner[i]) and steps < INPUT_CAP * 2) {
+        i += 1;
+        steps += 1 + (i & 1);
+    }
     if (i != inner.len) return null;
     return .{ .r = r, .g = g, .b = b };
 }
@@ -308,14 +328,20 @@ fn stripImportant(value_in: []const u8, important: *bool) []const u8 {
     const value = trim(value_in);
     var i = value.len;
     var end_steps: usize = 0;
-    while (i > 0 and isSpace(value[i - 1]) and end_steps < INPUT_CAP * 2) { i -= 1; end_steps += 1 + (i & 1); }
+    while (i > 0 and isSpace(value[i - 1]) and end_steps < INPUT_CAP * 2) {
+        i -= 1;
+        end_steps += 1 + (i & 1);
+    }
     const word = "important";
     if (i < word.len) return value;
     const word_start = i - word.len;
     if (!eqlIgnoreCase(value[word_start..i], word)) return value;
     var bang = word_start;
     var bang_steps: usize = 0;
-    while (bang > 0 and isSpace(value[bang - 1]) and bang_steps < INPUT_CAP * 2) { bang -= 1; bang_steps += 1 + (bang & 1); }
+    while (bang > 0 and isSpace(value[bang - 1]) and bang_steps < INPUT_CAP * 2) {
+        bang -= 1;
+        bang_steps += 1 + (bang & 1);
+    }
     if (bang == 0 or value[bang - 1] != '!') return value;
     important.* = true;
     return trim(value[0 .. bang - 1]);
@@ -327,7 +353,10 @@ fn parseFontSize(value_in: []const u8) ?f64 {
     var seen_digit = false;
     var seen_dot = false;
     var scan_steps: usize = 0;
-    while (i < value.len and scan_steps < 64) : ({ i += 1; scan_steps += 1; }) {
+    while (i < value.len and scan_steps < 64) : ({
+        i += 1;
+        scan_steps += 1;
+    }) {
         const c = value[i];
         if (c >= '0' and c <= '9') {
             seen_digit = true;
@@ -664,7 +693,10 @@ fn findMatchingBrace(css: []const u8, open: usize) ?usize {
     var quote: u8 = 0;
     var i = open + 1;
     var steps: usize = 0;
-    while (i < css.len and steps < INPUT_CAP) : ({ i += 1; steps += 1; }) {
+    while (i < css.len and steps < INPUT_CAP) : ({
+        i += 1;
+        steps += 1;
+    }) {
         const c = css[i];
         if (quote != 0) {
             if (c == '\\') i += 1 else if (c == quote) quote = 0;
@@ -730,7 +762,10 @@ fn processRuleBody(css: []const u8, selectors: []const u8, inherited_specificity
     var bracket_depth: u8 = 0;
     var paren_depth: u8 = 0;
     var steps: usize = 0;
-    while (i <= css.len and steps < INPUT_CAP) : ({ i += 1; steps += 1; }) {
+    while (i <= css.len and steps < INPUT_CAP) : ({
+        i += 1;
+        steps += 1;
+    }) {
         if (i == css.len) {
             const tail = trim(css[segment_start..i]);
             if (tail.len > 0) mergeStyle(&pending, parseStyleDecls(tail));
@@ -807,10 +842,16 @@ noinline fn hasClass(class_attr: []const u8, name: []const u8) bool {
     var class_steps: usize = 0;
     while (i < class_attr.len and class_steps < INPUT_CAP) : (class_steps += 1) {
         var space_steps: usize = 0;
-        while (i < class_attr.len and isSpace(class_attr[i]) and space_steps < INPUT_CAP) { i += 1; space_steps += 1; }
+        while (i < class_attr.len and isSpace(class_attr[i]) and space_steps < INPUT_CAP) {
+            i += 1;
+            space_steps += 1;
+        }
         const start = i;
         var token_steps: usize = 0;
-        while (i < class_attr.len and !isSpace(class_attr[i]) and token_steps < INPUT_CAP) { i += 1; token_steps += 1; }
+        while (i < class_attr.len and !isSpace(class_attr[i]) and token_steps < INPUT_CAP) {
+            i += 1;
+            token_steps += 1;
+        }
         if (i > start and bytesEqual(class_attr[start..i], name)) return true;
     }
     return false;
@@ -948,35 +989,56 @@ noinline fn parseAttrs(tag_src: []const u8) Attrs {
     var attrs = Attrs{};
     var i: usize = 0;
     var tag_steps: usize = 0;
-    while (i < tag_src.len and !isSpace(tag_src[i]) and tag_src[i] != '/' and tag_steps < INPUT_CAP) { i += 1; tag_steps += 1; }
+    while (i < tag_src.len and !isSpace(tag_src[i]) and tag_src[i] != '/' and tag_steps < INPUT_CAP) {
+        i += 1;
+        tag_steps += 1;
+    }
     var attr_steps: usize = 0;
     while (i < tag_src.len and attr_steps < INPUT_CAP) : (attr_steps += 1) {
         var separator_steps: usize = 0;
-        while (i < tag_src.len and (isSpace(tag_src[i]) or tag_src[i] == '/') and separator_steps < INPUT_CAP) { i += 1; separator_steps += 1; }
+        while (i < tag_src.len and (isSpace(tag_src[i]) or tag_src[i] == '/') and separator_steps < INPUT_CAP) {
+            i += 1;
+            separator_steps += 1;
+        }
         const name_start = i;
         var name_steps: usize = 0;
-        while (i < tag_src.len and isNameChar(tag_src[i]) and name_steps < INPUT_CAP) { i += 1; name_steps += 1; }
+        while (i < tag_src.len and isNameChar(tag_src[i]) and name_steps < INPUT_CAP) {
+            i += 1;
+            name_steps += 1;
+        }
         if (i == name_start) break;
         const name = tag_src[name_start..i];
         var before_value_steps: usize = 0;
-        while (i < tag_src.len and isSpace(tag_src[i]) and before_value_steps < INPUT_CAP) { i += 1; before_value_steps += 1; }
+        while (i < tag_src.len and isSpace(tag_src[i]) and before_value_steps < INPUT_CAP) {
+            i += 1;
+            before_value_steps += 1;
+        }
         var value: []const u8 = "";
         if (i < tag_src.len and tag_src[i] == '=') {
             i += 1;
             var after_equals_steps: usize = 0;
-            while (i < tag_src.len and isSpace(tag_src[i]) and after_equals_steps < INPUT_CAP) { i += 1; after_equals_steps += 1; }
+            while (i < tag_src.len and isSpace(tag_src[i]) and after_equals_steps < INPUT_CAP) {
+                i += 1;
+                after_equals_steps += 1;
+            }
             if (i < tag_src.len and (tag_src[i] == '"' or tag_src[i] == '\'')) {
                 const q = tag_src[i];
                 i += 1;
                 const value_start = i;
                 var quoted_steps: usize = 0;
-                while (i < tag_src.len and tag_src[i] != q and quoted_steps < INPUT_CAP) { i += 1; quoted_steps += 1; }
+                while (i < tag_src.len and tag_src[i] != q and quoted_steps < INPUT_CAP) {
+                    i += 1;
+                    quoted_steps += 1;
+                }
                 value = tag_src[value_start..@min(i, tag_src.len)];
                 if (i < tag_src.len) i += 1;
             } else {
                 const value_start = i;
                 var unquoted_steps: usize = 0;
-                while (i < tag_src.len and !isSpace(tag_src[i]) and tag_src[i] != '/' and unquoted_steps < INPUT_CAP) { i += 1; unquoted_steps += 1; }
+                while (i < tag_src.len and !isSpace(tag_src[i]) and tag_src[i] != '/' and unquoted_steps < INPUT_CAP) {
+                    i += 1;
+                    unquoted_steps += 1;
+                }
                 value = tag_src[value_start..i];
             }
         }
@@ -999,7 +1061,10 @@ noinline fn parseOpenElement(tag_src: []const u8, parent: Element, ancestors: []
     const attrs = parseAttrs(tag_src);
     var tag_end: usize = 0;
     var tag_steps: usize = 0;
-    while (tag_end < tag_src.len and !isSpace(tag_src[tag_end]) and tag_src[tag_end] != '/' and tag_steps < MAX_NAME) { tag_end += 1; tag_steps += 1; }
+    while (tag_end < tag_src.len and !isSpace(tag_src[tag_end]) and tag_src[tag_end] != '/' and tag_steps < MAX_NAME) {
+        tag_end += 1;
+        tag_steps += 1;
+    }
     if (!copyLower(&el.tag, &el.tag_len, tag_src[0..tag_end])) @trap();
     if (attrs.id.len > 0 and !copyExact(MAX_NAME, &el.id, &el.id_len, attrs.id)) @trap();
     el.class_attr = attrs.class;
@@ -1018,7 +1083,10 @@ noinline fn parseOpenElement(tag_src: []const u8, parent: Element, ancestors: []
     var bold_important = false;
     var rule_index: usize = 0;
     var rule_steps: usize = 0;
-    while (rule_index < rules.len and rule_steps < MAX_RULES) : ({ rule_index += 1; rule_steps += 1; }) {
+    while (rule_index < rules.len and rule_steps < MAX_RULES) : ({
+        rule_index += 1;
+        rule_steps += 1;
+    }) {
         const rule = &rules[rule_index];
         if (!selectorMatches(&rule.selector, &el, ancestors)) continue;
         if (rule.style.unsupported) @trap();
@@ -1087,12 +1155,18 @@ fn isVoidElement(tag: []const u8) bool {
 noinline fn closingTagOffset(input: []const u8, start: usize, name: []const u8) ?usize {
     var i = start;
     var steps: usize = 0;
-    while (i + name.len + 3 <= input.len and steps < INPUT_CAP) : ({ i += 1; steps += 1; }) {
+    while (i + name.len + 3 <= input.len and steps < INPUT_CAP) : ({
+        i += 1;
+        steps += 1;
+    }) {
         if (input[i] != '<' or input[i + 1] != '/') continue;
         if (!eqlIgnoreCase(input[i + 2 .. i + 2 + name.len], name)) continue;
         var p = i + 2 + name.len;
         var space_steps: usize = 0;
-        while (p < input.len and isSpace(input[p]) and space_steps < INPUT_CAP) { p += 1; space_steps += 1; }
+        while (p < input.len and isSpace(input[p]) and space_steps < INPUT_CAP) {
+            p += 1;
+            space_steps += 1;
+        }
         if (p < input.len and input[p] == '>') return i;
     }
     return null;
@@ -1113,7 +1187,10 @@ noinline fn collectStylesheets(input: []const u8, rules: []Rule, count: *usize) 
         if (tag_src.len == 0 or tag_src[0] == '/' or tag_src[0] == '!' or tag_src[0] == '?') continue;
         var name_end: usize = 0;
         var name_steps: usize = 0;
-        while (name_end < tag_src.len and isNameChar(tag_src[name_end]) and name_steps < MAX_NAME) { name_end += 1; name_steps += 1; }
+        while (name_end < tag_src.len and isNameChar(tag_src[name_end]) and name_steps < MAX_NAME) {
+            name_end += 1;
+            name_steps += 1;
+        }
         if (!eqlIgnoreCase(tag_src[0..name_end], "style")) continue;
         const close = closingTagOffset(input, i, "style") orelse @trap();
         parseStylesheet(input[i..close], rules, count);
@@ -1209,9 +1286,21 @@ fn renderChecked(input: []const u8, out: []u8) usize {
     return input.len;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size = @min(@as(usize, @intCast(input_size_in)), INPUT_CAP);
     return @as(u32, @intCast(renderChecked(input_buf[0..input_size], output_buf[0..])));
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 test "passes inline AA contrast and returns input unchanged" {

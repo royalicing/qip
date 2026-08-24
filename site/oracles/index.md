@@ -48,8 +48,8 @@ For the bridge ABI and authoring rules, see [`qip comply`](/docs/comply).
 | Preserve empty input | Empty input renders as empty output. | [wasm](/oracles/preserve-empty.wasm) | [wat](/oracles/preserve-empty.wat) |
 | Preserve whitespace | Common whitespace inputs pass through unchanged. | [wasm](/oracles/preserve-whitespace.wasm) | [wat](/oracles/preserve-whitespace.wat) |
 | Preserve ASCII | Printable ASCII passes through unchanged. | [wasm](/oracles/preserve-ascii.wasm) | [wat](/oracles/preserve-ascii.wat) |
-| Reject invalid UTF-8 | A byte-to-UTF-8 validator rejects malformed sequences through `commit`. | [wasm](/oracles/reject-invalid-utf8.wasm) | [wat](/oracles/reject-invalid-utf8.wat) |
-| Reject non-ASCII | A byte-to-ASCII validator rejects the first byte above `0x7f` through `commit`. | [wasm](/oracles/reject-non-ascii.wasm) | [wat](/oracles/reject-non-ascii.wat) |
+| Reject invalid UTF-8 | A byte-to-UTF-8 validator rejects malformed sequences and reports the first input offset. | [wasm](/oracles/reject-invalid-utf8.wasm) | [wat](/oracles/reject-invalid-utf8.wat) |
+| Reject non-ASCII | A byte-to-ASCII validator rejects the first byte above `0x7f` and reports its input offset. | [wasm](/oracles/reject-non-ascii.wasm) | [wat](/oracles/reject-non-ascii.wat) |
 | Trap invalid UTF-8 | A component whose input precondition is valid UTF-8 traps when that precondition is broken. | [wasm](/oracles/trap-invalid-utf8.wasm) | [wat](/oracles/trap-invalid-utf8.wat) |
 | Trap empty input | Empty input must trap. Useful for validators that require a value. | [wasm](/oracles/trap-empty-input.wasm) | [wat](/oracles/trap-empty-input.wat) |
 

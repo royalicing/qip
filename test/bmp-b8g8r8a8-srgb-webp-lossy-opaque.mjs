@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -53,9 +54,9 @@ function buildBmp(width, height, { bits = 32, v5Alpha = false, pixels } = {}) {
 
 function encode(exports, bmp) {
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), bmp.length).set(bmp);
-  const size = exports.render(bmp.length);
+  const size = qipRenderSize(exports, bmp.length);
   assert.ok(size > 0);
-  return Buffer.from(exports.memory.buffer, exports.output_ptr(), size);
+  return Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function composite(channel, background, alpha) {

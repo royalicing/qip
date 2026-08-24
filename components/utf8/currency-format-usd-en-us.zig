@@ -20,10 +20,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -94,7 +90,7 @@ fn incrementInteger(len: *usize) void {
     len.* += 1;
 }
 
-export fn render(input_size_in: u32) u32 {
+fn renderImpl(input_size_in: u32) u32 {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
@@ -137,4 +133,16 @@ export fn render(input_size_in: u32) u32 {
     output_buf[out + 1] = '0' + cents / 10;
     output_buf[out + 2] = '0' + cents % 10;
     return @intCast(out + 3);
+}
+
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_in),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

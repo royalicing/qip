@@ -3,17 +3,16 @@
   (global $input_ptr i32 (i32.const 0x10000))
   (global $input_utf8_cap i32 (i32.const 0x10000))
   (global $output_utf8_cap i32 (i32.const 0x10000))
-  (global $pending_commit_result (mut i64) (i64.const 1))
+  (global $failure_offset (mut i32) (i32.const -1))
 
   (func (export "input_ptr") (result i32)
     (global.get $input_ptr))
   (func (export "input_utf8_cap") (result i32)
     (global.get $input_utf8_cap))
-  ;; Accepted text is compacted in place. The host does not need a second copy.
-  (func (export "output_ptr") (result i32)
-    (global.get $input_ptr))
   (func (export "output_utf8_cap") (result i32)
     (global.get $output_utf8_cap))
+  (func (export "failure_modes_per_input_offset") (result i32)
+    (i32.const 1))
 
   ;; HTML ASCII whitespace: tab, LF, FF, CR, and space.
   (func $is_whitespace (param $c i32) (result i32)
@@ -29,28 +28,22 @@
 
   ;; Reject invalid input and include its first known byte offset.
   (func $reject (param $offset i32) (result i32)
-    (global.set $pending_commit_result
-      (i64.add
-        (i64.const -4611686018427387904)
-        (i64.extend_i32_u (local.get $offset))))
+    (global.set $failure_offset (local.get $offset))
     (i32.const 0))
 
-  ;; Accept one non-empty class token. Leading and trailing ASCII whitespace is
-  ;; removed, but whitespace inside the token rejects the transaction.
-  (func (export "render") (param $input_size i32) (result i32)
+  ;; Accept one non-empty class token. The output is an immutable interior
+  ;; slice with leading and trailing ASCII whitespace removed.
+  (func (export "render") (param $input_size i32) (result i64)
     (local $start i32)
     (local $end i32)
     (local $len i32)
     (local $i i32)
     (local $c i32)
 
-    ;; A second render before commit is a host call-order violation.
-    (if (i64.ne (global.get $pending_commit_result) (i64.const 1))
-      (then unreachable))
     (if (i32.gt_u (local.get $input_size) (global.get $input_utf8_cap))
       (then unreachable))
 
-    (global.set $pending_commit_result (i64.const -4611686018427387904))
+    (global.set $failure_offset (i32.const -1))
 
     (block $finish
       (if (i32.eqz (local.get $input_size))
@@ -97,31 +90,21 @@
           (br $validate)))
 
       (local.set $len (i32.sub (local.get $end) (local.get $start)))
-      (local.set $i (i32.const 0))
-      (block $done_copy
-        (loop $copy
-          (br_if $done_copy (i32.ge_u (local.get $i) (local.get $len)))
-          (i32.store8
-            (i32.add (global.get $input_ptr) (local.get $i))
-            (i32.load8_u
-              (i32.add (global.get $input_ptr)
-                (i32.add (local.get $start) (local.get $i)))))
-          (local.set $i (i32.add (local.get $i) (i32.const 1)))
-          (br $copy)))
-
-      (global.set $pending_commit_result (i64.const 0)))
+)
 
     ;; Every normal exit crosses the same output-capacity proof.
     (if (i32.gt_u (local.get $len) (global.get $output_utf8_cap))
       (then unreachable))
-    (local.get $len))
+    (if (result i64) (i32.ge_s (global.get $failure_offset) (i32.const 0))
+      (then
+        (i64.or
+          (i64.const -9223372036854775808)
+          (i64.extend_i32_u (global.get $failure_offset))))
+      (else
+        (i64.or
+          (i64.shl
+            (i64.extend_i32_u (i32.add (global.get $input_ptr) (local.get $start)))
+            (i64.const 32))
+          (i64.extend_i32_u (local.get $len))))))
 
-  ;; commit never traps. It closes both accepted and rejected transactions.
-  (func (export "commit") (result i64)
-    (local $result i64)
-    (local.set $result (global.get $pending_commit_result))
-    (if (i64.eq (local.get $result) (i64.const 1))
-      (then (local.set $result (i64.const -4611686018427387904))))
-    (global.set $pending_commit_result (i64.const 1))
-    (local.get $result))
 )

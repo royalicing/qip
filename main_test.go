@@ -563,7 +563,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 	}
 }
 
-func TestRunCommitRejectionNamesPipelineStepAndComponent(t *testing.T) {
+func TestRunRejectionNamesPipelineStepAndComponent(t *testing.T) {
 	cmd := exec.Command(
 		os.Args[0],
 		"-test.run=TestHelperRunModuleCLI",
@@ -587,11 +587,11 @@ func TestRunCommitRejectionNamesPipelineStepAndComponent(t *testing.T) {
 		t.Fatalf("rejected pipeline wrote stdout=%q", stdout.String())
 	}
 	got := stderr.String()
-	if !strings.Contains(got, "step 2 (components/bytes/zlib-decompress.wasm): rejected input") {
+	if !strings.Contains(got, "step 2 (components/bytes/zlib-decompress.wasm): component rejected input") {
 		t.Fatalf("stderr=%q, want step, component, and rejection", got)
 	}
 	if strings.Contains(got, "trace retry") {
-		t.Fatalf("stderr=%q, commit rejection must not trigger trap tracing", got)
+		t.Fatalf("stderr=%q, input rejection must not trigger trap tracing", got)
 	}
 }
 
@@ -928,9 +928,12 @@ func TestExecuteModuleReadsOutputPtrAfterRender(t *testing.T) {
 	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
-	// The module starts with output_ptr pointing at "stale". render then chooses
-	// either input_ptr for already-trimmed input or a scratch buffer otherwise.
-	wasmBytes := []byte{
+	// trim returns a dynamic immutable slice of its input.
+	wasmBytes, err := os.ReadFile("components/utf8/trim.wasm")
+	if err != nil {
+		t.Fatalf("read trim component: %v", err)
+	}
+	_ = []byte{
 		0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x02, 0x60,
 		0x00, 0x01, 0x7f, 0x60, 0x01, 0x7f, 0x01, 0x7f, 0x03, 0x06, 0x05, 0x00,
 		0x00, 0x00, 0x00, 0x01, 0x05, 0x04, 0x01, 0x01, 0x01, 0x01, 0x06, 0x19,
@@ -1038,7 +1041,7 @@ func TestContentTypeCheckingModesForRunModule(t *testing.T) {
 	}
 }
 
-func TestRunModuleCommitAcceptsAndRejects(t *testing.T) {
+func TestRunModuleAcceptsAndRejects(t *testing.T) {
 	ctx := context.Background()
 	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
@@ -1078,7 +1081,7 @@ func TestRunModuleCommitAcceptsAndRejects(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid UTF-8 rejection")
 	}
-	if !strings.Contains(err.Error(), "rejected invalid input at byte 2") {
+	if !strings.Contains(err.Error(), "component rejected input at input offset 2") {
 		t.Fatalf("unexpected rejection: %v", err)
 	}
 }

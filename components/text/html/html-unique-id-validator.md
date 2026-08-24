@@ -7,9 +7,9 @@ by HTML. The validator recognizes quoted, unquoted, and empty attribute values,
 and compares numeric character references and the common named references
 `amp`, `apos`, `gt`, `lt`, `nbsp`, and `quot` by their decoded values.
 
-On success, `render` returns the input byte length and `output_ptr()` returns
-the same address as `input_ptr()`. The bytes are not copied or modified. After
-a trap there is no output; a host must not call `output_ptr()` or read the input
+On success, `render` returns the input address and byte length. The address is
+the same as `input_ptr()`. The bytes are not copied or modified. After a trap
+there is no output; a host must not read the input
 buffer as though validation succeeded.
 
 ```bash

@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -10,7 +11,7 @@ function instantiate() {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(bytes) {
@@ -18,7 +19,7 @@ function digest(bytes) {
 }
 
 function renderInitial(exports) {
-  return exports.render(0);
+  return qipRenderSize(exports, 0);
 }
 
 test("tic-tac-toe exposes timestamp-free Interactive events and KTX2 output", () => {
@@ -59,13 +60,13 @@ test("events update state while presentation remains unchanged", () => {
   assert.equal(exports.finish_update(), 1n);
   assert.equal(digest(output(exports, size)), initialDigest);
 
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.notEqual(digest(output(exports, size)), initialDigest);
 
   exports.begin_update_at(2n);
   assert.equal(exports.key_event(0x72, 1), 1);
   assert.equal(exports.finish_update(), 2n);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
   assert.equal(digest(output(exports, size)), initialDigest);
 });
 
@@ -77,9 +78,9 @@ test("events outside an update and rendering inside one trap", () => {
   exports.begin_update_at(1n);
   assert.equal(exports.pointer_event(1, 64, 64), 1);
   assert.equal(exports.pointer_event(0, 64, 64), 0);
-  assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+  assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
   assert.equal(exports.finish_update(), 1n);
-  assert.equal(exports.render(0), size);
+  assert.equal(qipRenderSize(exports, 0), size);
 });
 
 test("non-increasing update time is host protocol misuse", () => {

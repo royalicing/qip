@@ -2,7 +2,13 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-let fontPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/inter-4.1/InterVariable.ttf"
+let repositoryRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+let defaultFontPath = repositoryRoot
+    .appendingPathComponent("fixtures/inter-4.1/InterVariable.ttf")
+    .path
+let fontPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : defaultFontPath
 let outputPath = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "components/interactive/inter_18_ascii_bitmap.zig"
 let fontURL = URL(fileURLWithPath: fontPath)
 
@@ -57,7 +63,7 @@ for scalarValue in start...end {
 
         let line = CTLineCreateWithAttributedString(NSAttributedString(
             string: str as String,
-            attributes: [.font: font]
+            attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]
         ))
         ctx.textPosition = CGPoint(x: 1, y: baseline)
         CTLineDraw(line, ctx)

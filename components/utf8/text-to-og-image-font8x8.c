@@ -43,8 +43,8 @@ uint32_t input_utf8_cap() {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
+static uint32_t
+output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
@@ -357,7 +357,7 @@ static void draw_glyph_scaled(uint32_t base_x, uint32_t base_y, unsigned char gl
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         __builtin_trap();
     }
@@ -474,5 +474,5 @@ uint32_t render(uint32_t input_size) {
 
     text_color_rgba = DEFAULT_TEXT_COLOR_RGBA;
     background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
-    return (uint32_t)total;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)total);
 }

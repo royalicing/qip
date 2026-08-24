@@ -36,7 +36,6 @@ async function bench(path) {
   const exports = instance.exports;
   for (const name of [
     "memory",
-    "output_ptr",
     "output_bytes_cap",
     "output_content_type_ptr",
     "output_content_type_size",
@@ -54,32 +53,34 @@ async function bench(path) {
   );
   if (contentType !== "image/ktx2") throw new Error(`${path}: qip-play output must be image/ktx2`);
 
-  function commitInitialContent() {
-    if (typeof exports.commit !== "function") return;
-    const result = exports.commit();
-    if (result < 0n) throw new Error(`${path}: commit rejected after render`);
+  function renderFrame() {
+    const result = BigInt.asUintN(64, exports.render(0));
+    if ((result >> 63n) !== 0n) throw new Error(`${path}: render rejected input`);
+    return {
+      len: Number(result & 0xffff_ffffn),
+      ptr: Number((result >> 32n) & 0x7fff_ffffn),
+    };
   }
 
-  let outputLength = Number(exports.render(0));
-  commitInitialContent();
+  let frame = renderFrame();
   for (let i = 0; i < warmup; i++) {
-    outputLength = Number(exports.render(0));
+    frame = renderFrame();
   }
 
   const samples = [];
   for (let i = 0; i < runs; i++) {
     const start = performance.now();
-    outputLength = Number(exports.render(0));
+    frame = renderFrame();
     samples.push(performance.now() - start);
   }
   samples.sort((a, b) => a - b);
-  if (outputLength < 0 || outputLength > outputCapacity) {
+  if (frame.len > outputCapacity) {
     throw new Error(`${path}: render returned output outside output_bytes_cap`);
   }
 
   const avg = mean(samples);
-  const ptr = Number(exports.output_ptr());
-  const len = outputLength;
+  const ptr = frame.ptr;
+  const len = frame.len;
   const output = new Uint8Array(exports.memory.buffer, ptr, len);
   const hash = await webcrypto.subtle.digest("SHA-256", output);
   const digest = [...new Uint8Array(hash)].map((n) => n.toString(16).padStart(2, "0")).join("");

@@ -75,7 +75,12 @@ async function drain() {
         inputBytes.length,
       );
       input.set(inputBytes);
-      const outputSize = exports.render(inputBytes.length) >>> 0;
+      const renderResult = exports.render(inputBytes.length);
+      if (typeof renderResult !== "bigint") throw TypeError("render must return i64");
+      const renderBits = BigInt.asUintN(64, renderResult);
+      if ((renderBits & (1n << 63n)) !== 0n) throw Error("The encoder rejected the BMP.");
+      const outputSize = Number(renderBits & 0xffff_ffffn);
+      const outputPointer = Number((renderBits >> 32n) & 0x7fff_ffffn);
       if (outputSize === 0) {
         throw Error("The encoder rejected the BMP or exceeded its fixed output capacity.");
       }
@@ -84,7 +89,7 @@ async function drain() {
       }
       const output = new Uint8Array(
         exports.memory.buffer,
-        exports.output_ptr() >>> 0,
+        outputPointer,
         outputSize,
       ).slice();
       self.postMessage({

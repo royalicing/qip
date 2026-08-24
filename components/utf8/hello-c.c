@@ -5,7 +5,7 @@
 static char input_buffer[65536];  // 64KB
 static char output_buffer[65536]; // 64KB
 
-// Export memory pointer functions (qip will call these to get addresses)
+// Export the static input pointer and capacities.
 __attribute__((export_name("input_ptr")))
 uint32_t
 input_ptr()
@@ -18,13 +18,6 @@ uint32_t
 input_utf8_cap()
 {
     return sizeof(input_buffer);
-}
-
-__attribute__((export_name("output_ptr")))
-uint32_t
-output_ptr()
-{
-    return (uint32_t)(uintptr_t)output_buffer;
 }
 
 __attribute__((export_name("output_utf8_cap")))
@@ -45,7 +38,7 @@ static void copy_bytes(char *dest, const char *src, uint32_t n)
 
 // Main entry point
 __attribute__((export_name("render")))
-uint32_t
+uint64_t
 render(uint32_t input_size)
 {
     // Example: prepend "Hello, " to input
@@ -60,11 +53,15 @@ render(uint32_t input_size)
     {
         // Copy input after prefix
         copy_bytes(output_buffer + prefix_len, input_buffer, input_size);
-        return prefix_len + input_size;
+        const uint32_t output_size = prefix_len + input_size;
+        return ((uint64_t)(uint32_t)(uintptr_t)output_buffer << 32) |
+               output_size;
     }
 
     // No input, default to "World"
     const char *default_name = "World";
     copy_bytes(output_buffer + prefix_len, default_name, 5);
-    return prefix_len + 5;
+    const uint32_t output_size = prefix_len + 5;
+    return ((uint64_t)(uint32_t)(uintptr_t)output_buffer << 32) |
+           output_size;
 }

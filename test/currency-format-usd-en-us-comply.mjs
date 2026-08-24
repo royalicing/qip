@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -37,15 +38,16 @@ test("duel: components/utf8/currency-format-usd-en-us.wasm is fully compliant", 
   const implBytes = await readFile(
     new URL("../components/utf8/currency-format-usd-en-us.wasm", import.meta.url),
   );
-  const { instance } = await WebAssembly.instantiate(implBytes);
-  const impl = instance.exports;
+  const implModule = await WebAssembly.compile(implBytes);
+  let impl = new WebAssembly.Instance(implModule).exports;
   const readI32 = (name) => (typeof impl[name] === "function" ? impl[name]() : impl[name].value);
   const wasmFormat = (input) => {
     new Uint8Array(impl.memory.buffer, readI32("input_ptr"), input.length).set(input);
     try {
-      const outLen = impl.render(input.length);
-      return Buffer.from(new Uint8Array(impl.memory.buffer, readI32("output_ptr"), outLen));
+      const outLen = qipRenderSize(impl, input.length);
+      return Buffer.from(new Uint8Array(impl.memory.buffer, qipRenderedOutputPointer(impl), outLen));
     } catch {
+      impl = new WebAssembly.Instance(implModule).exports;
       return null;
     }
   };

@@ -30,12 +30,20 @@ import {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   render,
 } from "/components/utf8/e164.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
+
+function decodeRenderResult(value) {
+  const bits = BigInt.asUintN(64, value);
+  if ((bits >> 63n) !== 0n) throw new Error("component rejected input");
+  return {
+    outputSize: Number(bits & 0xffff_ffffn),
+    outputPtr: Number((bits >> 32n) & 0x7fff_ffffn),
+  };
+}
 
 export function normalizeE164(phoneNumber) {
   const input = new Uint8Array(
@@ -49,9 +57,9 @@ export function normalizeE164(phoneNumber) {
     throw new RangeError("phone number exceeds input capacity");
   }
 
-  const outputSize = render(written);
+  const { outputPtr, outputSize } = decodeRenderResult(render(written));
   return decoder.decode(
-    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+    new Uint8Array(memory.buffer, outputPtr, outputSize),
   );
 }
 
@@ -74,12 +82,20 @@ import {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   render,
 } from "/components/text/markdown/gfm-commonmark.0.31.2.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
+
+function decodeRenderResult(value) {
+  const bits = BigInt.asUintN(64, value);
+  if ((bits >> 63n) !== 0n) throw new Error("component rejected input");
+  return {
+    outputSize: Number(bits & 0xffff_ffffn),
+    outputPtr: Number((bits >> 32n) & 0x7fff_ffffn),
+  };
+}
 
 export function markdownToHtml(markdown) {
   const input = new Uint8Array(
@@ -93,9 +109,9 @@ export function markdownToHtml(markdown) {
     throw new RangeError("Markdown exceeds input capacity");
   }
 
-  const outputSize = render(written);
+  const { outputPtr, outputSize } = decodeRenderResult(render(written));
   return decoder.decode(
-    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+    new Uint8Array(memory.buffer, outputPtr, outputSize),
   );
 }
 
@@ -124,13 +140,21 @@ import {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   uniform_set_currency,
   render,
 } from "/components/utf8/currency-format-en-us.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
+
+function decodeRenderResult(value) {
+  const bits = BigInt.asUintN(64, value);
+  if ((bits >> 63n) !== 0n) throw new Error("component rejected input");
+  return {
+    outputSize: Number(bits & 0xffff_ffffn),
+    outputPtr: Number((bits >> 32n) & 0x7fff_ffffn),
+  };
+}
 
 export function formatCurrency(amount, currency) {
   const input = new Uint8Array(
@@ -145,9 +169,9 @@ export function formatCurrency(amount, currency) {
   }
 
   uniform_set_currency(currency);
-  const outputSize = render(written);
+  const { outputPtr, outputSize } = decodeRenderResult(render(written));
   return decoder.decode(
-    new Uint8Array(memory.buffer, output_ptr(), outputSize),
+    new Uint8Array(memory.buffer, outputPtr, outputSize),
   );
 }
 
@@ -178,7 +202,7 @@ if (read !== source.length) {
   throw new RangeError("input exceeds component capacity");
 }
 
-const outputSize = render(written);
+const renderResult = render(written);
 ```
 
 The distinction is invisible for ASCII but required for other text. JavaScript
@@ -196,32 +220,27 @@ For a UTF-8 content component:
 1. Call `input_ptr()` and `input_utf8_cap()`.
 2. Create a `Uint8Array` view over that input region.
 3. Encode into the view and verify that the full string was read.
-4. Call `render(written)`.
-5. If `commit` is exported, call it. Stop when it returns a negative `BigInt`.
-6. Call `output_ptr()` and read exactly the returned number of bytes.
+4. Call `render(written)` and interpret its `BigInt` as 64 unsigned bits.
+5. Stop if bit 63 reports rejection.
+6. Decode the output pointer from bits 32 through 62 and the size from bits 0
+   through 31. Read exactly that range.
 
-For an explicitly instantiated component, the optional step is:
+For an explicitly instantiated component:
 
 ```js
-const outputSize = instance.exports.render(written);
-if (typeof instance.exports.commit === "function") {
-  const accepted = instance.exports.commit();
-  if (accepted < 0n) {
-    throw new Error(`component rejected input: ${accepted}`);
-  }
-}
+const result = BigInt.asUintN(64, instance.exports.render(written));
+if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+const outputSize = Number(result & 0xffff_ffffn);
+const outputPtr = Number((result >> 32n) & 0x7fff_ffffn);
 const output = new Uint8Array(
   instance.exports.memory.buffer,
-  instance.exports.output_ptr(),
+  outputPtr,
   outputSize,
 );
 ```
 
-An `i64` WebAssembly result is a JavaScript `BigInt`. Call `commit` only after
-`render` returns normally, and do not read provisional output after rejection.
-
-Call `output_ptr()` after `render()`. A component may select its output region
-based on the current input. If `render()` traps, do not read the output buffer;
+An `i64` WebAssembly result is a JavaScript `BigInt`. The output pointer belongs
+to that render and can change on the next call. If `render()` traps, do not read output;
 it may contain stale or partial bytes. Discard that instance and instantiate the
 module again before another render.
 
@@ -266,8 +285,8 @@ export function runBytes(bytes) {
   }
 
   new Uint8Array(memory.buffer, input_ptr(), bytes.length).set(bytes);
-  const outputSize = render(bytes.length);
-  return new Uint8Array(memory.buffer, output_ptr(), outputSize).slice();
+  const { outputPtr, outputSize } = decodeRenderResult(render(bytes.length));
+  return new Uint8Array(memory.buffer, outputPtr, outputSize).slice();
 }
 ```
 
@@ -277,10 +296,9 @@ it, a later render could overwrite the returned view.
 ## Traps And Reuse
 
 A WebAssembly trap appears as a JavaScript exception. A trap does not roll back
-memory or mutable globals. Do not call `commit` or read output after a trap.
-Discard the instance and instantiate the module again before another request.
-A negative `commit` result is different: it closes the transaction normally,
-so the same instance remains reusable.
+memory or mutable globals. Do not read output after a trap. Discard the instance
+and instantiate the module again before another request. Recoverable rejection
+returns normally, so the same instance remains reusable.
 
 ## Explicit Instantiation
 
@@ -296,7 +314,6 @@ const {
   memory,
   input_ptr,
   input_utf8_cap,
-  output_ptr,
   render,
 } = instance.exports;
 ```

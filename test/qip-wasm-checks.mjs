@@ -7,6 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 const execFileP = promisify(execFile);
 
@@ -77,8 +78,8 @@ test("Core 1.0 validator agrees with WebAssembly.validate and recovers after rej
   const wasm = instance.instance.exports;
   const validate = (bytes) => {
     new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), bytes.length).set(bytes);
-    const outputSize = wasm.render(bytes.length);
-    return wasm.commit() >= 0n && outputSize === bytes.length;
+    const result = decodeRenderResult(wasm.render(bytes.length));
+    return !result.failed && result.value === bytes.length;
   };
 
   assert.equal(validate(invalid), WebAssembly.validate(invalid));
@@ -126,7 +127,7 @@ test("wasm-counts emits stable long-form integer CSV", async (t) => {
     }),
   );
   assert.equal(rows.size, lines.length - 1, "metric names must be unique");
-  assert.equal(rows.get("functions_defined"), 5);
+  assert.equal(rows.get("functions_defined"), 4);
   assert.equal(rows.get("loops"), 1);
   assert.equal(rows.get("simd_instructions"), 0);
   assert.ok(rows.get("potentially_trapping_instructions") > 0);
@@ -181,8 +182,8 @@ test("nontrapping divides accepts a proved divisor and rejects zero", async (t) 
   const check = (moduleBytes) => {
     assert.equal(WebAssembly.validate(moduleBytes), true);
     new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), moduleBytes.length).set(moduleBytes);
-    const outputSize = wasm.render(moduleBytes.length);
-    return wasm.commit() >= 0n ? outputSize : -1;
+    const result = decodeRenderResult(wasm.render(moduleBytes.length));
+    return result.failed ? -1 : result.value;
   };
 
   const safe = singleVoidFunctionModule([0x41, 42, 0x41, 3, 0x6e, 0x1a]);
@@ -235,7 +236,11 @@ test("nontrapping divides accepts a proved divisor and rejects zero", async (t) 
   const palette = await readFile(bmpColorPalette);
   assert.equal(check(palette), palette.length);
   assert.deepEqual(
-    Buffer.from(wasm.memory.buffer, wasm.output_ptr(), palette.length),
+    Buffer.from(
+      wasm.memory.buffer,
+      decodeRenderResult(wasm.render(palette.length)).outputPointer,
+      palette.length,
+    ),
     palette,
   );
 });
@@ -310,16 +315,15 @@ function globalContractValueModule(globalName) {
   const typeSection = wasmSection(1, [
     0x02,
     0x60, 0x00, 0x01, 0x7f,
-    0x60, 0x01, 0x7f, 0x01, 0x7f,
+    0x60, 0x01, 0x7f, 0x01, 0x7e,
   ]);
-  const functionSection = wasmSection(3, [0x05, 0x00, 0x00, 0x00, 0x00, 0x01]);
+  const functionSection = wasmSection(3, [0x04, 0x00, 0x00, 0x00, 0x01]);
   const memorySection = wasmSection(5, [0x01, 0x01, 0x01, 0x01]);
   const globalSection = wasmSection(6, [0x01, 0x7f, 0x00, 0x41, 0x00, 0x0b]);
   const valueExports = [
     ["input_ptr", 0],
     ["input_bytes_cap", 1],
-    ["output_ptr", 2],
-    ["output_bytes_cap", 3],
+    ["output_bytes_cap", 2],
   ];
   const exports = [
     [...wasmName("memory"), 0x02, 0x00],
@@ -328,7 +332,7 @@ function globalContractValueModule(globalName) {
       name === globalName ? 0x03 : 0x00,
       ...encodeU32(name === globalName ? 0 : index),
     ]),
-    [...wasmName("render"), 0x00, 0x04],
+    [...wasmName("render"), 0x00, 0x03],
   ];
   const exportSection = wasmSection(7, [
     ...encodeU32(exports.length),
@@ -337,9 +341,8 @@ function globalContractValueModule(globalName) {
   const bodies = [
     [0x00, 0x41, 0x00, 0x0b],
     [0x00, 0x41, 0xff, 0x01, 0x0b],
-    [0x00, 0x41, 0x20, 0x0b],
     [0x00, 0x41, 0xff, 0x01, 0x0b],
-    [0x00, 0x41, 0x00, 0x0b],
+    [0x00, 0x42, 0x00, 0x0b],
   ];
   const codeSection = wasmSection(10, [
     ...encodeU32(bodies.length),
@@ -362,8 +365,8 @@ async function strictProfileAccepts(moduleBytes) {
   const { instance } = await WebAssembly.instantiate(validatorBytes);
   const wasm = instance.exports;
   new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), moduleBytes.length).set(moduleBytes);
-  const outputSize = wasm.render(moduleBytes.length);
-  return wasm.commit() >= 0n && outputSize === moduleBytes.length;
+  const result = decodeRenderResult(wasm.render(moduleBytes.length));
+  return !result.failed && result.value === moduleBytes.length;
 }
 
 async function createContentTypeReader() {
@@ -373,9 +376,10 @@ async function createContentTypeReader() {
   return (moduleBytes) => {
     assert.ok(moduleBytes.length <= wasm.input_bytes_cap(), "module exceeds reader capacity");
     new Uint8Array(wasm.memory.buffer, wasm.input_ptr(), moduleBytes.length).set(moduleBytes);
-    const outputSize = wasm.render(moduleBytes.length);
+    const result = decodeRenderResult(wasm.render(moduleBytes.length));
+    assert.equal(result.failed, false);
     return Buffer.from(
-      new Uint8Array(wasm.memory.buffer, wasm.output_ptr(), outputSize),
+      new Uint8Array(wasm.memory.buffer, result.outputPointer, result.value),
     ).toString("utf8");
   };
 }
@@ -530,7 +534,7 @@ test("all component QIP value exports are functions", async (t) => {
   await ensurePrerequisites(t);
   const qipValueNames = new Set([
     "input_ptr", "input_utf8_cap", "input_bytes_cap",
-    "output_ptr", "output_utf8_cap", "output_bytes_cap",
+    "output_utf8_cap", "output_bytes_cap", "failure_modes_per_input_offset",
     "input_content_type_ptr", "input_content_type_size",
     "output_content_type_ptr", "output_content_type_size",
     "output_rgba8_srgb_bytes", "render_width_px", "render_height_px",
@@ -552,7 +556,7 @@ test("qip run and comply reject QIP values exported as globals", async (t) => {
   await ensurePrerequisites(t);
   const directory = await mkdtemp(join(tmpdir(), "qip-input-ptr-"));
   try {
-    for (const name of ["input_ptr", "input_bytes_cap", "output_ptr", "output_bytes_cap"]) {
+    for (const name of ["input_ptr", "input_bytes_cap", "output_bytes_cap"]) {
       const moduleBytes = globalContractValueModule(name);
       assert.equal(WebAssembly.validate(moduleBytes), true);
       const path = join(directory, `${name}.wasm`);
@@ -600,7 +604,7 @@ test("bounded output rejects a dynamic result without a proof epilogue", async (
 
   const result = await runQip(["run", "-i", helloNaive, "--", boundedOutput]);
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr.toString("utf8"), /rejected invalid input at byte 0/);
+  assert.match(result.stderr.toString("utf8"), /component rejected input/);
 });
 
 test("strict profile alone accepts an unbounded loop", async (t) => {
@@ -618,7 +622,7 @@ test("bounded loops stage rejects an unbounded loop", async (t) => {
 
   const result = await runQip(["run", "-i", infiniteLoop, "--", boundedLoops]);
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr.toString("utf8"), /rejected invalid input at byte 0/);
+  assert.match(result.stderr.toString("utf8"), /component rejected input/);
 });
 
 test("qip score reports fixed-bound loop warnings", async (t) => {

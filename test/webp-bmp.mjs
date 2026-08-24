@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -60,15 +61,15 @@ async function encode(modulePath, bmp, configure) {
   const exports = await instantiate(modulePath);
   configure?.(exports);
   new Uint8Array(exports.memory.buffer).set(bmp, exports.input_ptr());
-  const size = exports.render(bmp.length);
+  const size = qipRenderSize(exports, bmp.length);
   assert.ok(size > 0, "fixture encoder must produce WebP");
-  return Buffer.from(exports.memory.buffer, exports.output_ptr(), size);
+  return Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function decode(exports, webp) {
   new Uint8Array(exports.memory.buffer).set(webp, exports.input_ptr());
-  const size = exports.render(webp.length);
-  return Buffer.from(exports.memory.buffer, exports.output_ptr(), size);
+  const size = qipRenderSize(exports, webp.length);
+  return Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function assertBMPHeader(bmp, width, height) {
@@ -182,6 +183,6 @@ test("webp-to-bmp-b8g8r8a8-srgb rejects malformed input", async (t) => {
   const decoder = await instantiate(decoderPath);
   const memory = new Uint8Array(decoder.memory.buffer);
   memory.fill(0, decoder.input_ptr(), decoder.input_ptr() + 64);
-  assert.equal(decoder.render(0), 0);
-  assert.equal(decoder.render(64), 0);
+  assert.equal(qipRenderSize(decoder, 0), 0);
+  assert.equal(qipRenderSize(decoder, 64), 0);
 });

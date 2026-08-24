@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -103,7 +104,7 @@ test("BMP to KTX2 to BMP is pixel-exact for both BMP row orders", async (t) => {
   }
 });
 
-test("Warm Fade applies its LUT in place, preserves alpha, and supports strength", async (t) => {
+test("Warm Fade applies its LUT, preserves alpha, and supports strength", async (t) => {
   await ensurePrerequisites(t);
   const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-look-"));
   const bmp = buildBMP(3, 1, (x) => [x * 96 + 24, x * 88 + 32, x * 72 + 40, 41 + x * 79]);
@@ -121,11 +122,17 @@ test("Warm Fade applies its LUT in place, preserves alpha, and supports strength
   assert.ok(after[1][0] > after[1][2], "midtone should receive a restrained warm bias");
 });
 
-test("Warm Fade exports one deliberate in-place buffer", async (t) => {
+test("Warm Fade returns a separate buffer for its modified output", async (t) => {
   await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-look-buffer-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(1, 1, () => [64, 96, 128, 255]));
+  const input = await runPipeline([bmpToKtx], bmpPath, join(dir, "in.ktx2"));
   const bytes = await readFile(warmFade);
   const { instance } = await WebAssembly.instantiate(bytes, {});
-  assert.equal(instance.exports.input_ptr(), instance.exports.output_ptr());
+  new Uint8Array(instance.exports.memory.buffer, instance.exports.input_ptr(), input.length).set(input);
+  qipRenderSize(instance.exports, input.length);
+  assert.notEqual(instance.exports.input_ptr(), qipRenderedOutputPointer(instance.exports));
   assert.equal(instance.exports.input_bytes_cap(), instance.exports.output_bytes_cap());
 });
 

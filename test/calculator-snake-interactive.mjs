@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -11,7 +12,7 @@ function instantiate(bytes) {
 }
 
 function output(exports, size) {
-  return new Uint8Array(exports.memory.buffer, exports.output_ptr(), size);
+  return new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), size);
 }
 
 function digest(bytes) {
@@ -40,7 +41,7 @@ function assertTransactionalInteractiveABI(exports) {
 test("calculator applies an ordered app update, then presents it separately", () => {
   const calculator = instantiate(calculatorWasm);
   assertTransactionalInteractiveABI(calculator);
-  const size = calculator.render(0);
+  const size = qipRenderSize(calculator, 0);
   assert.equal(size, 224 + 220 * 220 * 4);
   const initialDigest = digest(output(calculator, size));
 
@@ -54,10 +55,10 @@ test("calculator applies an ordered app update, then presents it separately", ()
   assert.equal(calculator.finish_update(), 2n);
   assert.equal(digest(output(calculator, size)), initialDigest);
 
-  assert.equal(calculator.render(0), size);
+  assert.equal(qipRenderSize(calculator, 0), size);
   const resultDigest = digest(output(calculator, size));
   assert.notEqual(resultDigest, initialDigest);
-  assert.equal(calculator.render(0), size);
+  assert.equal(qipRenderSize(calculator, 0), size);
   assert.equal(digest(output(calculator, size)), resultDigest);
 
   calculator.begin_update_at(3n);
@@ -69,7 +70,7 @@ test("calculator applies an ordered app update, then presents it separately", ()
 test("snake uses fixed-step updates and keeps presentation separate", () => {
   const snake = instantiate(snakeWasm);
   assertTransactionalInteractiveABI(snake);
-  const size = snake.render(0);
+  const size = qipRenderSize(snake, 0);
   assert.equal(size, 224 + 400 * 280 * 4);
   const initialDigest = digest(output(snake, size));
 
@@ -81,7 +82,7 @@ test("snake uses fixed-step updates and keeps presentation separate", () => {
   assert.equal(snake.finish_update(), 240n);
   assert.equal(digest(output(snake, size)), initialDigest);
 
-  assert.equal(snake.render(0), size);
+  assert.equal(qipRenderSize(snake, 0), size);
   const movedDigest = digest(output(snake, size));
   assert.notEqual(movedDigest, initialDigest);
 
@@ -99,10 +100,10 @@ test("calculator and snake trap on host lifecycle violations", () => {
   for (const bytes of [calculatorWasm, snakeWasm]) {
     const exports = instantiate(bytes);
     assert.throws(() => exports.key_event(0x20, 1), WebAssembly.RuntimeError);
-    exports.render(0);
+    qipRenderSize(exports, 0);
     assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
     exports.begin_update_at(1n);
-    assert.throws(() => exports.render(0), WebAssembly.RuntimeError);
+    assert.throws(() => qipRenderSize(exports, 0), WebAssembly.RuntimeError);
     assert.ok(exports.finish_update() >= 1n);
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }

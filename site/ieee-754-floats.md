@@ -2,7 +2,7 @@
 
 Inspect how `f32` and `f64` values are encoded as sign, exponent, and fraction bits.
 
-The selected format, bits, and cursor are retained transaction state. The
+The selected format, bits, and cursor are retained as component state. The
 component has no animation wake and publishes KTX2 bytes only from `render`.
 
 Controls:

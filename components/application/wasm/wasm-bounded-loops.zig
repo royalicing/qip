@@ -16,7 +16,7 @@
 //! returns, and branches to a block whose end path leaves the function.
 //!
 //! Input is a wasm module; output is the same bytes when every loop is
-//! proven; `commit` rejects otherwise. Run `qip score` for per-loop
+//! proven; `render` rejects otherwise. Run `qip score` for per-loop
 //! diagnostics. The analysis mirrors `internal/wasminspect` in the Go CLI;
 //! keep the two in sync. See docs/provable-loops.md for how to write code
 //! that passes.
@@ -29,9 +29,6 @@ const Instr = wasm_reader.Instr;
 
 const INPUT_CAP: usize = 8 * 1024 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
-const NO_RENDER: i64 = 1;
-const ERROR_BIT: u64 = 1 << 63;
-const INVALID_INPUT_BIT: u64 = 1 << 62;
 const MAX_DEFINED_FUNCS: usize = 8192;
 const MAX_CONTROL_DEPTH: usize = 4096;
 const MAX_LOOP_EVIDENCE: usize = 4096;
@@ -43,7 +40,12 @@ const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var pending_commit_result: i64 = NO_RENDER;
+
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
 
 var loop_has_backedge_buf: [MAX_LOOP_EVIDENCE]bool = undefined;
 var loop_counter_head_buf: [MAX_LOOP_EVIDENCE]i32 = undefined;
@@ -131,10 +133,6 @@ export fn input_ptr() u32 {
 
 export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
-}
-
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&input_buf)));
 }
 
 export fn output_bytes_cap() u32 {
@@ -1152,25 +1150,32 @@ fn checkModule(wasm: []const u8) CheckError!void {
     if (have_function_section and !have_code_section) return CheckError.InvalidWasm;
 }
 
-export fn render(input_size: u32) u32 {
-    const input_len: usize = @intCast(input_size);
-    if (pending_commit_result != NO_RENDER) @trap();
-    if (input_len > INPUT_CAP) @trap();
-
-    pending_commit_result = @bitCast(ERROR_BIT | INVALID_INPUT_BIT);
-    checkModule(input_buf[0..input_len]) catch return 0;
-    pending_commit_result = 0;
-    return input_size;
+export fn failure_modes_per_input_offset() u32 {
+    return 0;
 }
 
-/// Close the policy-check transaction. This function does not trap.
-export fn commit() i64 {
-    const result = if (pending_commit_result == NO_RENDER)
-        @as(i64, @bitCast(ERROR_BIT | INVALID_INPUT_BIT))
-    else
-        pending_commit_result;
-    pending_commit_result = NO_RENDER;
-    return result;
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+fn renderOutcome(input_size: u32) RenderOutcome {
+    if (input_size > INPUT_CAP) @trap();
+
+    checkModule(input_buf[0..input_size]) catch {
+        return .{ .output_size_or_failure = 0, .output_ptr = 0, .failed = 1 };
+    };
+    return .{ .output_size_or_failure = input_size, .output_ptr = @intFromPtr(&input_buf), .failed = 0 };
+}
+
+export fn render(input_size: u32) RenderResult {
+    const result = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = result.output_size_or_failure,
+        .output_ptr = if (result.failed == 1) 0 else @intCast(result.output_ptr),
+        .failed = result.failed,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,16 +1195,16 @@ const bounded_counter_loop = moduleWithBody(&[_]u8{
     0x0d, 0x01, // br_if 1 (exit)
     0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local 0 += 1
     0x0c, 0x00, // br 0 (backedge)
-    0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b,
+    0x0b,
 });
 
 const signed_compare_loop = moduleWithBody(&[_]u8{
     0x02, 0x40, 0x03, 0x40,
     0x20, 0x00, 0x41, 0x0a, 0x4e, // local0 >= 10 (signed)
-    0x0d, 0x01,
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0d, 0x01, 0x20, 0x00, 0x41,
+    0x01, 0x6a, 0x21, 0x00, 0x0c,
+    0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const i64_counter_loop = moduleWithBody(&[_]u8{
@@ -1207,8 +1212,7 @@ const i64_counter_loop = moduleWithBody(&[_]u8{
     0x20, 0x00, 0x42, 0xe4, 0x00, 0x5a, // local0 >= 100 (i64)
     0x0d, 0x01,
     0x20, 0x00, 0x42, 0x01, 0x7c, 0x21, 0x00, // local0 += 1 (i64)
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const div_shrink_loop = moduleWithBody(&[_]u8{
@@ -1216,8 +1220,7 @@ const div_shrink_loop = moduleWithBody(&[_]u8{
     0x20, 0x00, 0x45, // eqz(local0)
     0x0d, 0x01,
     0x20, 0x00, 0x41, 0x0a, 0x6e, 0x21, 0x00, // local0 /= 10
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const copy_chain_loop = moduleWithBody(&[_]u8{
@@ -1228,8 +1231,8 @@ const copy_chain_loop = moduleWithBody(&[_]u8{
     0x22, 0x01, // local.tee 1
     0x1a, // drop
     0x20, 0x01, 0x21, 0x00, // local0 = local1
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b,
+    0x0b,
 });
 
 const return_exit_loop = moduleWithBody(&[_]u8{
@@ -1237,11 +1240,15 @@ const return_exit_loop = moduleWithBody(&[_]u8{
     0x02, 0x40, // block
     0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
     0x0d, 0x00, // br_if 0 (to block end)
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
+    0x20, 0x00,
+    0x41, 0x01,
+    0x6a, 0x21,
+    0x00,
     0x0c, 0x01, // br 1 (backedge)
     0x0b, // end block
     0x0f, // return
-    0x0b, 0x0b,
+    0x0b,
+    0x0b,
 });
 
 const expression_operand_loop = moduleWithBody(&[_]u8{
@@ -1250,36 +1257,38 @@ const expression_operand_loop = moduleWithBody(&[_]u8{
     0x20, 0x01, 0x4b, // > local1
     0x0d, 0x01,
     0x20, 0x00, 0x41, 0x04, 0x6a, 0x21, 0x00, // local0 += 4
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const one_sided_compare_loop = moduleWithBody(&[_]u8{
     0x02, 0x40, 0x03, 0x40,
     0x20, 0x02, 0x2d, 0x00, 0x00, // load8(local2)
     0x20, 0x00, 0x49, // < local0
-    0x0d, 0x01,
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0d, 0x01, 0x20,
+    0x00, 0x41, 0x01,
+    0x6a, 0x21, 0x00,
+    0x0c, 0x00, 0x0b,
+    0x0b, 0x0b,
 });
 
 const global_bound_loop = moduleWithBody(&[_]u8{
     0x02, 0x40, 0x03, 0x40,
     0x20, 0x00, 0x23, 0x00, 0x4f, // local0 >= global0
-    0x0d, 0x01,
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0d, 0x01, 0x20, 0x00, 0x41,
+    0x01, 0x6a, 0x21, 0x00, 0x0c,
+    0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const conditional_return_loop = moduleWithBody(&[_]u8{
     0x03, 0x40, // loop
     0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
     0x0d, 0x01, // br_if 1 (function label)
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
-    0x0c, 0x00,
-    0x0b, 0x0b,
+    0x20, 0x00,
+    0x41, 0x01,
+    0x6a, 0x21,
+    0x00, 0x0c,
+    0x00, 0x0b,
+    0x0b,
 });
 
 const armed_br_chain_loop = moduleWithBody(&[_]u8{
@@ -1288,11 +1297,15 @@ const armed_br_chain_loop = moduleWithBody(&[_]u8{
     0x02, 0x40, // block (inner)
     0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
     0x0d, 0x00, // br_if 0 (to inner block end)
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
+    0x20, 0x00,
+    0x41, 0x01,
+    0x6a, 0x21,
+    0x00,
     0x0c, 0x01, // br 1 (backedge)
     0x0b, // end inner block
     0x0c, 0x01, // br 1 (crosses loop to outer block end)
-    0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b,
+    0x0b,
 });
 
 const if_return_exit_loop = moduleWithBody(&[_]u8{
@@ -1301,7 +1314,13 @@ const if_return_exit_loop = moduleWithBody(&[_]u8{
     0x04, 0x40, // if
     0x0f, // return
     0x0b, // end if
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
+    0x20,
+    0x00,
+    0x41,
+    0x01,
+    0x6a,
+    0x21,
+    0x00,
     0x0c, 0x00, // br 0 (backedge)
     0x0b, 0x0b,
 });
@@ -1313,7 +1332,13 @@ const br_if_skip_return_loop = moduleWithBody(&[_]u8{
     0x0d, 0x00, // br_if 0 (skip the return)
     0x0f, // return
     0x0b, // end block
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
+    0x20,
+    0x00,
+    0x41,
+    0x01,
+    0x6a,
+    0x21,
+    0x00,
     0x0c, 0x00, // br 0 (backedge)
     0x0b, 0x0b,
 });
@@ -1325,8 +1350,7 @@ const nonneg_stride_loop = moduleWithBody(&[_]u8{
     0x20, 0x02, 0x2d, 0x00, 0x00, 0x21, 0x03, // local3 = load8_u(local2)
     0x20, 0x00, 0x20, 0x03, 0x6a, 0x21, 0x00, // local0 += local3
     0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local0 += 1
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const nonneg_stride_alone_loop = moduleWithBody(&[_]u8{
@@ -1335,8 +1359,7 @@ const nonneg_stride_alone_loop = moduleWithBody(&[_]u8{
     0x0d, 0x01,
     0x20, 0x02, 0x2d, 0x00, 0x00, 0x21, 0x03, // local3 = load8_u(local2)
     0x20, 0x00, 0x20, 0x03, 0x6a, 0x21, 0x00, // local0 += local3 (weak only)
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b, 0x0b,
 });
 
 const fused_stride_loop = moduleWithBody(&[_]u8{
@@ -1350,7 +1373,8 @@ const fused_stride_loop = moduleWithBody(&[_]u8{
     0x6a, // i32.add
     0x21, 0x00, // local.set 0
     0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b,
+    0x0b,
 });
 
 const fused_weak_alone_loop = moduleWithBody(&[_]u8{
@@ -1362,7 +1386,8 @@ const fused_weak_alone_loop = moduleWithBody(&[_]u8{
     0x6a, // i32.add (no strict component)
     0x21, 0x00, // local.set 0
     0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b,
+    0x0b,
 });
 
 const must_exit_ladder_loop = moduleWithBody(&[_]u8{
@@ -1370,7 +1395,10 @@ const must_exit_ladder_loop = moduleWithBody(&[_]u8{
     0x02, 0x40, // block
     0x20, 0x00, 0x41, 0x0a, 0x46, // local0 == 10
     0x0d, 0x00, // br_if 0 (to block end)
-    0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00,
+    0x20, 0x00,
+    0x41, 0x01,
+    0x6a, 0x21,
+    0x00,
     0x0c, 0x01, // br 1 (backedge)
     0x0b, // end block
     0x20, 0x01, // local.get 1
@@ -1378,7 +1406,8 @@ const must_exit_ladder_loop = moduleWithBody(&[_]u8{
     0x0f, // return
     0x0b, // end if
     0x0f, // return
-    0x0b, 0x0b,
+    0x0b,
+    0x0b,
 });
 
 const unbounded_loop = moduleWithBody(&[_]u8{
@@ -1393,18 +1422,18 @@ const tainted_counter_loop = moduleWithBody(&[_]u8{
     0x0d, 0x01,
     0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, // local0 += 1
     0x41, 0x00, 0x21, 0x00, // local0 = 0 (taints the counter)
-    0x0c, 0x00,
-    0x0b, 0x0b, 0x0b,
+    0x0c, 0x00, 0x0b, 0x0b,
+    0x0b,
 });
 
 // The profile rules are the other component's job: memory.grow and atomics
 // pass here as long as every loop is proven.
 const memory_grow_module = [_]u8{
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f,
-    0x03, 0x02, 0x01, 0x00,
-    0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
-    0x0a, 0x08, 0x01, 0x06, 0x00, 0x41, 0x00, 0x40, 0x00, 0x0b,
+    0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, 0x03,
+    0x02, 0x01, 0x00, 0x05, 0x04, 0x01, 0x01, 0x01,
+    0x01, 0x0a, 0x08, 0x01, 0x06, 0x00, 0x41, 0x00,
+    0x40, 0x00, 0x0b,
 };
 
 const atomics_module = moduleWithBody(&[_]u8{ 0xfe, 0x10, 0x00, 0x00, 0x0b });
@@ -1415,13 +1444,14 @@ test "accepts a module with no loops" {
 
 test "render rejects an unproved loop and the instance recovers" {
     @memcpy(input_buf[0..unbounded_loop.len], &unbounded_loop);
-    try std.testing.expectEqual(@as(u32, 0), render(unbounded_loop.len));
-    try std.testing.expect(commit() < 0);
+    const rejected = renderOutcome(unbounded_loop.len);
+    try std.testing.expectEqual(@as(u1, 1), rejected.failed);
 
     @memcpy(input_buf[0..ok_module.len], &ok_module);
-    try std.testing.expectEqual(@as(u32, ok_module.len), render(ok_module.len));
+    const accepted = renderOutcome(ok_module.len);
+    try std.testing.expectEqual(@as(u1, 0), accepted.failed);
+    try std.testing.expectEqual(@as(u32, ok_module.len), accepted.output_size_or_failure);
     try std.testing.expectEqualSlices(u8, &ok_module, input_buf[0..ok_module.len]);
-    try std.testing.expectEqual(@as(i64, 0), commit());
 }
 
 test "accepts a counter loop with a visible bound" {

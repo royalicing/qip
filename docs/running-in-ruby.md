@@ -58,7 +58,6 @@ class MarkdownRenderer
     @memory = export("memory").to_memory
     @input_ptr = export("input_ptr").to_func
     @input_cap = export("input_utf8_cap").to_func
-    @output_ptr = export("output_ptr").to_func
     @render = export("render").to_func
   end
 
@@ -74,8 +73,11 @@ class MarkdownRenderer
 
     @memory.write(@input_ptr.call, source)
 
-    output_size = @render.call(source.bytesize)
-    @memory.read_utf8(@output_ptr.call, output_size)
+    packed = @render.call(source.bytesize) & 0xffff_ffff_ffff_ffff
+    raise "component rejected input" unless (packed >> 63).zero?
+    output_size = packed & 0xffff_ffff
+    output_ptr = (packed >> 32) & 0x7fff_ffff
+    @memory.read_utf8(output_ptr, output_size)
   end
 
   private
@@ -133,8 +135,9 @@ The loader is runtime-specific; the QIP calls are not:
 2. `Wasmtime::Instance.new` instantiates it with no imports.
 3. Ruby encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `Memory#write` copies those bytes to `input_ptr()`.
-5. `render(input_size)` returns the number of output bytes.
-6. `Memory#read_utf8` copies and validates that many bytes from `output_ptr()`.
+5. `render(input_size)` returns the rejection bit, output pointer, and size in
+   one packed `i64` value.
+6. `Memory#read_utf8` copies and validates the accepted output range.
 
 Resolving each export during initialization catches a missing export before the first render. Converting it with `to_func` or `to_memory` also rejects an export of the wrong kind.
 

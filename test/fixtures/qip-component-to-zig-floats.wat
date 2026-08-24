@@ -3,7 +3,6 @@
 
   (func (export "input_ptr") (result i32) i32.const 0)
   (func (export "input_bytes_cap") (result i32) i32.const 16)
-  (func (export "output_ptr") (result i32) i32.const 64)
   (func (export "output_bytes_cap") (result i32) i32.const 128)
 
   ;; Keep every Core 1.0 floating-point opcode in one validated fixture. The
@@ -75,7 +74,7 @@
     i32.const 1069547520 f32.reinterpret_i32 drop
     i64.const 4609434218613702656 f64.reinterpret_i64 drop)
 
-  (func (export "render") (param i32) (result i32)
+  (func (export "render") (param i32) (result i64)
     call $exercise
 
     i32.const 64 f32.const 2.5 f32.nearest f32.store
@@ -95,4 +94,4 @@
     i32.const 136 i64.const -7 f64.convert_i64_s f64.store
     i32.const 144 f32.const 1.5 f64.promote_f32 f64.store
 
-    i32.const 88))
+    i64.const 274877907032))

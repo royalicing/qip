@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -48,9 +49,9 @@ async function convert(parts, uuid = "12345678-90ab-cdef-1234-567890abcdef") {
     ),
   );
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), bytes.length).set(bytes);
-  const outputSize = exports.render(bytes.length);
+  const outputSize = qipRenderSize(exports, bytes.length);
   return Buffer.from(
-    new Uint8Array(exports.memory.buffer, exports.output_ptr(), outputSize),
+    new Uint8Array(exports.memory.buffer, qipRenderedOutputPointer(exports), outputSize),
   );
 }
 

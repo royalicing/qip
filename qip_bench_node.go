@@ -326,14 +326,13 @@ function render(prepared) {
   const memory = new Uint8Array(exports.memory.buffer);
   memory.set(input, prepared.inputPointer);
   const runStart = process.hrtime.bigint();
-  const outputSize = exports.render(input.length) >>> 0;
-  if (typeof exports.commit === "function") {
-    const result = exports.commit();
-    if (typeof result !== "bigint") fail("commit export must have signature commit() -> i64");
-    if (result < 0n) fail("component rejected input (commit returned " + result + ")");
-  }
+  const renderResult = exports.render(input.length);
   const runEnd = process.hrtime.bigint();
-  const outputPointer = exportedI32(exports, "output_ptr");
+  if (typeof renderResult !== "bigint") fail("render export must have signature render(i32) -> i64");
+  const bits = BigInt.asUintN(64, renderResult);
+  if ((bits & (1n << 63n)) !== 0n) fail("component rejected input");
+  const outputSize = Number(bits & 0xffff_ffffn);
+  const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
   if (outputSize > prepared.outputCapacity ||
       outputPointer + outputSize > exports.memory.buffer.byteLength) {
     fail("component returned output outside its capacity");

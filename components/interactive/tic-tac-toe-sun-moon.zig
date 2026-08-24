@@ -80,10 +80,6 @@ export fn input_bytes_cap() u32 {
     return 0;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf[0])));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_BYTES));
 }
@@ -133,13 +129,25 @@ fn requireEventPhase() void {
     if (phase != .updating) @trap();
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size != 0) @trap();
     if (phase != .initializing and phase != .ready) @trap();
     _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
     drawFrame();
     phase = .ready;
     return @intCast(OUTPUT_BYTES);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf[0])),
+        .failed = 0,
+    };
 }
 
 export fn finish_update() i64 {
@@ -390,7 +398,7 @@ fn resetTransactionStateForTest() void {
 
 test "Eventful updates change state and only render changes output" {
     resetTransactionStateForTest();
-    const size = render(0);
+    const size = renderImpl(0);
     try std.testing.expectEqual(@as(u32, OUTPUT_BYTES), size);
     const initial_hash = std.hash.Wyhash.hash(0, &output_buf);
 
@@ -403,13 +411,13 @@ test "Eventful updates change state and only render changes output" {
     try std.testing.expectEqual(PLAYER_SUN, state.board[0]);
     try std.testing.expectEqual(initial_hash, std.hash.Wyhash.hash(0, &output_buf));
 
-    try std.testing.expectEqual(size, render(0));
+    try std.testing.expectEqual(size, renderImpl(0));
     try std.testing.expect(initial_hash != std.hash.Wyhash.hash(0, &output_buf));
 }
 
 test "reset event applies inside a later update" {
     resetTransactionStateForTest();
-    _ = render(0);
+    _ = renderImpl(0);
 
     begin_update_at(1);
     const x: i32 = @intCast(BOARD_X + CELL_PX / 2);

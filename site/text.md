@@ -2,7 +2,7 @@
 
 # Text content components
 
-These components accept a `text/*` MIME type. Common day-to-day formats come first. Download a `.wasm` file and run it with [`qip run`](/docs/qip-cli), or combine compatible inputs and outputs with the [recipe finder](/recipes).
+These components accept a `text/*` MIME type. Common day-to-day formats come first. Download a `.wasm` file and run it with [`qipx run`](/docs/qipx), or combine compatible inputs and outputs with the [recipe finder](/recipes).
 
 ## Markdown (`text/markdown`)
 

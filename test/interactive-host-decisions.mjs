@@ -51,7 +51,7 @@ function tracedExports(actual, lines) {
       traced[property] = (inputSize) => {
         lines.push(`call render input_size=${inputSize}`);
         const result = value(inputSize);
-        lines.push(`return output_bytes=${result}`);
+        lines.push(`return output_bytes=${Number(BigInt.asUintN(64, result) & 0xffff_ffffn)}`);
         return result;
       };
       continue;
@@ -103,7 +103,6 @@ function makeElement(component, lines) {
   element._exports = tracedExports(actual, lines);
   element._memory = actual.memory;
   element._uniforms = [];
-  element._outputPtr = actual.output_ptr();
   element._outputCapacity = actual.output_bytes_cap();
   element._presentKTX2Output = () => {};
   element._stats = { textContent: "" };
@@ -115,7 +114,7 @@ function traceCalculator(lines) {
   const element = makeElement("calculator", lines);
 
   const initial = element._runInitialContentRender();
-  lines.push(`host initial present output_bytes=${initial.outputLen}`);
+  lines.push(`host initial present output_bytes=${initial.rendered.outputLen}`);
   element._runBootstrapUpdate();
   lines.push(`host bootstrap wake=${formatWake(element._nextWakeAtMS)}`);
 
@@ -135,7 +134,7 @@ function traceSnake(lines) {
   const element = makeElement("snake", lines);
 
   const initial = element._runInitialContentRender();
-  lines.push(`host initial present output_bytes=${initial.outputLen}`);
+  lines.push(`host initial present output_bytes=${initial.rendered.outputLen}`);
   element._runBootstrapUpdate();
   lines.push(`host bootstrap wake=${formatWake(element._nextWakeAtMS)}`);
 

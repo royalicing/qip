@@ -4,16 +4,16 @@
   (global $input_utf8_cap i32 (i32.const 0x10000))
   (global $output_ptr i32 (i32.const 0x20000))
   (global $output_bytes_cap i32 (i32.const 0x10000))
-  (global $pending_commit_result (mut i64) (i64.const 1))
+  (global $failure_offset (mut i32) (i32.const -1))
 
   (func (export "input_ptr") (result i32)
     (global.get $input_ptr))
   (func (export "input_utf8_cap") (result i32)
     (global.get $input_utf8_cap))
-  (func (export "output_ptr") (result i32)
-    (global.get $output_ptr))
   (func (export "output_bytes_cap") (result i32)
     (global.get $output_bytes_cap))
+  (func (export "failure_modes_per_input_offset") (result i32)
+    (i32.const 1))
 
   ;; Decode one RFC 4648 Base64 character. Padding is validated by render.
   (func $decode_base64_char (param $char i32) (result i32)
@@ -44,13 +44,10 @@
 
   ;; Reject invalid input and include its first known byte offset.
   (func $reject (param $offset i32) (result i32)
-    (global.set $pending_commit_result
-      (i64.add
-        (i64.const -4611686018427387904)
-        (i64.extend_i32_u (local.get $offset))))
+    (global.set $failure_offset (local.get $offset))
     (i32.const 0))
 
-  (func (export "render") (param $input_size i32) (result i32)
+  (func (export "render") (param $input_size i32) (result i64)
     (local $input_idx i32)
     (local $output_idx i32)
     (local $c1 i32)
@@ -63,13 +60,10 @@
     (local $v4 i32)
     (local $padding i32)
 
-    ;; A second render before commit is a host call-order violation.
-    (if (i64.ne (global.get $pending_commit_result) (i64.const 1))
-      (then unreachable))
     (if (i32.gt_u (local.get $input_size) (global.get $input_utf8_cap))
       (then unreachable))
 
-    (global.set $pending_commit_result (i64.const -4611686018427387904))
+    (global.set $failure_offset (i32.const -1))
 
     (block $finish
       ;; This strict profile accepts complete four-byte groups. The final
@@ -191,19 +185,18 @@
 
         (local.set $input_idx (i32.add (local.get $input_idx) (i32.const 4)))
         (br $groups)))
-
-      (global.set $pending_commit_result (i64.const 0)))
+)
 
     (if (i32.gt_u (local.get $output_idx) (global.get $output_bytes_cap))
       (then unreachable))
-    (local.get $output_idx))
+    (if (result i64) (i32.ge_s (global.get $failure_offset) (i32.const 0))
+      (then
+        (i64.or
+          (i64.const -9223372036854775808)
+          (i64.extend_i32_u (global.get $failure_offset))))
+      (else
+        (i64.or
+          (i64.shl (i64.extend_i32_u (global.get $output_ptr)) (i64.const 32))
+          (i64.extend_i32_u (local.get $output_idx))))))
 
-  ;; commit never traps. It closes both accepted and rejected transactions.
-  (func (export "commit") (result i64)
-    (local $result i64)
-    (local.set $result (global.get $pending_commit_result))
-    (if (i64.eq (local.get $result) (i64.const 1))
-      (then (local.set $result (i64.const -4611686018427387904))))
-    (global.set $pending_commit_result (i64.const 1))
-    (local.get $result))
 )

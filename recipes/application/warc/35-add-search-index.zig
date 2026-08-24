@@ -130,10 +130,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
@@ -987,11 +983,23 @@ fn addSearchIndex(input: []const u8, output: []u8, targets_storage: []u8, shard_
     return out.idx;
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
     const written = addSearchIndex(input_buf[0..input_size], &output_buf, &targets_buf, &shard_buf) catch @trap();
     return @as(u32, @intCast(written));
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }
 
 fn appendTestRecord(out: []u8, cursor: *usize, target_uri: []const u8, payload: []const u8) !void {

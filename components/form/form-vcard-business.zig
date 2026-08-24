@@ -45,10 +45,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -266,7 +262,7 @@ fn buildVCard() u32 {
     return @as(u32, @intCast(w.idx));
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const bounded_input_size = @min(input_size, INPUT_CAP);
     const input = input_buf[0..@as(usize, @intCast(bounded_input_size))];
     resetError();
@@ -305,6 +301,18 @@ export fn render(input_size: u32) u32 {
     return buildVCard();
 }
 
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn resetState() void {
     step = 0;
     business_name_size = 0;
@@ -318,7 +326,7 @@ fn resetState() void {
 
 fn feed(input: []const u8) u32 {
     @memcpy(input_buf[0..input.len], input);
-    return render(@as(u32, @intCast(input.len)));
+    return renderImpl(@as(u32, @intCast(input.len)));
 }
 
 test "successful flow outputs business vcard" {

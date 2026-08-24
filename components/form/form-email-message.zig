@@ -35,10 +35,6 @@ export fn input_utf8_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -207,7 +203,7 @@ fn buildMessage() u32 {
     return @as(u32, @intCast(w.idx));
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     const bounded_input_size = @min(input_size, INPUT_CAP);
     const input = input_buf[0..@as(usize, @intCast(bounded_input_size))];
     resetError();
@@ -227,6 +223,18 @@ export fn render(input_size: u32) u32 {
     };
 }
 
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
 fn resetState() void {
     step = .first_name;
     first_name_size = 0;
@@ -239,12 +247,12 @@ test "success flow returns message with headers" {
 
     const n1 = "Ada";
     @memcpy(input_buf[0..n1.len], n1);
-    try std.testing.expectEqual(@as(u32, 0), render(@as(u32, @intCast(n1.len))));
+    try std.testing.expectEqual(@as(u32, 0), renderImpl(@as(u32, @intCast(n1.len))));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
 
     const n2 = "ada@example.com";
     @memcpy(input_buf[0..n2.len], n2);
-    const out_size = render(@as(u32, @intCast(n2.len)));
+    const out_size = renderImpl(@as(u32, @intCast(n2.len)));
     try std.testing.expect(out_size > 0);
     try std.testing.expectEqual(@as(u32, 0), input_key_size());
 
@@ -258,7 +266,7 @@ test "invalid first name keeps current step and sets error" {
     resetState();
     const input = "   ";
     @memcpy(input_buf[0..input.len], input);
-    try std.testing.expectEqual(@as(u32, 0), render(@as(u32, @intCast(input.len))));
+    try std.testing.expectEqual(@as(u32, 0), renderImpl(@as(u32, @intCast(input.len))));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_FIRST_NAME.len)), input_key_size());
     try std.testing.expect(error_message_size() > 0);
 }
@@ -268,12 +276,12 @@ test "invalid email keeps step and sets error" {
 
     const n1 = "Ada";
     @memcpy(input_buf[0..n1.len], n1);
-    _ = render(@as(u32, @intCast(n1.len)));
+    _ = renderImpl(@as(u32, @intCast(n1.len)));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
 
     const n2 = "ada-at-example.com";
     @memcpy(input_buf[0..n2.len], n2);
-    try std.testing.expectEqual(@as(u32, 0), render(@as(u32, @intCast(n2.len))));
+    try std.testing.expectEqual(@as(u32, 0), renderImpl(@as(u32, @intCast(n2.len))));
     try std.testing.expectEqual(@as(u32, @intCast(KEY_EMAIL.len)), input_key_size());
     try std.testing.expect(error_message_size() > 0);
 }

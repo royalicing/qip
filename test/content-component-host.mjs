@@ -9,7 +9,7 @@ import {
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
-test("commit rejection closes the transaction and keeps the instance", async () => {
+test("input rejection keeps the instance reusable", async () => {
   const host = new ContentComponentHost(
     await readFile("components/utf8/utf8-must-be-valid.wasm"),
     { label: "UTF-8 validator" },
@@ -22,9 +22,9 @@ test("commit rejection closes the transaction and keeps the instance", async () 
 
   const rejected = host.run(new Uint8Array([0x41, 0xc3, 0x28]));
   assert.equal(rejected.status, "rejected");
-  assert.ok(rejected.commitResult < 0n);
-  assert.equal(rejected.invalidInput, true);
   assert.equal(rejected.detail, 2);
+  assert.equal(rejected.inputOffset, 2);
+  assert.equal(rejected.failureMode, 0);
   assert.equal(host.instance, firstInstance);
 
   const accepted = host.run("again");
@@ -80,8 +80,9 @@ test("Base64 rejects malformed and non-canonical input and recovers", async () =
   ]) {
     const rejected = host.run(encoded);
     assert.equal(rejected.status, "rejected", encoded);
-    assert.equal(rejected.invalidInput, true, encoded);
     assert.equal(rejected.detail, offset, encoded);
+    assert.equal(rejected.inputOffset, offset, encoded);
+    assert.equal(rejected.failureMode, 0, encoded);
     assert.equal(host.instance, instance);
   }
 
@@ -102,7 +103,7 @@ test("zlib distinguishes accepted empty output from rejection", async () => {
 
   const rejected = host.run(new Uint8Array([0x78, 0x00]));
   assert.equal(rejected.status, "rejected");
-  assert.equal(rejected.invalidInput, false);
+  assert.equal(rejected.inputOffset, undefined);
   assert.equal(host.instance, instance);
 
   const recovered = host.run(new Uint8Array([0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]));
@@ -116,10 +117,9 @@ test("Core Wasm validation rejects and recovers without copying accepted input",
 
   const rejected = host.run(new Uint8Array([0x00, 0x61, 0x73, 0x6d]));
   assert.equal(rejected.status, "rejected");
-  assert.equal(rejected.invalidInput, true);
+  assert.equal(rejected.inputOffset, undefined);
 
   const accepted = host.run(wasmBytes);
   assert.equal(accepted.status, "accepted");
   assert.deepEqual(Buffer.from(accepted.output), wasmBytes);
-  assert.equal(host.instance.exports.input_ptr(), host.instance.exports.output_ptr());
 });

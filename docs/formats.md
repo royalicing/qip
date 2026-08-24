@@ -203,7 +203,7 @@ trap.
 A file extension, HTTP `Content-Type`, or other untrusted label does not prove
 that the bytes are valid. Validate at that boundary when later components need
 to rely on the format. A pass-through PNG validator can accept arbitrary bytes,
-export `commit`, reject malformed input, and expose the accepted bytes as
+export `failure_modes_per_input_offset`, reject malformed input, and expose the accepted bytes as
 `image/png` without changing them:
 
 ```text
@@ -212,7 +212,7 @@ untrusted bytes -> validate PNG -> valid image/png -> expensive PNG transform
 
 This avoids making every downstream PNG component repeat validation. A combined
 validate-and-transform component is also valid; it accepts the wider byte
-domain and reports malformed input through `commit`. Recipes must not infer
+domain and reports malformed input through its `render` result. Recipes must not infer
 validation only from a source's claimed MIME type.
 
 `qip` currently supports these encodings:

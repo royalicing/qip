@@ -18,8 +18,11 @@ const simon = (await WebAssembly.instantiate(simonBytes)).instance.exports;
 
 function renderQip(input) {
   new Uint8Array(qip.memory.buffer, qip.input_ptr(), input.length).set(input);
-  const size = qip.render(input.length);
-  return Buffer.from(qip.memory.buffer, qip.output_ptr(), size);
+  const result = BigInt.asUintN(64, qip.render(input.length));
+  if ((result >> 63n) !== 0n) throw new Error("QIP renderer rejected input");
+  const size = Number(result & 0xffff_ffffn);
+  const ptr = Number((result >> 32n) & 0x7fff_ffffn);
+  return Buffer.from(qip.memory.buffer, ptr, size);
 }
 
 function renderSimon(input) {

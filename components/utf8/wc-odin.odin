@@ -25,11 +25,6 @@ input_utf8_cap :: proc "contextless" () -> u32 {
 }
 
 @(export)
-output_ptr :: proc "contextless" () -> u32 {
-	return u32(uintptr(&output_buf[0]))
-}
-
-@(export)
 output_utf8_cap :: proc "contextless" () -> u32 {
 	return OUTPUT_CAP
 }
@@ -109,9 +104,10 @@ format_counts :: proc "contextless" (counts: Counts) -> u32 {
 }
 
 @(export)
-render :: proc "contextless" (input_size: u32) -> u32 {
+render :: proc "contextless" (input_size: u32) -> u64 {
 	if input_size > INPUT_CAP {
 		intrinsics.trap()
 	}
-	return format_counts(count_wc(input_size))
+	output_size := format_counts(count_wc(input_size))
+	return (u64(u32(uintptr(&output_buf[0]))) << 32) | u64(output_size)
 }

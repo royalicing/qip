@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
@@ -79,9 +80,9 @@ function withLinkedProfile(bmp) {
 function encode(exports, input) {
   const memory = new Uint8Array(exports.memory.buffer);
   memory.set(input, exports.input_ptr());
-  const size = exports.render(input.length);
+  const size = qipRenderSize(exports, input.length);
   assert.ok(size > 0, "valid BMP must produce output");
-  return Buffer.from(memory.subarray(exports.output_ptr(), exports.output_ptr() + size));
+  return Buffer.from(memory.subarray(qipRenderedOutputPointer(exports), qipRenderedOutputPointer(exports) + size));
 }
 
 async function loadModule(t) {
@@ -139,7 +140,7 @@ test("rejects linked profiles and malformed BMPs", async (t) => {
   const bmp = buildBmp(1, 1, pixels);
   const memory = new Uint8Array(exports.memory.buffer);
   memory.set(withLinkedProfile(bmp), exports.input_ptr());
-  assert.equal(exports.render(138 + 4 + 8), 0);
+  assert.equal(qipRenderSize(exports, 138 + 4 + 8), 0);
   memory.set(Buffer.from("BM"), exports.input_ptr());
-  assert.equal(exports.render(2), 0);
+  assert.equal(qipRenderSize(exports, 2), 0);
 });

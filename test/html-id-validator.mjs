@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { decodeRenderResult } from "./lib/content-component-host.mjs";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -36,12 +37,9 @@ async function load(name) {
 
 function renderText(exports, text) {
   const inputLen = writeInput(exports, text);
-  const outputLen = exports.render(inputLen);
-  if (typeof exports.commit === "function") {
-    assert.ok(exports.commit() >= 0n);
-  }
-  const outputPtr = readI32Export(exports, "output_ptr");
-  return decoder.decode(new Uint8Array(exports.memory.buffer, outputPtr, outputLen));
+  const result = decodeRenderResult(exports.render(inputLen));
+  assert.equal(result.failed, false);
+  return decoder.decode(new Uint8Array(exports.memory.buffer, result.outputPointer, result.value));
 }
 
 test("html-id-validator rejects invalid input and recovers on the same instance", async () => {
@@ -49,8 +47,7 @@ test("html-id-validator rejects invalid input and recovers on the same instance"
 
   for (const invalid of ["", "   ", "main content"]) {
     const inputLen = writeInput(exports, invalid);
-    assert.equal(exports.render(inputLen), 0);
-    assert.ok(exports.commit() < 0n);
+    assert.equal(decodeRenderResult(exports.render(inputLen)).failed, true);
   }
 
   assert.equal(renderText(exports, "main-content"), "main-content");
@@ -64,8 +61,7 @@ test("html-input-name-validator accepts the HTML form name syntax", async () => 
   for (const valid of ["full name", "items[0].email", "名前 😀"]) {
     assert.equal(renderText(exports, valid), valid);
   }
-  assert.equal(exports.render(0), 0);
-  assert.ok(exports.commit() < 0n);
+  assert.equal(decodeRenderResult(exports.render(0)).failed, true);
   assert.equal(renderText(exports, "email"), "email");
 
   // Malformed UTF-8 violates input_utf8_cap. A host discards this instance.
@@ -85,8 +81,7 @@ test("html-tag-validator recognizes HTML and valid custom element names", async 
   }
   for (const invalid of ["", "frobnicate", "annotation-xml", "X-widget", "x_widget", " x-widget "]) {
     const inputLen = writeInput(exports, invalid);
-    assert.equal(exports.render(inputLen), 0);
-    assert.ok(exports.commit() < 0n);
+    assert.equal(decodeRenderResult(exports.render(inputLen)).failed, true);
   }
   assert.equal(renderText(exports, "button"), "builtin");
 });

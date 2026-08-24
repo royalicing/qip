@@ -216,7 +216,7 @@ static int write_output(const uint8_t* data, size_t data_size,
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 #ifdef QIP_WEBP_INPUT_KTX2_RGBA8
@@ -279,7 +279,7 @@ uint32_t arena_allocation_free_event(uint32_t index) {
   return arena_free_events[index];
 }
 
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
   uint32_t pixel_offset, dib_size, width_u, height_bits, compression;
   int32_t width, height_signed;
@@ -299,7 +299,7 @@ uint32_t render(uint32_t input_size_value) {
     size_t pixel;
     if (input_size > INPUT_CAP ||
         !qip_ktx2_rgba8_parse(input_buf, input_size, &image)) {
-      return 0;
+      return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
     width = (int32_t)image.width;
     height = image.height;
@@ -315,7 +315,7 @@ uint32_t render(uint32_t input_size_value) {
   }
 #else
   if (input_size > INPUT_CAP) input_size = INPUT_CAP;
-  if (input_size < 54 || input_buf[0] != 'B' || input_buf[1] != 'M') return 0;
+  if (input_size < 54 || input_buf[0] != 'B' || input_buf[1] != 'M') return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   pixel_offset = read_u32_le(input_buf + 10);
   dib_size = read_u32_le(input_buf + 14);
   width_u = read_u32_le(input_buf + 18);
@@ -328,7 +328,7 @@ uint32_t render(uint32_t input_size_value) {
       read_u16_le(input_buf + 28) != 32 ||
       width <= 0 || (uint32_t)width > MAX_DIMENSION || height_signed == 0 ||
       height_signed == INT32_MIN) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   if (compression != 0 &&
       (compression != 3 || dib_size < 124 || pixel_offset < 138 ||
@@ -336,16 +336,16 @@ uint32_t render(uint32_t input_size_value) {
        read_u32_le(input_buf + 58) != 0x0000ff00u ||
        read_u32_le(input_buf + 62) != 0x000000ffu ||
        read_u32_le(input_buf + 66) != 0xff000000u)) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   height = (uint32_t)(height_signed < 0 ? -height_signed : height_signed);
   if (height > MAX_DIMENSION ||
       (uint64_t)(uint32_t)width * height > MAX_PIXELS ||
       (size_t)width > SIZE_MAX / 4u / height) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   pixel_bytes = (size_t)width * 4u * height;
-  if (pixel_offset > input_size || pixel_bytes > input_size - pixel_offset) return 0;
+  if (pixel_offset > input_size || pixel_bytes > input_size - pixel_offset) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
 
   // The input is disposable. Move the pixels to an aligned base and normalize
   // bottom-up BMP storage in place so libwebp can consume it as ARGB words.
@@ -362,7 +362,7 @@ uint32_t render(uint32_t input_size_value) {
   }
   argb_pixels = input_buf;
 #endif
-  if (!WebPConfigInit(&config) || !WebPPictureInit(&picture)) return 0;
+  if (!WebPConfigInit(&config) || !WebPPictureInit(&picture)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   config.lossless = 0;
   config.quality = (float)quality;
   config.method = (int)method;
@@ -384,10 +384,10 @@ uint32_t render(uint32_t input_size_value) {
   // VP8L search for the alpha plane. Method 5 keeps alpha exact while avoiding
   // that memory/time cliff. Opaque images still receive the requested method.
   if (method == 6 && WebPPictureHasTransparency(&picture)) config.method = 5;
-  if (!WebPValidateConfig(&config)) return 0;
+  if (!WebPValidateConfig(&config)) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
 
   ok = WebPEncode(&config, &picture);
   WebPPictureFree(&picture);
-  if (!ok || writer.overflow || writer.size > UINT32_MAX) return 0;
-  return (uint32_t)writer.size;
+  if (!ok || writer.overflow || writer.size > UINT32_MAX) return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)writer.size);
 }

@@ -32,16 +32,17 @@ When not to use a tight cap:
 
 Even then, add the cap before checking in the module.
 
-## Minimal Content Component
+## Minimal Infallible Content Component
 
-This component accepts UTF-8 text and returns it unchanged. The example is simple so the ABI shape is visible.
+This component accepts UTF-8 text and returns it unchanged. It cannot reject a
+conforming call, so it does not export `failure_modes_per_input_offset`. It can
+still trap if the host violates the input-capacity precondition.
 
 ```zig
 const INPUT_CAP: usize = 64 * 1024;
 const OUTPUT_CAP: usize = INPUT_CAP;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -51,22 +52,48 @@ export fn input_utf8_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&output_buf)));
-}
-
 export fn output_utf8_cap() u32 {
     return @as(u32, @intCast(OUTPUT_CAP));
 }
 
-export fn render(input_size_in: u32) u32 {
+export fn render(input_size_in: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
     const input_size: usize = @intCast(input_size_in);
     if (input_size > INPUT_CAP) @trap();
 
-    @memcpy(output_buf[0..input_size], input_buf[0..input_size]);
-    return input_size_in;
+    return .{
+        .output_size = input_size_in,
+        .output_ptr = @intCast(@intFromPtr(&input_buf)),
+        .failed = 0,
+    };
 }
 ```
+
+The anonymous packed struct is the preferred result type for an infallible
+component:
+
+```zig
+packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+}
+```
+
+Zig stores `output_size` in bits 0 through 31, `output_ptr` in bits 32 through
+62, and `failed` in bit 63. An infallible component always sets `failed` to
+zero. The checked cast to `u31` also verifies that the output pointer is below
+2 GiB.
+
+Do not add a second result struct to an infallible component. Put a short
+operation directly in `render`. For a larger operation, use private functions
+that return their natural result, such as an output byte count. Test parsers,
+formatters, and transforms through those private functions with ordinary Zig
+slices. Test the packed pointer and failure bit through a WebAssembly runtime,
+where pointers use the ABI's 31-bit address range.
 
 Build it:
 
@@ -86,6 +113,83 @@ Run it:
 printf 'hello' | qip run echo.wasm
 ```
 
+## Minimal Fallible Content Component
+
+This component accepts arbitrary bytes and returns ASCII input unchanged. A
+non-ASCII byte is valid input for the byte contract, but this component cannot
+accept it. The component therefore exports `failure_modes_per_input_offset`
+and returns the rejected byte offset without trapping.
+
+```zig
+const INPUT_CAP: usize = 64 * 1024;
+
+var input_buf: [INPUT_CAP]u8 = undefined;
+
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
+    output_ptr: u31,
+    failed: u1,
+};
+
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+export fn input_ptr() u32 {
+    return @as(u32, @intCast(@intFromPtr(&input_buf)));
+}
+
+export fn input_bytes_cap() u32 {
+    return @as(u32, @intCast(INPUT_CAP));
+}
+
+export fn output_utf8_cap() u32 {
+    return @as(u32, @intCast(INPUT_CAP));
+}
+
+export fn failure_modes_per_input_offset() u32 {
+    return 1;
+}
+
+fn renderOutcome(input_size: u32) RenderOutcome {
+    if (input_size > INPUT_CAP) @trap();
+
+    const input_size_usize: usize = @intCast(input_size);
+    var input_offset: usize = 0;
+    while (input_offset < input_size_usize) : (input_offset += 1) {
+        if (input_buf[input_offset] > 0x7f) {
+            return .{
+                .output_size_or_failure = @intCast(input_offset),
+                .output_ptr = 0,
+                .failed = 1,
+            };
+        }
+    }
+
+    return .{
+        .output_size_or_failure = input_size,
+        .output_ptr = @intFromPtr(&input_buf),
+        .failed = 0,
+    };
+}
+
+export fn render(input_size: u32) RenderResult {
+    const outcome = renderOutcome(input_size);
+    return .{
+        .output_size_or_failure = outcome.output_size_or_failure,
+        .output_ptr = if (outcome.failed == 1) 0 else @intCast(outcome.output_ptr),
+        .failed = outcome.failed,
+    };
+}
+```
+
+`RenderResult` is the packed WebAssembly result. `RenderOutcome` is private and
+uses a native `usize` pointer. Native Zig tests can call `renderOutcome` to
+check acceptance, the first rejected offset, and recovery on the next call.
+Test the packed result through a WebAssembly runtime.
+
 ## Defaults We Prefer
 
 QIP components age well when their buffer sizes and memory use are obvious from
@@ -100,15 +204,16 @@ Use these defaults unless the module has a concrete reason not to:
 - `error` unions internally, converted to `@trap()` at the exported boundary.
 - Small exported surface: QIP ABI exports plus intentional `uniform_set_*` functions.
 - `usize` for indexing inside Zig; cast at the ABI boundary.
-- `u32` for exported pointers, sizes, caps, and return values.
+- `u32` for exported pointer and capacity getters. Use the packed `u64`
+  result for `render`.
 - Simple `while` loops with visible bounds.
 - Explicit content-type exports when the module knows its exact input or output format.
 
 Avoid these by default:
 
 - `@panic` for expected validation failures. Use `@trap()` for a precondition or
-  invariant failure. In a fallible Content transaction, use a negative
-  `commit` result when a conforming call can be rejected recoverably.
+  invariant failure. Set the render result's `failed` bit when a conforming
+  call can be rejected recoverably.
 - Heap allocation for ordinary one-input/one-output transforms. Static buffers are easier to inspect and budget.
 - Hidden global state that changes `render` behavior unless it is set through a documented uniform.
 - Recursion in modules intended to pass strict safety checks.
@@ -140,12 +245,11 @@ Good defaults:
   unreachable for every valid in-cap input.
 - Return `0` only when empty output is a meaningful success.
 
-For assertion pass-through validators, copy the input unchanged or use the same
-pointer for input and output when the host contract allows it. In a fallible
-Content transaction, a validator accepts a wider input domain, returns
-normally, and uses `commit` to reject values which do not establish its output
-guarantee. A later transform can require that guarantee and trap if the caller
-breaks the precondition.
+For assertion pass-through validators, return the input pointer without copying
+the input. A fallible validator accepts a wider input domain and sets the
+`failed` result bit when the input does not establish its output guarantee. A
+later transform can require that guarantee and trap if the caller breaks the
+precondition.
 
 ## Derive Output Capacity From Input Capacity
 
@@ -193,9 +297,8 @@ another finite domain limit, such as maximum width, height, pixel count,
 uncompressed bytes, archive entries, or nesting depth. Derive the output buffer
 from those limits. If a valid in-cap input can still exceed the advertised
 output capacity, overflow is an expected input-dependent failure rather than
-an invariant. Under the Content contract, `render` returns normally and
-[`commit` rejects the provisional
-output](/docs/content-component#optional-commit-export).
+an invariant. Under the Content contract, `render` sets its `failed` bit and
+returns the component's documented failure detail.
 
 Do not increase a derived output capacity to a round memory profile merely for
 consistency. Keep formulas exact enough that reviewers can see why overflow is
@@ -314,7 +417,7 @@ components/utf8/example-c.wasm: components/utf8/example-c.c
 		-Wl,--no-entry -Wl,--max-memory=1048576 \
 		-Wl,--export=render -Wl,--export-memory \
 		-Wl,--export=input_ptr -Wl,--export=input_utf8_cap \
-		-Wl,--export=output_ptr -Wl,--export=output_utf8_cap \
+		-Wl,--export=output_utf8_cap \
 		-Oz -o $@
 ```
 
@@ -363,11 +466,11 @@ printf 'valid' | qip run components/utf8/your-validator.wasm
 printf '\xff' | qip run components/utf8/your-validator.wasm
 ```
 
-For a validator with `commit`, test recovery on a reused instance: reject a
-range of invalid inputs, then feed valid input through the same instance and
-confirm the result is still correct. Do not reuse an instance after `render`
-traps. The host ignores its output and creates a new instance because a trap
-does not undo memory or global changes.
+For a fallible validator, test recovery on a reused instance: reject a range of
+invalid inputs, then feed valid input through the same instance and confirm the
+result is still correct. Do not reuse an instance after `render` traps. The
+host ignores its output and creates a new instance because a trap does not undo
+memory or global changes.
 
 Review the binary shape before trusting the source shape:
 
@@ -395,8 +498,8 @@ an optional optimized component such as a SIMD variant.
 - Trap on oversized input and on output overflow that violates the proven
   bound. Use the component's documented way of reporting expected
   input-dependent rejection.
-- For a component with `commit`, test rejection followed by valid input on the
-  same instance. After a trap, test the next call on a fresh instance.
+- For a fallible component, test rejection followed by valid input on the same
+  instance. After a trap, test the next call on a fresh instance.
 - Compile with `--max-memory`.
 - Run `wasm-objdump -x` and confirm `max=...` is present.
 - Check for accidental imports, indirect calls, tables, and recursion.

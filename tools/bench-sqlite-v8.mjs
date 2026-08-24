@@ -73,11 +73,14 @@ function writeInput(instance, dbBytes) {
 
 function renderOnce(instance, inputLen) {
   const t = performance.now();
-  const outLen = instance.exports.render(inputLen) >>> 0;
+  const result = BigInt.asUintN(64, instance.exports.render(inputLen));
   const renderMs = performance.now() - t;
+  if ((result >> 63n) !== 0n) throw new Error("component rejected database");
+  const outLen = Number(result & 0xffff_ffffn);
+  const outPtr = Number((result >> 32n) & 0x7fff_ffffn);
   const out = new Uint8Array(
     instance.exports.memory.buffer,
-    instance.exports.output_ptr(),
+    outPtr,
     outLen,
   );
   return { renderMs, out };

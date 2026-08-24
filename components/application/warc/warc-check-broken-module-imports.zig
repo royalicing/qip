@@ -60,10 +60,6 @@ export fn input_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
 
-export fn output_ptr() u32 {
-    return @as(u32, @intCast(@intFromPtr(&input_buf)));
-}
-
 export fn output_bytes_cap() u32 {
     return @as(u32, @intCast(INPUT_CAP));
 }
@@ -941,7 +937,7 @@ fn validateModuleImports(input: []const u8) ValidationSummary {
     };
 }
 
-export fn render(input_size_u32: u32) u32 {
+fn renderImpl(input_size_u32: u32) u32 {
     const input_size: usize = @intCast(input_size_u32);
     if (input_size > INPUT_CAP) @trap();
 
@@ -949,6 +945,18 @@ export fn render(input_size_u32: u32) u32 {
     const summary = validateModuleImports(input);
     if (summary.broken_imports != 0) @trap();
     return input_size_u32;
+}
+
+export fn render(input_size_u32: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size_u32),
+        .output_ptr = @intCast(@intFromPtr(&input_buf)),
+        .failed = 0,
+    };
 }
 
 fn appendWARCRecord(out_buf: []u8, cursor: *usize, warc_type: []const u8, target_uri: []const u8, payload: []const u8) !void {
@@ -980,7 +988,7 @@ test "validates inline module named imports" {
     );
 
     @memcpy(input_buf[0..n], build_buf[0..n]);
-    const out_len = render(@as(u32, @intCast(n)));
+    const out_len = renderImpl(@as(u32, @intCast(n)));
     try std.testing.expectEqual(@as(u32, @intCast(n)), out_len);
 
     const summary = validateModuleImports(build_buf[0..n]);

@@ -225,7 +225,7 @@ static void qip_reset_error(j_common_ptr cinfo) {
 
 uint32_t input_ptr(void) { return (uint32_t)(uintptr_t)input_buf; }
 uint32_t input_bytes_cap(void) { return INPUT_CAP; }
-uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
+static uint32_t output_ptr(void) { return (uint32_t)(uintptr_t)output_buf; }
 uint32_t output_bytes_cap(void) { return OUTPUT_CAP; }
 
 #ifdef QIP_JPEG_INPUT_KTX2_SRGB8_EITHER
@@ -267,7 +267,7 @@ uint32_t arena_free_unmatched_count(void) {
   return (uint32_t)arena_free_unmatched_count_value;
 }
 
-uint32_t render(uint32_t input_size_value) {
+uint64_t render(uint32_t input_size_value) {
   size_t input_size = input_size_value;
 #ifndef QIP_JPEG_INPUT_KTX2_SRGB8_EITHER
   uint32_t pixel_offset, dib_size, width_bits, height_bits, compression;
@@ -290,7 +290,7 @@ uint32_t render(uint32_t input_size_value) {
 #ifdef QIP_JPEG_INPUT_KTX2_SRGB8_EITHER
   if (input_size > INPUT_CAP ||
       !qip_ktx2_srgb8_parse(input_buf, input_size, &ktx_image)) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   }
   width = (int32_t)ktx_image.width;
   height = ktx_image.height;
@@ -300,7 +300,7 @@ uint32_t render(uint32_t input_size_value) {
 #else
   if (input_size > INPUT_CAP || input_size < 54 || input_buf[0] != 'B' ||
       input_buf[1] != 'M')
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   file_size = read_u32_le(input_buf + 2);
   pixel_offset = read_u32_le(input_buf + 10);
   dib_size = read_u32_le(input_buf + 14);
@@ -313,17 +313,17 @@ uint32_t render(uint32_t input_size_value) {
       read_u16_le(input_buf + 26) != 1 || read_u16_le(input_buf + 28) != 32 ||
       width <= 0 || (uint32_t)width > MAX_DIMENSION || height_signed == 0 ||
       height_signed == INT32_MIN)
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   if (compression == 3) {
     if (dib_size < 124 || pixel_offset < 138 ||
         read_u32_le(input_buf + 54) != 0x00ff0000u ||
         read_u32_le(input_buf + 58) != 0x0000ff00u ||
         read_u32_le(input_buf + 62) != 0x000000ffu ||
         read_u32_le(input_buf + 66) != 0xff000000u)
-      return 0;
+      return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     has_explicit_alpha = 1;
   } else if (compression != 0) {
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   } else if (dib_size >= 124 && pixel_offset >= 138 &&
              read_u32_le(input_buf + 66) != 0) {
     uint32_t red = read_u32_le(input_buf + 54);
@@ -333,15 +333,15 @@ uint32_t render(uint32_t input_size_value) {
         !((red == 0 && green == 0 && blue == 0) ||
           (red == 0x00ff0000u && green == 0x0000ff00u &&
            blue == 0x000000ffu)))
-      return 0;
+      return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     has_explicit_alpha = 1;
   }
   height = (uint32_t)(height_signed < 0 ? -height_signed : height_signed);
   if (height > MAX_DIMENSION || (uint64_t)(uint32_t)width * height > MAX_PIXELS)
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   stride = (uint32_t)width * 4u;
   if (pixel_offset > input_size || (size_t)stride * height > input_size - pixel_offset)
-    return 0;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
   pixels = input_buf + pixel_offset;
 #endif
 
@@ -410,5 +410,5 @@ uint32_t render(uint32_t input_size_value) {
   if (destination.size > UINT32_MAX || arena_used != 0 ||
       arena_free_unmatched_count_value != 0)
     __builtin_trap();
-  return (uint32_t)destination.size;
+  return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)destination.size);
 }

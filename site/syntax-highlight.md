@@ -260,14 +260,16 @@ function run(component, source) {
     memory,
     input_ptr,
     input_utf8_cap,
-    output_ptr,
     render,
   } = component.instance.exports;
   const input = encoder.encode(source);
   if (input.length > input_utf8_cap()) throw new RangeError("Input is too large");
   new Uint8Array(memory.buffer, input_ptr(), input.length).set(input);
-  const outputSize = render(input.length);
-  return decoder.decode(new Uint8Array(memory.buffer, output_ptr(), outputSize));
+  const result = BigInt.asUintN(64, render(input.length));
+  if ((result >> 63n) !== 0n) throw new Error("component rejected input");
+  const outputSize = Number(result & 0xffff_ffffn);
+  const outputPtr = Number((result >> 32n) & 0x7fff_ffffn);
+  return decoder.decode(new Uint8Array(memory.buffer, outputPtr, outputSize));
 }
 
 function highlight(source) {

@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -77,12 +78,12 @@ test("bmp-b8g8r8a8-srgb-to-webp-lossy emits deterministic VP8 with bounded arena
   const memory = new Uint8Array(exports.memory.buffer);
   const inputPtr = exports.input_ptr();
   memory.fill(0, inputPtr, inputPtr + 54);
-  assert.equal(exports.render(54), 0, "invalid BMP must produce no output");
+  assert.equal(qipRenderSize(exports, 54), 0, "invalid BMP must produce no output");
 
   memory.set(input, inputPtr);
-  const outputSize = exports.render(input.length);
+  const outputSize = qipRenderSize(exports, input.length);
   assert.ok(outputSize > 20);
-  const output = Buffer.from(exports.memory.buffer, exports.output_ptr(), outputSize);
+  const output = Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), outputSize);
   assert.equal(output.subarray(0, 4).toString("ascii"), "RIFF");
   assert.equal(output.subarray(8, 12).toString("ascii"), "WEBP");
   assert.equal(output.subarray(12, 16).toString("ascii"), "VP8 ");
@@ -98,17 +99,17 @@ test("bmp-b8g8r8a8-srgb-to-webp-lossy emits deterministic VP8 with bounded arena
 
   const first = Buffer.from(output);
   memory.set(input, inputPtr);
-  const secondSize = exports.render(input.length);
-  const second = Buffer.from(exports.memory.buffer, exports.output_ptr(), secondSize);
+  const secondSize = qipRenderSize(exports, input.length);
+  const second = Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), secondSize);
   assert.deepEqual(second, first, "reused instance must encode deterministically");
 
   const transparent = buildBMP(64, 48);
   transparent[54 + 3] = 0;
   memory.set(transparent, inputPtr);
-  const transparentSize = exports.render(transparent.length);
+  const transparentSize = qipRenderSize(exports, transparent.length);
   const transparentOutput = Buffer.from(
     exports.memory.buffer,
-    exports.output_ptr(),
+    qipRenderedOutputPointer(exports),
     transparentSize,
   );
   assert.ok(transparentOutput.includes(Buffer.from("ALPH")),
@@ -116,8 +117,8 @@ test("bmp-b8g8r8a8-srgb-to-webp-lossy emits deterministic VP8 with bounded arena
 
   const v5 = withV5AlphaHeader(transparent);
   memory.set(v5, inputPtr);
-  const v5Size = exports.render(v5.length);
-  const v5Output = Buffer.from(exports.memory.buffer, exports.output_ptr(), v5Size);
+  const v5Size = qipRenderSize(exports, v5.length);
+  const v5Output = Buffer.from(exports.memory.buffer, qipRenderedOutputPointer(exports), v5Size);
   assert.ok(v5Output.includes(Buffer.from("ALPH")),
     "lossy WebP must accept explicitly masked V5 alpha");
 });

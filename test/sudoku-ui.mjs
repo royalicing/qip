@@ -1,3 +1,4 @@
+import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -20,9 +21,9 @@ async function makeGame() {
 }
 
 function render(game) {
-  const length = game.render(0);
+  const length = qipRenderSize(game, 0);
   assert.equal(length, 224 + WIDTH * HEIGHT * 4);
-  const copy = new Uint8Array(new Uint8Array(game.memory.buffer, game.output_ptr(), length));
+  const copy = new Uint8Array(new Uint8Array(game.memory.buffer, qipRenderedOutputPointer(game), length));
   return copy.subarray(224);
 }
 
@@ -90,7 +91,7 @@ test("sudoku supports its primary pointer workflow", async () => {
   game.begin_update_at(1n);
   assert.equal(press(game, givenX, givenY), 0);
   assert.equal(game.finish_update(), 1n);
-  assert.equal(hash(new Uint8Array(game.memory.buffer, game.output_ptr() + 224, WIDTH * HEIGHT * 4)), hash(initial));
+  assert.equal(hash(new Uint8Array(game.memory.buffer, qipRenderedOutputPointer(game) + 224, WIDTH * HEIGHT * 4)), hash(initial));
 
   game.begin_update_at(2n);
   assert.equal(press(game, NUMBER_PAD_X + 92, NUMBER_PAD_Y + 92), 1);
@@ -145,7 +146,7 @@ test("sudoku candidate targets are row-major and ignore identical pointer moves"
     game.begin_update_at(now);
     assert.equal(game.pointer_event(0, lastX + 1, lastY + 1), 0);
     assert.equal(game.finish_update(), now);
-    assert.equal(hash(new Uint8Array(game.memory.buffer, game.output_ptr() + 224, WIDTH * HEIGHT * 4)), hash(preview));
+    assert.equal(hash(new Uint8Array(game.memory.buffer, qipRenderedOutputPointer(game) + 224, WIDTH * HEIGHT * 4)), hash(preview));
   }
 
   now += 1n;

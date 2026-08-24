@@ -42,7 +42,6 @@ exports = instance.exports(store)
 memory = exports["memory"]
 input_ptr = exports["input_ptr"]
 input_cap = exports["input_utf8_cap"]
-output_ptr = exports["output_ptr"]
 render = exports["render"]
 
 
@@ -57,8 +56,11 @@ def markdown_to_html(markdown: str) -> str:
 
     memory.write(store, source, input_ptr(store))
 
-    size = render(store, len(source))
-    start = output_ptr(store)
+    packed = render(store, len(source)) & 0xFFFF_FFFF_FFFF_FFFF
+    if packed >> 63:
+        raise ValueError("component rejected input")
+    size = packed & 0xFFFF_FFFF
+    start = (packed >> 32) & 0x7FFF_FFFF
     end = start + size
     result = memory.read(store, start, end)
     return bytes(result).decode("utf-8")
@@ -115,8 +117,9 @@ The loader is runtime-specific; the QIP calls are not:
 2. `Instance(store, module, [])` instantiates it with no imports.
 3. Python encodes the Markdown as UTF-8 and checks `input_utf8_cap()`.
 4. `memory.write` copies those bytes to `input_ptr()`.
-5. `render(input_size)` returns the number of output bytes.
-6. Python copies that many bytes from `output_ptr()` and decodes UTF-8.
+5. `render(input_size)` returns the rejection bit, output pointer, and size in
+   one packed `i64` value.
+6. Python copies the accepted range and decodes UTF-8.
 
 This wrapper trusts the known-valid GFM component and checks only the
 caller-controlled input size. A host accepting arbitrary Wasm has a different

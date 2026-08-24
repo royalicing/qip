@@ -92,10 +92,6 @@ export fn input_bytes_cap() u32 {
     return INPUT_CAP;
 }
 
-export fn output_ptr() u32 {
-    return @intCast(@intFromPtr(&output_buf));
-}
-
 export fn output_utf8_cap() u32 {
     return OUTPUT_CAP;
 }
@@ -411,7 +407,7 @@ fn readPair(info: *const ModuleInfo, ptr_export: MetadataExport, size_export: Me
     return try readRegion(info, ptr, size);
 }
 
-export fn render(input_size: u32) u32 {
+fn renderImpl(input_size: u32) u32 {
     if (input_size > INPUT_CAP) @trap();
     const info = parseModule(input_buf[0..input_size]) catch @trap();
     const input_type = readPair(&info, info.metadata.input_ptr, info.metadata.input_size) catch @trap();
@@ -420,4 +416,16 @@ export fn render(input_size: u32) u32 {
     if (value.len > OUTPUT_CAP) @trap();
     @memcpy(output_buf[0..value.len], value);
     return @intCast(value.len);
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    return .{
+        .output_size = renderImpl(input_size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
 }

@@ -24,8 +24,8 @@ uint32_t input_utf8_cap() {
     return INPUT_CAP;
 }
 
-__attribute__((export_name("output_ptr")))
-uint32_t output_ptr() {
+static uint32_t
+output_ptr() {
     return (uint32_t)(uintptr_t)output_buffer;
 }
 
@@ -366,7 +366,7 @@ static void draw_char(uint32_t width, uint32_t height, uint32_t *row, uint32_t *
 }
 
 __attribute__((export_name("render")))
-uint32_t render(uint32_t input_size) {
+uint64_t render(uint32_t input_size) {
     if (input_size > INPUT_CAP) {
         input_size = INPUT_CAP;
     }
@@ -385,7 +385,7 @@ uint32_t render(uint32_t input_size) {
     uint64_t pixel_bytes = (uint64_t)width * (uint64_t)height * 4u;
     uint64_t total = 54u + pixel_bytes;
     if (total > OUTPUT_CAP) {
-        return 0;
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
 
     // Clear header area and fill background pixels.
@@ -611,5 +611,5 @@ uint32_t render(uint32_t input_size) {
         i++;
     }
 
-    return (uint32_t)total;
+    return ((uint64_t)output_ptr() << 32) | (uint32_t)((uint32_t)total);
 }
