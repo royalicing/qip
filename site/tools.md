@@ -17,6 +17,8 @@
 
 Tools that run entirely in your browser. Nothing is uploaded. You can download the same `.wasm` files to run in JavaScript or in your terminal. Powered by [QIP content components](/docs/component-contract). For reusable behavior tests, see the [Compliance oracle downloads](/oracles).
 
+Browse the complete lists of [`text/*` components](/text) and [`image/*` components](/image) when you need the reusable module rather than a browser interface.
+
 - [Markdown to HTML](/markdown-to-html) renders either GitHub Flavored Markdown or CommonMark 0.31.2.
 - [Open Graph image maker](/og-image) previews a title and subtitle in Inter Display and DejaVu Sans Mono, then downloads self-contained SVG.
 - [QR code maker](/qr) turns a URL into a downloadable SVG QR code.
