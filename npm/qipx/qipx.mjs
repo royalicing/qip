@@ -424,9 +424,9 @@ const staticExportNames = [
   "input_ptr",
   "input_utf8_cap",
   "input_bytes_cap",
-  "output_ptr",
   "output_utf8_cap",
   "output_bytes_cap",
+  "failure_modes_per_input_offset",
   "input_content_type_ptr",
   "input_content_type_size",
   "output_content_type_ptr",
@@ -596,7 +596,6 @@ function wasmMustExportComponentFunctions(data, label) {
   const hasInputBytes = analysis.exportsByName.has("input_bytes_cap");
   if (hasInputUTF8 === hasInputBytes) failStaticExports(`${label} must export exactly one input capacity: input_utf8_cap or input_bytes_cap`);
   requireStaticFunctionExport(analysis, hasInputUTF8 ? "input_utf8_cap" : "input_bytes_cap", label);
-  requireStaticFunctionExport(analysis, "output_ptr", label);
   const hasOutputUTF8 = analysis.exportsByName.has("output_utf8_cap");
   const hasOutputBytes = analysis.exportsByName.has("output_bytes_cap");
   if (hasOutputUTF8 === hasOutputBytes) failStaticExports(`${label} must export exactly one output capacity: output_utf8_cap or output_bytes_cap`);
@@ -645,7 +644,6 @@ export function newComponent(instance, options = {}) {
   const outputCapName = hasOutputUTF8 ? "output_utf8_cap" : "output_bytes_cap";
   exportedValue(exports, "input_ptr", label);
   exportedValue(exports, inputCapName, label);
-  exportedValue(exports, "output_ptr", label);
   exportedValue(exports, outputCapName, label);
   const component = Object.freeze({
     label,
@@ -682,23 +680,17 @@ function makeStage(spec, component) {
 }
 
 class ContentRejection extends Error {
-  constructor(label, result) {
-    const bits = BigInt.asUintN(64, result);
-    const invalid = (bits & (1n << 62n)) !== 0n;
-    const offset = Number(bits & 0xffff_ffffn);
-    super(invalid
-      ? `${label} rejected invalid input at byte ${offset} (commit returned ${result})`
-      : `${label} rejected input (commit returned ${result})`);
+  constructor(label, detail, modes) {
+    const position = modes === 0 ? undefined : Math.floor(detail / modes);
+    const mode = modes === 0 ? undefined : detail % modes;
+    super(modes === 0
+      ? `${label} rejected input`
+      : modes === 1
+        ? `${label} rejected input at input offset ${position}`
+        : `${label} rejected input at input offset ${position} with mode ${mode}`);
     this.name = "ContentRejection";
-    this.result = result;
-  }
-}
-
-class ContentCommitTrap extends Error {
-  constructor(label, cause) {
-    super(`${label} commit trapped; commit() must not trap: ${cause?.message ?? cause}`);
-    this.name = "ContentCommitTrap";
-    this.cause = cause;
+    this.detail = detail;
+    this.modes = modes;
   }
 }
 
@@ -711,18 +703,23 @@ function runStage(stage, input) {
     throw new RangeError(`${stage.label} input exceeds its capacity`);
   }
   new Uint8Array(exports.memory.buffer, inputPointer, input.byteLength).set(input);
-  const outputLength = Number(exports.render(input.byteLength)) >>> 0;
-  if (typeof exports.commit === "function") {
-    let result;
-    try {
-      result = exports.commit();
-    } catch (error) {
-      throw new ContentCommitTrap(stage.label, error);
-    }
-    if (typeof result !== "bigint") throw new TypeError(`${stage.label} commit export must have signature commit() -> i64`);
-    if (result < 0n) throw new ContentRejection(stage.label, result);
+  const renderResult = exports.render(input.byteLength);
+  if (typeof renderResult !== "bigint") {
+    throw new TypeError(`${stage.label} render export must have signature render(i32) -> i64`);
   }
-  const outputPointer = exportedValue(exports, "output_ptr", stage.label);
+  const bits = BigInt.asUintN(64, renderResult);
+  const outputLength = Number(bits & 0xffff_ffffn);
+  if ((bits & (1n << 63n)) !== 0n) {
+    if (typeof exports.failure_modes_per_input_offset !== "function") {
+      throw new TypeError(`${stage.label} returned failure without failure_modes_per_input_offset`);
+    }
+    throw new ContentRejection(
+      stage.label,
+      outputLength,
+      exportedValue(exports, "failure_modes_per_input_offset", stage.label),
+    );
+  }
+  const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
   const outputCapacity = exportedValue(exports, stage.outputCapName, stage.label);
   if (outputLength > outputCapacity || outputPointer + outputLength > exports.memory.buffer.byteLength) {
     throw new RangeError(`${stage.label} returned an invalid output length`);
@@ -999,9 +996,7 @@ async function runComplianceOracle(implWasm, implPath, oraclePath, options = {})
       } catch (error) {
         state.failCount += 1;
         if (error instanceof ContentRejection) {
-          state.failures.push(`case ${ordinal}: unexpected rejection (commit returned ${error.result})`);
-        } else if (error instanceof ContentCommitTrap) {
-          state.failures.push(`case ${ordinal}: ${error.message}`);
+          state.failures.push(`case ${ordinal}: unexpected rejection (failure detail ${error.detail})`);
         } else {
           state.failures.push(`case ${ordinal}: trapped: ${error.message ?? error}`);
         }
@@ -1024,12 +1019,7 @@ async function runComplianceOracle(implWasm, implPath, oraclePath, options = {})
       } catch (error) {
         if (error instanceof ContentRejection) {
           state.failCount += 1;
-          state.failures.push(`case ${ordinal}: expected trap, got rejection (commit returned ${error.result})`);
-          return 0;
-        }
-        if (error instanceof ContentCommitTrap) {
-          state.failCount += 1;
-          state.failures.push(`case ${ordinal}: expected render trap, but ${error.message}`);
+          state.failures.push(`case ${ordinal}: expected trap, got rejection (failure detail ${error.detail})`);
           return 0;
         }
         return 1;
@@ -1043,15 +1033,15 @@ async function runComplianceOracle(implWasm, implPath, oraclePath, options = {})
         failProtocol(`must_reject pointer out of range at ordinal ${ordinal}`);
         return 0;
       }
-      if (typeof impl.exports.commit !== "function") {
+      if (typeof impl.exports.failure_modes_per_input_offset !== "function") {
         state.failCount += 1;
-        state.failures.push(`case ${ordinal}: expected rejection, but implementation does not export commit`);
+        state.failures.push(`case ${ordinal}: expected rejection, but implementation does not export failure_modes_per_input_offset`);
         return 0;
       }
       try {
         renderComponent(impl, input);
         state.failCount += 1;
-        state.failures.push(`case ${ordinal}: expected rejection, transaction was accepted`);
+        state.failures.push(`case ${ordinal}: expected rejection, render was accepted`);
         return 0;
       } catch (error) {
         if (error instanceof ContentRejection) return 1;

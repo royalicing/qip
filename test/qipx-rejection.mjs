@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { newComponent, render } from "../npm/qipx/qipx.mjs";
 
-test("qipx accepts and rejects Content commit transactions", async () => {
+test("qipx accepts and rejects fallible Content renders", async () => {
   const wasm = await readFile("components/utf8/utf8-must-be-valid.wasm");
   const { instance } = await WebAssembly.instantiate(wasm);
   const component = newComponent(instance, { label: "utf8 validator" });
@@ -13,10 +13,10 @@ test("qipx accepts and rejects Content commit transactions", async () => {
   assert.equal(render(component, "hello").outputString, "hello");
   assert.throws(
     () => render(component, new Uint8Array([0x41, 0xc3, 0x28])),
-    /rejected invalid input at byte 2/,
+    /rejected input at input offset 2/,
   );
 
-  // Rejection closes the transaction, so the same instance remains usable.
+  // Recoverable rejection leaves the same instance ready for another render.
   assert.equal(render(component, "again").outputString, "again");
 });
 

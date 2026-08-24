@@ -86,8 +86,8 @@ test("Node router rejects globals used in place of accessor functions", async ()
   );
 });
 
-test("Node router reports Content component commit rejection", async () => {
-  const contentRoot = await mkdtemp(join(tmpdir(), "qip-node-router-commit-"));
+test("Node router reports Content component rejection", async () => {
+  const contentRoot = await mkdtemp(join(tmpdir(), "qip-node-router-rejection-"));
   const recipeRoot = join(contentRoot, "_recipes", "text", "plain");
   await mkdir(recipeRoot, { recursive: true });
   await writeFile(join(contentRoot, "index.txt"), "49927398717");
@@ -98,7 +98,7 @@ test("Node router reports Content component commit rejection", async () => {
   const router = await createQIPRouter({ contentRoot });
   await assert.rejects(
     router.resolve("GET", "/index.txt"),
-    /text\/plain\/10-luhn\.wasm rejected invalid input at byte 11/,
+    /text\/plain\/10-luhn\.wasm rejected input at input offset 11/,
   );
 });
 

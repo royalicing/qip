@@ -414,7 +414,7 @@ ls ./site
 - [Hard Limits](docs/hard-limits.md)
 - [Provable Loops](docs/provable-loops.md)
 - [Running In JavaScript](docs/running-in-javascript.md)
-- [qip CLI](docs/qip-cli.md)
+- [qipx CLI](docs/qipx.md)
 - [QIP Component Compliance](docs/comply.md)
 
 ----
@@ -522,12 +522,18 @@ echo "World" | qip bench -i - --benchtime=2s --node components/utf8/hello.wasm
 
 ## TODO
 
-- [ ] For interactive components should we allow uniforms to be optional?
-- [x] Define `commit()` as zero for acceptance and a negative value for rejection.
+- [ ] Add `--view-source` to `npx qip-router warc`, including recipe source and view-source records.
+- [ ] Add `github:owner/repo/subdir` content roots to `qip-router`, pinned to one repository snapshot per load.
+- [ ] Allow loading from host: `qipx qip.dev run components/text/markdown/markdown-to-html.wasm`
+- [ ] Investigate if qip-component-to-c is affected by https://trustsig.eu/blog/wasm2c-tableflip-unchecked-calloc/
+- [ ] Remove `@memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);` — just render directly to output_buf instead of ktx_buf.
 - [ ] For interactive components should we inline the ktx2 header write function into components?
+- [ ] For interactive components should we allow uniforms to be optional?
+- [x] Return the dynamic output pointer, size, and rejection state from `render`.
 - [ ] Should uniforms return their previous value? This means we can bring a component back to its original state.
 - [ ] Ensure we always `new TextDecoder("utf-8", { fatal: true })`
 - [ ] Add `/text` and `/image` pages with list of wasm modules. I think image should include any with input or output image.
+- [ ] Should we drop `/components` prefix from web path?
 - [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
 - [ ] Recipes page: interactive upload and text entry
 - [x] Recipes page: copy recipe as source code (e.g. as JavaScript)

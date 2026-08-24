@@ -97,7 +97,6 @@ async function loadStage(spec) {
   const outputCapName = exports.output_utf8_cap ? "output_utf8_cap" : "output_bytes_cap";
   exportedValue(exports, "input_ptr");
   exportedValue(exports, inputCapName);
-  exportedValue(exports, "output_ptr");
   exportedValue(exports, outputCapName);
   return {
     ...spec,
@@ -118,30 +117,25 @@ function runStage(stage, input) {
     throw new RangeError(`${stage.label} input exceeds its capacity`);
   }
   new Uint8Array(exports.memory.buffer, inputPointer, input.byteLength).set(input);
-  const outputLength = Number(exports.render(input.byteLength)) >>> 0;
-  if (typeof exports.commit === "function") {
-    let result;
-    try {
-      result = exports.commit();
-    } catch (cause) {
-      throw new Error(
-        `${stage.label} commit trapped; commit() must not trap: ${cause?.message ?? cause}`,
-        { cause },
-      );
-    }
-    if (typeof result !== "bigint") {
-      throw new TypeError(`${stage.label} commit export must have signature commit() -> i64`);
-    }
-    if (result < 0n) {
-      const bits = BigInt.asUintN(64, result);
-      const invalidInput = (bits & (1n << 62n)) !== 0n;
-      const detail = Number(bits & 0xffff_ffffn);
-      throw new Error(invalidInput
-        ? `${stage.label} rejected invalid input at byte ${detail} (commit returned ${result})`
-        : `${stage.label} rejected input (commit returned ${result})`);
-    }
+  const renderResult = exports.render(input.byteLength);
+  if (typeof renderResult !== "bigint") {
+    throw new TypeError(`${stage.label} render export must have signature render(i32) -> i64`);
   }
-  const outputPointer = exportedValue(exports, "output_ptr");
+  const bits = BigInt.asUintN(64, renderResult);
+  const outputLength = Number(bits & 0xffff_ffffn);
+  if ((bits & (1n << 63n)) !== 0n) {
+    if (typeof exports.failure_modes_per_input_offset !== "function") {
+      throw new TypeError(`${stage.label} returned failure without failure_modes_per_input_offset`);
+    }
+    const modes = exportedValue(exports, "failure_modes_per_input_offset");
+    if (modes === 0) throw new Error(`${stage.label} rejected input`);
+    const position = Math.floor(outputLength / modes);
+    const mode = outputLength % modes;
+    throw new Error(modes === 1
+      ? `${stage.label} rejected input at input offset ${position}`
+      : `${stage.label} rejected input at input offset ${position} with mode ${mode}`);
+  }
+  const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
   const outputCapacity = exportedValue(exports, stage.outputCapName);
   if (outputLength > outputCapacity || outputPointer + outputLength > exports.memory.buffer.byteLength) {
     throw new RangeError(`${stage.label} returned an invalid output length`);

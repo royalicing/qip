@@ -729,7 +729,8 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/bytes-to-sha256.mjs
 	node --test test/content-total-byte-components.mjs
 	node --test test/content-component-host.mjs
-	node --test test/qipx-commit.mjs
+	node --test test/wasm-to-js.mjs
+	node --test test/qipx-rejection.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/interactive-host-decisions.mjs
 	node --test test/gif-player.mjs
