@@ -74,6 +74,52 @@ test("Node router handles canonical redirects, HEAD, and reload discovery", asyn
   assert.match(new TextDecoder().decode(afterReload.body), /<h1>Newly discovered<\/h1>/);
 });
 
+test("Node router prescans focused HTML dependencies for Kindred Routes", async () => {
+  const contentRoot = await mkdtemp(join(tmpdir(), "qip-node-router-kindred-"));
+  await writeFile(join(contentRoot, "index.html"), "<h1>Home</h1>");
+  await writeFile(join(contentRoot, "page.html"), [
+    '<!-- <img src="/comment.png"> -->',
+    '<p data-src="/data-attribute.png">src="/text.png"</p>',
+    '<script>const example = \'</scripture><img src="/script.png">\';</script>',
+    '<img src="/hero.png?size=2#preview">',
+    '<qip-view src="/tool.wasm"></qip-view>',
+    '<link rel="stylesheet" href="/site.css">',
+    '<link rel="modulepreload" href="/app.js">',
+    '<link rel="prefetch" href="/future.json?one=1&amp;two=2">',
+    '<link rel="manifest" href="/app.webmanifest">',
+    '<link rel="icon" href="/favicon.ico">',
+    '<link rel="canonical" href="/other.html">',
+  ].join("\n"));
+  for (const path of ["hero.png", "tool.wasm", "site.css", "app.js", "future.json", "app.webmanifest", "favicon.ico", "other.html"]) {
+    await writeFile(join(contentRoot, path), path);
+  }
+
+  const router = await createQIPRouter({ contentRoot });
+  assert.deepEqual(await router.kindred("/page"), [
+    { method: "GET", path: "/" },
+    { method: "GET", path: "/hero.png" },
+    { method: "GET", path: "/tool.wasm" },
+    { method: "GET", path: "/site.css" },
+    { method: "GET", path: "/app.js" },
+    { method: "GET", path: "/future.json" },
+    { method: "GET", path: "/app.webmanifest" },
+  ]);
+});
+
+test("Node router requires lowercase HTML dependency markup", async () => {
+  const contentRoot = await mkdtemp(join(tmpdir(), "qip-node-router-kindred-case-"));
+  await writeFile(join(contentRoot, "upper-tag.html"), '<IMG src="/hero.png">');
+  await writeFile(join(contentRoot, "upper-attribute.html"), '<img SRC="/hero.png">');
+  await writeFile(join(contentRoot, "upper-relation.html"), '<link rel="STYLESHEET" href="/site.css">');
+  await writeFile(join(contentRoot, "hero.png"), "png");
+  await writeFile(join(contentRoot, "site.css"), "css");
+
+  const router = await createQIPRouter({ contentRoot });
+  await assert.rejects(router.kindred("/upper-tag"), /uppercase tag <IMG>/);
+  await assert.rejects(router.kindred("/upper-attribute"), /uppercase attribute SRC/);
+  await assert.rejects(router.kindred("/upper-relation"), /non-lowercase link rel token STYLESHEET/);
+});
+
 test("Node router rejects globals used in place of accessor functions", async () => {
   const contentRoot = await mkdtemp(join(tmpdir(), "qip-node-router-global-"));
   const recipeRoot = join(contentRoot, "_recipes", "text", "plain");

@@ -276,16 +276,17 @@ In `npx qip-router dev`, `npx qip-router get`, and `npx qip-router head`, the ro
 
 ### Kindred Routes
 
-For a single-response WARC transformation, the router adds the target's kindred routes before its record. These are its parent pages and the sibling resources connected through `src`:
+For a single-response WARC transformation, the router adds the target's kindred routes before its record. These are its parent pages and direct sibling resources discovered in the target HTML:
 
 - `/`
 - each parent page path of the target, such as `/docs` for `/docs/router`
 - static assets referenced by any `src` attribute in the target HTML
+- static assets referenced by `<link href>` when `rel` contains `stylesheet`, `manifest`, `preload`, `modulepreload`, or `prefetch`
 - transformed top-level element entrypoints, so WARC recipes can selectively load them
 
 Parent pages must be `200 OK` HTML. They let WARC recipes copy navigation and other shared structure into descendant pages, serving a role similar to layouts in other routers.
 
-The shallow `src` scan follows browser URL resolution and ignores comments and raw text such as script bodies. It includes site-relative, non-HTML files served directly from the filesystem without a content recipe; component WASM files qualify. HTML, redirects, missing or external targets, synthetic routes, and recipe-transformed content are ignored. Paths are deduplicated after dropping queries and fragments, referenced assets are not scanned recursively, and a page may contribute at most 256 unique paths.
+The shallow dependency scan ignores comments and raw text such as script bodies. HTML tag names, attribute names, and `rel` tokens must be lowercase. It includes site-relative, non-HTML files served directly from the filesystem without a content recipe; component WASM files qualify. HTML, redirects, missing or external targets, synthetic routes, and recipe-transformed content are ignored. Paths are deduplicated after dropping queries and fragments, referenced assets are not scanned recursively, and a page may contribute at most 256 unique paths.
 
 These rules give WARC recipes access to direct static dependencies without turning a single-route request into a whole-site build.
 
@@ -322,7 +323,7 @@ npx qip-router warc ./site -o site.warc
 
 `head <content_dir> <path> ...` must resolve one path through the dev-route pipeline and write headers/log output without a response body.
 
-`kindred <content_dir> <path> ...` must list the GET request paths that the router supplies as Kindred Route context before the target response. For `/docs/router`, this includes parent pages such as `/` and `/docs` when they resolve to HTML. HTML targets can also contribute direct site-relative non-HTML `src` dependencies.
+`kindred <content_dir> <path> ...` must list the GET request paths that the router supplies as Kindred Route context before the target response. For `/docs/router`, this includes parent pages such as `/` and `/docs` when they resolve to HTML. HTML targets can also contribute direct site-relative non-HTML `src` and eligible `<link href>` dependencies.
 
 `list <content_dir> ...` must print the base route table.
 

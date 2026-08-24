@@ -360,22 +360,175 @@ function parentPaths(pathname) {
   return [...new Set(paths)].filter((path) => path !== pathname);
 }
 
-function htmlSourcePaths(body, basePath) {
-  const html = decoder.decode(body)
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(script|style|textarea|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
-  const paths = [];
-  for (const match of html.matchAll(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
-    const source = match[1] ?? match[2] ?? match[3] ?? "";
+const rawTextTags = new Set([
+  "script",
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+  "plaintext",
+]);
+const kindredLinkRelations = new Set([
+  "stylesheet",
+  "manifest",
+  "preload",
+  "modulepreload",
+  "prefetch",
+]);
+
+function htmlSpace(character) {
+  return character === " " || character === "\t" || character === "\n" || character === "\r" || character === "\f";
+}
+
+function htmlNameCharacter(character) {
+  return character !== undefined && /[A-Za-z0-9:_-]/.test(character);
+}
+
+function rawTextEnd(html, tagName, offset) {
+  const needle = `</${tagName}`;
+  while (offset < html.length) {
+    const found = html.indexOf(needle, offset);
+    if (found === -1) return -1;
+    const next = html[found + needle.length];
+    if (next === ">" || next === "/" || htmlSpace(next)) return found;
+    offset = found + needle.length;
+  }
+  return -1;
+}
+
+function decodeHTMLAttribute(value) {
+  return value.replace(/&(?:amp|quot|apos|lt|gt|#(?:[0-9]+|x[0-9a-fA-F]+));/g, (reference) => {
+    if (reference === "&amp;") return "&";
+    if (reference === "&quot;") return '"';
+    if (reference === "&apos;") return "'";
+    if (reference === "&lt;") return "<";
+    if (reference === "&gt;") return ">";
+    const hexadecimal = reference[2] === "x";
+    const digits = reference.slice(hexadecimal ? 3 : 2, -1);
+    const codePoint = Number.parseInt(digits, hexadecimal ? 16 : 10);
     try {
-      const url = new URL(source, `http://qip.local${basePath}`);
-      if (url.origin !== "http://qip.local") continue;
-      paths.push(canonicalPath(url.pathname));
+      return String.fromCodePoint(codePoint);
     } catch {
+      return "\ufffd";
+    }
+  });
+}
+
+function htmlDependencyPaths(body, basePath) {
+  const html = decoder.decode(body);
+  const paths = [];
+  const seen = new Set();
+
+  function addPath(reference) {
+    if (!reference) return;
+    try {
+      const url = new URL(decodeHTMLAttribute(reference), `http://qip.local${basePath}`);
+      if (url.origin !== "http://qip.local") return;
+      const pathname = canonicalPath(url.pathname);
+      if (!pathname || seen.has(pathname)) return;
+      if (paths.length === 256) throw new Error(`HTML for ${basePath} references more than 256 Kindred Routes`);
+      seen.add(pathname);
+      paths.push(pathname);
+    } catch (error) {
+      if (error?.message?.includes("references more than 256 Kindred Routes")) throw error;
       // Invalid browser URLs do not create Kindred Routes.
     }
   }
-  return [...new Set(paths.filter(Boolean))].slice(0, 256);
+
+  let offset = 0;
+  while (offset < html.length) {
+    const tagStart = html.indexOf("<", offset);
+    if (tagStart === -1) break;
+    if (html.startsWith("<!--", tagStart)) {
+      const commentEnd = html.indexOf("-->", tagStart + 4);
+      if (commentEnd === -1) break;
+      offset = commentEnd + 3;
+      continue;
+    }
+
+    let cursor = tagStart + 1;
+    while (htmlSpace(html[cursor])) cursor += 1;
+    if (html[cursor] === "/" || html[cursor] === "!" || html[cursor] === "?") {
+      const tagEnd = html.indexOf(">", cursor + 1);
+      if (tagEnd === -1) break;
+      offset = tagEnd + 1;
+      continue;
+    }
+
+    const nameStart = cursor;
+    while (htmlNameCharacter(html[cursor])) cursor += 1;
+    if (nameStart === cursor) {
+      offset = tagStart + 1;
+      continue;
+    }
+    const tagName = html.slice(nameStart, cursor);
+    if (/[A-Z]/.test(tagName)) throw new Error(`HTML for ${basePath} has uppercase tag <${tagName}>`);
+
+    const attributes = new Map();
+    let complete = false;
+    while (cursor < html.length) {
+      while (htmlSpace(html[cursor]) || html[cursor] === "/") cursor += 1;
+      if (html[cursor] === ">") {
+        cursor += 1;
+        complete = true;
+        break;
+      }
+      const attributeStart = cursor;
+      while (htmlNameCharacter(html[cursor])) cursor += 1;
+      if (attributeStart === cursor) {
+        cursor += 1;
+        continue;
+      }
+      const attributeName = html.slice(attributeStart, cursor);
+      if (/[A-Z]/.test(attributeName)) {
+        throw new Error(`HTML for ${basePath} has uppercase attribute ${attributeName} on <${tagName}>`);
+      }
+      while (htmlSpace(html[cursor])) cursor += 1;
+      let value = "";
+      if (html[cursor] === "=") {
+        cursor += 1;
+        while (htmlSpace(html[cursor])) cursor += 1;
+        if (html[cursor] === '"' || html[cursor] === "'") {
+          const quote = html[cursor];
+          cursor += 1;
+          const valueStart = cursor;
+          while (cursor < html.length && html[cursor] !== quote) cursor += 1;
+          if (cursor >= html.length) break;
+          value = html.slice(valueStart, cursor);
+          cursor += 1;
+        } else {
+          const valueStart = cursor;
+          while (cursor < html.length && !htmlSpace(html[cursor]) && html[cursor] !== ">") cursor += 1;
+          value = html.slice(valueStart, cursor);
+        }
+      }
+      if (!attributes.has(attributeName)) attributes.set(attributeName, value);
+    }
+    if (!complete) break;
+
+    addPath(attributes.get("src"));
+    if (tagName === "link" && attributes.has("href") && attributes.has("rel")) {
+      const relations = attributes.get("rel").split(/[\t\n\f\r ]+/).filter(Boolean);
+      for (const relation of relations) {
+        if (!/^[a-z0-9-]+$/.test(relation)) {
+          throw new Error(`HTML for ${basePath} has non-lowercase link rel token ${relation}`);
+        }
+      }
+      if (relations.some((relation) => kindredLinkRelations.has(relation))) addPath(attributes.get("href"));
+    }
+
+    offset = cursor;
+    if (tagName === "plaintext") break;
+    if (rawTextTags.has(tagName)) {
+      const closingTag = rawTextEnd(html, tagName, offset);
+      if (closingTag === -1) break;
+      offset = closingTag;
+    }
+  }
+  return paths;
 }
 
 function headerEntries(headers) {
@@ -609,7 +762,7 @@ export async function createQIPRouter(options = {}) {
       }
     }
     if (target.status === 200 && target.headers.get("content-type")?.startsWith("text/html")) {
-      for (const sourcePath of htmlSourcePaths(target.body, pathname)) {
+      for (const sourcePath of htmlDependencyPaths(target.body, pathname)) {
         if (seen.has(sourcePath)) continue;
         seen.add(sourcePath);
         const response = await baseResponse(sourcePath, current);
@@ -696,7 +849,7 @@ export async function createQIPRouter(options = {}) {
         }
       }
       if (target.status === 200 && target.headers.get("content-type")?.startsWith("text/html")) {
-        for (const sourcePath of htmlSourcePaths(target.body, canonical)) {
+        for (const sourcePath of htmlDependencyPaths(target.body, canonical)) {
           if (seen.has(sourcePath)) continue;
           seen.add(sourcePath);
           const response = await baseResponseForGeneration(sourcePath, current);

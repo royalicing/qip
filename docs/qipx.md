@@ -1,6 +1,6 @@
-# `qipx` CLI
+# `qipx` cli
 
-`qipx` runs QIP Content components from Node.js without package dependencies. Use it to run and inspect content pipelines, check components against Compliance oracles, and compare implementations with a reused WebAssembly instance.
+`qipx` runs QIP Content components in Node.js. Use it to run content recipes, check components against compliance oracles, and benchmark multiple components against each other.
 
 The package requires Node.js 22 or newer. Run it without installing it globally:
 

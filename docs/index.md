@@ -97,7 +97,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 </li>
 <li><span class="docs-section">Running</span>
 <ol>
-<li><a href="/docs/qipx">qipx CLI</a></li>
+<li><a href="/docs/qipx">qipx cli</a></li>
 <li><a href="/docs/qip-elements">Browser Elements</a></li>
 <li><a hidden href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
 <li><a href="/docs/running-in-javascript">Running In JavaScript</a></li>
