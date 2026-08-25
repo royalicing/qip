@@ -198,6 +198,11 @@ no earlier `return` or branch may escape to the function label. These rules
 make the proof local and mechanically checkable: every normal exit crosses the
 guard, while an excessive value traps inside the component.
 
+The checker also accepts the equivalent form emitted by Zig: branch out of one
+final block when `size >= capacity + 1`, return the packed result from the
+in-bound path, and place `unreachable` immediately after the block. It accepts
+that form only when the final return is the function's sole escaping exit.
+
 The checker requires the guarded local in the low 32 bits of the packed result.
 It also requires the pointer expression to be extended to 64 bits and shifted
 left by 32 bits before the fields are combined. This certificate covers the

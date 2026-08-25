@@ -37,7 +37,8 @@ Current formats directly supported by a qip command or supported by this repo’
 Examples:
 
 - `qip router warc ...` emits `application/warc`
-- `components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm` maps `image/svg+xml -> image/bmp`
+- `components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm` maps `image/svg+xml` directly to canonical RGBA8 sRGB `image/ktx2`
+- `components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm` maps `image/svg+xml -> image/bmp` for BMP-based pipelines
 - `components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm` maps `image/jp2 -> image/bmp`
 - `components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm` maps profiled `image/bmp -> image/bmp` and removes the source ICC profile
 - `components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm` maps 8-bit sRGB BGRA `image/bmp -> image/ktx2`
@@ -53,10 +54,11 @@ Examples:
 - `components/image/avif/avif-to-ktx2-r8g8b8a8-srgb.wasm` decodes a still AVIF directly to canonical 8-bit sRGB KTX2
 - `components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm` decodes JPEG directly to canonical 8-bit sRGB KTX2
 - `components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm` encodes RGBA8 or BGRA8 sRGB KTX2 directly as JPEG
-- `components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm` rasterizes SVG directly to canonical 8-bit sRGB KTX2
 - `components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.wasm` wraps sRGB BGRA bytes as `VK_FORMAT_B8G8R8A8_SRGB image/ktx2`
 - `components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm` applies a LUT in place to linear RGBA32F `image/ktx2`
 - `components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm` applies the Display P3 transfer function while retaining float HDR headroom
+- `components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm` reduces canonical RGBA8 sRGB KTX2 in linear light with premultiplied alpha
+- `components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm` enlarges canonical RGBA8 sRGB KTX2 with balanced Mitchell-Netravali bicubic reconstruction
 - `components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm` maps linear RGBA32F `image/ktx2 -> image/bmp`
 - `components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm` unwraps sRGB BGRA KTX2 pixels as `image/bmp`
 - `components/font/ttf/ttf-to-svg-paths-csv.wasm` maps `font/ttf -> text/csv`
@@ -179,6 +181,12 @@ additional 64 KiB for larger DIB headers and metadata.
 Compressed PNG, JPEG, JPEG 2000, and WebP inputs have a separate 64 MiB byte
 cap. That cap does not replace the pixel limit: a small compressed file that
 expands beyond 25 MP is rejected before its pixel buffers are written.
+
+The canonical KTX2 resizing components apply the same dimension and pixel
+ceilings to both input and output. They resample RGBA8 sRGB in linear light and
+with premultiplied alpha, then return straight-alpha RGBA8 sRGB. Reduction and
+enlargement are separate components so a pipeline cannot silently use an
+enlargement kernel for thumbnail generation or a reduction kernel for upscaling.
 
 These limits cost memory even for small conversions because the modules use
 fixed Wasm memories. PNG decoding uses fixed scanline batches and reserves

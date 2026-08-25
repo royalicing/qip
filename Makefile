@@ -1,4 +1,4 @@
-.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-markdown-pathological test-warc-libs test-qip-component-to-c test-qip-component-to-zig test-qip-component-to-swift test-qip-component-to-swift-complex test-qip-router-help site-static site-checks install score wasm-safety-report strict-profile-report
+.PHONY: fuzz-zlib compliance components recipes components-wat-wasm components-c-wasm components-zig-wasm test test-go test-node test-deno test-comply test-svg-rasterizers test-wasm-bounded-output test-markdown-pathological test-warc-libs test-qip-component-to-c test-qip-component-to-zig test-qip-component-to-swift test-qip-component-to-swift-complex test-qip-router-help site-static site-checks install score wasm-safety-report strict-profile-report
 
 default: qip compliance components recipes
 
@@ -741,6 +741,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/wasm-to-js.mjs
 	node --test test/qipx-rejection.mjs
 	node --test test/qipx-hosts.mjs
+	node --test test/svg-rasterizer-content.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/qip-play-steps.mjs
 	node --test test/interactive-host-decisions.mjs
@@ -827,6 +828,14 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/bmp-rgb-metrics.mjs
 	node --test test/form-data-to-tar.mjs
 	node --test test/wasm-trap-instance-continues.mjs
+
+test-svg-rasterizers: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm components/application/wasm/wasm-bounded-output.wasm
+	$(ZIG_ENV) zig test components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig $(ZIG_TEST_FLAGS)
+	$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot=components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig
+	node --test test/svg-rasterizer-content.mjs
+
+test-wasm-bounded-output: components/application/wasm/wasm-bounded-output.wasm
+	$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep wasm_reader -Mroot=components/application/wasm/wasm-bounded-output.zig -Mwasm_reader=components/application/wasm/lib/wasm-reader.zig
 
 fuzz-zlib: components/bytes/zlib-compress.wasm components/bytes/zlib-compress-fixed-huffman.wasm components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-compress-dynamic-huffman-opt.wasm components/bytes/zlib-decompress.wasm
 	node tools/fuzz-zlib.mjs 20000

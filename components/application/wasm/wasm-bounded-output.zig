@@ -35,7 +35,7 @@ const OUTPUT_CAP: usize = INPUT_CAP;
 const MAX_TYPES: usize = 4096;
 const MAX_DEFINED_FUNCS: usize = 8192;
 const MAX_GLOBALS: usize = 4096;
-const TRACE_LEN: usize = 32;
+const TRACE_LEN: usize = 64;
 const INPUT_CONTENT_TYPE = "application/wasm";
 const OUTPUT_CONTENT_TYPE = "application/wasm";
 
@@ -310,6 +310,7 @@ const ProofHandler = struct {
     recent_len: usize = 0,
     control_depth: usize = 0,
     has_escaping_exit: bool = false,
+    escaping_exit_count: usize = 0,
 
     fn append(self: *ProofHandler, instr: Instr, depth: usize) void {
         if (self.recent_len < TRACE_LEN) {
@@ -334,10 +335,16 @@ const ProofHandler = struct {
             0x0b => {
                 if (self.control_depth > 0) self.control_depth -= 1;
             },
-            0x0f, 0x12, 0x13 => self.has_escaping_exit = true,
+            0x0f, 0x12, 0x13 => {
+                self.has_escaping_exit = true;
+                self.escaping_exit_count += 1;
+            },
             0x0c, 0x0d => {
                 const branch_depth: usize = @intCast(instr.imm);
-                if (branch_depth >= self.control_depth) self.has_escaping_exit = true;
+                if (branch_depth >= self.control_depth) {
+                    self.has_escaping_exit = true;
+                    self.escaping_exit_count += 1;
+                }
             },
             else => {},
         }
@@ -345,7 +352,10 @@ const ProofHandler = struct {
     }
 
     pub fn onBrTableTarget(self: *ProofHandler, depth: u32) CheckError!void {
-        if (depth >= self.control_depth) self.has_escaping_exit = true;
+        if (depth >= self.control_depth) {
+            self.has_escaping_exit = true;
+            self.escaping_exit_count += 1;
+        }
     }
 };
 
@@ -368,6 +378,24 @@ fn isCapacityOperand(instr: Instr, capacity: u32, global_count: u32) bool {
     return index < global_count and
         global_buf[index].is_static_i32 and
         global_buf[index].value == capacity;
+}
+
+fn hasPackedLocalResult(recent: []const Instr, start: usize, end: usize, local: i64) bool {
+    var i = start;
+    while (i < end) : (i += 1) {
+        if ((recent[i].op == 0x21 or recent[i].op == 0x22) and recent[i].imm == local) return false;
+        if (i >= 4 and
+            recent[i - 4].op == 0xad and
+            recent[i - 3].op == 0x42 and recent[i - 3].imm == 32 and
+            recent[i - 2].op == 0x86 and
+            recent[i - 1].op == 0x20 and recent[i - 1].imm == local and
+            recent[i].op == 0xad and
+            i + 1 < end and recent[i + 1].op == 0x84)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 fn provesFinalResult(recent: []const Instr, recent_depth: []const usize, capacity: u32, global_count: u32) bool {
@@ -412,22 +440,45 @@ fn provesFinalResult(recent: []const Instr, recent_depth: []const usize, capacit
         }
         const local = size_local orelse continue;
 
-        var i = guard_start + 6;
-        while (i < recent.len) : (i += 1) {
-            if ((recent[i].op == 0x21 or recent[i].op == 0x22) and recent[i].imm == local) break;
-            if (i >= 4 and
-                recent[i - 4].op == 0xad and
-                recent[i - 3].op == 0x42 and recent[i - 3].imm == 32 and
-                recent[i - 2].op == 0x86 and
-                recent[i - 1].op == 0x20 and recent[i - 1].imm == local and
-                recent[i].op == 0xad and
-                i + 1 < recent.len and recent[i + 1].op == 0x84)
-            {
-                return true;
-            }
-        }
+        if (hasPackedLocalResult(recent, guard_start + 6, recent.len, local)) return true;
     }
 
+    return false;
+}
+
+fn provesBranchedTrapResult(recent: []const Instr, recent_depth: []const usize, capacity: u32) bool {
+    if (capacity == std.math.maxInt(u32)) return false;
+    var guard_start: usize = 0;
+    while (guard_start + 7 < recent.len) : (guard_start += 1) {
+        if (!(recent_depth[guard_start] == 1 and
+            recent_depth[guard_start + 1] == 1 and
+            recent_depth[guard_start + 2] == 1 and
+            recent_depth[guard_start + 3] == 1)) continue;
+        var block_start = guard_start;
+        while (block_start > 0) {
+            block_start -= 1;
+            if (recent_depth[block_start] == 0) break;
+        }
+        if (recent_depth[block_start] != 0 or recent[block_start].op != 0x02) continue;
+        const size = recent[guard_start];
+        if (!((size.op == 0x20 or size.op == 0x22) and
+            recent[guard_start + 1].op == 0x41 and
+            i32ImmediateBits(recent[guard_start + 1]) == capacity + 1 and
+            recent[guard_start + 2].op == 0x4f and
+            recent[guard_start + 3].op == 0x0d and
+            recent[guard_start + 3].imm == 0)) continue;
+
+        var return_index = guard_start + 4;
+        while (return_index < recent.len and recent[return_index].op != 0x0f) : (return_index += 1) {}
+        if (return_index + 2 >= recent.len or
+            recent_depth[return_index] != 1 or
+            recent[return_index + 1].op != 0x0b or recent_depth[return_index + 1] != 1 or
+            recent[return_index + 2].op != 0x00 or recent_depth[return_index + 2] != 0)
+        {
+            continue;
+        }
+        if (hasPackedLocalResult(recent, guard_start + 4, return_index, size.imm)) return true;
+    }
     return false;
 }
 
@@ -459,14 +510,13 @@ fn validateRender(
 
     var handler = ProofHandler{};
     try wasm_reader.walkFunctionBody(&handler, function_body_buf[index]);
-    if (handler.has_escaping_exit or
-        !provesFinalResult(
-            handler.recent[0..handler.recent_len],
-            handler.recent_depth[0..handler.recent_len],
-            capacity,
-            global_count,
-        ))
-    {
+    const recent = handler.recent[0..handler.recent_len];
+    const recent_depth = handler.recent_depth[0..handler.recent_len];
+    const conventional = !handler.has_escaping_exit and
+        provesFinalResult(recent, recent_depth, capacity, global_count);
+    const branched_trap = handler.escaping_exit_count == 1 and
+        provesBranchedTrapResult(recent, recent_depth, capacity);
+    if (!conventional and !branched_trap) {
         return CheckError.OutputBoundNotProven;
     }
 }
@@ -584,8 +634,36 @@ const early_return_module = hexBytes(
         "2101200141e4004b0440000b41c801ad4220862001ad840b",
 );
 
+// Zig lowers `if (size > capacity) @trap()` to an equivalent final block:
+// branch out when `size >= capacity + 1`, return on the in-bound path, and
+// trap immediately after the block.
+const branched_trap_module = hexBytes(
+    "0061736d01000000010a026000017f60017f017e0303020001050401010101" ++
+        "072503066d656d6f727902000f6f75747075745f757466385f636170000006" ++
+        "72656e64657200010a2802050041e4000b2001017f200021010240200141e5" ++
+        "004f0d0041c801ad4220862001ad840f0b000b",
+);
+
+const branched_trap_wrong_limit_module = hexBytes(
+    "0061736d01000000010a026000017f60017f017e0303020001050401010101" ++
+        "072503066d656d6f727902000f6f75747075745f757466385f636170000006" ++
+        "72656e64657200010a2802050041e4000b2001017f200021010240200141e4" ++
+        "004f0d0041c801ad4220862001ad840f0b000b",
+);
+
+const branched_loop_module = hexBytes(
+    "0061736d01000000010a026000017f60017f017e0303020001050401010101" ++
+        "072503066d656d6f727902000f6f75747075745f757466385f636170000006" ++
+        "72656e64657200010a2802050041e4000b2001017f200021010340200141e5" ++
+        "004f0d0041c801ad4220862001ad840f0b000b",
+);
+
 test "accepts an exact guarded output bound" {
     try checkModule(&guarded_module);
+}
+
+test "accepts Zig's equivalent branch-to-trap output bound" {
+    try checkModule(&branched_trap_module);
 }
 
 test "render rejects an unproved output and the instance recovers" {
@@ -606,6 +684,11 @@ test "rejects an unguarded dynamic result" {
 
 test "rejects a guard against a different capacity" {
     try std.testing.expectError(CheckError.OutputBoundNotProven, checkModule(&wrong_capacity_module));
+    try std.testing.expectError(CheckError.OutputBoundNotProven, checkModule(&branched_trap_wrong_limit_module));
+}
+
+test "rejects a bound that loops instead of trapping" {
+    try std.testing.expectError(CheckError.OutputBoundNotProven, checkModule(&branched_loop_module));
 }
 
 test "rejects a path returning before the guard" {

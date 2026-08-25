@@ -29,8 +29,8 @@ Related tool: [WebP to PNG or BMP](/webp-to-png).
 
 ## SVG (`image/svg+xml`)
 
-- [`svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm) rasterizes the supported SVG subset to BMP.
-- [`svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm) rasterizes the supported SVG subset to KTX2.
+- [`svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm) rasterizes the supported SVG subset to canonical RGBA8 sRGB KTX2. Use this output for new pipelines.
+- [`svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm) provides BMP output for stages that still require it.
 - [`svg-recolor-current-color.wasm`](/image/svg+xml/svg-recolor-current-color.wasm) replaces supported `currentColor` uses with a supplied color.
 - [`svg-to-data-uri.wasm`](/image/svg+xml/svg-to-data-uri.wasm) percent-encodes SVG bytes as a data URI.
 
@@ -75,6 +75,17 @@ Related tool: [image compressor](/image-compress).
 Related tools: [image color palette](/image-color-palette), [favicon generator](/favicon), [BMP to WebP](/webp), and [image compressor](/image-compress).
 
 ## KTX2 (`image/ktx2`)
+
+### Resize
+
+- [`ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm) reduces canonical RGBA8 sRGB KTX2 with a three-lobe Lanczos filter.
+- [`ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm) enlarges canonical RGBA8 sRGB KTX2 with balanced Mitchell-Netravali bicubic reconstruction.
+
+Both components filter in linear light with premultiplied alpha. They expose
+`width` and `height` uniforms, preserve aspect ratio when one dimension is
+omitted, and recoverably reject the opposite scaling direction.
+
+Related tool: [high-quality image resizer](/image-resize).
 
 ### Decode and encode
 

@@ -18,10 +18,11 @@ const OUTPUT_HEADER_SIZE: u32 = if (OUTPUT_KTX2) 224 else 54;
 const OUTPUT_CAP: u32 = MAX_PIXELS * 4 + OUTPUT_HEADER_SIZE;
 const INPUT_CONTENT_TYPE = "image/svg+xml";
 const OUTPUT_CONTENT_TYPE = if (OUTPUT_KTX2) "image/ktx2" else "image/bmp";
+const DEFAULT_BACKGROUND_COLOR_RGBA: u32 = 0x00000000;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
-var background_color_rgba: u32 = 0x00000000; // 0xRRGGBBAA, default transparent black
+var background_color_rgba: u32 = DEFAULT_BACKGROUND_COLOR_RGBA;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -33,6 +34,10 @@ export fn input_utf8_cap() u32 {
 
 export fn output_bytes_cap() u32 {
     return OUTPUT_CAP;
+}
+
+export fn failure_modes_per_input_offset() u32 {
+    return 0;
 }
 
 export fn input_content_type_ptr() u32 {
@@ -74,6 +79,10 @@ export fn uniform_set_background_color_rgba(value: u32) u32 {
 
 export fn uniform_set_background_color(value: u32) u32 {
     return uniform_set_background_color_rgba(value);
+}
+
+fn resetBackgroundColorUniform() void {
+    background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
 }
 
 const Mat = struct {
@@ -1592,21 +1601,21 @@ fn writeU32LE(buf: []u8, off: u32, value: u32) void {
     buf[off + 3] = @intCast((value >> 24) & 0xFF);
 }
 
-fn renderImpl(input_size: u32) u32 {
-    const size = if (input_size > INPUT_CAP) INPUT_CAP else input_size;
-    const input = input_buf[0..size];
+fn renderImpl(input_size: u32) ?u32 {
+    if (input_size > INPUT_CAP) @trap();
+    const input = input_buf[0..input_size];
 
-    const dims = findSvgSize(input) orelse return 0;
+    const dims = findSvgSize(input) orelse return null;
     const width = dims[0];
     const height = dims[1];
-    if (width == 0 or height == 0) return 0;
+    if (width == 0 or height == 0) return null;
     if (width > MAX_DIMENSION or height > MAX_DIMENSION or
-        @as(u64, width) * @as(u64, height) > MAX_PIXELS) return 0;
+        @as(u64, width) * @as(u64, height) > MAX_PIXELS) return null;
 
     const pixel_bytes: u64 = @as(u64, width) * @as(u64, height) * 4;
     const header_size: u32 = OUTPUT_HEADER_SIZE;
     const needed: u64 = @as(u64, header_size) + pixel_bytes;
-    if (needed > OUTPUT_CAP) return 0;
+    if (needed > OUTPUT_CAP) return null;
     const needed_usize: usize = @intCast(needed);
 
     var i: usize = 0;
@@ -1623,7 +1632,7 @@ fn renderImpl(input_size: u32) u32 {
     }
 
     if (OUTPUT_KTX2) {
-        _ = ktx2.writeHeader(&output_buf, width, height) orelse return 0;
+        _ = ktx2.writeHeader(&output_buf, width, height) orelse return null;
     } else {
         // BMP header (BITMAPFILEHEADER + BITMAPINFOHEADER).
         output_buf[0] = 'B';
@@ -1659,23 +1668,47 @@ fn renderImpl(input_size: u32) u32 {
     return ctx.out_len;
 }
 
-export fn render(input_size: u32) packed struct(u64) {
-    output_size: u32,
+const RenderResult = packed struct(u64) {
+    output_size_or_failure: u32,
     output_ptr: u31,
     failed: u1,
-} {
+};
+
+const RenderOutcome = struct {
+    output_size_or_failure: u32,
+    output_ptr: usize,
+    failed: u1,
+};
+
+noinline fn renderOutcome(input_size: u32) RenderOutcome {
+    defer resetBackgroundColorUniform();
+    const output_size = renderImpl(input_size) orelse {
+        return .{ .output_size_or_failure = 0, .output_ptr = 0, .failed = 1 };
+    };
     return .{
-        .output_size = renderImpl(input_size),
-        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .output_size_or_failure = output_size,
+        .output_ptr = @intFromPtr(&output_buf),
         .failed = 0,
     };
 }
 
+export fn render(input_size: u32) RenderResult {
+    const outcome = renderOutcome(input_size);
+    const output_size_or_failure = outcome.output_size_or_failure;
+    if (output_size_or_failure > OUTPUT_CAP) @trap();
+    return .{
+        .output_size_or_failure = output_size_or_failure,
+        .output_ptr = if (outcome.failed == 1) 0 else @intCast(outcome.output_ptr),
+        .failed = outcome.failed,
+    };
+}
+
 pub fn renderForTest(input: []const u8) []const u8 {
-    const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
-    @memcpy(input_buf[0..size], input[0..size]);
-    const out_len = renderImpl(@as(u32, @intCast(size)));
-    return output_buf[0..@as(usize, @intCast(out_len))];
+    if (input.len > INPUT_CAP) @panic("test input exceeds SVG input capacity");
+    @memcpy(input_buf[0..input.len], input);
+    const outcome = renderOutcome(@intCast(input.len));
+    if (outcome.failed == 1) @panic("test SVG was rejected");
+    return output_buf[0..outcome.output_size_or_failure];
 }
 
 pub const native_output_capacity: usize = OUTPUT_CAP;
@@ -1688,13 +1721,25 @@ pub fn nativeRender(input: []const u8, output: []u8) u32 {
 }
 
 pub fn renderForTestWithBackground(input: []const u8, bg_rgba: u32) []const u8 {
-    const prev = background_color_rgba;
-    background_color_rgba = bg_rgba;
-    defer background_color_rgba = prev;
-    const size: usize = if (input.len > INPUT_CAP) INPUT_CAP else input.len;
-    @memcpy(input_buf[0..size], input[0..size]);
-    const out_len = renderImpl(@as(u32, @intCast(size)));
-    return output_buf[0..@as(usize, @intCast(out_len))];
+    _ = uniform_set_background_color_rgba(bg_rgba);
+    return renderForTest(input);
+}
+
+test "render rejects unsupported dimensions, resets its uniform, and recovers" {
+    const invalid = "<svg/>";
+    @memcpy(input_buf[0..invalid.len], invalid);
+    _ = uniform_set_background_color_rgba(0xff0000ff);
+    const rejected = renderOutcome(invalid.len);
+    try std.testing.expectEqual(@as(u1, 1), rejected.failed);
+    try std.testing.expectEqual(@as(u32, 0), rejected.output_size_or_failure);
+    try std.testing.expectEqual(DEFAULT_BACKGROUND_COLOR_RGBA, background_color_rgba);
+
+    const valid = "<svg width=\"1\" height=\"1\"></svg>";
+    @memcpy(input_buf[0..valid.len], valid);
+    _ = uniform_set_background_color_rgba(0x11223344);
+    const accepted = renderOutcome(valid.len);
+    try std.testing.expectEqual(@as(u1, 0), accepted.failed);
+    try std.testing.expectEqual(DEFAULT_BACKGROUND_COLOR_RGBA, background_color_rgba);
 }
 
 fn pixelAt(buf: []const u8, width: u32, height: u32, x: u32, y: u32) Color {
