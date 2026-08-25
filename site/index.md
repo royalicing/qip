@@ -193,6 +193,26 @@ QIP Interactive Components receive keyboard & pointer events and render out pixe
 
 Use `<qip-play>` to render them in the browser, or use our SDK to render them in Swift.
 
+<qip-play canvas-width="min(180px, 100%)" canvas-height="auto">
+  <source id="home-chronograph-source" src="/interactive/chronograph.wasm" type="application/wasm" data-uniform-current_seconds="0" />
+</qip-play>
+
+<script type="module">
+const chronographSource = document.querySelector("#home-chronograph-source");
+chronographSource.setAttribute(
+  "data-uniform-current_seconds",
+  String((Date.now() / 1000) % 60),
+);
+</script>
+
+A small JavaScript host passes the current second once as a uniform. The Timed
+component then advances from the explicit lifecycle timestamps and requests an
+update every 200 ms, matching the five steps per second of an 18,000 vph
+mechanical movement. That keeps the clock input explicit without giving Wasm
+ambient clock access.
+
+---
+
 <qip-play canvas-width="720px" canvas-height="auto">
   <source src="/interactive/cover-flow.wasm" type="application/wasm" />
 </qip-play>
