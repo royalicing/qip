@@ -31,6 +31,8 @@ const LINEAR_BUTTON_W: i32 = 82;
 const LOG_BUTTON_X: i32 = 724;
 const LOG_BUTTON_W: i32 = 50;
 const FONT_SIZE_LOGICAL: i32 = 14;
+const SCALE_TWEEN_DURATION_MS: i64 = 750;
+const SCALE_TWEEN_FRAME_MS: i64 = 16;
 const BTN_PRIMARY: i32 = 1 << 0;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const XK_LEFT: i32 = 0xFF51;
@@ -105,6 +107,12 @@ var pixel_buf: [PIXEL_BYTES]u8 = undefined;
 var selected_series: Series = .anthropic;
 var selected_idx: usize = ANTHROPIC_POINTS.len - 1;
 var scale_mode: ScaleMode = .log;
+var scale_mix: f64 = 1.0;
+var scale_tween_from: f64 = 1.0;
+var scale_tween_to: f64 = 1.0;
+var scale_tween_started_at_ms: i64 = 0;
+var scale_tween_duration_ms: i64 = 0;
+var scale_tween_active = false;
 var primary_down = false;
 
 const Phase = enum { initializing, ready, updating };
@@ -134,6 +142,7 @@ export fn begin_update_at(now_ms: i64) void {
     if (transaction_phase != .ready) @trap();
     if (now_ms <= 0 or now_ms <= committed_at_ms) @trap();
     begun_at_ms = now_ms;
+    advanceScaleTween(now_ms);
     transaction_phase = .updating;
 }
 
@@ -209,7 +218,7 @@ export fn finish_update() i64 {
     if (transaction_phase != .updating) @trap();
     committed_at_ms = begun_at_ms;
     transaction_phase = .ready;
-    return begun_at_ms;
+    return scaleTweenNextWake();
 }
 
 fn selectLatest(series: Series) bool {
@@ -224,15 +233,44 @@ fn selectLatest(series: Series) bool {
 fn setScaleMode(mode: ScaleMode) bool {
     if (scale_mode == mode) return false;
     scale_mode = mode;
+    startScaleTween(if (mode == .log) 1.0 else 0.0);
     return true;
 }
 
 fn toggleScaleMode() bool {
-    scale_mode = switch (scale_mode) {
+    return setScaleMode(switch (scale_mode) {
         .linear => .log,
         .log => .linear,
-    };
-    return true;
+    });
+}
+
+fn startScaleTween(target: f64) void {
+    scale_tween_from = scale_mix;
+    scale_tween_to = target;
+    scale_tween_started_at_ms = begun_at_ms;
+    const distance = absF64(target - scale_mix);
+    scale_tween_duration_ms = @max(1, @as(i64, @intFromFloat(@round(distance * @as(f64, @floatFromInt(SCALE_TWEEN_DURATION_MS))))));
+    scale_tween_active = distance > 0.000_001;
+    if (!scale_tween_active) scale_mix = target;
+}
+
+fn advanceScaleTween(now_ms: i64) void {
+    if (!scale_tween_active) return;
+    const elapsed = @max(0, now_ms - scale_tween_started_at_ms);
+    if (elapsed >= scale_tween_duration_ms) {
+        scale_mix = scale_tween_to;
+        scale_tween_active = false;
+        return;
+    }
+    const t = @as(f64, @floatFromInt(elapsed)) / @as(f64, @floatFromInt(scale_tween_duration_ms));
+    scale_mix = lerpF64(scale_tween_from, scale_tween_to, smoothstep(t));
+}
+
+fn scaleTweenNextWake() i64 {
+    if (!scale_tween_active) return begun_at_ms;
+    const end_at = scale_tween_started_at_ms +| scale_tween_duration_ms;
+    const frame_at = begun_at_ms +| SCALE_TWEEN_FRAME_MS;
+    return @min(end_at, frame_at);
 }
 
 fn selectAdjacent(delta: i32) bool {
@@ -257,7 +295,7 @@ fn selectedLen() usize {
 fn drawFrame() void {
     fillRect(0, 0, @as(i32, @intCast(DISPLAY_W)), @as(i32, @intCast(DISPLAY_H)), C_BG);
     drawText(24, 20, "OPENAI VS ANTHROPIC ARR RUN-RATE", C_INK);
-    drawText(24, 40, "REPORTED PRIVATE-COMPANY MILESTONES, USD BILLIONS.  HOVER OR USE ARROWS.  L TOGGLE SCALE.", C_MUTED);
+    drawText(24, 40, "REPORTED PRIVATE-COMPANY MILESTONES, USD BILLIONS.  HOVER OR USE ARROWS.  L ANIMATE SCALE.", C_MUTED);
 
     button(OPENAI_BUTTON_X, BUTTON_Y, OPENAI_BUTTON_W, "OPENAI", C_OPENAI, selected_series == .openai, 0);
     button(ANTHROPIC_BUTTON_X, BUTTON_Y, ANTHROPIC_BUTTON_W, "ANTHROPIC", C_ANTHROPIC, selected_series == .anthropic, 0);
@@ -289,24 +327,29 @@ fn drawChart() void {
 }
 
 fn drawYAxis() void {
-    var buf: [24]u8 = undefined;
     const linear_ticks = [_]f64{ 0, 10, 20, 30, 40, 50, 60, 70 };
     const log_ticks = [_]f64{ 0.1, 1, 10, 100 };
-    const ticks: []const f64 = switch (scale_mode) {
-        .linear => linear_ticks[0..],
-        .log => log_ticks[0..],
-    };
+    // Fade one axis out before the other appears so unlike tick values never
+    // overlap while the data geometry moves between the two scales.
+    drawYAxisTicks(linear_ticks[0..], .linear, clampF64((0.5 - scale_mix) * 2.0, 0, 1));
+    drawYAxisTicks(log_ticks[0..], .log, clampF64((scale_mix - 0.5) * 2.0, 0, 1));
+}
 
+fn drawYAxisTicks(ticks: []const f64, mode: ScaleMode, opacity: f64) void {
+    if (opacity <= 0.001) return;
+    var buf: [24]u8 = undefined;
+    const alpha = @as(u8, @intFromFloat(@round(clampF64(opacity, 0, 1) * 255.0)));
+    const grid_color = lerpColor(C_CHART, C_GRID, opacity);
     for (ticks) |value| {
-        const y = arrToY(value);
-        if (y > CHART_Y + 1 and y < CHART_Y + CHART_H - 1) fillRect(CHART_X + 1, y, CHART_W - 2, 1, C_GRID);
+        const y = arrToYForMode(value, mode);
+        if (y > CHART_Y + 1 and y < CHART_Y + CHART_H - 1) fillRect(CHART_X + 1, y, CHART_W - 2, 1, grid_color);
         const label = if (value == 0)
             std.fmt.bufPrint(&buf, "${d:.0}B", .{value}) catch ""
         else if (value < 1)
             std.fmt.bufPrint(&buf, "${d:.1}B", .{value}) catch ""
         else
             std.fmt.bufPrint(&buf, "${d:.0}B", .{value}) catch "";
-        drawText(24, y - 6, label, C_MUTED);
+        drawText(24, y - 6, label, withAlpha(C_MUTED, alpha));
     }
 }
 
@@ -387,7 +430,17 @@ fn monthToX(month: i32) i32 {
 }
 
 fn arrToY(arr_b: f64) i32 {
-    const t = switch (scale_mode) {
+    const linear_y = arrToYForMode(arr_b, .linear);
+    const log_y = arrToYForMode(arr_b, .log);
+    return @as(i32, @intFromFloat(@round(lerpF64(
+        @as(f64, @floatFromInt(linear_y)),
+        @as(f64, @floatFromInt(log_y)),
+        scale_mix,
+    ))));
+}
+
+fn arrToYForMode(arr_b: f64, mode: ScaleMode) i32 {
+    const t = switch (mode) {
         .linear => clampF64(arr_b / ARR_LINEAR_MAX_B, 0, 1),
         .log => logScaleT(arr_b),
     };
@@ -440,6 +493,25 @@ fn clampF64(value: f64, min: f64, max: f64) f64 {
 
 fn absF64(value: f64) f64 {
     return if (value < 0) -value else value;
+}
+
+fn lerpF64(a: f64, b: f64, t: f64) f64 {
+    return a + (b - a) * clampF64(t, 0, 1);
+}
+
+fn smoothstep(t_in: f64) f64 {
+    const t = clampF64(t_in, 0, 1);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+fn lerpColor(a: Color, b: Color, t: f64) Color {
+    const clamped = clampF64(t, 0, 1);
+    return .{
+        @as(u8, @intFromFloat(@round(lerpF64(@as(f64, @floatFromInt(a[0])), @as(f64, @floatFromInt(b[0])), clamped)))),
+        @as(u8, @intFromFloat(@round(lerpF64(@as(f64, @floatFromInt(a[1])), @as(f64, @floatFromInt(b[1])), clamped)))),
+        @as(u8, @intFromFloat(@round(lerpF64(@as(f64, @floatFromInt(a[2])), @as(f64, @floatFromInt(b[2])), clamped)))),
+        0xFF,
+    };
 }
 
 fn drawText(x: i32, y: i32, text: []const u8, c: Color) void {
@@ -686,4 +758,45 @@ test "latest milestones cite Bloomberg in hover detail" {
     try std.testing.expectEqual(@as(f64, 65.0), anthropic.arr_b);
     try std.testing.expect(std.mem.indexOf(u8, openai.note, "SOURCE: BLOOMBERG") != null);
     try std.testing.expect(std.mem.indexOf(u8, anthropic.note, "SOURCE: BLOOMBERG") != null);
+}
+
+test "scale tween interpolates for 750 milliseconds" {
+    scale_mode = .log;
+    scale_mix = 1.0;
+    scale_tween_active = false;
+    begun_at_ms = 100;
+
+    try std.testing.expect(setScaleMode(.linear));
+    try std.testing.expect(scale_tween_active);
+    try std.testing.expectEqual(@as(i64, SCALE_TWEEN_DURATION_MS), scale_tween_duration_ms);
+    const log_y = arrToYForMode(10.0, .log);
+    const linear_y = arrToYForMode(10.0, .linear);
+
+    advanceScaleTween(475);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), scale_mix, 0.000_001);
+    const middle_y = arrToY(10.0);
+    try std.testing.expect(middle_y > @min(log_y, linear_y));
+    try std.testing.expect(middle_y < @max(log_y, linear_y));
+
+    advanceScaleTween(850);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), scale_mix, 0.000_001);
+    try std.testing.expect(!scale_tween_active);
+}
+
+test "reversing scale tween starts from its current position" {
+    scale_mode = .log;
+    scale_mix = 1.0;
+    scale_tween_active = false;
+    begun_at_ms = 100;
+    _ = setScaleMode(.linear);
+    advanceScaleTween(475);
+    const before_reverse = scale_mix;
+
+    begun_at_ms = 475;
+    try std.testing.expect(setScaleMode(.log));
+    try std.testing.expectApproxEqAbs(before_reverse, scale_tween_from, 0.000_001);
+    try std.testing.expectEqual(@as(i64, 375), scale_tween_duration_ms);
+    advanceScaleTween(850);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), scale_mix, 0.000_001);
+    try std.testing.expect(!scale_tween_active);
 }

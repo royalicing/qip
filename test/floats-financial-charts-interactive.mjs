@@ -67,3 +67,29 @@ test("all three components trap on update lifecycle misuse", () => {
     assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
   }
 });
+
+test("openai-anthropic-arr animates scale changes for 750 milliseconds", () => {
+  const exports = instantiate(modules["openai-anthropic-arr"]);
+  const size = qipRenderSize(exports, 0);
+  const logFrame = digest(exports, size);
+
+  exports.begin_update_at(1n);
+  assert.equal(exports.key_event("L".codePointAt(0), 1), 1);
+  assert.equal(exports.finish_update(), 17n);
+  assert.equal(qipRenderSize(exports, 0), size);
+  const transitionStart = digest(exports, size);
+  assert.notEqual(transitionStart, logFrame);
+
+  exports.begin_update_at(376n);
+  assert.equal(exports.finish_update(), 392n);
+  assert.equal(qipRenderSize(exports, 0), size);
+  const midpoint = digest(exports, size);
+  assert.notEqual(midpoint, transitionStart);
+
+  exports.begin_update_at(751n);
+  assert.equal(exports.finish_update(), 751n);
+  assert.equal(qipRenderSize(exports, 0), size);
+  const linearFrame = digest(exports, size);
+  assert.notEqual(linearFrame, midpoint);
+  assert.notEqual(linearFrame, logFrame);
+});

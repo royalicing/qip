@@ -17,7 +17,7 @@ Controls:
 - Hover the chart or use the arrow keys to inspect a milestone
 - `1` or `O`: latest OpenAI point
 - `2` or `A`: latest Anthropic point
-- `L`: toggle linear/log scale
+- `L`: animate between linear and log scale over 750 milliseconds
 
 Data notes:
 
