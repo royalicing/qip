@@ -8,6 +8,12 @@ Controls:
 - Watch the dotted ghost rectangles left behind while dragging
 - `R`: reset icon positions
 
-<qip-play>
+<style>
+#macos9-desktop canvas {
+  image-rendering: pixelated;
+}
+</style>
+
+<qip-play id="macos9-desktop" canvas-width="320px" canvas-height="220px">
   <source src="/interactive/macos9-desktop.wasm" type="application/wasm" />
 </qip-play>

@@ -10,28 +10,34 @@ const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
 const FLAG_KEY_DOWN: i32 = 1 << 0;
 const BTN_PRIMARY: i32 = 1 << 0;
 const BTN_SECONDARY: i32 = 1 << 2;
-const ICON_W: i32 = 36;
-const ICON_H: i32 = 30;
-const WINDOW_W: i32 = 132;
-const WINDOW_H: i32 = 72;
-const WINDOW_SHADED_H: i32 = 14;
-const WINDOW_MIN_W: i32 = 96;
-const WINDOW_MIN_H: i32 = 52;
-const WINDOW_MAX_W: i32 = 220;
-const WINDOW_MAX_H: i32 = 140;
+const ICON_W: i32 = 40;
+const ICON_H: i32 = 32;
+const WINDOW_W: i32 = 196;
+const WINDOW_H: i32 = 126;
+const WINDOW_SHADED_H: i32 = 20;
+const WINDOW_MIN_W: i32 = 138;
+const WINDOW_MIN_H: i32 = 78;
+const WINDOW_MAX_W: i32 = 292;
+const WINDOW_MAX_H: i32 = 188;
+const SCROLLBAR_SIZE: i32 = 15;
 const SCROLL_CONTENT_W: i32 = 290;
 const SCROLL_CONTENT_H: i32 = 250;
 
 const Color = [4]u8;
-const C_DESK: Color = .{ 0x5B, 0x8E, 0xC6, 0xFF };
-const C_BAR: Color = .{ 0xEA, 0xEA, 0xEA, 0xFF };
+const C_DESK: Color = .{ 0x66, 0x65, 0x99, 0xFF };
+const C_DESK_LIGHT: Color = .{ 0x75, 0x74, 0xA8, 0xFF };
+const C_DESK_DARK: Color = .{ 0x58, 0x57, 0x88, 0xFF };
+const C_BAR: Color = .{ 0xDD, 0xDD, 0xDD, 0xFF };
 const C_LIGHT: Color = .{ 0xFF, 0xFF, 0xFF, 0xFF };
-const C_MID: Color = .{ 0xAA, 0xAA, 0xAA, 0xFF };
-const C_DARK: Color = .{ 0x10, 0x10, 0x10, 0xFF };
-const C_SELECT: Color = .{ 0x2C, 0x5E, 0xB8, 0xFF };
-const C_FOLDER: Color = .{ 0xF6, 0xD7, 0x68, 0xFF };
-const C_DRIVE: Color = .{ 0xD8, 0xD8, 0xD8, 0xFF };
-const C_WINDOW: Color = .{ 0xF5, 0xF5, 0xF5, 0xFF };
+const C_HILITE: Color = .{ 0xF3, 0xF3, 0xF3, 0xFF };
+const C_MID: Color = .{ 0x99, 0x99, 0x99, 0xFF };
+const C_SHADOW: Color = .{ 0x66, 0x66, 0x66, 0xFF };
+const C_DARK: Color = .{ 0x22, 0x22, 0x22, 0xFF };
+const C_SELECT: Color = .{ 0x33, 0x66, 0xCC, 0xFF };
+const C_FOLDER: Color = .{ 0xF6, 0xCF, 0x59, 0xFF };
+const C_FOLDER_SHADOW: Color = .{ 0xC3, 0x8D, 0x24, 0xFF };
+const C_DRIVE: Color = .{ 0xCC, 0xCC, 0xCC, 0xFF };
+const C_WINDOW: Color = .{ 0xDD, 0xDD, 0xDD, 0xFF };
 
 const IconKind = enum(u8) { drive, folder, trash, document, app };
 
@@ -73,16 +79,16 @@ var drag_dx: i32 = 0;
 var drag_dy: i32 = 0;
 var icon_drag_x: i32 = 0;
 var icon_drag_y: i32 = 0;
-var window_x: i32 = 88;
-var window_y: i32 = 52;
+var window_x: i32 = 54;
+var window_y: i32 = 46;
 var window_w: i32 = WINDOW_W;
 var window_h: i32 = WINDOW_H;
-var window_restore_x: i32 = 88;
-var window_restore_y: i32 = 52;
+var window_restore_x: i32 = 54;
+var window_restore_y: i32 = 46;
 var window_restore_w: i32 = WINDOW_W;
 var window_restore_h: i32 = WINDOW_H;
-var window_drag_x: i32 = 88;
-var window_drag_y: i32 = 52;
+var window_drag_x: i32 = 54;
+var window_drag_y: i32 = 46;
 var window_drag_w: i32 = WINDOW_W;
 var window_drag_h: i32 = WINDOW_H;
 var scroll_x: i32 = 0;
@@ -207,11 +213,6 @@ fn pointerEventForTest(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
             menu_open = menuBarHit(x_px, y_px);
             menu_tracking = true;
             mode = .idle;
-        } else if (window_minimized and minimizedTabAt(x_px, y_px)) {
-            window_minimized = false;
-            selected_icon = -1;
-            selected_mask = 0;
-            mode = .idle;
         } else if (!window_minimized and closeButtonAt(x_px, y_px)) {
             window_minimized = true;
             selected_icon = -1;
@@ -222,8 +223,8 @@ fn pointerEventForTest(button_mask: i32, x_px: i32, y_px: i32, _: i64) i32 {
             selected_icon = -1;
             selected_mask = 0;
             mode = .idle;
-        } else if (!window_minimized and minimizeButtonAt(x_px, y_px)) {
-            window_minimized = true;
+        } else if (!window_minimized and collapseButtonAt(x_px, y_px)) {
+            window_shaded = !window_shaded;
             selected_icon = -1;
             selected_mask = 0;
             mode = .idle;
@@ -392,19 +393,19 @@ fn ensureInit() void {
 
 fn resetDesktop() void {
     icons = .{
-        .{ .x = 244, .y = 34, .kind = .drive, .label = "Macintosh HD" },
-        .{ .x = 34, .y = 44, .kind = .folder, .label = "Documents" },
-        .{ .x = 38, .y = 104, .kind = .app, .label = "SimpleText" },
-        .{ .x = 128, .y = 74, .kind = .document, .label = "Notes" },
-        .{ .x = 246, .y = 150, .kind = .trash, .label = "Trash" },
+        .{ .x = 266, .y = 28, .kind = .drive, .label = "Macintosh HD" },
+        .{ .x = 266, .y = 82, .kind = .folder, .label = "Documents" },
+        .{ .x = 18, .y = 151, .kind = .app, .label = "SimpleText" },
+        .{ .x = 18, .y = 82, .kind = .document, .label = "Notes" },
+        .{ .x = 268, .y = 164, .kind = .trash, .label = "Trash" },
     };
     selected_icon = -1;
     selected_mask = 0;
     mode = .idle;
     icon_drag_x = 0;
     icon_drag_y = 0;
-    window_x = 88;
-    window_y = 52;
+    window_x = 54;
+    window_y = 46;
     window_w = WINDOW_W;
     window_h = WINDOW_H;
     window_restore_x = window_x;
@@ -436,29 +437,29 @@ fn resetDesktop() void {
 
 fn menuBarHit(x: i32, y: i32) MenuId {
     if (y < 0 or y >= 20) return .none;
-    if (x >= 8 and x < 72) return .system;
-    if (x >= 74 and x < 112) return .file;
-    if (x >= 112 and x < 152) return .edit;
-    if (x >= 152 and x < 194) return .view;
+    if (x >= 5 and x < 28) return .system;
+    if (x >= 28 and x < 58) return .file;
+    if (x >= 58 and x < 88) return .edit;
+    if (x >= 88 and x < 124) return .view;
     return .none;
 }
 
 fn menuPanelX(menu: MenuId) i32 {
     return switch (menu) {
-        .system => 8,
-        .file => 74,
-        .edit => 112,
-        .view => 152,
+        .system => 5,
+        .file => 28,
+        .edit => 58,
+        .view => 88,
         .none => 0,
     };
 }
 
 fn menuPanelWidth(menu: MenuId) i32 {
     return switch (menu) {
-        .system => 82,
-        .file => 62,
-        .edit => 76,
-        .view => 68,
+        .system => 132,
+        .file => 108,
+        .edit => 104,
+        .view => 100,
         .none => 0,
     };
 }
@@ -473,23 +474,23 @@ fn menuItemCount(menu: MenuId) i32 {
 fn menuItemLabel(menu: MenuId, item: i32) []const u8 {
     return switch (menu) {
         .system => switch (item) {
-            0 => "Reset",
-            1 => "Trash",
+            0 => "About This Mac",
+            1 => "Control Panels",
             else => "",
         },
         .file => switch (item) {
             0 => "Open",
-            1 => "Mini",
+            1 => "Close Window",
             else => "",
         },
         .edit => switch (item) {
-            0 => "Select",
+            0 => "Select All",
             1 => "Clear",
             else => "",
         },
         .view => switch (item) {
-            0 => "Shade",
-            1 => "Close",
+            0 => "Collapse",
+            1 => "Close Window",
             else => "",
         },
         .none => "",
@@ -501,11 +502,11 @@ fn menuItemAt(menu: MenuId, x: i32, y: i32) i32 {
     const panel_x = menuPanelX(menu);
     const panel_y: i32 = 20;
     const panel_w = menuPanelWidth(menu);
-    const panel_h = 8 + menuItemCount(menu) * 14;
+    const panel_h = 8 + menuItemCount(menu) * 16;
     if (x < panel_x or x >= panel_x + panel_w or y < panel_y or y >= panel_y + panel_h) return -1;
     const rel = y - (panel_y + 4);
     if (rel < 0) return -1;
-    const idx = @divFloor(rel, 14);
+    const idx = @divFloor(rel, 16);
     if (idx < 0 or idx >= menuItemCount(menu)) return -1;
     return idx;
 }
@@ -634,17 +635,17 @@ fn titlebarAt(x: i32, y: i32) bool {
     return x >= window_x and x < window_x + window_w and y >= window_y and y < window_y + WINDOW_SHADED_H;
 }
 
-const Mac9CaptionButton = enum(u8) { close, minimize, zoom };
+const Mac9CaptionButton = enum(u8) { close, collapse, zoom };
 
 fn mac9CaptionButtonRect(which: Mac9CaptionButton) Rect {
-    const btn_w: i32 = 8;
-    const btn_h: i32 = 8;
-    const btn_y = window_y + 3;
+    const btn_w: i32 = 11;
+    const btn_h: i32 = 11;
+    const btn_y = window_y + 4;
     const zoom_x = window_x + window_w - btn_w - 5;
     return switch (which) {
         .close => .{ .x = window_x + 5, .y = btn_y, .w = btn_w, .h = btn_h },
         .zoom => .{ .x = zoom_x, .y = btn_y, .w = btn_w, .h = btn_h },
-        .minimize => .{ .x = zoom_x - btn_w - 2, .y = btn_y, .w = btn_w, .h = btn_h },
+        .collapse => .{ .x = zoom_x - btn_w - 3, .y = btn_y, .w = btn_w, .h = btn_h },
     };
 }
 
@@ -653,8 +654,8 @@ fn closeButtonAt(x: i32, y: i32) bool {
     return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h;
 }
 
-fn minimizeButtonAt(x: i32, y: i32) bool {
-    const r = mac9CaptionButtonRect(.minimize);
+fn collapseButtonAt(x: i32, y: i32) bool {
+    const r = mac9CaptionButtonRect(.collapse);
     return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h;
 }
 
@@ -693,18 +694,18 @@ fn toggleMac9Zoom() void {
 }
 
 fn resizeHandleAt(x: i32, y: i32) bool {
-    const handle_x = window_x + window_w - 21;
-    const handle_y = window_y + window_h - 21;
-    return x >= handle_x and x < handle_x + 13 and y >= handle_y and y < handle_y + 13;
+    const handle_x = window_x + window_w - SCROLLBAR_SIZE - 2;
+    const handle_y = window_y + window_h - SCROLLBAR_SIZE - 2;
+    return x >= handle_x and x < handle_x + SCROLLBAR_SIZE and y >= handle_y and y < handle_y + SCROLLBAR_SIZE;
 }
 
 fn mac9ClientRect() Rect {
-    return .{ .x = window_x + 3, .y = window_y + 14, .w = window_w - 6, .h = window_h - 17 };
+    return .{ .x = window_x + 3, .y = window_y + WINDOW_SHADED_H, .w = window_w - 6, .h = window_h - WINDOW_SHADED_H - 3 };
 }
 
 fn mac9ViewportRect() Rect {
     const c = mac9ClientRect();
-    return .{ .x = c.x + 1, .y = c.y + 1, .w = c.w - 14, .h = c.h - 14 };
+    return .{ .x = c.x + 1, .y = c.y + 1, .w = c.w - SCROLLBAR_SIZE - 1, .h = c.h - SCROLLBAR_SIZE - 1 };
 }
 
 fn mac9MaxScrollX() i32 {
@@ -727,32 +728,32 @@ fn setMac9ScrollY(v: i32) void {
 
 fn mac9VScrollRect() Rect {
     const c = mac9ClientRect();
-    return .{ .x = c.x + c.w - 13, .y = c.y, .w = 13, .h = c.h - 13 };
+    return .{ .x = c.x + c.w - SCROLLBAR_SIZE, .y = c.y, .w = SCROLLBAR_SIZE, .h = c.h - SCROLLBAR_SIZE };
 }
 
 fn mac9HScrollRect() Rect {
     const c = mac9ClientRect();
-    return .{ .x = c.x, .y = c.y + c.h - 13, .w = c.w - 13, .h = 13 };
+    return .{ .x = c.x, .y = c.y + c.h - SCROLLBAR_SIZE, .w = c.w - SCROLLBAR_SIZE, .h = SCROLLBAR_SIZE };
 }
 
 fn mac9VThumbRect() Rect {
     const track = mac9VScrollRect();
-    const thumb_size: i32 = 11;
-    const top = track.y + 13;
-    const span = @max(1, track.h - 26 - thumb_size);
+    const thumb_size: i32 = 13;
+    const top = track.y + SCROLLBAR_SIZE;
+    const span = @max(1, track.h - SCROLLBAR_SIZE * 2 - thumb_size);
     const max_scroll = @max(1, mac9MaxScrollY());
     const t = @divTrunc(scroll_y * span, max_scroll);
-    return .{ .x = track.x + 1, .y = top + t, .w = thumb_size, .h = thumb_size };
+    return .{ .x = track.x + 1, .y = top + t, .w = track.w - 2, .h = thumb_size };
 }
 
 fn mac9HThumbRect() Rect {
     const track = mac9HScrollRect();
-    const thumb_size: i32 = 11;
-    const left = track.x + 13;
-    const span = @max(1, track.w - 26 - thumb_size);
+    const thumb_size: i32 = 13;
+    const left = track.x + SCROLLBAR_SIZE;
+    const span = @max(1, track.w - SCROLLBAR_SIZE * 2 - thumb_size);
     const max_scroll = @max(1, mac9MaxScrollX());
     const t = @divTrunc(scroll_x * span, max_scroll);
-    return .{ .x = left + t, .y = track.y + 1, .w = thumb_size, .h = thumb_size };
+    return .{ .x = left + t, .y = track.y + 1, .w = thumb_size, .h = track.h - 2 };
 }
 
 fn pointInRect(x: i32, y: i32, r: Rect) bool {
@@ -762,8 +763,8 @@ fn pointInRect(x: i32, y: i32, r: Rect) bool {
 fn clampMac9VThumbY(thumb_y: i32) i32 {
     const track = mac9VScrollRect();
     const thumb = mac9VThumbRect();
-    const min_y = track.y + 13;
-    const max_y = track.y + track.h - 13 - thumb.h;
+    const min_y = track.y + SCROLLBAR_SIZE;
+    const max_y = track.y + track.h - SCROLLBAR_SIZE - thumb.h;
     return clampI32(thumb_y, min_y, max_y);
 }
 
@@ -774,8 +775,8 @@ fn previewMac9VScrollTo(thumb_y: i32) void {
 fn commitMac9VScrollTo(thumb_y: i32) void {
     const track = mac9VScrollRect();
     const clamped = clampMac9VThumbY(thumb_y);
-    const min_y = track.y + 13;
-    const max_y = track.y + track.h - 13 - mac9VThumbRect().h;
+    const min_y = track.y + SCROLLBAR_SIZE;
+    const max_y = track.y + track.h - SCROLLBAR_SIZE - mac9VThumbRect().h;
     const span = @max(1, max_y - min_y);
     setMac9ScrollY(@divTrunc((clamped - min_y) * mac9MaxScrollY(), span));
 }
@@ -783,8 +784,8 @@ fn commitMac9VScrollTo(thumb_y: i32) void {
 fn clampMac9HThumbX(thumb_x: i32) i32 {
     const track = mac9HScrollRect();
     const thumb = mac9HThumbRect();
-    const min_x = track.x + 13;
-    const max_x = track.x + track.w - 13 - thumb.w;
+    const min_x = track.x + SCROLLBAR_SIZE;
+    const max_x = track.x + track.w - SCROLLBAR_SIZE - thumb.w;
     return clampI32(thumb_x, min_x, max_x);
 }
 
@@ -795,8 +796,8 @@ fn previewMac9HScrollTo(thumb_x: i32) void {
 fn commitMac9HScrollTo(thumb_x: i32) void {
     const track = mac9HScrollRect();
     const clamped = clampMac9HThumbX(thumb_x);
-    const min_x = track.x + 13;
-    const max_x = track.x + track.w - 13 - mac9HThumbRect().w;
+    const min_x = track.x + SCROLLBAR_SIZE;
+    const max_x = track.x + track.w - SCROLLBAR_SIZE - mac9HThumbRect().w;
     const span = @max(1, max_x - min_x);
     setMac9ScrollX(@divTrunc((clamped - min_x) * mac9MaxScrollX(), span));
 }
@@ -820,20 +821,16 @@ fn handleMac9ScrollbarPress(x: i32, y: i32) bool {
         return true;
     }
     if (pointInRect(x, y, vbar)) {
-        if (y < vbar.y + 13) setMac9ScrollY(scroll_y - 12) else if (y >= vbar.y + vbar.h - 13) setMac9ScrollY(scroll_y + 12) else if (y < vthumb.y) setMac9ScrollY(scroll_y - 40) else if (y >= vthumb.y + vthumb.h) setMac9ScrollY(scroll_y + 40);
+        if (y < vbar.y + SCROLLBAR_SIZE) setMac9ScrollY(scroll_y - 12) else if (y >= vbar.y + vbar.h - SCROLLBAR_SIZE) setMac9ScrollY(scroll_y + 12) else if (y < vthumb.y) setMac9ScrollY(scroll_y - 40) else if (y >= vthumb.y + vthumb.h) setMac9ScrollY(scroll_y + 40);
         mode = .idle;
         return true;
     }
     if (pointInRect(x, y, hbar)) {
-        if (x < hbar.x + 13) setMac9ScrollX(scroll_x - 12) else if (x >= hbar.x + hbar.w - 13) setMac9ScrollX(scroll_x + 12) else if (x < hthumb.x) setMac9ScrollX(scroll_x - 40) else if (x >= hthumb.x + hthumb.w) setMac9ScrollX(scroll_x + 40);
+        if (x < hbar.x + SCROLLBAR_SIZE) setMac9ScrollX(scroll_x - 12) else if (x >= hbar.x + hbar.w - SCROLLBAR_SIZE) setMac9ScrollX(scroll_x + 12) else if (x < hthumb.x) setMac9ScrollX(scroll_x - 40) else if (x >= hthumb.x + hthumb.w) setMac9ScrollX(scroll_x + 40);
         mode = .idle;
         return true;
     }
     return false;
-}
-
-fn minimizedTabAt(x: i32, y: i32) bool {
-    return x >= 10 and x < 92 and y >= @as(i32, @intCast(RENDER_H)) - 18 and y < @as(i32, @intCast(RENDER_H)) - 4;
 }
 
 fn currentWindowHeight() i32 {
@@ -851,13 +848,11 @@ fn iconAt(x: i32, y: i32) i32 {
 }
 
 fn drawFrame() void {
-    fillRect(0, 0, RENDER_W, RENDER_H, C_DESK);
+    drawDesktopPattern();
     drawMenuBar();
     var i: usize = 0;
     while (i < icons.len) : (i += 1) drawIcon(i);
-    if (window_minimized) {
-        drawMinimizedTab();
-    } else {
+    if (!window_minimized) {
         drawWindow(window_x, window_y, window_w, currentWindowHeight());
     }
     drawTrails();
@@ -866,19 +861,25 @@ fn drawFrame() void {
 }
 
 fn drawMenuBar() void {
-    fillRectI32(0, 0, 320, 20, C_BAR);
-    fillRectI32(0, 19, 320, 1, C_DARK);
-    drawMenuTitle(.system, 8, 9, 64, "System 9");
-    drawMenuTitle(.file, 74, 9, 38, "File");
-    drawMenuTitle(.edit, 112, 9, 40, "Edit");
-    drawMenuTitle(.view, 152, 9, 42, "View");
-    fillRectI32(292, 5, 14, 10, C_LIGHT);
-    drawRect(292, 5, 14, 10, C_DARK);
+    fillRectI32(0, 0, @intCast(RENDER_W), 20, C_BAR);
+    fillRectI32(0, 0, @intCast(RENDER_W), 1, C_LIGHT);
+    fillRectI32(0, 18, @intCast(RENDER_W), 1, C_SHADOW);
+    fillRectI32(0, 19, @intCast(RENDER_W), 1, C_DARK);
+    if (menu_open == .system) fillRectI32(5, 1, 23, 18, C_SELECT);
+    drawAppleLogo(11, 4, if (menu_open == .system) C_LIGHT else C_DARK);
+    drawMenuTitle(.file, 31, 7, 27, "File");
+    drawMenuTitle(.edit, 61, 7, 27, "Edit");
+    drawMenuTitle(.view, 91, 7, 33, "View");
+    drawText(127, 7, "Special", C_DARK);
+    drawText(172, 7, "Help", C_DARK);
+    drawFinderBadge(228, 5);
+    drawText(246, 7, "Finder", C_DARK);
+    drawText(286, 7, "11:45", C_DARK);
 }
 
 fn drawMenuTitle(menu: MenuId, x: i32, y: i32, w: i32, text: []const u8) void {
     const selected = menu_open == menu;
-    if (selected) fillRectI32(x - 2, y - 2, w, 11, C_SELECT);
+    if (selected) fillRectI32(x - 3, 1, w + 2, 18, C_SELECT);
     drawText(x, y, text, if (selected) C_LIGHT else C_DARK);
 }
 
@@ -886,48 +887,53 @@ fn drawMenuPanel(menu: MenuId) void {
     const panel_x = menuPanelX(menu);
     const panel_y: i32 = 20;
     const panel_w = menuPanelWidth(menu);
-    const panel_h = 8 + menuItemCount(menu) * 14;
+    const panel_h = 8 + menuItemCount(menu) * 16;
+    fillRectI32(panel_x + 3, panel_y + 3, panel_w, panel_h, C_SHADOW);
     fillRectI32(panel_x, panel_y, panel_w, panel_h, C_WINDOW);
-    drawRect(panel_x, panel_y, panel_w, panel_h, C_DARK);
+    drawBevel(panel_x, panel_y, panel_w, panel_h, false);
     var i: i32 = 0;
     while (i < menuItemCount(menu)) : (i += 1) {
-        const item_y = panel_y + 4 + i * 14;
-        fillRectI32(panel_x + 3, item_y, panel_w - 6, 12, C_BAR);
-        drawText(panel_x + 8, item_y + 3, menuItemLabel(menu, i), C_DARK);
+        const item_y = panel_y + 4 + i * 16;
+        drawText(panel_x + 11, item_y + 4, menuItemLabel(menu, i), C_DARK);
     }
 }
 
 fn drawWindow(x: i32, y: i32, w: i32, h: i32) void {
+    fillRectI32(x + 3, y + 3, w, h, C_DESK_DARK);
     fillRectI32(x, y, w, h, C_WINDOW);
     drawRect(x, y, w, h, C_DARK);
-    fillRectI32(x + 1, y + 1, w - 2, 12, C_BAR);
+    drawRect(x + 1, y + 1, w - 2, h - 2, C_LIGHT);
+    fillRectI32(x + 2, y + 2, w - 4, WINDOW_SHADED_H - 3, C_BAR);
     drawTitlebarStripes(x, y, w);
     drawMac9CaptionButton(mac9CaptionButtonRect(.close), .close);
-    drawMac9CaptionButton(mac9CaptionButtonRect(.minimize), .minimize);
+    drawMac9CaptionButton(mac9CaptionButtonRect(.collapse), .collapse);
     drawMac9CaptionButton(mac9CaptionButtonRect(.zoom), .zoom);
+    const title = "Macintosh HD";
+    const title_x = x + @divFloor(w - textWidth(title), 2);
+    fillRectI32(title_x - 4, y + 3, textWidth(title) + 8, 14, C_BAR);
+    drawText(title_x, y + 7, title, C_DARK);
     if (h <= WINDOW_SHADED_H) return;
     const c = mac9ClientRect();
     fillRectI32(c.x, c.y, c.w, c.h, C_LIGHT);
-    drawRect(c.x, c.y, c.w, c.h, C_MID);
+    drawBevel(c.x, c.y, c.w, c.h, true);
     drawMac9Content();
     drawMac9Scrollbars(c.x, c.y, c.w, c.h);
 }
 
 fn drawMac9CaptionButton(r: Rect, which: Mac9CaptionButton) void {
-    fillRectI32(r.x, r.y, r.w, r.h, C_LIGHT);
-    drawRect(r.x, r.y, r.w, r.h, C_DARK);
+    fillRectI32(r.x, r.y, r.w, r.h, C_WINDOW);
+    drawBevel(r.x, r.y, r.w, r.h, false);
     switch (which) {
         .close => {},
-        .minimize => {
-            fillRectI32(r.x + 2, r.y + r.h - 3, r.w - 4, 1, C_DARK);
-            fillRectI32(r.x + 2, r.y + 2, r.w - 4, 1, C_MID);
+        .collapse => {
+            fillRectI32(r.x + 3, r.y + 4, r.w - 6, 2, C_DARK);
         },
         .zoom => {
             if (window_zoomed) {
-                drawRect(r.x + 2, r.y + 3, 3, 3, C_DARK);
-                drawRect(r.x + 3, r.y + 2, 3, 3, C_DARK);
+                drawRect(r.x + 3, r.y + 4, 4, 4, C_DARK);
+                drawRect(r.x + 4, r.y + 3, 4, 4, C_DARK);
             } else {
-                drawRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, C_DARK);
+                drawRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, C_DARK);
             }
         },
     }
@@ -936,56 +942,63 @@ fn drawMac9CaptionButton(r: Rect, which: Mac9CaptionButton) void {
 fn drawMac9Content() void {
     const vp = mac9ViewportRect();
     fillRectI32(vp.x, vp.y, vp.w, vp.h, C_LIGHT);
+    fillRectI32(vp.x, vp.y, vp.w, 14, C_WINDOW);
+    drawBevel(vp.x, vp.y, vp.w, 14, false);
+    drawTextClipped(vp.x + 19, vp.y + 4, "Name", C_DARK, vp);
+    drawLine(vp.x + vp.w - 45, vp.y + 2, vp.x + vp.w - 45, vp.y + 11, C_SHADOW);
+    drawTextClipped(vp.x + vp.w - 38, vp.y + 4, "Size", C_DARK, vp);
     var row: i32 = 0;
     while (row < 18) : (row += 1) {
-        const y = vp.y + row * 12 - scroll_y;
-        if (y >= vp.y - 6 and y < vp.y + vp.h) {
+        const y = vp.y + 15 + row * 14 - scroll_y;
+        if (y >= vp.y + 12 and y < vp.y + vp.h) {
             var label_buf: [32]u8 = undefined;
-            const label = buildNumberedLabel(&label_buf, row + 1, "Finder Item");
-            drawTextClipped(vp.x + 4 - scroll_x, y + 2, label, C_DARK, vp);
+            const label = buildNumberedLabel(&label_buf, row + 1, if (row < 5) "System Folder" else "Finder Item");
+            drawListIcon(vp.x + 4 - scroll_x, y + 2, @mod(row, 3));
+            drawTextClipped(vp.x + 19 - scroll_x, y + 4, label, C_DARK, vp);
         }
     }
 }
 
 fn drawMac9Scrollbars(cx: i32, cy: i32, cw: i32, ch: i32) void {
-    const sb: i32 = 13;
+    const sb: i32 = SCROLLBAR_SIZE;
     if (cw < sb + 8 or ch < sb + 8) return;
 
     const vbar_x = cx + cw - sb;
     const vbar_h = ch - sb;
     fillRectI32(vbar_x, cy, sb, vbar_h, C_BAR);
-    drawRect(vbar_x, cy, sb, vbar_h, C_MID);
+    drawBevel(vbar_x, cy, sb, vbar_h, true);
     const up_btn = Rect{ .x = vbar_x + 1, .y = cy + 1, .w = sb - 2, .h = sb - 2 };
     const down_btn = Rect{ .x = vbar_x + 1, .y = cy + vbar_h - sb + 1, .w = sb - 2, .h = sb - 2 };
     fillRectI32(up_btn.x, up_btn.y, up_btn.w, up_btn.h, C_WINDOW);
-    drawRect(up_btn.x, up_btn.y, up_btn.w, up_btn.h, C_MID);
+    drawBevel(up_btn.x, up_btn.y, up_btn.w, up_btn.h, false);
     fillRectI32(down_btn.x, down_btn.y, down_btn.w, down_btn.h, C_WINDOW);
-    drawRect(down_btn.x, down_btn.y, down_btn.w, down_btn.h, C_MID);
+    drawBevel(down_btn.x, down_btn.y, down_btn.w, down_btn.h, false);
     drawMac9ScrollArrow(up_btn, .up);
     drawMac9ScrollArrow(down_btn, .down);
     const vthumb = mac9VThumbRect();
     fillRectI32(vthumb.x, vthumb.y, vthumb.w, vthumb.h, C_WINDOW);
-    drawRect(vthumb.x, vthumb.y, vthumb.w, vthumb.h, C_MID);
+    drawBevel(vthumb.x, vthumb.y, vthumb.w, vthumb.h, false);
 
     const hbar_y = cy + ch - sb;
     const hbar_w = cw - sb;
     fillRectI32(cx, hbar_y, hbar_w, sb, C_BAR);
-    drawRect(cx, hbar_y, hbar_w, sb, C_MID);
+    drawBevel(cx, hbar_y, hbar_w, sb, true);
     const left_btn = Rect{ .x = cx + 1, .y = hbar_y + 1, .w = sb - 2, .h = sb - 2 };
     const right_btn = Rect{ .x = cx + hbar_w - sb + 1, .y = hbar_y + 1, .w = sb - 2, .h = sb - 2 };
     fillRectI32(left_btn.x, left_btn.y, left_btn.w, left_btn.h, C_WINDOW);
-    drawRect(left_btn.x, left_btn.y, left_btn.w, left_btn.h, C_MID);
+    drawBevel(left_btn.x, left_btn.y, left_btn.w, left_btn.h, false);
     fillRectI32(right_btn.x, right_btn.y, right_btn.w, right_btn.h, C_WINDOW);
-    drawRect(right_btn.x, right_btn.y, right_btn.w, right_btn.h, C_MID);
+    drawBevel(right_btn.x, right_btn.y, right_btn.w, right_btn.h, false);
     drawMac9ScrollArrow(left_btn, .left);
     drawMac9ScrollArrow(right_btn, .right);
     const hthumb = mac9HThumbRect();
     fillRectI32(hthumb.x, hthumb.y, hthumb.w, hthumb.h, C_WINDOW);
-    drawRect(hthumb.x, hthumb.y, hthumb.w, hthumb.h, C_MID);
+    drawBevel(hthumb.x, hthumb.y, hthumb.w, hthumb.h, false);
 
     fillRectI32(vbar_x, hbar_y, sb, sb, C_BAR);
-    drawRect(vbar_x, hbar_y, sb, sb, C_MID);
-    drawLine(vbar_x + 2, hbar_y + sb - 3, vbar_x + sb - 3, hbar_y + 2, C_MID);
+    drawBevel(vbar_x, hbar_y, sb, sb, true);
+    drawLine(vbar_x + 3, hbar_y + sb - 3, vbar_x + sb - 3, hbar_y + 3, C_SHADOW);
+    drawLine(vbar_x + 7, hbar_y + sb - 3, vbar_x + sb - 3, hbar_y + 7, C_SHADOW);
 }
 
 fn drawMac9ScrollArrow(r: Rect, dir: ScrollArrowDir) void {
@@ -1003,12 +1016,10 @@ fn drawMac9ScrollArrow(r: Rect, dir: ScrollArrowDir) void {
 }
 
 fn drawTitlebarStripes(x: i32, y: i32, w: i32) void {
-    const left = x + 18;
-    const right = x + w - 18;
-    if (right <= left) return;
-    drawLine(left, y + 4, right, y + 4, C_LIGHT);
-    drawLine(left, y + 6, right, y + 6, C_MID);
-    drawLine(left, y + 8, right, y + 8, C_LIGHT);
+    const title_w = textWidth("Macintosh HD") + 10;
+    const title_x = x + @divFloor(w - title_w, 2);
+    drawPlatinumStripes(x + 19, title_x - 4, y + 4, y + 15);
+    drawPlatinumStripes(title_x + title_w + 4, x + w - 34, y + 4, y + 15);
 }
 
 fn drawTrails() void {
@@ -1039,29 +1050,21 @@ fn drawTrails() void {
     }
 }
 
-fn drawMinimizedTab() void {
-    const y = @as(i32, @intCast(RENDER_H)) - 18;
-    fillRectI32(10, y, 82, 14, C_WINDOW);
-    drawRect(10, y, 82, 14, C_DARK);
-    fillRectI32(12, y + 2, 8, 8, C_LIGHT);
-    drawRect(12, y + 2, 8, 8, C_DARK);
-    drawText(26, y + 5, "Welcome", C_DARK);
-}
-
 fn drawIcon(i: usize) void {
     const icon = icons[i];
     const selected = ((selected_mask & (@as(u8, 1) << @as(u3, @intCast(i)))) != 0) or selected_icon == @as(i32, @intCast(i));
-    if (selected) drawDottedRect(icon.x - 3, icon.y - 3, ICON_W + 6, ICON_H + 18, C_LIGHT);
-    drawIconGlyph(icon.kind, icon.x + 7, icon.y);
+    drawIconGlyph(icon.kind, icon.x + 4, icon.y);
     const label_w = textWidth(icon.label);
     const label_x = icon.x + @divFloor(ICON_W - label_w, 2);
-    if (selected) fillRectI32(label_x - 2, icon.y + ICON_H + 2, label_w + 4, 9, C_SELECT);
+    if (selected) fillRectI32(label_x - 3, icon.y + ICON_H + 2, label_w + 6, 11, C_SELECT);
+    drawText(label_x + 1, icon.y + ICON_H + 5, icon.label, C_DARK);
     drawText(label_x, icon.y + ICON_H + 4, icon.label, C_LIGHT);
 }
 
 fn drawDesktopMenu() void {
+    fillRectI32(desktop_menu_x + 3, desktop_menu_y + 3, 100, 50, C_SHADOW);
     fillRectI32(desktop_menu_x, desktop_menu_y, 100, 50, C_WINDOW);
-    drawRect(desktop_menu_x, desktop_menu_y, 100, 50, C_DARK);
+    drawBevel(desktop_menu_x, desktop_menu_y, 100, 50, false);
     drawDesktopMenuItem(0, "Clean Up");
     drawDesktopMenuItem(1, "Hide Win");
     drawDesktopMenuItem(2, "Clear");
@@ -1069,45 +1072,128 @@ fn drawDesktopMenu() void {
 
 fn drawDesktopMenuItem(item: i32, label: []const u8) void {
     const y = desktop_menu_y + 5 + item * 14;
-    fillRectI32(desktop_menu_x + 4, y, 92, 12, C_BAR);
-    drawRect(desktop_menu_x + 4, y, 92, 12, C_DARK);
     drawText(desktop_menu_x + 10, y + 3, label, C_DARK);
 }
 
 fn drawIconGlyph(kind: IconKind, x: i32, y: i32) void {
     switch (kind) {
         .drive => {
-            fillRectI32(x + 1, y + 8, 24, 13, C_DRIVE);
-            drawRect(x + 1, y + 8, 24, 13, C_DARK);
-            fillRectI32(x + 4, y + 5, 18, 5, C_LIGHT);
-            drawRect(x + 4, y + 5, 18, 5, C_DARK);
+            fillRectI32(x + 2, y + 10, 31, 18, C_DRIVE);
+            drawBevel(x + 2, y + 10, 31, 18, false);
+            fillRectI32(x + 5, y + 6, 25, 8, C_HILITE);
+            drawBevel(x + 5, y + 6, 25, 8, false);
+            fillRectI32(x + 10, y + 21, 15, 2, C_SHADOW);
+            fillRectI32(x + 27, y + 21, 2, 2, .{ 0x36, 0xA8, 0x4A, 0xFF });
         },
         .folder => {
-            fillRectI32(x + 2, y + 8, 23, 15, C_FOLDER);
-            fillRectI32(x + 5, y + 5, 9, 4, C_FOLDER);
-            drawRect(x + 2, y + 8, 23, 15, C_DARK);
+            fillRectI32(x + 3, y + 10, 30, 18, C_FOLDER_SHADOW);
+            fillRectI32(x + 3, y + 7, 14, 6, C_FOLDER);
+            drawRect(x + 3, y + 7, 14, 6, C_DARK);
+            fillRectI32(x + 2, y + 11, 32, 17, C_FOLDER);
+            drawBevel(x + 2, y + 11, 32, 17, false);
+            drawLine(x + 6, y + 15, x + 30, y + 15, C_LIGHT);
         },
         .trash => {
-            fillRectI32(x + 6, y + 8, 14, 16, C_DRIVE);
-            drawRect(x + 6, y + 8, 14, 16, C_DARK);
-            drawLine(x + 5, y + 6, x + 21, y + 6, C_DARK);
-            drawLine(x + 10, y + 11, x + 10, y + 21, C_MID);
-            drawLine(x + 16, y + 11, x + 16, y + 21, C_MID);
+            fillRectI32(x + 8, y + 8, 20, 22, C_DRIVE);
+            drawBevel(x + 8, y + 8, 20, 22, false);
+            fillRectI32(x + 6, y + 6, 24, 4, C_HILITE);
+            drawBevel(x + 6, y + 6, 24, 4, false);
+            fillRectI32(x + 13, y + 3, 10, 4, C_DRIVE);
+            drawRect(x + 13, y + 3, 10, 4, C_DARK);
+            drawLine(x + 13, y + 12, x + 14, y + 26, C_SHADOW);
+            drawLine(x + 18, y + 12, x + 18, y + 26, C_SHADOW);
+            drawLine(x + 23, y + 12, x + 22, y + 26, C_SHADOW);
         },
         .document => {
-            fillRectI32(x + 7, y + 3, 16, 22, C_LIGHT);
-            drawRect(x + 7, y + 3, 16, 22, C_DARK);
-            drawLine(x + 11, y + 9, x + 19, y + 9, C_MID);
-            drawLine(x + 11, y + 13, x + 19, y + 13, C_MID);
-            drawLine(x + 11, y + 17, x + 17, y + 17, C_MID);
+            fillRectI32(x + 8, y + 2, 22, 29, C_LIGHT);
+            drawRect(x + 8, y + 2, 22, 29, C_DARK);
+            fillRectI32(x + 23, y + 2, 7, 7, C_WINDOW);
+            drawLine(x + 23, y + 2, x + 30, y + 9, C_DARK);
+            drawLine(x + 23, y + 2, x + 23, y + 9, C_DARK);
+            drawLine(x + 23, y + 9, x + 30, y + 9, C_DARK);
+            drawLine(x + 12, y + 13, x + 25, y + 13, C_SELECT);
+            drawLine(x + 12, y + 17, x + 25, y + 17, C_MID);
+            drawLine(x + 12, y + 21, x + 23, y + 21, C_MID);
         },
         .app => {
-            fillRectI32(x + 4, y + 5, 22, 18, C_LIGHT);
-            drawRect(x + 4, y + 5, 22, 18, C_DARK);
-            fillRectI32(x + 4, y + 5, 22, 5, C_BAR);
-            drawLine(x + 8, y + 14, x + 22, y + 14, C_DARK);
-            drawLine(x + 8, y + 18, x + 18, y + 18, C_DARK);
+            fillRectI32(x + 3, y + 5, 30, 24, C_LIGHT);
+            drawBevel(x + 3, y + 5, 30, 24, false);
+            fillRectI32(x + 5, y + 7, 26, 6, C_SELECT);
+            drawText(x + 9, y + 7, "TXT", C_LIGHT);
+            drawLine(x + 9, y + 17, x + 27, y + 17, C_DARK);
+            drawLine(x + 9, y + 21, x + 25, y + 21, C_DARK);
+            drawLine(x + 9, y + 25, x + 21, y + 25, C_DARK);
         },
+    }
+}
+
+fn drawDesktopPattern() void {
+    fillRect(0, 0, RENDER_W, RENDER_H, C_DESK);
+    var y: i32 = 27;
+    var row: i32 = 0;
+    while (y < @as(i32, @intCast(RENDER_H))) : (y += 28) {
+        var x: i32 = 8 + @mod(row, 2) * 14;
+        while (x < @as(i32, @intCast(RENDER_W))) : (x += 28) drawDesktopFace(x, y);
+        row += 1;
+    }
+}
+
+fn drawDesktopFace(x: i32, y: i32) void {
+    drawRect(x, y, 9, 9, C_DESK_DARK);
+    drawLine(x + 4, y + 1, x + 4, y + 7, C_DESK_LIGHT);
+    setPixelI32(x + 2, y + 3, C_DESK_LIGHT);
+    setPixelI32(x + 6, y + 3, C_DESK_LIGHT);
+    drawLine(x + 2, y + 6, x + 3, y + 7, C_DESK_LIGHT);
+    drawLine(x + 5, y + 7, x + 7, y + 5, C_DESK_LIGHT);
+}
+
+fn drawAppleLogo(x: i32, y: i32, c: Color) void {
+    fillRectI32(x + 3, y, 2, 2, c);
+    setPixelI32(x + 5, y - 1, c);
+    fillRectI32(x + 1, y + 3, 7, 6, c);
+    fillRectI32(x, y + 5, 9, 3, c);
+    setPixelI32(x + 8, y + 4, C_BAR);
+    setPixelI32(x + 1, y + 9, c);
+    setPixelI32(x + 7, y + 9, c);
+}
+
+fn drawFinderBadge(x: i32, y: i32) void {
+    fillRectI32(x, y, 13, 11, C_LIGHT);
+    drawRect(x, y, 13, 11, C_DARK);
+    drawLine(x + 6, y + 1, x + 6, y + 9, C_MID);
+    setPixelI32(x + 3, y + 4, C_DARK);
+    setPixelI32(x + 9, y + 4, C_DARK);
+    drawLine(x + 3, y + 7, x + 5, y + 8, C_DARK);
+    drawLine(x + 7, y + 8, x + 10, y + 6, C_DARK);
+}
+
+fn drawListIcon(x: i32, y: i32, kind: i32) void {
+    if (kind == 0) {
+        fillRectI32(x, y + 2, 11, 7, C_FOLDER);
+        fillRectI32(x + 1, y, 5, 3, C_FOLDER);
+        drawRect(x, y + 2, 11, 7, C_DARK);
+    } else {
+        fillRectI32(x + 2, y, 8, 10, C_LIGHT);
+        drawRect(x + 2, y, 8, 10, C_DARK);
+    }
+}
+
+fn drawBevel(x: i32, y: i32, w: i32, h: i32, inset: bool) void {
+    const top_left = if (inset) C_SHADOW else C_LIGHT;
+    const bottom_right = if (inset) C_LIGHT else C_SHADOW;
+    drawLine(x, y, x + w - 1, y, top_left);
+    drawLine(x, y, x, y + h - 1, top_left);
+    drawLine(x, y + h - 1, x + w - 1, y + h - 1, bottom_right);
+    drawLine(x + w - 1, y, x + w - 1, y + h - 1, bottom_right);
+    drawRect(x + 1, y + 1, w - 2, h - 2, C_DARK);
+}
+
+fn drawPlatinumStripes(x0: i32, x1: i32, y0: i32, y1: i32) void {
+    if (x1 <= x0) return;
+    var y = y0;
+    while (y <= y1) : (y += 3) {
+        drawLine(x0, y, x1, y, C_LIGHT);
+        if (y + 1 <= y1) drawLine(x0, y + 1, x1, y + 1, C_MID);
     }
 }
 
@@ -1156,7 +1242,7 @@ fn drawLine(x0_in: i32, y0_in: i32, x1: i32, y1: i32, c: Color) void {
 
 fn drawText(x: i32, y: i32, text: []const u8, c: Color) void {
     var i: usize = 0;
-    while (i < text.len) : (i += 1) drawChar(x + @as(i32, @intCast(i * 4)), y, text[i], c);
+    while (i < text.len) : (i += 1) drawChar(x + @as(i32, @intCast(i * 6)), y, text[i], c);
 }
 
 fn buildNumberedLabel(buf: *[32]u8, number: i32, item: []const u8) []const u8 {
@@ -1190,23 +1276,24 @@ fn buildNumberedLabel(buf: *[32]u8, number: i32, item: []const u8) []const u8 {
 fn drawTextClipped(x: i32, y: i32, text: []const u8, c: Color, clip: Rect) void {
     var i: usize = 0;
     while (i < text.len) : (i += 1) {
-        const cx = x + @as(i32, @intCast(i * 4));
-        if (cx + 3 <= clip.x or cx >= clip.x + clip.w) continue;
+        const cx = x + @as(i32, @intCast(i * 6));
+        if (cx + 5 <= clip.x or cx >= clip.x + clip.w) continue;
         drawCharClipped(cx, y, text[i], c, clip);
     }
 }
 
 fn textWidth(text: []const u8) i32 {
-    return @as(i32, @intCast(text.len * 4));
+    if (text.len == 0) return 0;
+    return @as(i32, @intCast(text.len * 6 - 1));
 }
 
 fn drawChar(x: i32, y: i32, ch: u8, c: Color) void {
     const rows = glyph(ch);
     var ry: usize = 0;
-    while (ry < 5) : (ry += 1) {
+    while (ry < 7) : (ry += 1) {
         var rx: usize = 0;
-        while (rx < 3) : (rx += 1) {
-            if ((rows[ry] & (@as(u8, 1) << @as(u3, @intCast(2 - rx)))) != 0) setPixelI32(x + @as(i32, @intCast(rx)), y + @as(i32, @intCast(ry)), c);
+        while (rx < 5) : (rx += 1) {
+            if ((rows[ry] & (@as(u8, 1) << @as(u3, @intCast(4 - rx)))) != 0) setPixelI32(x + @as(i32, @intCast(rx)), y + @as(i32, @intCast(ry)), c);
         }
     }
 }
@@ -1214,12 +1301,12 @@ fn drawChar(x: i32, y: i32, ch: u8, c: Color) void {
 fn drawCharClipped(x: i32, y: i32, ch: u8, c: Color, clip: Rect) void {
     const rows = glyph(ch);
     var ry: usize = 0;
-    while (ry < 5) : (ry += 1) {
+    while (ry < 7) : (ry += 1) {
         const py = y + @as(i32, @intCast(ry));
         if (py < clip.y or py >= clip.y + clip.h) continue;
         var rx: usize = 0;
-        while (rx < 3) : (rx += 1) {
-            if ((rows[ry] & (@as(u8, 1) << @as(u3, @intCast(2 - rx)))) == 0) continue;
+        while (rx < 5) : (rx += 1) {
+            if ((rows[ry] & (@as(u8, 1) << @as(u3, @intCast(4 - rx)))) == 0) continue;
             const px = x + @as(i32, @intCast(rx));
             if (px < clip.x or px >= clip.x + clip.w) continue;
             setPixelI32(px, py, c);
@@ -1227,38 +1314,75 @@ fn drawCharClipped(x: i32, y: i32, ch: u8, c: Color, clip: Rect) void {
     }
 }
 
-fn glyph(ch: u8) [5]u8 {
+fn glyph(ch: u8) [7]u8 {
     return switch (ch) {
-        'A', 'a' => .{ 0b010, 0b101, 0b111, 0b101, 0b101 },
-        'C', 'c' => .{ 0b111, 0b100, 0b100, 0b100, 0b111 },
-        'D', 'd' => .{ 0b110, 0b101, 0b101, 0b101, 0b110 },
-        'E', 'e' => .{ 0b111, 0b100, 0b110, 0b100, 0b111 },
-        'F', 'f' => .{ 0b111, 0b100, 0b110, 0b100, 0b100 },
-        'G', 'g' => .{ 0b111, 0b100, 0b101, 0b101, 0b111 },
-        'H', 'h' => .{ 0b101, 0b101, 0b111, 0b101, 0b101 },
-        'I', 'i' => .{ 0b111, 0b010, 0b010, 0b010, 0b111 },
-        'L', 'l' => .{ 0b100, 0b100, 0b100, 0b100, 0b111 },
-        'M', 'm' => .{ 0b101, 0b111, 0b111, 0b101, 0b101 },
-        'N', 'n' => .{ 0b110, 0b101, 0b101, 0b101, 0b101 },
-        'O', 'o', '0' => .{ 0b111, 0b101, 0b101, 0b101, 0b111 },
-        'P', 'p' => .{ 0b110, 0b101, 0b110, 0b100, 0b100 },
-        'R', 'r' => .{ 0b110, 0b101, 0b110, 0b101, 0b101 },
-        'S', 's' => .{ 0b111, 0b100, 0b111, 0b001, 0b111 },
-        'T', 't' => .{ 0b111, 0b010, 0b010, 0b010, 0b010 },
-        'V', 'v' => .{ 0b101, 0b101, 0b101, 0b101, 0b010 },
-        'W', 'w' => .{ 0b101, 0b101, 0b111, 0b111, 0b101 },
-        '1' => .{ 0b010, 0b110, 0b010, 0b010, 0b111 },
-        '2' => .{ 0b111, 0b001, 0b111, 0b100, 0b111 },
-        '3' => .{ 0b111, 0b001, 0b111, 0b001, 0b111 },
-        '9' => .{ 0b111, 0b101, 0b111, 0b001, 0b111 },
-        '4' => .{ 0b101, 0b101, 0b111, 0b001, 0b001 },
-        '5' => .{ 0b111, 0b100, 0b111, 0b001, 0b111 },
-        '6' => .{ 0b111, 0b100, 0b111, 0b101, 0b111 },
-        '7' => .{ 0b111, 0b001, 0b001, 0b001, 0b001 },
-        '8' => .{ 0b111, 0b101, 0b111, 0b101, 0b111 },
-        '.' => .{ 0b000, 0b000, 0b000, 0b000, 0b010 },
-        ' ' => .{ 0, 0, 0, 0, 0 },
-        else => .{ 0b111, 0b001, 0b010, 0b000, 0b010 },
+        'A' => .{ 0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001 },
+        'B' => .{ 0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110 },
+        'C' => .{ 0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111 },
+        'D' => .{ 0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110 },
+        'E' => .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111 },
+        'F' => .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000 },
+        'G' => .{ 0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111 },
+        'H' => .{ 0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001 },
+        'I' => .{ 0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 },
+        'J' => .{ 0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100 },
+        'K' => .{ 0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001 },
+        'L' => .{ 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111 },
+        'M' => .{ 0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001 },
+        'N' => .{ 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001 },
+        'O' => .{ 0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110 },
+        'P' => .{ 0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000 },
+        'Q' => .{ 0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101 },
+        'R' => .{ 0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001 },
+        'S' => .{ 0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110 },
+        'T' => .{ 0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100 },
+        'U' => .{ 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110 },
+        'V' => .{ 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100 },
+        'W' => .{ 0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001 },
+        'X' => .{ 0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001 },
+        'Y' => .{ 0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100 },
+        'Z' => .{ 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111 },
+        'a' => .{ 0, 0, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111 },
+        'b' => .{ 0b10000, 0b10000, 0b10110, 0b11001, 0b10001, 0b10001, 0b11110 },
+        'c' => .{ 0, 0, 0b01111, 0b10000, 0b10000, 0b10000, 0b01111 },
+        'd' => .{ 0b00001, 0b00001, 0b01101, 0b10011, 0b10001, 0b10001, 0b01111 },
+        'e' => .{ 0, 0, 0b01110, 0b10001, 0b11111, 0b10000, 0b01111 },
+        'f' => .{ 0b00110, 0b01001, 0b01000, 0b11100, 0b01000, 0b01000, 0b01000 },
+        'g' => .{ 0, 0, 0b01111, 0b10001, 0b01111, 0b00001, 0b01110 },
+        'h' => .{ 0b10000, 0b10000, 0b10110, 0b11001, 0b10001, 0b10001, 0b10001 },
+        'i' => .{ 0b00100, 0, 0b01100, 0b00100, 0b00100, 0b00100, 0b01110 },
+        'j' => .{ 0b00010, 0, 0b00110, 0b00010, 0b00010, 0b10010, 0b01100 },
+        'k' => .{ 0b10000, 0b10000, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010 },
+        'l' => .{ 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 },
+        'm' => .{ 0, 0, 0b11010, 0b10101, 0b10101, 0b10101, 0b10101 },
+        'n' => .{ 0, 0, 0b10110, 0b11001, 0b10001, 0b10001, 0b10001 },
+        'o' => .{ 0, 0, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110 },
+        'p' => .{ 0, 0, 0b11110, 0b10001, 0b11110, 0b10000, 0b10000 },
+        'q' => .{ 0, 0, 0b01111, 0b10001, 0b01111, 0b00001, 0b00001 },
+        'r' => .{ 0, 0, 0b10110, 0b11001, 0b10000, 0b10000, 0b10000 },
+        's' => .{ 0, 0, 0b01111, 0b10000, 0b01110, 0b00001, 0b11110 },
+        't' => .{ 0b01000, 0b01000, 0b11100, 0b01000, 0b01000, 0b01001, 0b00110 },
+        'u' => .{ 0, 0, 0b10001, 0b10001, 0b10001, 0b10011, 0b01101 },
+        'v' => .{ 0, 0, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100 },
+        'w' => .{ 0, 0, 0b10001, 0b10001, 0b10101, 0b10101, 0b01010 },
+        'x' => .{ 0, 0, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001 },
+        'y' => .{ 0, 0, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110 },
+        'z' => .{ 0, 0, 0b11111, 0b00010, 0b00100, 0b01000, 0b11111 },
+        '0' => .{ 0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110 },
+        '1' => .{ 0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 },
+        '2' => .{ 0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111 },
+        '3' => .{ 0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110 },
+        '4' => .{ 0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010 },
+        '5' => .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110 },
+        '6' => .{ 0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110 },
+        '7' => .{ 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 },
+        '8' => .{ 0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110 },
+        '9' => .{ 0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110 },
+        '.' => .{ 0, 0, 0, 0, 0, 0b01100, 0b01100 },
+        ':' => .{ 0, 0b01100, 0b01100, 0, 0b01100, 0b01100, 0 },
+        '-' => .{ 0, 0, 0, 0b11111, 0, 0, 0 },
+        ' ' => .{ 0, 0, 0, 0, 0, 0, 0 },
+        else => .{ 0b01110, 0b10001, 0b00010, 0b00100, 0b00100, 0, 0b00100 },
     };
 }
 
@@ -1305,47 +1429,52 @@ fn absI32(v: i32) i32 {
 
 test "icon outline commits on release" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_PRIMARY, 246, 36, 0);
+    const original_x = icons[0].x;
+    const original_y = icons[0].y;
+    _ = pointerEventForTest(BTN_PRIMARY, original_x + 8, original_y + 8, 0);
     _ = pointerEventForTest(BTN_PRIMARY, 190, 90, 0);
-    try std.testing.expect(icons[0].x == 244 and icons[0].y == 34);
-    try std.testing.expect(icon_drag_x != 244 or icon_drag_y != 34);
+    try std.testing.expect(icons[0].x == original_x and icons[0].y == original_y);
+    try std.testing.expect(icon_drag_x != original_x or icon_drag_y != original_y);
     _ = pointerEventForTest(0, 190, 90, 0);
     try std.testing.expect(icons[0].x == icon_drag_x and icons[0].y == icon_drag_y);
 }
 
 test "window outline commits on release" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_PRIMARY, 114, 58, 0);
+    const original_x = window_x;
+    const original_y = window_y;
+    _ = pointerEventForTest(BTN_PRIMARY, window_x + 30, window_y + 9, 0);
     _ = pointerEventForTest(BTN_PRIMARY, 140, 88, 0);
-    try std.testing.expect(window_x == 88 and window_y == 52);
-    try std.testing.expect(window_drag_x != 88 or window_drag_y != 52);
+    try std.testing.expect(window_x == original_x and window_y == original_y);
+    try std.testing.expect(window_drag_x != original_x or window_drag_y != original_y);
     _ = pointerEventForTest(0, 140, 88, 0);
     try std.testing.expect(window_x == window_drag_x and window_y == window_drag_y);
 }
 
-test "view menu Shade toggles window shade state" {
+test "view menu Collapse toggles window shade state" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_PRIMARY, 160, 8, 0);
-    _ = pointerEventForTest(BTN_PRIMARY, 162, 26, 0);
-    _ = pointerEventForTest(0, 162, 26, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 96, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 98, 28, 0);
+    _ = pointerEventForTest(0, 98, 28, 0);
     try std.testing.expect(window_shaded);
     try std.testing.expect(!window_minimized);
-    _ = pointerEventForTest(BTN_PRIMARY, 160, 8, 0);
-    _ = pointerEventForTest(BTN_PRIMARY, 162, 26, 0);
-    _ = pointerEventForTest(0, 162, 26, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 96, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 98, 28, 0);
+    _ = pointerEventForTest(0, 98, 28, 0);
     try std.testing.expect(!window_shaded);
 }
 
-test "dedicated minimize button hides window and tab restores it" {
+test "collapse box toggles window shade" {
     resetDesktop();
-    const min_btn = mac9CaptionButtonRect(.minimize);
-    _ = pointerEventForTest(BTN_PRIMARY, min_btn.x + 2, min_btn.y + 2, 0);
-    _ = pointerEventForTest(0, min_btn.x + 2, min_btn.y + 2, 0);
-    try std.testing.expect(window_minimized);
-    try std.testing.expect(mode == .idle);
-    _ = pointerEventForTest(BTN_PRIMARY, 30, @as(i32, @intCast(RENDER_H)) - 12, 0);
-    _ = pointerEventForTest(0, 30, @as(i32, @intCast(RENDER_H)) - 12, 0);
+    const collapse_btn = mac9CaptionButtonRect(.collapse);
+    _ = pointerEventForTest(BTN_PRIMARY, collapse_btn.x + 2, collapse_btn.y + 2, 0);
+    _ = pointerEventForTest(0, collapse_btn.x + 2, collapse_btn.y + 2, 0);
+    try std.testing.expect(window_shaded);
     try std.testing.expect(!window_minimized);
+    try std.testing.expect(mode == .idle);
+    _ = pointerEventForTest(BTN_PRIMARY, collapse_btn.x + 2, collapse_btn.y + 2, 0);
+    _ = pointerEventForTest(0, collapse_btn.x + 2, collapse_btn.y + 2, 0);
+    try std.testing.expect(!window_shaded);
 }
 
 test "zoom button toggles fit size and restore" {
@@ -1360,13 +1489,15 @@ test "zoom button toggles fit size and restore" {
     _ = pointerEventForTest(BTN_PRIMARY, zoom_btn_rest.x + 2, zoom_btn_rest.y + 2, 0);
     _ = pointerEventForTest(0, zoom_btn_rest.x + 2, zoom_btn_rest.y + 2, 0);
     try std.testing.expect(!window_zoomed);
-    try std.testing.expect(window_x == 88 and window_y == 52 and window_w == WINDOW_W and window_h == WINDOW_H);
+    try std.testing.expect(window_x == 54 and window_y == 46 and window_w == WINDOW_W and window_h == WINDOW_H);
 }
 
 test "resize outline commits on release" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_PRIMARY, 205, 109, 0);
-    _ = pointerEventForTest(BTN_PRIMARY, 244, 146, 0);
+    const handle_x = window_x + window_w - 8;
+    const handle_y = window_y + window_h - 8;
+    _ = pointerEventForTest(BTN_PRIMARY, handle_x, handle_y, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, handle_x + 28, handle_y + 28, 0);
     try std.testing.expect(window_w == WINDOW_W and window_h == WINDOW_H);
     try std.testing.expect(window_drag_w > WINDOW_W and window_drag_h > WINDOW_H);
     _ = pointerEventForTest(0, 244, 146, 0);
@@ -1375,30 +1506,30 @@ test "resize outline commits on release" {
 
 test "menubar opens while holding and closes on release" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_PRIMARY, 86, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 40, 8, 0);
     try std.testing.expect(menu_open == .file);
     try std.testing.expect(menu_tracking);
-    _ = pointerEventForTest(BTN_PRIMARY, 130, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 70, 8, 0);
     try std.testing.expect(menu_open == .edit);
     _ = pointerEventForTest(0, 280, 120, 0);
     try std.testing.expect(menu_open == .none);
     try std.testing.expect(!menu_tracking);
 }
 
-test "menubar file mini item minimizes window on release" {
+test "menubar file close item closes window on release" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_PRIMARY, 86, 8, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 40, 8, 0);
     try std.testing.expect(menu_open == .file);
-    _ = pointerEventForTest(BTN_PRIMARY, 82, 40, 0);
-    _ = pointerEventForTest(0, 82, 40, 0);
+    _ = pointerEventForTest(BTN_PRIMARY, 42, 44, 0);
+    _ = pointerEventForTest(0, 42, 44, 0);
     try std.testing.expect(window_minimized);
     try std.testing.expect(menu_open == .none);
 }
 
 test "desktop context menu opens on right click" {
     resetDesktop();
-    _ = pointerEventForTest(BTN_SECONDARY, 220, 170, 0);
-    _ = pointerEventForTest(0, 220, 170, 0);
+    _ = pointerEventForTest(BTN_SECONDARY, 210, 205, 0);
+    _ = pointerEventForTest(0, 210, 205, 0);
     try std.testing.expect(desktop_menu_open);
 }
 
