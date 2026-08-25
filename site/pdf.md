@@ -84,7 +84,7 @@ function outputName(inputName) {
 async function loadExtractor() {
   if (extractorPromise === null) {
     extractorPromise = WebAssembly.instantiateStreaming(
-      fetch("/components/application/pdf/pdf-extract-text.wasm"),
+      fetch("/application/pdf/pdf-extract-text.wasm"),
     ).then(({ instance }) => instance.exports);
   }
   return extractorPromise;
@@ -190,5 +190,5 @@ MiB, and output is limited to 32 MiB.
 
 ## Download the component
 
-- <a href="/components/application/pdf/pdf-extract-text.wasm" download>pdf-extract-text.wasm</a>
-  (<qip-content-size src="/components/application/pdf/pdf-extract-text.wasm"></qip-content-size>)
+- <a href="/application/pdf/pdf-extract-text.wasm" download>pdf-extract-text.wasm</a>
+  (<qip-content-size src="/application/pdf/pdf-extract-text.wasm"></qip-content-size>)

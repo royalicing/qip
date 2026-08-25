@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import { arch, cpus, platform } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
@@ -12,10 +12,13 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 const encoder = new TextEncoder();
 
 function usage() {
-  return `Usage: qipx run [options] <component.wasm> [component2.wasm ...]\n` +
-    `       qipx dry run [options] <component.wasm> [component2.wasm ...]\n` +
-    `       qipx comply [options] <file-or-dir> [...]\n` +
-    `       qipx bench -i <input> [options] <component.wasm> [...]\n\n` +
+  return `Usage: qipx [host ...] run [options] <component.wasm> [component2.wasm ...]\n` +
+    `       qipx [host ...] dry run [options] <component.wasm> [component2.wasm ...]\n` +
+    `       qipx [host ...] comply [options] <file-or-dir> [...]\n` +
+    `       qipx [host ...] bench -i <input> [options] <component.wasm> [...]\n\n` +
+    `Hosts:\n` +
+    `  Hosts are dotted DNS names with optional ports. Missing relative .wasm files\n` +
+    `  are requested over HTTPS in host order and saved at their original paths.\n\n` +
     `Options:\n` +
     `  -i, --input <path>              Read input from a file instead of stdin\n` +
     `  -o, --output <path>             Write output to a file instead of stdout\n` +
@@ -30,8 +33,182 @@ function usage() {
     `Documentation: https://qip.dev/docs/content-component\n`;
 }
 
+const downloadByteLimit = 16 * 1024 * 1024;
+const downloadTimeoutMilliseconds = 30_000;
+const knownCommands = new Set(["run", "dry", "dry-run", "bench", "comply"]);
+
+function parseHost(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 259) {
+    throw new Error(`invalid host ${JSON.stringify(value)}`);
+  }
+  const match = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)(?::([0-9]{1,5}))?$/.exec(value);
+  if (!match || match[1].length > 253) throw new Error(`invalid host ${JSON.stringify(value)}; use a dotted DNS name with an optional port`);
+  if (!/[A-Za-z]/.test(match[1].split(".").at(-1))) throw new Error(`invalid host ${JSON.stringify(value)}; IP addresses are not supported`);
+  if (match[2] !== undefined) {
+    const port = Number(match[2]);
+    if (port < 1 || port > 65535) throw new Error(`invalid host port in ${JSON.stringify(value)}`);
+  }
+  const authority = `${match[1].toLowerCase()}${match[2] === undefined ? "" : `:${Number(match[2])}`}`;
+  return Object.freeze({ authority, origin: `https://${authority}` });
+}
+
+function parseInvocation(argv) {
+  const commandIndex = argv.findIndex((arg) => knownCommands.has(arg));
+  if (commandIndex < 0) throw new Error("qipx requires a subcommand: run, dry run, bench, or comply");
+  const hosts = argv.slice(0, commandIndex).map(parseHost);
+  const command = argv[commandIndex];
+  if (command === "dry") {
+    if (argv[commandIndex + 1] !== "run") throw new Error("qipx dry must be followed by run");
+    return { command: "dry-run", hosts, args: argv.slice(commandIndex + 2) };
+  }
+  return { command, hosts, args: argv.slice(commandIndex + 1) };
+}
+
+function remotelyEligiblePath(filePath) {
+  if (typeof filePath !== "string" || !filePath.endsWith(".wasm")) return false;
+  if (isAbsolute(filePath) || /^[A-Za-z]:/.test(filePath) || filePath.includes("\\")) return false;
+  if (filePath.includes("?") || filePath.includes("#") || /[\x00-\x1f\x7f]/.test(filePath)) return false;
+  const segments = filePath.split("/");
+  return segments.length > 0 && segments.every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+function sourcePlan(filePath, hosts) {
+  const sources = [{ kind: "local", path: filePath }];
+  if (remotelyEligiblePath(filePath)) {
+    const requestPath = filePath.split("/").map(encodeURIComponent).join("/");
+    for (const host of hosts) sources.push({ kind: "https", url: `${host.origin}/${requestPath}` });
+  }
+  return Object.freeze({ filePath, sources: Object.freeze(sources.map(Object.freeze)) });
+}
+
+function missingFileError(error) {
+  return error?.code === "ENOENT" || error?.code === "ENOTDIR";
+}
+
+async function observeLocalSource(plan) {
+  try {
+    return { state: "selected", bytes: await readFile(plan.filePath) };
+  } catch (error) {
+    if (missingFileError(error)) return { state: "missing" };
+    throw error;
+  }
+}
+
+async function readDownload(response, url) {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength !== null && /^\d+$/.test(declaredLength) && Number(declaredLength) > downloadByteLimit) {
+    throw new Error(`${url} exceeds the ${downloadByteLimit}-byte download limit`);
+  }
+  if (!response.body) return new Uint8Array();
+  const chunks = [];
+  let length = 0;
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > downloadByteLimit) throw new Error(`${url} exceeds the ${downloadByteLimit}-byte download limit`);
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+async function fetchSource(source) {
+  let response;
+  try {
+    response = await fetch(source.url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(downloadTimeoutMilliseconds),
+    });
+  } catch (error) {
+    return { unavailable: true, reason: error.message ?? String(error) };
+  }
+  if (response.status === 404 || response.status === 410 || response.status >= 500) {
+    return { unavailable: true, reason: `HTTP ${response.status}` };
+  }
+  if (response.status !== 200) throw new Error(`${source.url} returned HTTP ${response.status}`);
+  return { unavailable: false, bytes: await readDownload(response, source.url) };
+}
+
+function pathIsInside(root, child) {
+  const difference = relative(root, child);
+  return difference === "" || (!difference.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && difference !== ".." && !isAbsolute(difference));
+}
+
+async function vendorDownload(filePath, wasm) {
+  const root = await realpath(".");
+  const parent = dirname(filePath);
+  let existingAncestor = parent;
+  while (true) {
+    try {
+      const resolvedAncestor = await realpath(existingAncestor);
+      if (!pathIsInside(root, resolvedAncestor)) throw new Error(`refusing to vendor outside the current directory: ${filePath}`);
+      break;
+    } catch (error) {
+      if (!missingFileError(error)) throw error;
+      const next = dirname(existingAncestor);
+      if (next === existingAncestor) throw error;
+      existingAncestor = next;
+    }
+  }
+  await mkdir(parent, { recursive: true });
+  const resolvedParent = await realpath(parent);
+  if (!pathIsInside(root, resolvedParent)) throw new Error(`refusing to vendor outside the current directory: ${filePath}`);
+  const temporaryPath = join(parent, `.${basename(filePath)}.qipx-${process.pid}-${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporaryPath, wasm, { flag: "wx" });
+    try {
+      await link(temporaryPath, filePath);
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+  } finally {
+    try {
+      await unlink(temporaryPath);
+    } catch (error) {
+      if (!missingFileError(error)) throw error;
+    }
+  }
+  return readFile(filePath);
+}
+
+async function resolveSource(plan, validate) {
+  const local = await observeLocalSource(plan);
+  if (local.state === "selected") {
+    validate(local.bytes, plan.filePath);
+    return local.bytes;
+  }
+  const unavailable = [];
+  for (const source of plan.sources.slice(1)) {
+    const fetched = await fetchSource(source);
+    if (fetched.unavailable) {
+      unavailable.push(`${source.url}: ${fetched.reason}`);
+      continue;
+    }
+    validate(fetched.bytes, source.url);
+    const installed = await vendorDownload(plan.filePath, fetched.bytes);
+    validate(installed, plan.filePath);
+    return installed;
+  }
+  if (plan.sources.length === 1 && !remotelyEligiblePath(plan.filePath)) {
+    throw new Error(`${plan.filePath} is missing; only missing relative paths ending in .wasm can be downloaded`);
+  }
+  const detail = unavailable.length === 0 ? "" : ` (${unavailable.join("; ")})`;
+  throw new Error(`${plan.filePath} is unavailable from every source${detail}`);
+}
+
 function benchUsage() {
-  return `Usage: qipx bench -i <input> [options] <component.wasm> [...]\n\n` +
+  return `Usage: qipx [host ...] bench -i <input> [options] <component.wasm> [...]\n\n` +
     `Options:\n` +
     `  -i, --input <path>              Read benchmark input from a file ('-' for stdin)\n` +
     `  -r, --runs <n>                  Measure exactly n runs per component\n` +
@@ -46,7 +223,7 @@ function benchUsage() {
 }
 
 function complyUsage() {
-  return `Usage: qipx comply [options] <file-or-dir> [...]\n\n` +
+  return `Usage: qipx [host ...] comply [options] <file-or-dir> [...]\n\n` +
     `Options:\n` +
     `  --with <compliance.wasm>        Run a Compliance oracle (repeatable)\n` +
     `  --seed <n>                      Call uniform_set_seed(u32) on each oracle\n` +
@@ -679,18 +856,17 @@ function makeStage(spec, component) {
   return stage;
 }
 
-class ContentRejection extends Error {
-  constructor(label, detail, modes) {
-    const position = modes === 0 ? undefined : Math.floor(detail / modes);
-    const mode = modes === 0 ? undefined : detail % modes;
-    super(modes === 0
+export class ContentRejection extends Error {
+  constructor(label, inputOffset, failureMode) {
+    super(inputOffset === undefined
       ? `${label} rejected input`
-      : modes === 1
-        ? `${label} rejected input at input offset ${position}`
-        : `${label} rejected input at input offset ${position} with mode ${mode}`);
+      : failureMode === 0
+        ? `${label} rejected input at input offset ${inputOffset}`
+        : `${label} rejected input at input offset ${inputOffset} with mode ${failureMode}`);
     this.name = "ContentRejection";
-    this.detail = detail;
-    this.modes = modes;
+    this.label = label;
+    this.inputOffset = inputOffset;
+    this.failureMode = failureMode;
   }
 }
 
@@ -713,10 +889,15 @@ function runStage(stage, input) {
     if (typeof exports.failure_modes_per_input_offset !== "function") {
       throw new TypeError(`${stage.label} returned failure without failure_modes_per_input_offset`);
     }
+    const failureModesPerInputOffset = exportedValue(
+      exports,
+      "failure_modes_per_input_offset",
+      stage.label,
+    );
     throw new ContentRejection(
       stage.label,
-      outputLength,
-      exportedValue(exports, "failure_modes_per_input_offset", stage.label),
+      failureModesPerInputOffset === 0 ? undefined : Math.floor(outputLength / failureModesPerInputOffset),
+      failureModesPerInputOffset === 0 ? undefined : outputLength % failureModesPerInputOffset,
     );
   }
   const outputPointer = Number((bits >> 32n) & 0x7fff_ffffn);
@@ -858,7 +1039,14 @@ async function walkWasmFiles(path) {
 
 async function discoverWasmFiles(paths) {
   const files = [];
-  for (const path of paths) files.push(...await walkWasmFiles(path));
+  for (const path of paths) {
+    try {
+      files.push(...await walkWasmFiles(path));
+    } catch (error) {
+      if (missingFileError(error) && remotelyEligiblePath(path)) files.push(path);
+      else throw error;
+    }
+  }
   return [...new Set(files)].sort((a, b) => a.localeCompare(b));
 }
 
@@ -918,8 +1106,7 @@ function instantiateComplianceOracle(wasm, label, imports) {
   return instance;
 }
 
-async function runComplianceOracle(implWasm, implPath, oraclePath, options = {}) {
-  const oracleWasm = await readFile(oraclePath);
+async function runComplianceOracle(implWasm, implPath, oraclePath, oracleWasm, options = {}) {
   const impl = await instantiateContentComponent(implWasm, implPath, options);
   let oracleInstance;
   const state = { next: 0n, openRenderInto: null, openRenderIntoFailed: false, openRenderIntoErrorCount: 0, failCount: 0, failures: [], protocolError: null };
@@ -1152,16 +1339,29 @@ async function runComplianceOracle(implWasm, implPath, oraclePath, options = {})
   return { cases: Number(state.next) };
 }
 
-async function complyCommand(argv) {
+async function complyCommand(argv, hosts) {
   const { options, paths } = parseComplyCLI(argv);
   const files = await discoverWasmFiles(paths);
   if (files.length === 0) throw new Error("No .wasm files found");
+  const oracles = [];
+  for (const oraclePath of options.with) {
+    const oracleWasm = await resolveSource(sourcePlan(oraclePath, hosts), (wasm, label) => {
+      try {
+        new WebAssembly.Module(wasm);
+      } catch (error) {
+        throw new Error(`${label} is not valid WebAssembly: ${error.message ?? error}`);
+      }
+    });
+    oracles.push({ path: oraclePath, wasm: oracleWasm });
+  }
   let pass = 0;
   let fail = 0;
   for (const file of files) {
     let wasm;
     try {
-      wasm = await readFile(file);
+      wasm = await resolveSource(sourcePlan(file, hosts), (candidate, label) => {
+        wasmMustComplyWithComponentContract(candidate, { label, maxMemory: options.maxMemory });
+      });
       await instantiateContentComponent(wasm, file, options);
       console.log(`PASS ${file}`);
       pass += 1;
@@ -1170,13 +1370,13 @@ async function complyCommand(argv) {
       fail += 1;
       continue;
     }
-    for (const oracle of options.with) {
+    for (const oracle of oracles) {
       try {
-        const result = await runComplianceOracle(wasm, file, oracle, options);
-        console.log(`PASS ${file} --with ${oracle} (${result.cases} cases)`);
+        const result = await runComplianceOracle(wasm, file, oracle.path, oracle.wasm, options);
+        console.log(`PASS ${file} --with ${oracle.path} (${result.cases} cases)`);
         pass += 1;
       } catch (error) {
-        console.log(`FAIL ${file} --with ${oracle}: ${error.message ?? error}`);
+        console.log(`FAIL ${file} --with ${oracle.path}: ${error.message ?? error}`);
         fail += 1;
       }
     }
@@ -1236,12 +1436,13 @@ function parseCLI(argv) {
   return { options, components: parseStageArgs(components) };
 }
 
-async function loadStages(componentSpecs, options) {
+async function loadStages(componentSpecs, options, hosts) {
   const stages = [];
   for (const spec of componentSpecs) {
-    const wasm = await readFile(spec.filePath);
     const contract = newContentComponentContract({ maxMemory: options.maxMemory, label: spec.label });
-    wasmMustComplyWithComponentContract(wasm, contract);
+    const wasm = await resolveSource(sourcePlan(spec.filePath, hosts), (candidate) => {
+      wasmMustComplyWithComponentContract(candidate, contract);
+    });
     const module = new WebAssembly.Module(wasm);
     const instance = new WebAssembly.Instance(module);
     const component = newComponent(instance, contract);
@@ -1250,13 +1451,67 @@ async function loadStages(componentSpecs, options) {
   return stages;
 }
 
-async function prepareRunPipeline(argv) {
+async function prepareRunPipeline(argv, hosts) {
   const { options, components } = parseCLI(argv);
-  const stages = await loadStages(components, options);
+  const stages = await loadStages(components, options, hosts);
   const pipeline = createRecipe(stages, {
     capacitiesMustFit: options.capacitiesMustFit,
   });
   return { options, pipeline };
+}
+
+function printSourceObservations(observations) {
+  console.log("Sources:");
+  observations.forEach(({ plan }, componentIndex) => {
+    if (observations.length > 1) console.log(`  Component ${componentIndex + 1}: ${plan.filePath}`);
+    plan.sources.forEach((source, sourceIndex) => {
+      const indent = observations.length > 1 ? "    " : "  ";
+      console.log(`${indent}${sourceIndex}  ${source.kind.padEnd(5)}  ${source.kind === "local" ? source.path : source.url}`);
+    });
+  });
+  console.log("\nResolution:");
+  observations.forEach(({ plan, local }, componentIndex) => {
+    if (observations.length > 1) console.log(`  Component ${componentIndex + 1}: ${plan.filePath}`);
+    const indent = observations.length > 1 ? "    " : "  ";
+    console.log(`${indent}0  ${local.state}`);
+    for (let index = 1; index < plan.sources.length; index += 1) console.log(`${indent}${index}  unexamined`);
+  });
+}
+
+async function dryRunCommand(argv, hosts) {
+  const { options, components } = parseCLI(argv);
+  if (components.length === 0) throw new Error("at least one component is required");
+  const observations = [];
+  for (const spec of components) {
+    const plan = sourcePlan(spec.filePath, hosts);
+    observations.push({ spec, plan, local: await observeLocalSource(plan) });
+  }
+  printSourceObservations(observations);
+  console.log("\nValidation:");
+  const stages = [];
+  let missing = 0;
+  for (const observation of observations) {
+    if (observation.local.state === "missing") {
+      console.log(`  ${observation.spec.label}: deferred (local file missing)`);
+      missing += 1;
+      continue;
+    }
+    const contract = newContentComponentContract({ maxMemory: options.maxMemory, label: observation.spec.label });
+    wasmMustComplyWithComponentContract(observation.local.bytes, contract);
+    const module = new WebAssembly.Module(observation.local.bytes);
+    const instance = new WebAssembly.Instance(module);
+    const component = newComponent(instance, contract);
+    const stage = makeStage({ component, label: observation.spec.label, uniforms: observation.spec.uniforms }, component);
+    applyUniforms(stage);
+    stages.push(stage);
+    console.log(`  ${observation.spec.label}: valid`);
+  }
+  if (missing > 0) {
+    console.log(`Pipeline compatibility: deferred (${missing} component${missing === 1 ? "" : "s"} missing locally)`);
+    return;
+  }
+  const pipeline = createRecipe(stages, { capacitiesMustFit: options.capacitiesMustFit });
+  printDryRunPlan(pipeline);
 }
 
 function formatBytes(count) {
@@ -1270,10 +1525,6 @@ function formatBytes(count) {
     unit = next;
   }
   return `${value.toFixed(1)} ${unit} (${count} bytes)`;
-}
-
-function applyPipelineUniforms(plan) {
-  for (const stage of plan.stages) applyUniforms(stage);
 }
 
 function printDryRunPlan(plan) {
@@ -1459,10 +1710,11 @@ function benchmarkSample(candidate, input, expected, targetNanoseconds) {
   return { elapsed, renders, mean: elapsed / renders };
 }
 
-async function loadBenchmarkCandidate(spec, options) {
-  const wasm = await readFile(spec.filePath);
+async function loadBenchmarkCandidate(spec, options, hosts) {
   const contract = newContentComponentContract({ label: spec.label, maxMemory: options.maxMemory });
-  wasmMustComplyWithComponentContract(wasm, contract);
+  const wasm = await resolveSource(sourcePlan(spec.filePath, hosts), (candidate) => {
+    wasmMustComplyWithComponentContract(candidate, contract);
+  });
 
   const compileStart = process.hrtime.bigint();
   const module = new WebAssembly.Module(wasm);
@@ -1570,7 +1822,7 @@ function printBenchmarkReport(candidates, input, inputLabel, expected, options, 
   }
 }
 
-async function benchCommand(argv) {
+async function benchCommand(argv, hosts) {
   const parsed = parseBenchCLI(argv);
   if (parsed.help) {
     console.log(benchUsage());
@@ -1580,7 +1832,7 @@ async function benchCommand(argv) {
   const collectAfterWarmup = typeof globalThis.gc === "function";
   const input = options.input === "-" ? await readStdin() : await readFile(options.input);
   const candidates = [];
-  for (const spec of specs) candidates.push(await loadBenchmarkCandidate(spec, options));
+  for (const spec of specs) candidates.push(await loadBenchmarkCandidate(spec, options, hosts));
 
   const expected = render(candidates[0].recipe, input);
   for (let index = 1; index < candidates.length; index += 1) {
@@ -1616,30 +1868,24 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(usage());
     return;
   }
-  if (argv[0] === "comply") {
-    await complyCommand(argv.slice(1));
+  const invocation = parseInvocation(argv);
+  if ((invocation.command === "run" || invocation.command === "dry-run") && (invocation.args[0] === "--help" || invocation.args[0] === "-h")) {
+    console.log(usage());
     return;
   }
-  if (argv[0] === "bench") {
-    await benchCommand(argv.slice(1));
+  if (invocation.command === "comply") {
+    await complyCommand(invocation.args, invocation.hosts);
     return;
   }
-  let dryRun = false;
-  if (argv[0] === "dry" && argv[1] === "run") {
-    dryRun = true;
-    argv = argv.slice(2);
-  } else if (argv[0] === "dry-run") {
-    dryRun = true;
-    argv = argv.slice(1);
-  } else if (argv[0] === "run") {
-    argv = argv.slice(1);
-  }
-  const { options, pipeline } = await prepareRunPipeline(argv);
-  if (dryRun) {
-    applyPipelineUniforms(pipeline);
-    printDryRunPlan(pipeline);
+  if (invocation.command === "bench") {
+    await benchCommand(invocation.args, invocation.hosts);
     return;
   }
+  if (invocation.command === "dry-run") {
+    await dryRunCommand(invocation.args, invocation.hosts);
+    return;
+  }
+  const { options, pipeline } = await prepareRunPipeline(invocation.args, invocation.hosts);
   const input = options.input === "-" ? await readStdin() : await readFile(options.input);
   const result = render(pipeline, input);
   if (options.output === "-") {

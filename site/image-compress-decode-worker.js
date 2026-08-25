@@ -1,10 +1,10 @@
 const DECODER_PATHS = {
   jpeg: [
-    "/components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm",
+    "/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm",
   ],
   png: [
-    "/components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm",
-    "/components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm",
+    "/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm",
+    "/image/png/png-to-bmp-b8g8r8a8-srgb.wasm",
   ],
 };
 

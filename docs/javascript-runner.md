@@ -110,10 +110,10 @@ const identityText = contentRecipe(text, [], text);
   const html = contentTypeUTF8("text/html");
 
   const markdownModule = await WebAssembly.compileStreaming(
-    fetch("/components/text/markdown/commonmark.0.31.2.wasm"),
+    fetch("/text/markdown/commonmark.0.31.2.wasm"),
   );
   const pageModule = await WebAssembly.compileStreaming(
-    fetch("/components/text/html/html-page-wrap.wasm"),
+    fetch("/text/html/html-page-wrap.wasm"),
   );
 
   const markdownToHtml = contentComponent(markdown, markdownModule, html);

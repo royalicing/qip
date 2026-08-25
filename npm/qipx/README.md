@@ -10,25 +10,25 @@ downloads are available from [qip.dev/tools](https://qip.dev/tools) and
 
 ## Try It
 
-Download a Markdown renderer and run it with `npx`:
+Load a Markdown renderer from qip.dev and run it with `npx`:
 
 ```sh
-curl -L -o gfm-commonmark.0.31.2.wasm \
-  https://qip.dev/components/text/markdown/gfm-commonmark.0.31.2.wasm
-
-printf '# Hello from qipx\n' | npx @qip.dev/qipx run gfm-commonmark.0.31.2.wasm
+printf '# Hello from qipx\n' \
+  | npx @qip.dev/qipx qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm
 ```
 
-Multiple components run left to right. Download a compressor and a Base64
-encoder, then pipe bytes through both:
+The first command saves the component at
+`text/markdown/gfm-commonmark.0.31.2.wasm`. Later commands use that local file
+without making a request.
+
+Multiple components run left to right. Hosts apply to every missing component
+in the pipeline:
 
 ```sh
-curl -L -o zlib-compress.wasm \
-  https://qip.dev/components/bytes/zlib-compress.wasm
-curl -L -o base64-encode.wasm \
-  https://qip.dev/components/bytes/base64-encode.wasm
-
-printf 'qip + wasm\n' | npx @qip.dev/qipx run zlib-compress.wasm base64-encode.wasm
+printf 'qip + wasm\n' \
+  | npx @qip.dev/qipx qip.dev run \
+      bytes/zlib-compress.wasm \
+      bytes/base64-encode.wasm
 ```
 
 ## Run
@@ -36,7 +36,7 @@ printf 'qip + wasm\n' | npx @qip.dev/qipx run zlib-compress.wasm base64-encode.w
 Run a Content component pipeline:
 
 ```sh
-qipx run [options] <component.wasm> [component2.wasm ...]
+qipx [host ...] run [options] <component.wasm> [component2.wasm ...]
 
 Options:
   -i, --input <path>              Read input from a file instead of stdin
@@ -46,13 +46,45 @@ Options:
   -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)
 ```
 
+## Host Resolution
+
+Hosts are global execution context for `run`, `dry run`, `bench`, and `comply`.
+Put them before the required subcommand, in fallback order:
+
+```sh
+qipx qip.dev mirror.example run text/markdown/gfm-commonmark.0.31.2.wasm
+```
+
+A host is a dotted ASCII DNS name with an optional port. Do not include a URL
+scheme or path. IP addresses and `localhost` are not supported in this version.
+qipx always uses HTTPS.
+
+For each component, qipx constructs the same ordered source chain:
+
+```text
+0  local  text/markdown/gfm-commonmark.0.31.2.wasm
+1  https  https://qip.dev/text/markdown/gfm-commonmark.0.31.2.wasm
+2  https  https://mirror.example/text/markdown/gfm-commonmark.0.31.2.wasm
+```
+
+An existing local file always wins. Otherwise, qipx tries each host in order.
+It validates the first successful response and saves it at the original
+relative path. It creates parent directories but never replaces an existing
+file. Only safe relative paths ending in `.wasm` are eligible; local directories
+are not fetched.
+
+Connection failures, TLS failures, timeouts, HTTP 404 or 410, and HTTP 5xx
+responses advance to the next host. Other HTTP errors and invalid component
+bytes stop resolution. Downloads reject redirects, time out after 30 seconds,
+and have a 16 MiB decoded-byte limit.
+
 ### Uniforms
 
 Put `-u <name=value>` or `--uniform <name=value>` after the component it
 configures. Repeat the option to set more than one uniform:
 
 ```sh
-qipx run components/utf8/text-to-bmp.wasm \
+qipx run components/text/text-to-bmp.wasm \
   -u cols=80 \
   -u leading=16 \
   < text.txt > out.bmp
@@ -70,7 +102,7 @@ a component needs signed integer configuration.
 Check QIP Content compliance for files or directories:
 
 ```sh
-qipx comply [options] <file-or-dir> [...]
+qipx [host ...] comply [options] <file-or-dir> [...]
 
 Options:
   --with <compliance.wasm>        Run a Compliance oracle (repeatable)
@@ -78,15 +110,12 @@ Options:
   --max-memory <bytes>            Reject implementation memory above bytes
 ```
 
-Download a component and a reusable oracle, then check them together:
+Load a component and a reusable oracle, then check them together:
 
 ```sh
-curl -L -o utf8-must-be-valid.wasm \
-  https://qip.dev/components/utf8/utf8-must-be-valid.wasm
-curl -L -o reject-invalid-utf8.wasm \
-  https://qip.dev/oracles/reject-invalid-utf8.wasm
-
-npx @qip.dev/qipx comply utf8-must-be-valid.wasm --with reject-invalid-utf8.wasm
+npx @qip.dev/qipx qip.dev comply \
+  text/utf8-must-be-valid.wasm \
+  --with oracles/reject-invalid-utf8.wasm
 ```
 
 `comply` accepts files and directories. Directories are searched recursively.
@@ -103,8 +132,8 @@ implementation does not need to be WebAssembly; only the adapter must implement
 the oracle bridge.
 
 ```text
-PASS components/utf8/trim.wasm
-PASS components/utf8/trim.wasm --with compliance/preserve-empty.wasm (1 cases)
+PASS components/text/trim.wasm
+PASS components/text/trim.wasm --with compliance/preserve-empty.wasm (1 cases)
 
 pass=2 fail=0 total=2
 ```
@@ -164,14 +193,13 @@ not memory bandwidth.
 Validate a pipeline without reading input, calling `render`, or writing output:
 
 ```sh
-qipx dry run [options] <component.wasm> [component2.wasm ...]
+qipx [host ...] dry run [options] <component.wasm> [component2.wasm ...]
 ```
 
-`dry run` uses the same component loading, Strict Wasm Profile subset, Content
-ABI validation, content-type checks, and `--capacities-must-fit` checks as
-`run`. It applies uniforms on the prepared instances so missing setters,
-invalid values, and setter traps fail before execution. It does not read stdin,
-call `render`, or write output.
+`dry run` prints the complete source chain and observes local state without DNS
+or HTTPS requests. It validates every component that is already local. Missing
+components and pipeline connections that depend on them are deferred. It does
+not create directories, read stdin, call `render`, or write output.
 
 ## JavaScript API
 
@@ -240,8 +268,10 @@ choose async or sync setup. It provides QIP-specific validation and execution:
   `capacitiesMustFit` failures are reported.
 - `render(componentOrRecipe, input)` executes synchronously against
   instantiated components. This is where runtime traps, input-too-large errors,
-  and invalid output length errors are reported. The result always includes
-  `outputBytes` and `outputType`. UTF-8 output also includes a lazy
+  component rejections, and invalid output length errors are reported. A
+  `ContentRejection` exposes `inputOffset` and `failureMode` when that detail is
+  available. A successful result always
+  includes `outputBytes` and `outputType`. UTF-8 output also includes a lazy
   `outputString` getter.
 
 `qipx` does not include a cache. If two recipes share a `.wasm` file, keep
@@ -255,9 +285,9 @@ When validation or execution fails, the library throws an `Error` or
 | Phase | Function or CLI point | Typical failures |
 | --- | --- | --- |
 | Component contract bytes | `wasmMustComplyWithComponentContract(bytes, contract)` or CLI component loading | invalid Wasm binary header; imports; start function; shared memory; `memory.grow`; atomics; malformed function bodies; declared memory exceeds `maxMemory`; memory has no declared maximum when `maxMemory` is set; missing Content exports; non-static ABI getters |
-| Instantiation and ABI | `newComponent(instance, contract)` | exported memory is missing; `render` is missing; input/output pointer or capacity exports are missing or ambiguous; declared content type is invalid |
+| Instantiation and ABI | `newComponent(instance, contract)` | exported memory is missing; `render` is missing; the input pointer or input/output capacity exports are missing or ambiguous; declared content type is invalid |
 | Recipe validation | `createRecipe(...)` | a stage expects a different content type than the previous stage produced; recipe content type is unspecified for a stage that declares an input type; `capacitiesMustFit` finds producer output capacity larger than consumer input capacity |
-| Execution | `render(componentOrRecipe, input)` | input bytes do not fit the stage input buffer; the component traps; returned output length exceeds the advertised output capacity or memory bounds |
+| Execution | `render(componentOrRecipe, input)` | input bytes do not fit the stage input buffer; the component rejects input or traps; returned output length exceeds the advertised output capacity or memory bounds |
 | Compliance bridge | `qipx comply impl.wasm --with oracle.wasm` | oracle does not export `memory` or `comply`; oracle imports other than the `qip` bridge; bridge ordinals are not sequential; expected output does not match actual output; expected trap does not trap; must_render_into protocol is not closed |
 
 Example `maxMemory` failure:

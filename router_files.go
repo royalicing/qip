@@ -110,14 +110,13 @@ func loadComponentAssets(componentsRoot string) (map[string]componentAsset, []st
 			return nil
 		}
 
-		requestPath := "/components/" + cleanRel
-		if _, exists := assets[requestPath]; exists {
-			return fmt.Errorf("duplicate component request path %q", requestPath)
-		}
-
 		body, err := os.ReadFile(fullPath)
 		if err != nil {
 			return err
+		}
+		requestPath := "/" + cleanRel
+		if _, exists := assets[requestPath]; exists {
+			return fmt.Errorf("duplicate component request path %q", requestPath)
 		}
 		assets[requestPath] = componentAsset{
 			body:        body,

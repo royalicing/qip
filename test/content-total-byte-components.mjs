@@ -64,7 +64,7 @@ test("CRC-32 has fixed output and does not retain render state", async () => {
 
 test("trim output cannot exceed its maximum input", async () => {
   const { instance } = await WebAssembly.instantiate(
-    await readFile("components/utf8/trim.wasm"),
+    await readFile("components/text/trim.wasm"),
     {},
   );
   const wasm = instance.exports;

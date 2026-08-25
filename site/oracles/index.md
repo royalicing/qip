@@ -35,8 +35,8 @@ returns output bytes or reports a trap-like failure.
 
 ```bash
 curl -O https://qip.dev/oracles/luhn.comply.wasm
-qip comply components/utf8/luhn.wasm --with luhn.comply.wasm
-npx qipx comply components/utf8/luhn.wasm --with luhn.comply.wasm
+qip comply components/text/luhn.wasm --with luhn.comply.wasm
+npx qipx comply components/text/luhn.wasm --with luhn.comply.wasm
 ```
 
 For the bridge ABI and authoring rules, see [`qip comply`](/docs/comply).

@@ -34,7 +34,7 @@ test("qip-form loads one explicit Wasm source", async () => {
   const element = new QIPFormElement();
   element.querySelectorAll = (selector) => {
     assert.equal(selector, ":scope > source");
-    return [source({ src: "/components/form/form-email-message.wasm", type: "application/wasm" })];
+    return [source({ src: "/form/form-email-message.wasm", type: "application/wasm" })];
   };
 
   let fetchedURL = "";
@@ -50,7 +50,7 @@ test("qip-form loads one explicit Wasm source", async () => {
   };
 
   await element._init();
-  assert.equal(fetchedURL, "/components/form/form-email-message.wasm");
+  assert.equal(fetchedURL, "/form/form-email-message.wasm");
   assert.equal(typeof element._exports.render, "function");
   assert.equal(element._exports.run, undefined);
 });

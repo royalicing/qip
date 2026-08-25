@@ -65,7 +65,7 @@ const minifyButton = document.getElementById("css-minify");
 const copyButton = document.getElementById("css-copy");
 const status = document.getElementById("css-status");
 const text = contentTypeUTF8();
-const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/css/css-minify.wasm"));
+const componentModule = await WebAssembly.compileStreaming(fetch("/text/css/css-minify.wasm"));
 const minifyCSSComponent = contentComponent(text, componentModule, text);
 
 function minifyCSS() {

@@ -94,7 +94,7 @@ The wasm spec itself is formally specified, and as of March 2025 the standard's 
 ### Concrete integration sketch
 
 ```
-qip verify components/utf8/base64-encode.wasm \
+qip verify components/text/base64-encode.wasm \
     --symbolic-input-cap 256 \
     --assert no-trap,output-cap,write-set
 ```

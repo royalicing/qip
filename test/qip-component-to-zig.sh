@@ -19,7 +19,7 @@ zig_build() {
     fi
 }
 
-"$qip_bin" run -i components/utf8/hello.wasm \
+"$qip_bin" run -i components/text/hello.wasm \
     -o "$tmp_dir/hello.zig" "$translator"
 zig_build --dep component \
     -Mroot=test/qip-component-to-zig-runner.zig \
@@ -27,7 +27,7 @@ zig_build --dep component \
     -O ReleaseSafe -femit-bin="$tmp_dir/hello"
 "$tmp_dir/hello"
 
-"$qip_bin" run -i components/utf8/trim.wasm \
+"$qip_bin" run -i components/text/trim.wasm \
     -o "$tmp_dir/trim.zig" "$translator"
 zig_build --dep first --dep second \
     -Mroot=test/qip-component-to-zig-bundle.zig \

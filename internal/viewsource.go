@@ -137,7 +137,7 @@ func buildComponentViewSourceEntries(componentRequestPaths []string, componentSo
 	}
 	// Prefer direct component endpoints for matching labels.
 	for _, requestPath := range componentRequestPaths {
-		label := strings.TrimPrefix(requestPath, "/components/")
+		label := strings.TrimPrefix(requestPath, "/")
 		entriesByLabel[label] = componentViewSourceEntry{
 			label: label,
 			href:  requestPathForHref(requestPath),
@@ -196,7 +196,7 @@ func filterComponentRequestPaths(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	seen := make(map[string]struct{}, len(paths))
 	for _, requestPath := range paths {
-		if !strings.HasPrefix(requestPath, "/components/") {
+		if !strings.HasPrefix(requestPath, "/") || !strings.HasSuffix(requestPath, ".wasm") {
 			continue
 		}
 		normalized := path.Clean(requestPath)

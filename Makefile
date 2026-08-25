@@ -61,24 +61,24 @@ compliance/currency-format-ja-jp.comply.wasm: compliance/currency-format-ja-jp.c
 compliance/currency-format-zh-cn.comply.wasm: compliance/currency-format-zh-cn.comply.zig compliance/currency-format-zh-cn-table.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-components/utf8/currency-format-en-us.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-en-us.wasm: components/utf8/lib/currency-format-en-us-table.zig
-components/utf8/currency-format-en-in.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-en-in.wasm: components/utf8/lib/currency-format-en-in-table.zig
-components/utf8/currency-format-es-es.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-es-es.wasm: components/utf8/lib/currency-format-es-es-table.zig
-components/utf8/currency-format-de-de.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-de-de.wasm: components/utf8/lib/currency-format-de-de-table.zig
-components/utf8/currency-format-ar-eg.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-ar-eg.wasm: components/utf8/lib/currency-format-ar-eg-table.zig
-components/utf8/currency-format-fr-fr.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-fr-fr.wasm: components/utf8/lib/currency-format-fr-fr-table.zig
-components/utf8/currency-format-pt-br.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-pt-br.wasm: components/utf8/lib/currency-format-pt-br-table.zig
-components/utf8/currency-format-ja-jp.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-ja-jp.wasm: components/utf8/lib/currency-format-ja-jp-table.zig
-components/utf8/currency-format-zh-cn.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
-components/utf8/currency-format-zh-cn.wasm: components/utf8/lib/currency-format-zh-cn-table.zig
+components/text/currency-format-en-us.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-en-us.wasm: components/text/lib/currency-format-en-us-table.zig
+components/text/currency-format-en-in.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-en-in.wasm: components/text/lib/currency-format-en-in-table.zig
+components/text/currency-format-es-es.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-es-es.wasm: components/text/lib/currency-format-es-es-table.zig
+components/text/currency-format-de-de.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-de-de.wasm: components/text/lib/currency-format-de-de-table.zig
+components/text/currency-format-ar-eg.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-ar-eg.wasm: components/text/lib/currency-format-ar-eg-table.zig
+components/text/currency-format-fr-fr.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-fr-fr.wasm: components/text/lib/currency-format-fr-fr-table.zig
+components/text/currency-format-pt-br.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-pt-br.wasm: components/text/lib/currency-format-pt-br-table.zig
+components/text/currency-format-ja-jp.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-ja-jp.wasm: components/text/lib/currency-format-ja-jp-table.zig
+components/text/currency-format-zh-cn.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
+components/text/currency-format-zh-cn.wasm: components/text/lib/currency-format-zh-cn-table.zig
 components/image/svg+xml/svg-to-data-uri.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 components/text/uri-list/data-uri-to-css-url.wasm: ZIG_WASM_FLAGS += --stack 1024 --global-base=0
 
@@ -180,10 +180,10 @@ $(foreach m,$(SQLITE3_ZIG_COMPONENTS),components/application/vnd.sqlite3/$(m).wa
 components/application/vnd.sqlite3/sqlite-table-names.wasm: components/application/vnd.sqlite3/sqlite-table-names.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_bytes_cap -Wl,--export=output_utf8_cap -Oz -o $@
 
-components/utf8/text-to-bmp.wasm: components/utf8/text-to-bmp.c
+components/text/text-to-bmp.wasm: components/text/text-to-bmp.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=uniform_set_leading -Wl,--export=uniform_set_cols -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_bytes_cap -Oz -o $@
 
-components/utf8/text-to-og-image-font8x8.wasm: components/utf8/text-to-og-image-font8x8.c
+components/text/text-to-og-image-font8x8.wasm: components/text/text-to-og-image-font8x8.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib -Wl,--no-entry $(WASM_STACK_FLAG) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--export=render -Wl,--export=uniform_set_text_color -Wl,--export=uniform_set_background_color -Wl,--export-memory -Wl,--export=input_ptr -Wl,--export=input_utf8_cap -Wl,--export=output_bytes_cap -Oz -o $@
 
 components/image/bmp/bmp-double.wasm: components/image/bmp/bmp-double.c
@@ -279,9 +279,9 @@ components/text/csv/content-recipe-to-browser-javascript.wasm: ZIG_WASM_MAX_MEMO
 
 components/font/ttf/ttf-to-svg-paths-csv.wasm components/font/ttf/ttf-to-svg-path-defs.wasm: components/font/ttf/lib/ttf.zig components/font/ttf/lib/path-output.zig
 
-components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm: components/utf8/dejavu_sans_mono_56_latin1_paths.zig components/utf8/dejavu_sans_mono_bold_56_latin1_paths.zig
+components/text/text-to-og-image-svg-dejavu-sans-mono.wasm: components/text/dejavu_sans_mono_56_latin1_paths.zig components/text/dejavu_sans_mono_bold_56_latin1_paths.zig
 
-components/utf8/text-to-og-image-svg-inter.wasm: components/utf8/lib/inter_display_latin_paths.zig components/utf8/lib/inter_display_bold_latin_paths.zig
+components/text/text-to-og-image-svg-inter.wasm: components/text/lib/inter_display_latin_paths.zig components/text/lib/inter_display_bold_latin_paths.zig
 
 components/application/wasm/qip-component-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040
 components/application/wasm/qip-component-to-c.wasm: components/application/wasm/qip-component-to-c.zig
@@ -617,9 +617,9 @@ $(LCMS_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.c $(LCMS_C
 components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm: $(LCMS_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
-components/utf8/unicode-17-lowercase.wasm: components/utf8/lib/unicode-17-lowercase-tables.zig components/utf8/lib/utf8.zig
-components/utf8/unicode-17-uppercase.wasm: components/utf8/lib/unicode-17-uppercase-tables.zig components/utf8/lib/utf8.zig
-components/utf8/iso-4217-alpha-to-numeric.wasm: components/utf8/lib/iso-4217-alpha-numeric-table.zig
+components/text/unicode-17-lowercase.wasm: components/text/lib/unicode-17-lowercase-tables.zig components/text/lib/utf8.zig
+components/text/unicode-17-uppercase.wasm: components/text/lib/unicode-17-uppercase-tables.zig components/text/lib/utf8.zig
+components/text/iso-4217-alpha-to-numeric.wasm: components/text/lib/iso-4217-alpha-numeric-table.zig
 
 components/bytes/zlib-compress-dynamic-huffman-opt.wasm: components/bytes/lib/deflate.zig
 components/image/bmp/bmp-to-png.wasm: components/image/bmp/lib/deflate.zig
@@ -636,18 +636,18 @@ components/%.wasm: components/%.c
 components/%.wasm: components/%.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
-components/utf8/hello-odin.wasm: components/utf8/hello-odin.odin
+components/text/hello-odin.wasm: components/text/hello-odin.odin
 	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
 
-components/utf8/wc-odin.wasm: ODIN_WASM_MAX_MEMORY = 6291456
-components/utf8/wc-odin.wasm: components/utf8/wc-odin.odin
+components/text/wc-odin.wasm: ODIN_WASM_MAX_MEMORY = 6291456
+components/text/wc-odin.wasm: components/text/wc-odin.odin
 	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
 
-components/utf8/shortcode-to-emoji-odin.wasm: components/utf8/shortcode-to-emoji-odin.odin
+components/text/shortcode-to-emoji-odin.wasm: components/text/shortcode-to-emoji-odin.odin
 	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
 
-components/utf8/utf8-must-be-valid-odin.wasm: ODIN_WASM_MAX_MEMORY = 3145728
-components/utf8/utf8-must-be-valid-odin.wasm: components/utf8/utf8-must-be-valid-odin.odin
+components/text/utf8-must-be-valid-odin.wasm: ODIN_WASM_MAX_MEMORY = 3145728
+components/text/utf8-must-be-valid-odin.wasm: components/text/utf8-must-be-valid-odin.odin
 	odin build $< -file -target:freestanding_wasm32 -no-entry-point -no-bounds-check -extra-linker-flags:"--max-memory=$(ODIN_WASM_MAX_MEMORY)" -out:$@
 
 recipes/%.wasm: recipes/%.zig
@@ -731,6 +731,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/content-component-host.mjs
 	node --test test/wasm-to-js.mjs
 	node --test test/qipx-rejection.mjs
+	node --test test/qipx-hosts.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/interactive-host-decisions.mjs
 	node --test test/gif-player.mjs
@@ -841,32 +842,32 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/commonmark-0.31.2-gfm.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
-	$(QIP_BIN) comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
-	$(QIP_BIN) comply components/utf8/base64-decode.wasm --with compliance/base64-decode.comply.wasm --straight-line-oracles
+	$(QIP_BIN) comply components/text/luhn.wasm --with compliance/luhn.comply.wasm
+	$(QIP_BIN) comply components/text/base64-decode.wasm --with compliance/base64-decode.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/css/css-class-validator.wasm --with compliance/css-class-validator.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/html/html-id-validator.wasm --with compliance/html-id-validator.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/html/html-input-name-validator.wasm --with compliance/html-input-name-validator.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/html/html-tag-validator.wasm --with compliance/html-tag-validator.comply.wasm --straight-line-oracles
-	$(QIP_BIN) comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
+	$(QIP_BIN) comply components/text/e164.wasm --with compliance/e164.comply.wasm
 	$(QIP_BIN) comply components/bytes/base64-encode.wasm --with compliance/base64-encode.comply.wasm
 	$(QIP_BIN) comply components/bytes/crc32-hex.wasm --with compliance/crc32-hex.comply.wasm --straight-line-oracles
-	$(QIP_BIN) comply components/utf8/trim.wasm --with compliance/trim.comply.wasm
+	$(QIP_BIN) comply components/text/trim.wasm --with compliance/trim.comply.wasm
 	$(QIP_BIN) comply components/text/markdown/extract-title-text.wasm --with compliance/extract-title-text.comply.wasm
-	$(QIP_BIN) comply components/utf8/utf8-must-be-valid.wasm --with compliance/reject-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
-	$(QIP_BIN) comply components/utf8/utf8-must-be-ascii.wasm --with compliance/reject-non-ascii.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
-	$(QIP_BIN) comply components/utf8/unicode-17-lowercase.wasm --with compliance/unicode-17-lowercase.comply.wasm
-	$(QIP_BIN) comply components/utf8/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-usd-en-us.wasm --with compliance/currency-format-usd-en-us.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-en-us.wasm --with compliance/currency-format-en-us.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-en-in.wasm --with compliance/currency-format-en-in.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-es-es.wasm --with compliance/currency-format-es-es.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-de-de.wasm --with compliance/currency-format-de-de.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-ar-eg.wasm --with compliance/currency-format-ar-eg.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-fr-fr.wasm --with compliance/currency-format-fr-fr.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-pt-br.wasm --with compliance/currency-format-pt-br.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-ja-jp.wasm --with compliance/currency-format-ja-jp.comply.wasm
-	$(QIP_BIN) comply components/utf8/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
-	$(QIP_BIN) comply components/utf8/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
+	$(QIP_BIN) comply components/text/utf8-must-be-valid.wasm --with compliance/reject-invalid-utf8.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+	$(QIP_BIN) comply components/text/utf8-must-be-ascii.wasm --with compliance/reject-non-ascii.wasm --with compliance/preserve-ascii.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+	$(QIP_BIN) comply components/text/unicode-17-lowercase.wasm --with compliance/unicode-17-lowercase.comply.wasm
+	$(QIP_BIN) comply components/text/unicode-17-uppercase.wasm --with compliance/unicode-17-uppercase.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-usd-en-us.wasm --with compliance/currency-format-usd-en-us.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-en-us.wasm --with compliance/currency-format-en-us.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-en-in.wasm --with compliance/currency-format-en-in.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-es-es.wasm --with compliance/currency-format-es-es.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-de-de.wasm --with compliance/currency-format-de-de.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-ar-eg.wasm --with compliance/currency-format-ar-eg.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-fr-fr.wasm --with compliance/currency-format-fr-fr.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-pt-br.wasm --with compliance/currency-format-pt-br.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-ja-jp.wasm --with compliance/currency-format-ja-jp.comply.wasm
+	$(QIP_BIN) comply components/text/currency-format-zh-cn.wasm --with compliance/currency-format-zh-cn.comply.wasm
+	$(QIP_BIN) comply components/text/iso-4217-alpha-to-numeric.wasm --with compliance/iso-4217-alpha-to-numeric.comply.wasm
 	$(QIP_BIN) comply components/image/svg+xml/svg-to-data-uri.wasm --with compliance/svg-to-data-uri.comply.wasm
 	$(QIP_BIN) comply components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm --with compliance/jpeg-to-bmp-b8g8r8a8-srgb.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm --with compliance/bmp-b8g8r8a8-icc-to-srgb.comply.wasm --straight-line-oracles
@@ -878,7 +879,7 @@ test-snapshot: qip components
 	@printf "%s\n" "module: base64-encode.wasm" >> test/latest.txt
 	@printf %s "hello" | $(QIP_BIN) run components/bytes/base64-encode.wasm >> test/latest.txt
 	@printf "%s\n" "module: base64-encode.wasm | base64-decode.wasm" >> test/latest.txt
-	@printf %s "hello" | $(QIP_BIN) run components/bytes/base64-encode.wasm components/utf8/base64-decode.wasm >> test/latest.txt
+	@printf %s "hello" | $(QIP_BIN) run components/bytes/base64-encode.wasm components/text/base64-decode.wasm >> test/latest.txt
 	@printf "\n" >> test/latest.txt
 	@printf "%s\n" "module: bmp-to-ico.wasm | base64-encode.wasm" >> test/latest.txt
 	@printf %s "424D3A0000000000000036000000280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00" | xxd -r -p | $(QIP_BIN) run components/image/bmp/bmp-to-ico.wasm components/bytes/base64-encode.wasm >> test/latest.txt
@@ -888,7 +889,7 @@ test-snapshot: qip components
 	@printf "%s\n" "module: css-class-validator.wasm" >> test/latest.txt
 	@printf %s "btn-primary" | $(QIP_BIN) run components/text/css/css-class-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: e164.wasm" >> test/latest.txt
-	@printf %s "+14155552671" | $(QIP_BIN) run components/utf8/e164.wasm >> test/latest.txt
+	@printf %s "+14155552671" | $(QIP_BIN) run components/text/e164.wasm >> test/latest.txt
 	@printf "%s\n" "module: zlib-compress.wasm | base64-encode.wasm" >> test/latest.txt
 	@printf %s "qip + wasm" | $(QIP_BIN) run components/bytes/zlib-compress.wasm components/bytes/base64-encode.wasm >> test/latest.txt
 	@printf "%s\n" "module: zlib-compress.wasm | zlib-decompress.wasm" >> test/latest.txt
@@ -905,13 +906,13 @@ test-snapshot: qip components
 	@printf %s "qip + wasm" | $(QIP_BIN) run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-decompress.wasm >> test/latest.txt
 	@printf "\n" >> test/latest.txt
 	@printf "%s\n" "module: hello.wasm" >> test/latest.txt
-	@printf %s "World" | $(QIP_BIN) run components/utf8/hello.wasm >> test/latest.txt
+	@printf %s "World" | $(QIP_BIN) run components/text/hello.wasm >> test/latest.txt
 	@printf "%s\n" "module: hello-c.wasm" >> test/latest.txt
-	@printf %s "World" | $(QIP_BIN) run components/utf8/hello-c.wasm >> test/latest.txt
+	@printf %s "World" | $(QIP_BIN) run components/text/hello-c.wasm >> test/latest.txt
 	@printf "%s\n" "module: hello-zig.wasm" >> test/latest.txt
-	@printf %s "World" | $(QIP_BIN) run components/utf8/hello-zig.wasm >> test/latest.txt
+	@printf %s "World" | $(QIP_BIN) run components/text/hello-zig.wasm >> test/latest.txt
 	@printf "%s\n" "module: hex-to-rgb.wasm" >> test/latest.txt
-	@printf %s "#ff8800" | $(QIP_BIN) run components/utf8/hex-to-rgb.wasm >> test/latest.txt
+	@printf %s "#ff8800" | $(QIP_BIN) run components/text/hex-to-rgb.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-id-validator.wasm" >> test/latest.txt
 	@printf %s "main-content" | $(QIP_BIN) run components/text/html/html-id-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: html-input-name-validator.wasm" >> test/latest.txt
@@ -923,7 +924,7 @@ test-snapshot: qip components
 	@printf "%s\n" "module: html-tag-validator.wasm" >> test/latest.txt
 	@printf %s "div" | $(QIP_BIN) run components/text/html/html-tag-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: luhn.wasm" >> test/latest.txt
-	@printf %s "49927398716" | $(QIP_BIN) run components/utf8/luhn.wasm >> test/latest.txt
+	@printf %s "49927398716" | $(QIP_BIN) run components/text/luhn.wasm >> test/latest.txt
 	@printf "%s\n" "module: markdown-basic.wasm" >> test/latest.txt
 	@printf "%b" "# Title\nHello **World**\n" | $(QIP_BIN) run components/text/markdown/markdown-basic.wasm >> test/latest.txt
 	@printf "%s\n" "module: markdown-basic.wasm (table)" >> test/latest.txt
@@ -931,19 +932,19 @@ test-snapshot: qip components
 	@printf "%s\n" "module: markdown-basic.wasm | html-page-wrap.wasm" >> test/latest.txt
 	@printf "%b" "# Title\nHello **World**\n" | $(QIP_BIN) run components/text/markdown/markdown-basic.wasm components/text/html/html-page-wrap.wasm | perl -0pe 's#(<style\b[^>]*>).*?(</style>)#$$1$$2#gis' >> test/latest.txt
 	@printf "%s\n" "module: rgb-to-hex.wasm" >> test/latest.txt
-	@printf %s "255,0,170" | $(QIP_BIN) run components/utf8/rgb-to-hex.wasm >> test/latest.txt
+	@printf %s "255,0,170" | $(QIP_BIN) run components/text/rgb-to-hex.wasm >> test/latest.txt
 	@printf "%s\n" "module: rgb-to-hex.wasm (rgb())" >> test/latest.txt
-	@printf %s " rgb( 101, 79, 240 ) " | $(QIP_BIN) run components/utf8/rgb-to-hex.wasm >> test/latest.txt
+	@printf %s " rgb( 101, 79, 240 ) " | $(QIP_BIN) run components/text/rgb-to-hex.wasm >> test/latest.txt
 	@printf "%s\n" "module: tld-validator.wasm" >> test/latest.txt
-	@printf %s "com" | $(QIP_BIN) run components/utf8/tld-validator.wasm >> test/latest.txt
+	@printf %s "com" | $(QIP_BIN) run components/text/tld-validator.wasm >> test/latest.txt
 	@printf "%s\n" "module: youtube-id-extractor.wasm" >> test/latest.txt
-	@printf %s "https://youtu.be/dQw4w9WgXcQ https://www.youtube.com/embed/9bZkp7q19f0 https://www.youtube.com/watch?v=3JZ_D3ELwOQ" | $(QIP_BIN) run components/utf8/youtube-id-extractor.wasm >> test/latest.txt
+	@printf %s "https://youtu.be/dQw4w9WgXcQ https://www.youtube.com/embed/9bZkp7q19f0 https://www.youtube.com/watch?v=3JZ_D3ELwOQ" | $(QIP_BIN) run components/text/youtube-id-extractor.wasm >> test/latest.txt
 	@printf "%s\n" "module: trim.wasm" >> test/latest.txt
-	@printf %s "  hi  " | $(QIP_BIN) run components/utf8/trim.wasm >> test/latest.txt
+	@printf %s "  hi  " | $(QIP_BIN) run components/text/trim.wasm >> test/latest.txt
 	@printf "%s\n" "module: utf8-must-be-valid.wasm" >> test/latest.txt
-	@printf %s "hello" | $(QIP_BIN) run components/utf8/utf8-must-be-valid.wasm >> test/latest.txt
+	@printf %s "hello" | $(QIP_BIN) run components/text/utf8-must-be-valid.wasm >> test/latest.txt
 	@printf "%s\n" "module: wasm-to-js.wasm" >> test/latest.txt
-	@cat components/utf8/hello.wasm | $(QIP_BIN) run -o test/latest-wasm-to-js.txt components/application/wasm/wasm-to-js.wasm
+	@cat components/text/hello.wasm | $(QIP_BIN) run -o test/latest-wasm-to-js.txt components/application/wasm/wasm-to-js.wasm
 	@cat test/latest-wasm-to-js.txt >> test/latest.txt
 	@rm -f test/latest-wasm-to-js.txt
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
@@ -992,7 +993,7 @@ site/favicon.ico: qip-logo.svg
 	$(QIP_BIN) run -i qip-logo.svg -- components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > $@
 
 OG_MD_SOURCES := $(shell find site docs -type f -name '*.md' | sort)
-OG_IMAGE_MODULES := components/text/markdown/extract-title-text.wasm components/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-png.wasm
+OG_IMAGE_MODULES := components/text/markdown/extract-title-text.wasm components/text/text-to-path-svg-dejavu-sans-mono-bold.wasm components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-png.wasm
 
 OG_PNG_TARGETS := $(sort $(patsubst site/_og/%/index.png,site/_og/%.png,$(patsubst docs/%.md,site/_og/docs/%.png,$(patsubst site/%.md,site/_og/%.png,$(OG_MD_SOURCES)))))
 
@@ -1000,7 +1001,7 @@ site/_og: $(OG_PNG_TARGETS)
 
 define OG_RENDER_PNG_RECIPE
 	@mkdir -p $(dir $@)
-	$(QIP_BIN) run -i "$<" -o "$@" -- components/text/markdown/extract-title-text.wasm components/utf8/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm '?background_color_rgba=0xeecc33ff' components/image/bmp/bmp-to-png.wasm
+	$(QIP_BIN) run -i "$<" -o "$@" -- components/text/markdown/extract-title-text.wasm components/text/text-to-path-svg-dejavu-sans-mono-bold.wasm '?width=1200&height=630&font_size=72' components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm '?background_color_rgba=0xeecc33ff' components/image/bmp/bmp-to-png.wasm
 endef
 
 site/_og/%.png: site/%.md $(OG_IMAGE_MODULES)

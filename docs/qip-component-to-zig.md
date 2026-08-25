@@ -13,9 +13,9 @@ Build and run the translator like any other Content component:
 
 ```sh
 make -j components/application/wasm/qip-component-to-zig.wasm
-wasm-validate components/utf8/trim.wasm
+wasm-validate components/text/trim.wasm
 ./qip run \
-  -i components/utf8/trim.wasm \
+  -i components/text/trim.wasm \
   -o trim.zig \
   components/application/wasm/qip-component-to-zig.wasm
 ```

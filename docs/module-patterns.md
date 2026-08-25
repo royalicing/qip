@@ -18,11 +18,11 @@ that.
 
 | Purpose | Successful output | Reject with | Repository example |
 | --- | --- | --- | --- |
-| Assertion gate | Original input unchanged | `render` rejection | [`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) |
-| Transformer | Replacement content | Trap | [`json-prettify.wasm`](/components/text/json/json-prettify.wasm) |
-| Converter | Content in a different format | Trap | [`svg-to-data-uri.wasm`](/components/image/svg+xml/svg-to-data-uri.wasm) |
-| Reporter | Counts, scores, or diagnostics | Trap | [`wasm-counts.wasm`](/components/application/wasm/wasm-counts.wasm) |
-| Extractor or filter | Matching content, which may be empty | Trap | [`wasm-read-input-content-type.wasm`](/components/application/wasm/wasm-read-input-content-type.wasm) |
+| Assertion gate | Original input unchanged | `render` rejection | [`utf8-must-be-valid.wasm`](/text/utf8-must-be-valid.wasm) |
+| Transformer | Replacement content | Trap | [`json-prettify.wasm`](/application/json/json-prettify.wasm) |
+| Converter | Content in a different format | Trap | [`svg-to-data-uri.wasm`](/image/svg+xml/svg-to-data-uri.wasm) |
+| Reporter | Counts, scores, or diagnostics | Trap | [`wasm-counts.wasm`](/application/wasm/wasm-counts.wasm) |
+| Extractor or filter | Matching content, which may be empty | Trap | [`wasm-read-input-content-type.wasm`](/application/wasm/wasm-read-input-content-type.wasm) |
 
 These purposes describe data flow. UTF-8 versus arbitrary bytes is a separate
 ABI choice, covered under [Choose The Byte Contract](#choose-the-byte-contract).
@@ -33,9 +33,9 @@ Use an assertion gate to enforce an invariant without changing the payload. On
 success, return the original bytes and byte count. On failure, reject through
 the `render` result so the pipeline stops before an unsafe value reaches another component.
 
-[`utf8-must-be-valid.wasm`](/components/utf8/utf8-must-be-valid.wasm) checks
+[`utf8-must-be-valid.wasm`](/text/utf8-must-be-valid.wasm) checks
 every UTF-8 sequence and preserves valid input. The
-[`warc-check-broken-links.wasm`](/components/application/warc/warc-check-broken-links.wasm)
+[`warc-check-broken-links.wasm`](/application/warc/warc-check-broken-links.wasm)
 assertion uses the same shape: it returns the archive unchanged when every
 internal link resolves and traps when one does not.
 
@@ -66,7 +66,7 @@ A converter changes the content format. It has the same buffer and failure
 rules as a transformer, plus exact input and output MIME metadata.
 
 For example,
-[`svg-to-data-uri.wasm`](/components/image/svg+xml/svg-to-data-uri.wasm)
+[`svg-to-data-uri.wasm`](/image/svg+xml/svg-to-data-uri.wasm)
 declares `image/svg+xml -> text/uri-list`. It writes in place from the end of
 the shared buffer towards the beginning so percent-encoding cannot overwrite
 unread input.
@@ -80,7 +80,7 @@ broad MIME type to hide unsupported variants. See
 A reporter replaces the input with facts about it. Counts, scores, indexes,
 diagnostics, and status records are ordinary successful output.
 
-[`wasm-counts.wasm`](/components/application/wasm/wasm-counts.wasm) accepts
+[`wasm-counts.wasm`](/application/wasm/wasm-counts.wasm) accepts
 `application/wasm` and returns deterministic `text/csv`. It reports
 measurements without deciding whether the module should pass a policy.
 
@@ -97,12 +97,12 @@ input must abort the operation.
 An extractor selects part of a valid input. A filter selects zero or more
 matching records. Empty output is correct when the input contains no match.
 
-[`wasm-read-input-content-type.wasm`](/components/application/wasm/wasm-read-input-content-type.wasm)
+[`wasm-read-input-content-type.wasm`](/application/wasm/wasm-read-input-content-type.wasm)
 returns zero bytes when a valid module omits optional input content-type
 metadata. Malformed Wasm and invalid metadata trap.
 
 No match does not always mean a zero-byte file.
-[`warc-extract-broken-links.wasm`](/components/application/warc/warc-extract-broken-links.wasm)
+[`warc-extract-broken-links.wasm`](/application/warc/warc-extract-broken-links.wasm)
 returns a valid archive containing no response records when it finds no broken
 internal links; the archive still contains its required `warcinfo` record.
 

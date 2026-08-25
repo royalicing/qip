@@ -21,7 +21,7 @@ async function translate(componentPath) {
 }
 
 test("generated JavaScript runs an infallible component", async () => {
-  const { module, source } = await translate("../components/utf8/hello.wasm");
+  const { module, source } = await translate("../components/text/hello.wasm");
 
   assert.equal(module.default("Node"), "Hello, Node");
   assert.deepEqual(module.input, { encoding: "utf-8" });
@@ -56,7 +56,7 @@ test("generated JavaScript reads an immutable interior input slice", async () =>
 });
 
 test("generated JavaScript runs a byte-to-UTF-8 guard", async () => {
-  const { module } = await translate("../components/utf8/utf8-must-be-valid.wasm");
+  const { module } = await translate("../components/text/utf8-must-be-valid.wasm");
   const valid = new TextEncoder().encode("Café");
 
   assert.equal(module.default(valid), "Café");

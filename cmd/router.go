@@ -301,7 +301,7 @@ func buildRecipeSourceWARCRecords(host string, recipesRoot string, componentsRoo
 func filterComponentRequestPaths(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
-		if strings.HasPrefix(p, "/components/") {
+		if strings.HasPrefix(p, "/") && strings.HasSuffix(p, ".wasm") {
 			out = append(out, p)
 		}
 	}

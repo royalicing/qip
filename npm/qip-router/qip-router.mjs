@@ -659,7 +659,7 @@ export async function createQIPRouter(options = {}) {
   async function loadGeneration() {
     const [routes, components, elements, recipes] = await Promise.all([
       discoverContentRoutes(contentRoot),
-      discoverAssetRoutes(componentsRoot, "/components", (path) => path.endsWith(".wasm")),
+      discoverAssetRoutes(componentsRoot, "", (path) => path.endsWith(".wasm")),
       discoverAssetRoutes(elementsRoot, "/elements", (path) => path.endsWith(".js")),
       createRecipeRuntime(recipesRoot),
     ]);

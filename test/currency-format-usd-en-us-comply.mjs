@@ -34,9 +34,9 @@ test("duel: Intl.NumberFormat agrees for the supported decimal subset", async ()
   assert.deepEqual(failures, [], "Intl currency output diverged on supported inputs");
 });
 
-test("duel: components/utf8/currency-format-usd-en-us.wasm is fully compliant", async () => {
+test("duel: components/text/currency-format-usd-en-us.wasm is fully compliant", async () => {
   const implBytes = await readFile(
-    new URL("../components/utf8/currency-format-usd-en-us.wasm", import.meta.url),
+    new URL("../components/text/currency-format-usd-en-us.wasm", import.meta.url),
   );
   const implModule = await WebAssembly.compile(implBytes);
   let impl = new WebAssembly.Instance(implModule).exports;

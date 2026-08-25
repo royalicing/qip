@@ -39,15 +39,15 @@ You can pipe the results of other CLI tools to stdin or pass files in via `-i`. 
 
 ```bash
 # Normalize phone number
-echo "+1 (212) 555-0100" | qip run components/utf8/e164.wasm
+echo "+1 (212) 555-0100" | qip run components/text/e164.wasm
 # +12125550100
 
 # Convert purple from rgb to hex
-echo "rgb(101, 79, 240)" | qip run components/utf8/rgb-to-hex.wasm
+echo "rgb(101, 79, 240)" | qip run components/text/rgb-to-hex.wasm
 # #654ff0
 
 # Expand emoji shortcodes
-echo "Run :rocket: WebAssembly components identically on any computer :sparkles:" | qip run components/utf8/shortcode-to-emoji.wasm
+echo "Run :rocket: WebAssembly components identically on any computer :sparkles:" | qip run components/text/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly components identically on any computer ✨
 
 # Create zlib bytes (dynamic Huffman, shown as base64)
@@ -68,7 +68,7 @@ qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-s
 echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
 
 # Rendering cannot loop forever
-echo "x" | qip run components/utf8/infinite-loop.wasm
+echo "x" | qip run components/text/infinite-loop.wasm
 # Error: Wasm module exceeded the execution time limit (100ms)
 ```
 
@@ -435,7 +435,7 @@ components/
   text/markdown/
   text/x-c/
   rgba/
-  utf8/
+  text/
 ```
 
 ## Notes: Compare Compression Ratios
@@ -456,15 +456,15 @@ Benchmark the performance of one or more QIP components. If you compare multiple
 
 ```bash
 # Benchmark one component for two seconds
-echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm
+echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm
 # bench: outputs match
 
 # Benchmark two components against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf8/hello-c.wasm
+echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm components/text/hello-c.wasm
 # bench: outputs match
 
 # Benchmark three components against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf8/hello-c.wasm components/utf8/hello-zig.wasm
+echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm components/text/hello-c.wasm components/text/hello-zig.wasm
 # bench: outputs match
 ```
 
@@ -510,8 +510,8 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm componen
   - [x] `components/text/html/html-id-validator.wasm`
   - [ ] `components/text/html/html-input-name-validator.wasm`
   - [ ] `components/text/html/html-tag-validator.wasm`
-  - [ ] `components/utf8/tld-validator.wasm`
-  - [ ] `components/utf8/luhn.wasm`
+  - [ ] `components/text/tld-validator.wasm`
+  - [ ] `components/text/luhn.wasm`
 - [x] Use `qip router` as the routing/export CLI command for consistent "Qip Router" branding.
 - [x] Add symlink support for reading recipes. This means we can have a single implementation and then link it into the recipes directory.
 - [ ] Add `qip dry run ...pipeline.wasm` that validate pipeline is compatible and outputs memory usage (summing all input/output buffers).

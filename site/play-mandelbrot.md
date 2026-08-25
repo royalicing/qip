@@ -11,5 +11,5 @@ Controls:
 - Click/tap to recenter
 
 <qip-play>
-  <source src="/components/interactive/mandelbrot.wasm" type="application/wasm" />
+  <source src="/interactive/mandelbrot.wasm" type="application/wasm" />
 </qip-play>

@@ -770,7 +770,7 @@ later invalid part. Under the proposed contract, `render` can retain the parser
 error, return normally, and let `commit` reject. The host ignores the partial
 TAR, while the component clears its pending state and remains reusable.
 
-`components/utf8/utf8-must-be-valid.zig` is a smaller second candidate. Its
+`components/text/utf8-must-be-valid.zig` is a smaller second candidate. Its
 purpose is to reject invalid UTF-8, and it currently uses traps for every invalid
 sequence. It must advertise `input_bytes_cap`, because advertising
 `input_utf8_cap` makes the host reject malformed UTF-8 before the component can
@@ -779,7 +779,7 @@ the desired UTF-8 output. Converting it would provide a narrow conformance
 fixture for valid empty output versus rejected input, but it exercises less
 cleanup behavior than the multipart converter.
 
-`components/utf8/utf8-must-be-ascii.zig` has the same assertion-gate shape. It
+`components/text/utf8-must-be-ascii.zig` has the same assertion-gate shape. It
 traps on the first byte above `0x7f`; under this proposal it marks the render
 invalid and lets `commit` reject. The ASCII and UTF-8 components together can
 exercise rejection near the start, middle, and end of an otherwise preserved
@@ -792,7 +792,7 @@ It separates three cases that a source search for traps alone cannot find.
 
 ### Definite Current Mismatches
 
-- `components/utf8/utf8-must-be-valid.zig` declares `input_utf8_cap` while its
+- `components/text/utf8-must-be-valid.zig` declares `input_utf8_cap` while its
   purpose is to receive and reject invalid UTF-8. The host-visible input
   contract excludes its rejection corpus. It also copies accepted input even
   though `output_ptr` can safely identify the same bytes.
@@ -825,7 +825,7 @@ their static bounds are verified:
 
 - `components/bytes/bytes-to-sha256.zig`, `base64-encode.wat`, and
   `crc32-hex.wat`;
-- `components/utf8/trim.c`, Unicode uppercase and lowercase, and other generic
+- `components/text/trim.c`, Unicode uppercase and lowercase, and other generic
   UTF-8 rewrites whose expansion fits the advertised output capacity;
 - generators with no caller-provided source input; and
 - extractors such as `youtube-id-extractor.zig` when no match is valid empty
@@ -1029,9 +1029,9 @@ together.
   component list, then delete it when permanent tests and docs cover every row.
 - [ ] Migrate `components/multipart/form-data/form-data-to-tar.zig` first. Test
   invalid multipart after a valid part so rejection covers partial output.
-- [x] Migrate `components/utf8/utf8-must-be-valid.zig` as a small rejection and
+- [x] Migrate `components/text/utf8-must-be-valid.zig` as a small rejection and
   valid-empty-output conformance fixture.
-- [x] Migrate `components/utf8/utf8-must-be-ascii.zig` with a declared input
+- [x] Migrate `components/text/utf8-must-be-ascii.zig` with a declared input
   domain and cover rejection at several input offsets.
 - [ ] Add state-machine tests for valid zero-byte output, failed render followed
   by commit, commit before required render, render twice, setters after render,

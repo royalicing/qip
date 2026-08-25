@@ -3,7 +3,7 @@
 # Mermaid to Unicode box art
 
 Render a strict Mermaid subset as terminal-style Unicode box art in
-<a href="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm" download><qip-content-size src="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"></qip-content-size>
+<a href="/text/vnd.mermaid/mermaid-to-unicode-html.wasm" download><qip-content-size src="/text/vnd.mermaid/mermaid-to-unicode-html.wasm"></qip-content-size>
 of WebAssembly</a>. It runs locally in your browser and as a CLI.
 
 <style>
@@ -104,13 +104,13 @@ renderer reuses right-side feedback lanes to keep cyclic graphs compact.
 
 ## Download
 
-- <a href="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm" download>mermaid-to-unicode-html.wasm</a> — <qip-content-size src="/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"></qip-content-size>
+- <a href="/text/vnd.mermaid/mermaid-to-unicode-html.wasm" download>mermaid-to-unicode-html.wasm</a> — <qip-content-size src="/text/vnd.mermaid/mermaid-to-unicode-html.wasm"></qip-content-size>
 
 ## CLI
 
 ```bash
 go install github.com/royalicing/qip@latest
-curl -O https://qip.dev/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm
+curl -O https://qip.dev/text/vnd.mermaid/mermaid-to-unicode-html.wasm
 
 printf '%s\n' \
   'graph TD' \
@@ -232,7 +232,7 @@ const exampleButtons = [...document.querySelectorAll("[data-example]")];
 const mermaid = contentTypeUTF8("text/vnd.mermaid");
 const html = contentTypeUTF8("text/html");
 const componentModule = await WebAssembly.compileStreaming(
-  fetch("/components/text/vnd.mermaid/mermaid-to-unicode-html.wasm"),
+  fetch("/text/vnd.mermaid/mermaid-to-unicode-html.wasm"),
 );
 const renderMermaid = contentComponent(mermaid, componentModule, html);
 

@@ -238,16 +238,16 @@ func TestBuildRouteListEntriesIncludesComponentAssets(t *testing.T) {
 			},
 			routeOptions: qinternal.DefaultRouteOptions(),
 			componentAssets: map[string]componentAsset{
-				"/components/bytes/base64-encode.wasm": {contentType: "application/wasm"},
+				"/bytes/base64-encode.wasm": {contentType: "application/wasm"},
 			},
-			componentRequestPaths: []string{"/components/bytes/base64-encode.wasm"},
+			componentRequestPaths: []string{"/bytes/base64-encode.wasm"},
 		},
 	}
 
 	got := buildRouteListEntries(state)
 	want := []routeListEntry{
-		{Method: "GET", Path: "/components/bytes/base64-encode.wasm", ContentType: "application/wasm"},
-		{Method: "HEAD", Path: "/components/bytes/base64-encode.wasm", ContentType: "application/wasm"},
+		{Method: "GET", Path: "/bytes/base64-encode.wasm", ContentType: "application/wasm"},
+		{Method: "HEAD", Path: "/bytes/base64-encode.wasm", ContentType: "application/wasm"},
 		{Method: "GET", Path: "/guide", ContentType: "text/markdown"},
 		{Method: "HEAD", Path: "/guide", ContentType: "text/markdown"},
 	}
@@ -288,8 +288,8 @@ func TestResolveRecipeSourceResponse(t *testing.T) {
 					Body:        []byte("const x = 1;"),
 					ContentType: "text/plain; charset=utf-8",
 				},
-				"/view-source/components/utf8/trim.zig": {
-					RequestPath: "/view-source/components/utf8/trim.zig",
+				"/view-source/components/text/trim.zig": {
+					RequestPath: "/view-source/components/text/trim.zig",
 					Body:        []byte("const std = @import(\"std\");"),
 					ContentType: "text/plain; charset=utf-8",
 				},
@@ -327,7 +327,7 @@ func TestResolveRecipeSourceResponse(t *testing.T) {
 		t.Fatal("expected missing asset to not resolve")
 	}
 
-	componentAssetResp, ok := resolveRecipeSourceResponse("/view-source/components/utf8/trim.zig", state)
+	componentAssetResp, ok := resolveRecipeSourceResponse("/view-source/components/text/trim.zig", state)
 	if !ok {
 		t.Fatal("expected component source asset response")
 	}

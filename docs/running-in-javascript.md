@@ -31,7 +31,7 @@ import {
   input_ptr,
   input_utf8_cap,
   render,
-} from "/components/utf8/e164.wasm";
+} from "/text/e164.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -83,7 +83,7 @@ import {
   input_ptr,
   input_utf8_cap,
   render,
-} from "/components/text/markdown/gfm-commonmark.0.31.2.wasm";
+} from "/text/markdown/gfm-commonmark.0.31.2.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -142,7 +142,7 @@ import {
   input_utf8_cap,
   uniform_set_currency,
   render,
-} from "/components/utf8/currency-format-en-us.wasm";
+} from "/text/currency-format-en-us.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -306,7 +306,7 @@ When direct `.wasm` imports are unavailable, only the loading step changes:
 
 ```js
 const { instance } = await WebAssembly.instantiateStreaming(
-  fetch("/components/utf8/e164.wasm"),
+  fetch("/text/e164.wasm"),
   {},
 );
 

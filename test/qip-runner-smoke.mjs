@@ -170,7 +170,7 @@ if (accessibilityTree("<main><button>Save</button></main>") !==
 }
 
 const luhnModule = await WebAssembly.compile(
-  await readFile("components/utf8/luhn.wasm"),
+  await readFile("components/text/luhn.wasm"),
 );
 const luhn = contentComponent(text, luhnModule, text);
 if (luhn(" 4992-7398 716 ") !== "49927398716") {

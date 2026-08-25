@@ -13,7 +13,7 @@ This lists every table with its columns and declared types. The database arrives
 <form aria-label="SQLite schema preview">
   <qip-edit>
     <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
-    <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+    <source src="/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
     <output name="output"><pre><code></code></pre></output>
   </qip-edit>
 </form>
@@ -21,7 +21,7 @@ This lists every table with its columns and declared types. The database arrives
 ```html
 <qip-edit>
   <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
-  <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+  <source src="/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
 ```
@@ -35,7 +35,7 @@ The [Titanic dataset](/data/titanic.sqlite) (68 KB) holds eight tables. Pick one
 <form aria-label="SQLite table to CSV">
   <qip-edit>
     <source name="input" src="/data/titanic.sqlite" type="application/vnd.sqlite3" />
-    <source src="/components/application/vnd.sqlite3/sqlite-table-csv.wasm" type="application/wasm" data-uniform-table="" />
+    <source src="/application/vnd.sqlite3/sqlite-table-csv.wasm" type="application/wasm" data-uniform-table="" />
     <p>
       <label>Table
         <select name="uniform-table">
@@ -63,7 +63,7 @@ Uniforms come from ordinary form controls: the `<select name="uniform-table">` f
 <form aria-label="SQLite row lookup">
   <qip-edit>
     <source name="input" src="/data/titanic.sqlite" type="application/vnd.sqlite3" />
-    <source src="/components/application/vnd.sqlite3/sqlite-row-lookup.wasm" type="application/wasm" data-uniform-table="0" data-uniform-rowid="" />
+    <source src="/application/vnd.sqlite3/sqlite-row-lookup.wasm" type="application/wasm" data-uniform-table="0" data-uniform-rowid="" />
     <p>
       <label>Passenger rowid
         <input type="number" name="uniform-rowid" value="1" min="1" max="891" />
@@ -80,7 +80,7 @@ Drop any SQLite file here and browse its schema. Nothing is uploaded: the file i
 <form aria-label="Inspect your own SQLite database">
   <qip-edit>
     <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
-    <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+    <source src="/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
     <p><input type="file" name="input" accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3" /></p>
     <output name="output"><pre><code></code></pre></output>
   </qip-edit>
@@ -140,7 +140,7 @@ async function fetchBytes(url) {
 
 async function runComponent(dbBytes) {
   let t = performance.now();
-  const wasmBytes = await fetchBytes("/components/application/vnd.sqlite3/sqlite-table-csv.wasm");
+  const wasmBytes = await fetchBytes("/application/vnd.sqlite3/sqlite-table-csv.wasm");
   const downloadMs = performance.now() - t;
 
   t = performance.now();

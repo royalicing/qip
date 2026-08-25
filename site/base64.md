@@ -4,8 +4,8 @@
 
 Encode text to Base64 and decode Base64 back locally in your browser. Each
 direction is its own QIP component:
-<a href="/components/bytes/base64-encode.wasm" download><qip-content-size src="/components/bytes/base64-encode.wasm"></qip-content-size> of WebAssembly to encode</a>
-and <a href="/components/utf8/base64-decode.wasm" download><qip-content-size src="/components/utf8/base64-decode.wasm"></qip-content-size> to decode</a>.
+<a href="/bytes/base64-encode.wasm" download><qip-content-size src="/bytes/base64-encode.wasm"></qip-content-size> of WebAssembly to encode</a>
+and <a href="/text/base64-decode.wasm" download><qip-content-size src="/text/base64-decode.wasm"></qip-content-size> to decode</a>.
 
 <style>
 .tool-grid {
@@ -68,8 +68,8 @@ const status = document.getElementById("base64-status");
 const bytes = contentTypeBytes();
 const text = contentTypeUTF8();
 const [encodeModule, decodeModule] = await Promise.all([
-  WebAssembly.compileStreaming(fetch("/components/bytes/base64-encode.wasm")),
-  WebAssembly.compileStreaming(fetch("/components/utf8/base64-decode.wasm")),
+  WebAssembly.compileStreaming(fetch("/bytes/base64-encode.wasm")),
+  WebAssembly.compileStreaming(fetch("/text/base64-decode.wasm")),
 ]);
 const encodeComponent = contentComponent(bytes, encodeModule, text);
 const decodeComponent = contentComponent(text, decodeModule, bytes);
@@ -131,14 +131,14 @@ components handle up to 64 KiB.
 
 ## Download
 
-- <a href="/components/bytes/base64-encode.wasm" download>base64-encode.wasm</a> — <qip-content-size src="/components/bytes/base64-encode.wasm"></qip-content-size>
-- <a href="/components/utf8/base64-decode.wasm" download>base64-decode.wasm</a> — <qip-content-size src="/components/utf8/base64-decode.wasm"></qip-content-size>
+- <a href="/bytes/base64-encode.wasm" download>base64-encode.wasm</a> — <qip-content-size src="/bytes/base64-encode.wasm"></qip-content-size>
+- <a href="/text/base64-decode.wasm" download>base64-decode.wasm</a> — <qip-content-size src="/text/base64-decode.wasm"></qip-content-size>
 
 ## CLI equivalent
 
 ```bash
 qip run components/bytes/base64-encode.wasm < image.png > image.png.b64
-qip run components/utf8/base64-decode.wasm < image.png.b64 > image.png
+qip run components/text/base64-decode.wasm < image.png.b64 > image.png
 ```
 
 The decoder accepts canonical RFC 4648 Base64. The input length must be a
@@ -148,4 +148,4 @@ producing partial bytes.
 
 The decoder treats every input byte as Base64 data, so strip whitespace first
 when a file wraps its lines. Add `=` padding when the source omitted it before
-running `qip run components/utf8/base64-decode.wasm`.
+running `qip run components/text/base64-decode.wasm`.

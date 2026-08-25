@@ -9,5 +9,5 @@ Controls:
 - `R`: reset icon positions
 
 <qip-play>
-  <source src="/components/interactive/macos9-desktop.wasm" type="application/wasm" />
+  <source src="/interactive/macos9-desktop.wasm" type="application/wasm" />
 </qip-play>

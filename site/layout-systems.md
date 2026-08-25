@@ -9,7 +9,7 @@ not schedule wakes because it has no animation, and only `render` publishes a
 new KTX2 frame.
 
 <qip-play>
-  <source src="/components/interactive/layout-systems.wasm" type="application/wasm" />
+  <source src="/interactive/layout-systems.wasm" type="application/wasm" />
 </qip-play>
 
 ## What to notice

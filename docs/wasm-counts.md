@@ -8,7 +8,7 @@ a score or decide whether a module is acceptable.
 make -j qip components/application/wasm/wasm-counts.wasm
 
 qip run \
-  -i components/utf8/e164.wasm \
+  -i components/text/e164.wasm \
   -- components/application/wasm/wasm-counts.wasm
 ```
 

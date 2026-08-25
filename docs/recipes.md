@@ -50,7 +50,7 @@ The result is another `application/warc` archive. It keeps only response pages c
 site path:
 
 ```html
-<qip-content-size src="/components/example.wasm"></qip-content-size>
+<qip-content-size src="/example.wasm"></qip-content-size>
 ```
 
 Bodies below 1,000 bytes render as bytes. Larger bodies render as decimal
@@ -136,8 +136,8 @@ sides of that step:
 
 ```csv
 path,input_encoding,input_mime,input_capacity_bytes,output_encoding,output_mime,output_capacity_bytes
-/components/text/markdown/commonmark.0.31.2.wasm,utf8,text/markdown,2097152,utf8,text/html,2097152
-/components/text/html/html-to-accessibility-tree.wasm,utf8,text/html,262144,utf8,text/markdown,1048576
+/text/markdown/commonmark.0.31.2.wasm,utf8,text/markdown,2097152,utf8,text/html,2097152
+/text/html/html-to-accessibility-tree.wasm,utf8,text/html,262144,utf8,text/markdown,1048576
 ```
 
 Rows execute in file order. The first data row is step 1; a separate step
@@ -228,7 +228,7 @@ sets the failure bit. The CLI does not read output from a rejected result. If
 the component supplies an input offset, the message is more specific:
 
 ```text
-step 3 (components/utf8/utf8-must-be-valid.wasm): rejected input at input offset 17
+step 3 (components/text/utf8-must-be-valid.wasm): rejected input at input offset 17
 ```
 
 The input offset is diagnostic data. Recipe logic must not treat it as a stable

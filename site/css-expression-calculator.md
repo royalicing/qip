@@ -125,7 +125,7 @@ const presets = {
   "android-resizes-content": { ...base, viewport_width: 412, viewport_height: 915, small_viewport_width: 412, small_viewport_height: 800, dynamic_viewport_width: 412, dynamic_viewport_height: 480, visual_viewport_width: 412, visual_viewport_height: 480, safe_area_inset_top: 24, safe_area_max_inset_top: 24, keyboard_inset_top: 480, keyboard_inset_width: 412, keyboard_inset_height: 320 },
 };
 
-const wasm = await WebAssembly.instantiateStreaming(fetch("/components/text/css/css-expression-to-value.wasm"));
+const wasm = await WebAssembly.instantiateStreaming(fetch("/text/css/css-expression-to-value.wasm"));
 const exports = wasm.instance.exports;
 
 function applyPreset(name) {
@@ -190,7 +190,7 @@ It resolves one numeric expression. It does not calculate layout, determine whet
 
 ```bash
 go install github.com/royalicing/qip@latest
-curl -O https://qip.dev/components/text/css/css-expression-to-value.wasm
+curl -O https://qip.dev/text/css/css-expression-to-value.wasm
 
 echo -n 'calc(100dvh - max(1rlh, env(safe-area-inset-bottom)))' | \
   qip run css-expression-to-value.wasm \

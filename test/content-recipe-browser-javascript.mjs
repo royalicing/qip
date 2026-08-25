@@ -25,15 +25,15 @@ async function generate(csv) {
 
 test("generated browser JavaScript runs a multi-component recipe", async () => {
   const csv = `${header}\n` +
-    "/components/image/svg+xml/svg-to-data-uri.wasm,utf8,image/svg+xml,20473,utf8,text/uri-list,61440\n" +
-    "/components/text/uri-list/data-uri-to-css-url.wasm,utf8,text/uri-list,20477,utf8,text/plain,61440\n";
+    "/image/svg+xml/svg-to-data-uri.wasm,utf8,image/svg+xml,20473,utf8,text/uri-list,61440\n" +
+    "/text/uri-list/data-uri-to-css-url.wasm,utf8,text/uri-list,20477,utf8,text/plain,61440\n";
   const javascript = await generate(csv);
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (source) => {
     const path = String(source);
-    assert.ok(path.startsWith("/components/"));
-    return new Response(await readFile(join(root, path.slice(1))), {
+    assert.ok(path.startsWith("/"));
+    return new Response(await readFile(join(root, "components", path.slice(1))), {
       headers: { "Content-Type": "application/wasm" },
     });
   };

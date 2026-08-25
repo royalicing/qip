@@ -16,5 +16,5 @@ Optional keyboard shortcuts:
 - `R`, `N`, or Enter: generate a new random puzzle.
 
 <qip-play canvas-width="min(762px, 100%)" canvas-height="auto">
-  <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
+  <source src="/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>

@@ -15,10 +15,10 @@ compile_and_run() {
     "$executable"
 }
 
-"$qip_bin" run -i components/utf8/hello.wasm -o "$tmp_dir/hello.swift" "$translator"
+"$qip_bin" run -i components/text/hello.wasm -o "$tmp_dir/hello.swift" "$translator"
 compile_and_run "$tmp_dir/hello.swift" test/qip-component-to-swift-runner.swift "$tmp_dir/hello"
 
-"$qip_bin" run -i components/utf8/trim.wasm -o "$tmp_dir/trim.swift" "$translator"
+"$qip_bin" run -i components/text/trim.wasm -o "$tmp_dir/trim.swift" "$translator"
 swiftc -O -whole-module-optimization -emit-library -emit-module -module-name HelloComponent -module-cache-path "$tmp_dir/module-cache" "$tmp_dir/hello.swift" -o "$tmp_dir/libHelloComponent.dylib"
 swiftc -O -whole-module-optimization -emit-library -emit-module -module-name TrimComponent -module-cache-path "$tmp_dir/module-cache" "$tmp_dir/trim.swift" -o "$tmp_dir/libTrimComponent.dylib"
 cp test/qip-component-to-swift-bundle.swift "$tmp_dir/main.swift"

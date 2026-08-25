@@ -160,6 +160,30 @@ function godRaysUniforms(speed = "0.75") {
   }).map(([key, value]) => ({ key, value }));
 }
 
+test("qip-play reads source uniforms again before each operation", () => {
+  const element = new QIPPlayElement();
+  let value = "14";
+  const applied = [];
+  element._sourceElement = {
+    getAttributeNames() {
+      return ["data-uniform-current_seconds"];
+    },
+    getAttribute() {
+      return value;
+    },
+  };
+  element._exports = {
+    uniform_set_current_seconds(seconds) {
+      applied.push(seconds);
+    },
+  };
+
+  element._applyUniforms();
+  value = "15";
+  element._applyUniforms();
+  assert.deepEqual(applied, [14, 15]);
+});
+
 test("qip-play debug stats count unchanged renders without skipping canvas draws", () => {
   const { element, bytes, putImageDataN } = makePlayElement(true);
 

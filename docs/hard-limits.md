@@ -46,8 +46,8 @@ pipeline.
 The same policy controls work with text, binary, and image components:
 
 ```bash
-qip run --timeout-ms 1000 --max-memory 67108864 components/utf8/trim.wasm
-qip bench -i input.txt --timeout-ms 1000 --max-memory 67108864 components/utf8/trim.wasm
+qip run --timeout-ms 1000 --max-memory 67108864 components/text/trim.wasm
+qip bench -i input.txt --timeout-ms 1000 --max-memory 67108864 components/text/trim.wasm
 qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 components/rgba/invert.wasm
 ```
 
@@ -66,7 +66,7 @@ Browser hosts expose the memory controls as attributes:
 
 ```html
 <qip-edit max-memory="67108864">
-  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <source src="/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
 </qip-edit>
 ```
 
@@ -74,7 +74,7 @@ Use `allow-memory-grow` only with an explicit cap:
 
 ```html
 <qip-edit allow-memory-grow max-memory="16777216">
-  <source src="/components/example.wasm" type="application/wasm" />
+  <source src="/example.wasm" type="application/wasm" />
 </qip-edit>
 ```
 

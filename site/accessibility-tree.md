@@ -4,7 +4,7 @@
 
 Paste HTML and see its accessibility tree — the roles and accessible names a
 screen reader works from — computed locally in
-<a href="/components/text/html/html-to-accessibility-tree.wasm" download><qip-content-size src="/components/text/html/html-to-accessibility-tree.wasm"></qip-content-size>
+<a href="/text/html/html-to-accessibility-tree.wasm" download><qip-content-size src="/text/html/html-to-accessibility-tree.wasm"></qip-content-size>
 of WebAssembly</a>.
 
 <style>
@@ -67,7 +67,7 @@ const output = document.getElementById("a11y-output");
 const copyButton = document.getElementById("a11y-copy");
 const html = contentTypeUTF8("text/html");
 const markdown = contentTypeUTF8("text/markdown");
-const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/html/html-to-accessibility-tree.wasm"));
+const componentModule = await WebAssembly.compileStreaming(fetch("/text/html/html-to-accessibility-tree.wasm"));
 const accessibilityTreeComponent = contentComponent(html, componentModule, markdown);
 
 function computeTree() {
@@ -98,12 +98,12 @@ it either. Handles documents up to 256 KiB.
 
 ## Download
 
-- <a href="/components/text/html/html-to-accessibility-tree.wasm" download>html-to-accessibility-tree.wasm</a> — <qip-content-size src="/components/text/html/html-to-accessibility-tree.wasm"></qip-content-size>
+- <a href="/text/html/html-to-accessibility-tree.wasm" download>html-to-accessibility-tree.wasm</a> — <qip-content-size src="/text/html/html-to-accessibility-tree.wasm"></qip-content-size>
 
 ## CLI equivalent
 
 ```bash
 go install github.com/royalicing/qip@latest
-curl -O https://qip.dev/components/text/html/html-to-accessibility-tree.wasm
+curl -O https://qip.dev/text/html/html-to-accessibility-tree.wasm
 qip run html-to-accessibility-tree.wasm < page.html
 ```

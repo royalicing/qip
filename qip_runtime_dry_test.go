@@ -16,7 +16,7 @@ import (
 func TestExecuteDryRunDoesNotCallRender(t *testing.T) {
 	config, err := parseRunCommandArgs([]string{
 		"--timeout-ms", "250",
-		"components/utf8/infinite-loop.wasm",
+		"components/text/infinite-loop.wasm",
 	}, "dry run")
 	if err != nil {
 		t.Fatalf("parseRunCommandArgs: %v", err)
@@ -28,7 +28,7 @@ func TestExecuteDryRunDoesNotCallRender(t *testing.T) {
 	}
 	got := output.String()
 	if !strings.Contains(got, "Pipeline compatible: 1 step(s)") ||
-		!strings.Contains(got, "components/utf8/infinite-loop.wasm — Content") ||
+		!strings.Contains(got, "components/text/infinite-loop.wasm — Content") ||
 		!strings.Contains(got, "Total declared buffer capacity:") {
 		t.Fatalf("unexpected dry-run report:\n%s", got)
 	}

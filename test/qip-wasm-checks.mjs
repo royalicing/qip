@@ -34,10 +34,10 @@ const nontrappingDivides = fileURLToPath(
 const core10Validator = fileURLToPath(
   new URL("../components/application/wasm/wasm-validate-core-1.0.wasm", import.meta.url),
 );
-const luhn = fileURLToPath(new URL("../components/utf8/luhn.wasm", import.meta.url));
-const e164 = fileURLToPath(new URL("../components/utf8/e164.wasm", import.meta.url));
-const infiniteLoop = fileURLToPath(new URL("../components/utf8/infinite-loop.wasm", import.meta.url));
-const helloNaive = fileURLToPath(new URL("../components/utf8/hello-naive.wasm", import.meta.url));
+const luhn = fileURLToPath(new URL("../components/text/luhn.wasm", import.meta.url));
+const e164 = fileURLToPath(new URL("../components/text/e164.wasm", import.meta.url));
+const infiniteLoop = fileURLToPath(new URL("../components/text/infinite-loop.wasm", import.meta.url));
+const helloNaive = fileURLToPath(new URL("../components/text/hello-naive.wasm", import.meta.url));
 const bmpColorPalette = fileURLToPath(
   new URL("../components/image/bmp/bmp-color-palette.wasm", import.meta.url),
 );

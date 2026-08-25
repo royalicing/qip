@@ -29,7 +29,7 @@ self.onmessage = async (event) => {
     const { input } = event.data;
     const inputBytes = new Uint8Array(input);
     const decoderModule = await WebAssembly.compileStreaming(
-      fetch("/components/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm"),
+      fetch("/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm"),
     );
     const decoder = new WebAssembly.Instance(decoderModule, {}).exports;
     decoder._initialize?.();

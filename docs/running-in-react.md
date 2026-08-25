@@ -29,7 +29,7 @@ import {
   input_ptr,
   input_utf8_cap,
   render,
-} from "/components/gfm-commonmark.0.31.2.wasm";
+} from "/gfm-commonmark.0.31.2.wasm";
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 
@@ -62,7 +62,7 @@ Direct `.wasm` imports depend on the browser, runtime, and bundler. When that in
 
 ```js
 const markdownRenderer = await WebAssembly.instantiateStreaming(
-  fetch("/components/gfm-commonmark.0.31.2.wasm"),
+  fetch("/gfm-commonmark.0.31.2.wasm"),
 );
 
 const {

@@ -222,9 +222,9 @@ func TestLegacyDevNoticePointsToRouterCommand(t *testing.T) {
 
 func TestNormalizeRunArgs(t *testing.T) {
 	in := []string{
-		"components/utf8/trim.wasm",
+		"components/text/trim.wasm",
 		"?x=1",
-		"components/utf8/wc.wasm",
+		"components/text/wc.wasm",
 		"-o",
 		"out.txt",
 		"--timeout-ms",
@@ -242,9 +242,9 @@ func TestNormalizeRunArgs(t *testing.T) {
 		"--max-memory",
 		"1048576",
 		"--allow-memory-grow",
-		"components/utf8/trim.wasm",
+		"components/text/trim.wasm",
 		"?x=1",
-		"components/utf8/wc.wasm",
+		"components/text/wc.wasm",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("args=%v, want %v", got, want)
@@ -541,7 +541,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 		"--",
 		"--timeout-ms",
 		"1",
-		"components/utf8/infinite-loop.wasm",
+		"components/text/infinite-loop.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -555,7 +555,7 @@ func TestRunModuleExecutionErrorIncludesModulePath(t *testing.T) {
 	}
 
 	gotErr := stderr.String()
-	if !strings.Contains(gotErr, "step 1 (components/utf8/infinite-loop.wasm): render trapped:") {
+	if !strings.Contains(gotErr, "step 1 (components/text/infinite-loop.wasm): render trapped:") {
 		t.Fatalf("stderr=%q, want step, component path, and render failure", gotErr)
 	}
 	if !strings.Contains(gotErr, "Wasm module exceeded the execution time limit") {
@@ -602,7 +602,7 @@ func TestRunAppliesUniformQueries(t *testing.T) {
 	}
 
 	runOnce := func(extraArgs ...string) []byte {
-		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "components/utf8/text-to-bmp.wasm"}
+		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "components/text/text-to-bmp.wasm"}
 		args = append(args, extraArgs...)
 		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
@@ -643,7 +643,7 @@ func TestRunAppliesColsUniform(t *testing.T) {
 	}
 
 	runOnce := func(extraArgs ...string) []byte {
-		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "components/utf8/text-to-bmp.wasm"}
+		args := []string{"-test.run=TestHelperRunModuleCLI", "--", "-i", inputPath, "components/text/text-to-bmp.wasm"}
 		args = append(args, extraArgs...)
 		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
@@ -695,7 +695,7 @@ func TestRunOutputFlagWritesToFile(t *testing.T) {
 		inputPath,
 		"-o",
 		outputPath,
-		"components/utf8/trim.wasm",
+		"components/text/trim.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -732,7 +732,7 @@ func TestRunOutputFlagAtEndWritesToFile(t *testing.T) {
 		"--",
 		"-i",
 		inputPath,
-		"components/utf8/trim.wasm",
+		"components/text/trim.wasm",
 		"-o",
 		outputPath,
 	)
@@ -811,7 +811,7 @@ func TestRunOutputFlagImageReencodeByExtension(t *testing.T) {
 				inputPath,
 				"-o",
 				outputPath,
-				"components/utf8/text-to-bmp.wasm",
+				"components/text/text-to-bmp.wasm",
 			)
 			cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 			var stdout bytes.Buffer
@@ -890,7 +890,7 @@ func TestRunOutputFlagImageReencodeRejectsNonImageOutput(t *testing.T) {
 		inputPath,
 		"-o",
 		outputPath,
-		"components/utf8/trim.wasm",
+		"components/text/trim.wasm",
 	)
 	cmd.Env = append(os.Environ(), "QIP_HELPER_RUN_MODULE_CLI=1")
 	var stdout bytes.Buffer
@@ -929,7 +929,7 @@ func TestExecuteModuleReadsOutputPtrAfterRender(t *testing.T) {
 	defer runtime.Close(ctx)
 
 	// trim returns a dynamic immutable slice of its input.
-	wasmBytes, err := os.ReadFile("components/utf8/trim.wasm")
+	wasmBytes, err := os.ReadFile("components/text/trim.wasm")
 	if err != nil {
 		t.Fatalf("read trim component: %v", err)
 	}
@@ -1046,7 +1046,7 @@ func TestRunModuleAcceptsAndRejects(t *testing.T) {
 	runtime := wasmruntime.New(ctx)
 	defer runtime.Close(ctx)
 
-	compiled := compileWasmModuleForTest(t, ctx, runtime, "components/utf8/utf8-must-be-valid.wasm")
+	compiled := compileWasmModuleForTest(t, ctx, runtime, "components/text/utf8-must-be-valid.wasm")
 	defer compiled.Close(ctx)
 
 	exec, err := executeModuleWithInput(
@@ -1414,14 +1414,14 @@ func TestLoadComponentAssets(t *testing.T) {
 	if len(requestPaths) != 2 {
 		t.Fatalf("request path count=%d, want 2", len(requestPaths))
 	}
-	if !bytes.Equal(assets["/components/contact.wasm"].body, wasmBytes) {
-		t.Fatalf("contact component bytes mismatch")
+	if !bytes.Equal(assets["/contact.wasm"].body, wasmBytes) {
+		t.Fatalf("direct contact component bytes mismatch")
 	}
-	if got := assets["/components/contact.wasm"].contentType; got != "application/wasm" {
+	if got := assets["/contact.wasm"].contentType; got != "application/wasm" {
 		t.Fatalf("content type=%q, want application/wasm", got)
 	}
-	if !bytes.Equal(assets["/components/nested/signup.wasm"].body, wasmBytes) {
-		t.Fatalf("nested/signup component bytes mismatch")
+	if !bytes.Equal(assets["/nested/signup.wasm"].body, wasmBytes) {
+		t.Fatalf("direct nested/signup component bytes mismatch")
 	}
 }
 
@@ -1459,7 +1459,7 @@ func TestLoadComponentAssetsSupportsSymlinkedWasmAndIgnoresNonWasmSymlink(t *tes
 	if len(requestPaths) != 1 {
 		t.Fatalf("request path count=%d, want 1", len(requestPaths))
 	}
-	if !bytes.Equal(assets["/components/contact.wasm"].body, wasmBytes) {
-		t.Fatalf("contact component bytes mismatch")
+	if !bytes.Equal(assets["/contact.wasm"].body, wasmBytes) {
+		t.Fatalf("direct contact component bytes mismatch")
 	}
 }

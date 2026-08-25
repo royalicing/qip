@@ -217,7 +217,7 @@ Nested recipe roots are not active in this version. A file at `site/docs/_recipe
 
 ```html
 <qip-form>
-  <source src="/components/form/contact.wasm" type="application/wasm">
+  <source src="/form/contact.wasm" type="application/wasm">
 </qip-form>
 ```
 
@@ -228,10 +228,12 @@ The element module at `/elements/qip-form.js` fetches and instantiates that comp
 `.wasm` files under `site/_components`, or under `--components <dir>` when provided, must be served as browser-loadable QIP component assets at:
 
 ```txt
-/components/<relative-path>.wasm
+/<relative-path>.wasm
 ```
 
 Component asset paths must be valid UTF-8, clean relative paths, and must not start with `/`. Non-`.wasm` files in the component root should be ignored.
+
+Direct paths let a qipx host map `text/markdown/render.wasm` to `https://example.com/text/markdown/render.wasm` without a site-specific prefix.
 
 Component assets must use `application/wasm`. They are not content pages and should not run content recipes.
 

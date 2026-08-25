@@ -33,7 +33,7 @@ index 24b7a30..c5be7d0 100644
  
  You can read more about the [component contract in our docs](./docs/component-contract.md#qip-component-contract).
  
-@@ -461,9 +470,16 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf
+@@ -461,9 +470,16 @@ echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm components/utf
  
  ## TODO
  
@@ -50,7 +50,7 @@ index 24b7a30..c5be7d0 100644
  - [ ] Add monochrome rendering `output_monochrome_bytes() -> i32`
  - [ ] Add IEEE 754 Floating-Point example letting me see mantissa, toggle bits, toggle negative, see formatted hexadecimal and decimal, and what ever else would be useful for understanding f32 and f64.
  - [x] Add application/wasm verifier that checks no dynamic memory allocation, all loops have a fixed upper bound, no recursion. A subset of https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code
-@@ -476,6 +492,7 @@ echo "World" | qip bench -i - --benchtime=2s components/utf8/hello.wasm components/utf
+@@ -476,6 +492,7 @@ echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm components/utf
  - [ ] Extend `paint` example with `animate` that is like Flash or After Effects with a simple keyframe and tween editor of graphics. We could have a limited number of layers (8?) and text input.
  - [ ] Add spreadsheet example.
  - [ ] Add bar charts.

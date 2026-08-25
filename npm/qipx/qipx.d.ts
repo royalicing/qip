@@ -50,6 +50,13 @@ export interface RenderResult {
   readonly outputType: ContentType;
 }
 
+export class ContentRejection extends Error {
+  constructor(label: string, inputOffset?: number, failureMode?: number);
+  readonly label: string;
+  readonly inputOffset?: number;
+  readonly failureMode?: number;
+}
+
 export interface RecipeStage {
   label: string;
   uniforms: Array<[key: string, value: string | number]>;

@@ -1,8 +1,60 @@
-//! warc-counts: deterministic factual counts for WARC files.
+//! `warc-counts` scans an uncompressed WARC 1.0 or 1.1 archive. It writes
+//! deterministic long-form CSV with one integer metric in each row. It reports
+//! archive structure, stored bytes, HTTP messages, status families, and MIME
+//! families. It does not extract payloads or decide if an archive is good.
 //!
-//! Input is an uncompressed WARC 1.0 or 1.1 archive. Output is long-form CSV
-//! with one integer metric per row. Invalid WARC structure traps; malformed
-//! embedded HTTP messages are counted separately.
+//! Build and run it with:
+//!
+//! ```sh
+//! make -j qip components/application/warc/warc-counts.wasm
+//!
+//! qip router warc ./site |
+//!   qip run components/application/warc/warc-counts.wasm
+//! ```
+//!
+//! Output has this form:
+//!
+//! ```csv
+//! metric,value
+//! archive_bytes,12177834
+//! records,381
+//! response_records,379
+//! http_status_2xx,376
+//! http_html_records,84
+//! http_html_body_bytes,1928441
+//! ```
+//!
+//! Zero-valued rows remain in the output. You can compare two reports with
+//! `diff`, SQLite, or a spreadsheet.
+//!
+//! The report counts:
+//!
+//! - WARC 1.0 and 1.1 records, split by standard `WARC-Type`;
+//! - bytes used by record headers, payloads, and record separators;
+//! - the largest complete record and payload;
+//! - records that have target URIs, block digests, and payload digests;
+//! - embedded HTTP requests, responses, headers, and bodies;
+//! - HTTP status families and redirects other than `304 Not Modified`; and
+//! - HTTP records and body bytes grouped as HTML, CSS, JavaScript, other text,
+//!   JSON, XML, image, audio, video, font, Wasm, other, or no content type.
+//!
+//! MIME parameters do not affect grouping. For example,
+//! `text/html; charset=utf-8` is HTML. A structured suffix such as `+json`
+//! selects JSON. The top-level `image` type takes precedence over an XML
+//! suffix, so `image/svg+xml` is an image.
+//!
+//! Byte metrics describe stored bytes, not decoded or decompressed sizes. The
+//! component accepts raw WARC input up to 128 MiB. It does not decode
+//! `.warc.gz`.
+//!
+//! Malformed WARC record framing traps. A valid WARC record with a malformed
+//! embedded HTTP message remains countable and increments
+//! `http_malformed_messages`.
+//!
+//! Use a record inventory when you need target URIs, dates, headers, or
+//! offsets for each record. Use an extractor when you need payload contents.
+//! Aggregate counts support comparisons and overview charts, but they cannot
+//! identify the record that caused a change.
 
 const std = @import("std");
 

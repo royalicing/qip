@@ -16,7 +16,7 @@ and 72px vertical margins.
 ```bash
 printf '%s' 'title=Inter+makes+Open+Graph+titles+clear&subtitle=Reusable+paths%2C+wrapping%2C+and+kerning.' |
   qip run -- \
-    components/utf8/text-to-og-image-svg-inter.wasm \
+    components/text/text-to-og-image-svg-inter.wasm \
     -u text_color=0xffffffff -u background_color=0x4b2e83ff -u font_weight=700 \
     components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm \
     components/image/bmp/bmp-to-png.wasm \

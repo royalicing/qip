@@ -362,9 +362,9 @@ to the page.
 
 ## Components
 
-- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"></qip-content-size>
+- <a href="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy.wasm</a> — <qip-content-size src="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm"></qip-content-size>
+- <a href="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm</a> — <qip-content-size src="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm"></qip-content-size>
+- <a href="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossless.wasm</a> — <qip-content-size src="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"></qip-content-size>
 
 ## CLI equivalent
 

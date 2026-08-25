@@ -19,7 +19,7 @@ Generate the component as C:
 
 ```sh
 ./qip run \
-  -i components/utf8/trim.wasm \
+  -i components/text/trim.wasm \
   -o trim.h \
   components/application/wasm/qip-component-to-c.wasm
 ```
@@ -33,7 +33,7 @@ generated component implementation in Swift.
 ```sh
 make -j components/application/wasm/qip-component-to-swift.wasm
 ./qip run \
-  -i components/utf8/trim.wasm \
+  -i components/text/trim.wasm \
   -o trim.swift \
   components/application/wasm/qip-component-to-swift.wasm
 ```

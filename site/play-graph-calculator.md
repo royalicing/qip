@@ -19,5 +19,5 @@ Controls:
 - `Z` / `A`: zoom in or out
 
 <qip-play>
-  <source src="/components/interactive/graph-calculator.wasm" type="application/wasm" />
+  <source src="/interactive/graph-calculator.wasm" type="application/wasm" />
 </qip-play>

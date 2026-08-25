@@ -242,7 +242,7 @@ let formatVersion = 0;
 function loadLocale(name) {
   if (!modules.has(name)) {
     modules.set(name, WebAssembly.instantiateStreaming(
-      fetch(`/components/utf8/currency-format-${name}.wasm`),
+      fetch(`/text/currency-format-${name}.wasm`),
     ).then(({ instance }) => instance.exports));
   }
   return modules.get(name);
@@ -339,7 +339,7 @@ printf %s '1234567.895' | qip run currency-format-en-us.wasm -u currency=840
 
 ```js
 const currencyFormatter = await WebAssembly.instantiateStreaming(
-  fetch("/components/utf8/currency-format-en-us.wasm"),
+  fetch("/text/currency-format-en-us.wasm"),
 );
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 
@@ -367,16 +367,16 @@ The amount is ASCII decimal text, not a JavaScript `Number`, so the component pe
 
 ## Download
 
-- <a href="/components/utf8/currency-format-en-us.wasm" download>currency-format-en-US.wasm</a> — <qip-content-size src="/components/utf8/currency-format-en-us.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-en-in.wasm" download>currency-format-en-IN.wasm</a> — <qip-content-size src="/components/utf8/currency-format-en-in.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-es-es.wasm" download>currency-format-es-ES.wasm</a> — <qip-content-size src="/components/utf8/currency-format-es-es.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-de-de.wasm" download>currency-format-de-DE.wasm</a> — <qip-content-size src="/components/utf8/currency-format-de-de.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-ar-eg.wasm" download>currency-format-ar-EG.wasm</a> — <qip-content-size src="/components/utf8/currency-format-ar-eg.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-fr-fr.wasm" download>currency-format-fr-FR.wasm</a> — <qip-content-size src="/components/utf8/currency-format-fr-fr.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-pt-br.wasm" download>currency-format-pt-BR.wasm</a> — <qip-content-size src="/components/utf8/currency-format-pt-br.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-ja-jp.wasm" download>currency-format-ja-JP.wasm</a> — <qip-content-size src="/components/utf8/currency-format-ja-jp.wasm"></qip-content-size>
-- <a href="/components/utf8/currency-format-zh-cn.wasm" download>currency-format-zh-CN.wasm</a> — <qip-content-size src="/components/utf8/currency-format-zh-cn.wasm"></qip-content-size>
-- <a href="/components/utf8/iso-4217-alpha-to-numeric.wasm" download>iso-4217-alpha-to-numeric.wasm</a> — <qip-content-size src="/components/utf8/iso-4217-alpha-to-numeric.wasm"></qip-content-size>
+- <a href="/text/currency-format-en-us.wasm" download>currency-format-en-US.wasm</a> — <qip-content-size src="/text/currency-format-en-us.wasm"></qip-content-size>
+- <a href="/text/currency-format-en-in.wasm" download>currency-format-en-IN.wasm</a> — <qip-content-size src="/text/currency-format-en-in.wasm"></qip-content-size>
+- <a href="/text/currency-format-es-es.wasm" download>currency-format-es-ES.wasm</a> — <qip-content-size src="/text/currency-format-es-es.wasm"></qip-content-size>
+- <a href="/text/currency-format-de-de.wasm" download>currency-format-de-DE.wasm</a> — <qip-content-size src="/text/currency-format-de-de.wasm"></qip-content-size>
+- <a href="/text/currency-format-ar-eg.wasm" download>currency-format-ar-EG.wasm</a> — <qip-content-size src="/text/currency-format-ar-eg.wasm"></qip-content-size>
+- <a href="/text/currency-format-fr-fr.wasm" download>currency-format-fr-FR.wasm</a> — <qip-content-size src="/text/currency-format-fr-fr.wasm"></qip-content-size>
+- <a href="/text/currency-format-pt-br.wasm" download>currency-format-pt-BR.wasm</a> — <qip-content-size src="/text/currency-format-pt-br.wasm"></qip-content-size>
+- <a href="/text/currency-format-ja-jp.wasm" download>currency-format-ja-JP.wasm</a> — <qip-content-size src="/text/currency-format-ja-jp.wasm"></qip-content-size>
+- <a href="/text/currency-format-zh-cn.wasm" download>currency-format-zh-CN.wasm</a> — <qip-content-size src="/text/currency-format-zh-cn.wasm"></qip-content-size>
+- <a href="/text/iso-4217-alpha-to-numeric.wasm" download>iso-4217-alpha-to-numeric.wasm</a> — <qip-content-size src="/text/iso-4217-alpha-to-numeric.wasm"></qip-content-size>
 
 ## Details
 

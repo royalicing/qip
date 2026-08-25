@@ -300,7 +300,7 @@ uploaded.
 import { contentComponent, contentTypeBytes, contentTypeUTF8 } from "/qip-runner.js";
 
 const MAX_MODULE_BYTES = 8 * 1024 * 1024;
-const DEFAULT_MODULE = "/components/text/markdown/gfm-commonmark.0.31.2.wasm";
+const DEFAULT_MODULE = "/text/markdown/gfm-commonmark.0.31.2.wasm";
 const inspector = document.getElementById("wasm-inspector");
 const moduleSelect = document.getElementById("wasm-module-select");
 const fileInput = document.getElementById("wasm-file-input");
@@ -311,7 +311,7 @@ let rawCSV = "";
 let inspectionNumber = 0;
 
 const [counterModule, viewSourceResponse] = await Promise.all([
-  WebAssembly.compileStreaming(fetch("/components/application/wasm/wasm-counts.wasm")),
+  WebAssembly.compileStreaming(fetch("/application/wasm/wasm-counts.wasm")),
   fetch("/view-source"),
 ]);
 if (!viewSourceResponse.ok) {
@@ -329,7 +329,7 @@ const viewSource = new DOMParser().parseFromString(
 );
 const modulePaths = [
   ...new Set(
-    [...viewSource.querySelectorAll('a[href^="/components/"][href$=".wasm"]')]
+    [...viewSource.querySelectorAll('a[href^="/"][href$=".wasm"]')]
       .map((link) => new URL(link.getAttribute("href"), location.origin).pathname),
   ),
 ].sort();
@@ -360,7 +360,7 @@ function populateCatalog() {
     for (const path of paths) {
       const option = document.createElement("option");
       option.value = path;
-      option.textContent = path.slice("/components/".length);
+      option.textContent = path.slice("/".length);
       group.append(option);
     }
     moduleSelect.append(group);
@@ -619,7 +619,7 @@ performance score.
 
 ## Download
 
-- <a href="/components/application/wasm/wasm-counts.wasm" download>wasm-counts.wasm</a> — <qip-content-size src="/components/application/wasm/wasm-counts.wasm"></qip-content-size>
+- <a href="/application/wasm/wasm-counts.wasm" download>wasm-counts.wasm</a> — <qip-content-size src="/application/wasm/wasm-counts.wasm"></qip-content-size>
 ## CLI equivalent
 
 ```bash

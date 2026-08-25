@@ -61,17 +61,17 @@ Options:
 ## Examples In This Repo
 
 ```bash
-# Expects that components/utf8/e164.wasm produces normalized phone numbers, and preserves empty input.
-qip comply components/utf8/e164.wasm --with compliance/e164.comply.wasm
+# Expects that components/text/e164.wasm produces normalized phone numbers, and preserves empty input.
+qip comply components/text/e164.wasm --with compliance/e164.comply.wasm
 
 # Expects rejection for invalid UTF-8 and accepts whitespace or empty strings unchanged.
-qip comply components/utf8/utf8-must-be-valid.wasm --with compliance/reject-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
+qip comply components/text/utf8-must-be-valid.wasm --with compliance/reject-invalid-utf8.wasm --with compliance/preserve-empty.wasm --with compliance/preserve-whitespace.wasm
 
-# Expects that components/utf8/luhn.wasm accepts normalized Luhn-valid input and rejects invalid input.
-qip comply components/utf8/luhn.wasm --with compliance/luhn.comply.wasm
+# Expects that components/text/luhn.wasm accepts normalized Luhn-valid input and rejects invalid input.
+qip comply components/text/luhn.wasm --with compliance/luhn.comply.wasm
 
 # Expects canonical RFC 4648 output for valid quartets and rejection for malformed Base64.
-qip comply components/utf8/base64-decode.wasm --with compliance/base64-decode.comply.wasm
+qip comply components/text/base64-decode.wasm --with compliance/base64-decode.comply.wasm
 ```
 
 ## What It Does

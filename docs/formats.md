@@ -63,8 +63,8 @@ Examples:
 - `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
 - `components/application/x-tar/tar-to-zip.wasm` maps `application/x-tar -> application/zip`
 - `components/application/zip/zip-to-tar.wasm` maps `application/zip -> application/x-tar`
-- `components/utf8/text-to-og-image-svg-inter.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
-- `components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
+- `components/text/text-to-og-image-svg-inter.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
+- `components/text/text-to-og-image-svg-dejavu-sans-mono.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
 - `components/application/zip/zip-list-entries-csv.wasm` maps `application/zip -> text/csv`
 - `components/application/zip/zip-list-files-csv.wasm` maps `application/zip -> text/csv`
 - `components/application/zip/zip-extract-file.wasm` maps one regular ZIP entry to `application/octet-stream`; select it with `?file_index=N`
@@ -255,7 +255,7 @@ If you need:
 - Simple raster interchange between components: use `image/bmp`
 - General 8-bit sRGB Content images: use the repository's narrow `image/ktx2` `VK_FORMAT_R8G8B8A8_SRGB` profile
 - Chained Content image transforms that need linear floating-point pixels: use the repository's narrow `image/ktx2` RGBA32F profile
-- General text transforms: use `UTF-8` components in `components/utf8/`
+- General text transforms: use `UTF-8` components in `components/text/`
 - Image filter pipelines: use `RGBA32Float` via `qip image`
 
 ## When not to use these defaults

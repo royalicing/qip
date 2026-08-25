@@ -13,7 +13,7 @@ More interactive pages:
 
 <template id="qip-play-runtime-trigger">
   <qip-play>
-    <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
+    <source src="/interactive/sudoku.wasm" type="application/wasm" />
   </qip-play>
 </template>
 

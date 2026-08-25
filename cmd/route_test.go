@@ -362,7 +362,7 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 			if !request.ViewSource {
 				t.Fatalf("expected ViewSource to be true")
 			}
-			return []string{"/a", "/guide", "/guide.md", "/components/utf8/trim.wasm"}, nil
+			return []string{"/a", "/guide", "/guide.md", "/text/trim.wasm"}, nil
 		},
 		ResolveWARC: func(ctx context.Context, request RouteWARCRequest) (qinternal.InProcessHTTPResponse, error) {
 			return qinternal.InProcessHTTPResponse{
@@ -413,19 +413,19 @@ func TestRunRouteWARCViewSourceAddsViewSourceRecords(t *testing.T) {
 	if !strings.Contains(got, "href=\"/guide.md\"") {
 		t.Fatalf("missing markdown content link in view-source index")
 	}
-	if !strings.Contains(got, "href=\"/components/utf8/trim.wasm\"") {
+	if !strings.Contains(got, "href=\"/text/trim.wasm\"") {
 		t.Fatalf("missing component link in view-source index")
 	}
-	if !strings.Contains(got, "href=\"/view-source/components/utf8/trim.zig\"") {
+	if !strings.Contains(got, "href=\"/view-source/components/text/trim.zig\"") {
 		t.Fatalf("missing component zig source link in view-source index")
 	}
-	if !strings.Contains(got, "href=\"/view-source/components/utf8/styles.css\"") {
+	if !strings.Contains(got, "href=\"/view-source/components/text/styles.css\"") {
 		t.Fatalf("missing component css source link in view-source index")
 	}
-	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/components/utf8/trim.zig\r\n") {
+	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/components/text/trim.zig\r\n") {
 		t.Fatalf("missing component zig source record")
 	}
-	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/components/utf8/styles.css\r\n") {
+	if !strings.Contains(got, "WARC-Target-URI: http://qip.local/view-source/components/text/styles.css\r\n") {
 		t.Fatalf("missing component css source record")
 	}
 	if !strings.Contains(got, "Content-Type: application/wasm\r\n") {

@@ -61,7 +61,7 @@ const formatButton = document.getElementById("json-format");
 const copyButton = document.getElementById("json-copy");
 const status = document.getElementById("json-status");
 const text = contentTypeUTF8();
-const componentModule = await WebAssembly.compileStreaming(fetch("/components/text/json/json-prettify.wasm"));
+const componentModule = await WebAssembly.compileStreaming(fetch("/application/json/json-prettify.wasm"));
 const formatJSONComponent = contentComponent(text, componentModule, text);
 
 function formatJSON() {
@@ -85,5 +85,5 @@ formatJSON();
 ## CLI equivalent
 
 ```bash
-qip run components/text/json/json-prettify.wasm < input.json > formatted.json
+qip run components/application/json/json-prettify.wasm < input.json > formatted.json
 ```

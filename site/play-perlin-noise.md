@@ -12,5 +12,5 @@ Controls:
 - `R` regenerates with a new seed and recenters
 
 <qip-play>
-  <source src="/components/interactive/perlin-noise.wasm" type="application/wasm" />
+  <source src="/interactive/perlin-noise.wasm" type="application/wasm" />
 </qip-play>

@@ -4,7 +4,7 @@
 
 Paste code and convert to highlighted HTML locally in your browser.
 Each language is its own small component — TypeScript’s is
-<a href="/components/text/html/html-code-syntax-highlight-tsx.wasm" download><qip-content-size src="/components/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size> of WebAssembly</a>
+<a href="/text/html/html-code-syntax-highlight-tsx.wasm" download><qip-content-size src="/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size> of WebAssembly</a>
 — chained with an HTML escaper and a Night Owl stylesheet.
 
 <style>
@@ -131,11 +131,11 @@ const languages = Object.keys(languageClasses);
 const modules = await Promise.all([
   ...languages.map((language) =>
     WebAssembly.compileStreaming(
-      fetch("/components/text/html/html-code-syntax-highlight-" + language + ".wasm"),
+      fetch("/text/html/html-code-syntax-highlight-" + language + ".wasm"),
     ),
   ),
-  WebAssembly.compileStreaming(fetch("/components/text/html/html-escape.wasm")),
-  WebAssembly.compileStreaming(fetch("/components/text/html/html-add-highlight-stylesheet-night-owl.wasm")),
+  WebAssembly.compileStreaming(fetch("/text/html/html-escape.wasm")),
+  WebAssembly.compileStreaming(fetch("/text/html/html-add-highlight-stylesheet-night-owl.wasm")),
 ]);
 const highlightComponents = {};
 languages.forEach((language, i) => {
@@ -244,13 +244,13 @@ to the other side of the ledger.
 ```js
 const [highlighter, escaper, stylesheet] = await Promise.all([
   WebAssembly.instantiateStreaming(
-    fetch("/components/text/html/html-code-syntax-highlight-tsx.wasm"),
+    fetch("/text/html/html-code-syntax-highlight-tsx.wasm"),
   ),
   WebAssembly.instantiateStreaming(
-    fetch("/components/text/html/html-escape.wasm"),
+    fetch("/text/html/html-escape.wasm"),
   ),
   WebAssembly.instantiateStreaming(
-    fetch("/components/text/html/html-add-highlight-stylesheet-night-owl.wasm"),
+    fetch("/text/html/html-add-highlight-stylesheet-night-owl.wasm"),
   ),
 ]);
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -293,18 +293,18 @@ self-contained.
 
 ## Download
 
-- <a href="/components/text/html/html-code-syntax-highlight-zig.wasm" download>html-code-syntax-highlight-zig.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-zig.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-c.wasm" download>html-code-syntax-highlight-c.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-c.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-bash.wasm" download>html-code-syntax-highlight-bash.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-bash.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-tsx.wasm" download>html-code-syntax-highlight-tsx.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-html.wasm" download>html-code-syntax-highlight-html.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-html.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-css.wasm" download>html-code-syntax-highlight-css.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-css.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-go.wasm" download>html-code-syntax-highlight-go.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-go.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-swift.wasm" download>html-code-syntax-highlight-swift.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-swift.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-ruby.wasm" download>html-code-syntax-highlight-ruby.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-ruby.wasm"></qip-content-size>
-- <a href="/components/text/html/html-code-syntax-highlight-wasm.wasm" download>html-code-syntax-highlight-wasm.wasm</a> — <qip-content-size src="/components/text/html/html-code-syntax-highlight-wasm.wasm"></qip-content-size>
-- <a href="/components/text/html/html-escape.wasm" download>html-escape.wasm</a> — <qip-content-size src="/components/text/html/html-escape.wasm"></qip-content-size>
-- <a href="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" download>html-add-highlight-stylesheet-night-owl.wasm</a> — <qip-content-size src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-zig.wasm" download>html-code-syntax-highlight-zig.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-zig.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-c.wasm" download>html-code-syntax-highlight-c.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-c.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-bash.wasm" download>html-code-syntax-highlight-bash.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-bash.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-tsx.wasm" download>html-code-syntax-highlight-tsx.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-tsx.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-html.wasm" download>html-code-syntax-highlight-html.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-html.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-css.wasm" download>html-code-syntax-highlight-css.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-css.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-go.wasm" download>html-code-syntax-highlight-go.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-go.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-swift.wasm" download>html-code-syntax-highlight-swift.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-swift.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-ruby.wasm" download>html-code-syntax-highlight-ruby.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-ruby.wasm"></qip-content-size>
+- <a href="/text/html/html-code-syntax-highlight-wasm.wasm" download>html-code-syntax-highlight-wasm.wasm</a> — <qip-content-size src="/text/html/html-code-syntax-highlight-wasm.wasm"></qip-content-size>
+- <a href="/text/html/html-escape.wasm" download>html-escape.wasm</a> — <qip-content-size src="/text/html/html-escape.wasm"></qip-content-size>
+- <a href="/text/html/html-add-highlight-stylesheet-night-owl.wasm" download>html-add-highlight-stylesheet-night-owl.wasm</a> — <qip-content-size src="/text/html/html-add-highlight-stylesheet-night-owl.wasm"></qip-content-size>
 
 ## CLI equivalent
 

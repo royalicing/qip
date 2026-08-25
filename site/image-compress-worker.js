@@ -2,18 +2,18 @@ const CODEC_CONFIG = {
   webp: {
     modulePath(hasAlpha) {
       return hasAlpha
-        ? "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm"
-        : "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm";
+        ? "/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm"
+        : "/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm";
     },
   },
   avif: {
     modulePath() {
-      return "/components/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.wasm";
+      return "/image/bmp/bmp-b8g8r8a8-srgb-to-avif-lossy.wasm";
     },
   },
   jpeg: {
     modulePath() {
-      return "/components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm";
+      return "/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm";
     },
   },
 };

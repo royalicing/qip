@@ -45,7 +45,7 @@ test("self-contained Node router serves content recipes, raw Markdown, and compo
   assert.equal(source.headers.get("content-type"), "text/markdown; charset=utf-8");
   assert.equal(new TextDecoder().decode(source.body), "# Guide\n\nHello from Markdown.\n");
 
-  const component = await router.resolve("GET", "/components/demo/markdown.wasm");
+  const component = await router.resolve("GET", "/demo/markdown.wasm");
   assert.equal(component.status, 200);
   assert.equal(component.headers.get("content-type"), "application/wasm");
   assert.ok(component.body.byteLength > 1_000);

@@ -5,7 +5,7 @@
 <form aria-labelledby="form-qr-url-heading">
     <h2 id="form-qr-url-heading">URL to QR Code SVG</h2>
     <qip-edit>
-        <source src="/components/text/uri-list/url-to-qr-svg.wasm" type="application/wasm" />
+        <source src="/text/uri-list/url-to-qr-svg.wasm" type="application/wasm" />
         <input
             type="url"
             name="input"

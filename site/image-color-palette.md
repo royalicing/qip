@@ -52,7 +52,7 @@ const status = document.getElementById("palette-status");
 const output = document.getElementById("palette-output");
 const bytes = contentTypeBytes();
 const text = contentTypeUTF8();
-const componentModule = await WebAssembly.compileStreaming(fetch("/components/image/bmp/bmp-color-palette.wasm"));
+const componentModule = await WebAssembly.compileStreaming(fetch("/image/bmp/bmp-color-palette.wasm"));
 const extractPaletteComponent = contentComponent(bytes, componentModule, text);
 
 function showPalette(palette) {

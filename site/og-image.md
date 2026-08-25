@@ -165,9 +165,9 @@ const status = document.getElementById("og-status");
 const titleInput = form.elements.namedItem("title");
 const subtitleInput = form.elements.namedItem("subtitle");
 const rasterComponentURLs = {
-  svg: "/components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm",
-  png: "/components/image/bmp/bmp-to-png.wasm",
-  webp: "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm",
+  svg: "/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm",
+  png: "/image/bmp/bmp-to-png.wasm",
+  webp: "/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm",
 };
 const rasterComponents = new Map();
 
@@ -195,14 +195,14 @@ if (initialFontWeight === "400" || initialFontWeight === "700") {
 const previews = [
   {
     name: "og-image-inter",
-    url: "/components/utf8/text-to-og-image-svg-inter.wasm",
+    url: "/text/text-to-og-image-svg-inter.wasm",
     image: document.getElementById("og-inter"),
     objectURL: null,
     svg: null,
   },
   {
     name: "og-image-dejavu-sans-mono",
-    url: "/components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm",
+    url: "/text/text-to-og-image-svg-dejavu-sans-mono.wasm",
     image: document.getElementById("og-dejavu"),
     objectURL: null,
     svg: null,
@@ -388,11 +388,11 @@ update();
 
 ## Download
 
-- <a href="/components/utf8/text-to-og-image-svg-inter.wasm" download>text-to-og-image-svg-inter.wasm</a> — <qip-content-size src="/components/utf8/text-to-og-image-svg-inter.wasm"></qip-content-size>
-- <a href="/components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm" download>text-to-og-image-svg-dejavu-sans-mono.wasm</a> — <qip-content-size src="/components/utf8/text-to-og-image-svg-dejavu-sans-mono.wasm"></qip-content-size>
-- <a href="/components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm" download>svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm</a> — <qip-content-size src="/components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-to-png.wasm" download>bmp-to-png.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-png.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossless.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"></qip-content-size>
+- <a href="/text/text-to-og-image-svg-inter.wasm" download>text-to-og-image-svg-inter.wasm</a> — <qip-content-size src="/text/text-to-og-image-svg-inter.wasm"></qip-content-size>
+- <a href="/text/text-to-og-image-svg-dejavu-sans-mono.wasm" download>text-to-og-image-svg-dejavu-sans-mono.wasm</a> — <qip-content-size src="/text/text-to-og-image-svg-dejavu-sans-mono.wasm"></qip-content-size>
+- <a href="/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm" download>svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm</a> — <qip-content-size src="/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size>
+- <a href="/image/bmp/bmp-to-png.wasm" download>bmp-to-png.wasm</a> — <qip-content-size src="/image/bmp/bmp-to-png.wasm"></qip-content-size>
+- <a href="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm" download>bmp-b8g8r8a8-srgb-to-webp-lossless.wasm</a> — <qip-content-size src="/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"></qip-content-size>
 
 ## JavaScript
 

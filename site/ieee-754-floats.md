@@ -15,5 +15,5 @@ Controls:
 - Watch the raw exponent, hidden bit, hexadecimal bytes, decimal value, and scientific notation update together.
 
 <qip-play>
-  <source src="/components/interactive/ieee-754-floats.wasm" type="application/wasm" />
+  <source src="/interactive/ieee-754-floats.wasm" type="application/wasm" />
 </qip-play>

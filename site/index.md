@@ -115,9 +115,9 @@ You can render the same QIP components in the browser:
 
 <form class="browser-preview-demo" aria-label="Markdown to HTML">
     <qip-edit>
-        <source src="/components/text/markdown/gfm-commonmark.0.31.2.wasm" type="application/wasm" />
-        <source src="/components/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
-        <source src="/components/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
+        <source src="/text/markdown/gfm-commonmark.0.31.2.wasm" type="application/wasm" />
+        <source src="/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
+        <source src="/text/html/html-add-highlight-stylesheet-night-owl.wasm" type="application/wasm" />
         <label class="browser-preview-view">
             <strong>Markdown input</strong>
             <textarea name="input" rows="5"># Markdown with highlighted code&#10;```tsx&#10;const pi: number = 3.14;&#10;```</textarea>
@@ -135,8 +135,8 @@ Use the `<qip-edit>` custom element to render a series of QIP components with us
 
 <pre><code class="language-html">&lt;form aria-label=&quot;Markdown to HTML&quot;&gt;
     &lt;qip-edit&gt;
-        &lt;source src=&quot;/components/text/markdown/gfm-commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
-        &lt;source src=&quot;/components/text/html/html-code-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;source src=&quot;/text/markdown/gfm-commonmark.0.31.2.wasm&quot; type=&quot;application/wasm&quot; /&gt;
+        &lt;source src=&quot;/text/html/html-code-syntax-highlight-tsx.wasm&quot; type=&quot;application/wasm&quot; /&gt;
         &lt;textarea name=&quot;input&quot; rows=&quot;5&quot;&gt;# Markdown with highlighted code
 ```tsx
 const pi: number = 3.14;
@@ -194,19 +194,19 @@ QIP Interactive Components receive keyboard & pointer events and render out pixe
 Use `<qip-play>` to render them in the browser, or use our SDK to render them in Swift.
 
 <qip-play canvas-width="720px" canvas-height="auto">
-  <source src="/components/interactive/cover-flow.wasm" type="application/wasm" />
+  <source src="/interactive/cover-flow.wasm" type="application/wasm" />
 </qip-play>
 
 ---
 
 <qip-play canvas-width="820px" canvas-height="auto">
-  <source src="/components/interactive/openai-anthropic-arr.wasm" type="application/wasm" />
+  <source src="/interactive/openai-anthropic-arr.wasm" type="application/wasm" />
 </qip-play>
 
 ---
 
 <qip-play canvas-width="min(762px, 100%)" canvas-height="auto">
-  <source src="/components/interactive/sudoku.wasm" type="application/wasm" />
+  <source src="/interactive/sudoku.wasm" type="application/wasm" />
 </qip-play>
 
 ---

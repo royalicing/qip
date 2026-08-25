@@ -11,7 +11,7 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 
 test("input rejection keeps the instance reusable", async () => {
   const host = new ContentComponentHost(
-    await readFile("components/utf8/utf8-must-be-valid.wasm"),
+    await readFile("components/text/utf8-must-be-valid.wasm"),
     { label: "UTF-8 validator" },
   );
 
@@ -52,7 +52,7 @@ test("a render trap discards the instance instead of attempting recovery", async
 
 test("Base64 rejects malformed and non-canonical input and recovers", async () => {
   const host = new ContentComponentHost(
-    await readFile("components/utf8/base64-decode.wasm"),
+    await readFile("components/text/base64-decode.wasm"),
     { label: "Base64 decoder" },
   );
   const instance = host.instantiate();

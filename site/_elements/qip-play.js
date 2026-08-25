@@ -894,6 +894,7 @@ class QIPPlayElement extends HTMLElement {
     this._boundInputChange = null;
     this._boundVisibilityChange = null;
     this._inputElement = null;
+    this._sourceElement = null;
     this._eventN = 0;
     this._updateN = 0;
     this._renderN = 0;
@@ -995,6 +996,7 @@ class QIPPlayElement extends HTMLElement {
 
     this._exports = exportsObj;
     this._memory = exportsObj.memory;
+    this._sourceElement = sourceElement;
     this._uniforms = qipPlayExtractUniforms(sourceElement);
     this._debugStats = this.hasAttribute("debug");
     this._logTimings = this.hasAttribute("log");
@@ -1148,7 +1150,10 @@ class QIPPlayElement extends HTMLElement {
   }
 
   _applyUniforms() {
-    for (const uniform of this._uniforms) {
+    const uniforms = this._sourceElement
+      ? qipPlayExtractUniforms(this._sourceElement)
+      : this._uniforms;
+    for (const uniform of uniforms) {
       qipPlayApplyUniform(this._exports, uniform);
     }
   }

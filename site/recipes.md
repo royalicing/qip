@@ -105,7 +105,7 @@ Choose the type of content you have and the content type you want made.
 
 <script type="module">
 const CATALOG_URL = "/data/component-catalog.csv";
-const GENERATOR_URL = "/components/text/csv/content-recipe-to-browser-javascript.wasm";
+const GENERATOR_URL = "/text/csv/content-recipe-to-browser-javascript.wasm";
 const CATALOG_HEADER = "path,input_encoding,input_mime,input_capacity_bytes,output_encoding,output_mime,output_capacity_bytes";
 
 const MIME_LABELS = {
@@ -417,7 +417,7 @@ function renderRecipe(recipe, inputMime, outputMime) {
     const componentItem = document.createElement("li");
     const link = document.createElement("a");
     link.href = component.path;
-    link.textContent = component.path.replace("/components/", "");
+    link.textContent = component.path.replace("/", "");
     componentItem.append(link);
     componentList.append(componentItem);
   }

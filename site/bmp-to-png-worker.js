@@ -2,7 +2,7 @@ self.onmessage = async (event) => {
   try {
     const input = new Uint8Array(event.data.input);
     const module = await WebAssembly.compileStreaming(
-      fetch("/components/image/bmp/bmp-to-png.wasm"),
+      fetch("/image/bmp/bmp-to-png.wasm"),
     );
     const exports = new WebAssembly.Instance(module, {}).exports;
     const inputCap = exports.input_bytes_cap() >>> 0;

@@ -37,7 +37,7 @@ The page or application owns the canonical input, and the user consumes the resu
 
 ```html
 <qip-view>
-  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <source src="/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
   <input type="hidden" name="input" value="# Rendered ahead of time" />
   <output name="output"><h1>Rendered ahead of time</h1></output>
 </qip-view>
@@ -128,8 +128,8 @@ The element is intentionally small: the page provides input controls, Wasm sourc
 ```html
 <form aria-label="Markdown to HTML">
   <qip-edit>
-    <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
-    <source src="/components/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
+    <source src="/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+    <source src="/text/html/html-code-syntax-highlight-tsx.wasm" type="application/wasm" />
 
     <textarea name="input" rows="5" placeholder="Write some Markdown"># A Markdown renderer that works identically cross-platform! Try typing…</textarea>
 
@@ -147,7 +147,7 @@ Each edit element needs at least one QIP component, one input, and one output:
 
 ```html
 <qip-edit>
-  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <source src="/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
   <textarea name="input"># Hello</textarea>
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
@@ -186,7 +186,7 @@ A `<source name="input">` declares the input. The runtime fetches it, and its `t
 ```html
 <qip-edit>
   <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
-  <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+  <source src="/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
 ```
@@ -195,8 +195,8 @@ Every other `<source>` is a pipeline stage. The naming follows the element's exi
 
 ```html
 <qip-edit>
-  <source name="input" src="/components/utf8/luhn.wasm" type="application/wasm" />
-  <source src="/components/application/wasm/wasm-strict-profile.wasm" type="application/wasm" />
+  <source name="input" src="/text/luhn.wasm" type="application/wasm" />
+  <source src="/application/wasm/wasm-strict-profile.wasm" type="application/wasm" />
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
 ```
@@ -208,7 +208,7 @@ An `<input type="file" name="input">` supplies the chosen file's bytes and conte
 ```html
 <qip-edit>
   <source name="input" src="/data/countries.sqlite" type="application/vnd.sqlite3" />
-  <source src="/components/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
+  <source src="/application/vnd.sqlite3/sqlite-schema.wasm" type="application/wasm" />
   <input type="file" name="input" accept=".sqlite,application/vnd.sqlite3" />
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
@@ -222,7 +222,7 @@ Components use fixed memory by default. Add a byte cap when the page needs a tig
 
 ```html
 <qip-edit max-memory="67108864">
-  <source src="/components/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
+  <source src="/text/markdown/commonmark.0.31.2.wasm" type="application/wasm" />
   <textarea name="input"># Hello</textarea>
   <output name="output"><pre><code></code></pre></output>
 </qip-edit>
@@ -239,7 +239,7 @@ These checks run after the module bytes are fetched and before `WebAssembly.comp
 
 ```html
 <qip-play>
-  <source src="/components/interactive/snake.wasm" type="application/wasm" />
+  <source src="/interactive/snake.wasm" type="application/wasm" />
 </qip-play>
 ```
 

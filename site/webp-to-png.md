@@ -249,8 +249,8 @@ fixed Wasm memory attached to the page.
 
 ## Components
 
-- <a href="/components/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm" download>webp-to-bmp-b8g8r8a8-srgb.wasm</a> — <qip-content-size src="/components/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size>
-- <a href="/components/image/bmp/bmp-to-png.wasm" download>bmp-to-png.wasm</a> — <qip-content-size src="/components/image/bmp/bmp-to-png.wasm"></qip-content-size>
+- <a href="/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm" download>webp-to-bmp-b8g8r8a8-srgb.wasm</a> — <qip-content-size src="/image/webp/webp-to-bmp-b8g8r8a8-srgb.wasm"></qip-content-size>
+- <a href="/image/bmp/bmp-to-png.wasm" download>bmp-to-png.wasm</a> — <qip-content-size src="/image/bmp/bmp-to-png.wasm"></qip-content-size>
 
 ## CLI equivalent
 

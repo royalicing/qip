@@ -2,10 +2,10 @@ self.onmessage = async (event) => {
   try {
     const { input, mode, options } = event.data;
     const modulePath = mode === "lossless"
-      ? "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"
+      ? "/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossless.wasm"
       : mode === "opaque"
-        ? "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm"
-        : "/components/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm";
+        ? "/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy-opaque.wasm"
+        : "/image/bmp/bmp-b8g8r8a8-srgb-to-webp-lossy.wasm";
     const module = await WebAssembly.compileStreaming(fetch(modulePath));
     const { exports } = new WebAssembly.Instance(module, {});
     const inputBytes = new Uint8Array(input);

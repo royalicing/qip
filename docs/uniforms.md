@@ -85,7 +85,7 @@ Examples from this repository:
 
 ```bash
 # i32 uniform
-qip run components/utf8/text-to-bmp.wasm -u cols=120
+qip run components/text/text-to-bmp.wasm -u cols=120
 
 # f32 uniforms
 qip image -i in.jpg -o out.png \

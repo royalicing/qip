@@ -67,8 +67,8 @@ const upperOutput = document.getElementById("case-upper");
 const status = document.getElementById("case-status");
 const text = contentTypeUTF8();
 const [lowerModule, upperModule] = await Promise.all([
-  WebAssembly.compileStreaming(fetch("/components/utf8/unicode-17-lowercase.wasm")),
-  WebAssembly.compileStreaming(fetch("/components/utf8/unicode-17-uppercase.wasm")),
+  WebAssembly.compileStreaming(fetch("/text/unicode-17-lowercase.wasm")),
+  WebAssembly.compileStreaming(fetch("/text/unicode-17-uppercase.wasm")),
 ]);
 const toLower = contentComponent(text, lowerModule, text);
 const toUpper = contentComponent(text, upperModule, text);
@@ -106,10 +106,10 @@ Both implement Unicode Default Case Conversion for the root locale. Locale-speci
 ## Use the components
 
 ```bash
-echo "ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ" | qip run components/utf8/unicode-17-lowercase.wasm
+echo "ΘΕΣΣΑΛΟΝΊΚΗ ΣΟΦΟΣ" | qip run components/text/unicode-17-lowercase.wasm
 # θεσσαλονίκη σοφος
 
-echo "straße" | qip run components/utf8/unicode-17-uppercase.wasm
+echo "straße" | qip run components/text/unicode-17-uppercase.wasm
 # STRASSE
 ```
 
@@ -120,7 +120,7 @@ import { contentComponent, contentTypeUTF8 } from "/qip-runner.js";
 
 const text = contentTypeUTF8();
 const module = await WebAssembly.compileStreaming(
-  fetch("/components/utf8/unicode-17-lowercase.wasm"),
+  fetch("/text/unicode-17-lowercase.wasm"),
 );
 const lowercase = contentComponent(text, module, text);
 

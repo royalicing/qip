@@ -412,7 +412,7 @@ Use the generic default for ordinary modules. Add target-specific overrides for 
 For C components compiled through `zig cc`, pass the linker spelling instead:
 
 ```make
-components/utf8/example-c.wasm: components/utf8/example-c.c
+components/text/example-c.wasm: components/text/example-c.c
 	$(ZIG_ENV) zig cc $< -target wasm32-freestanding -nostdlib \
 		-Wl,--no-entry -Wl,--max-memory=1048576 \
 		-Wl,--export=render -Wl,--export-memory \
@@ -428,7 +428,7 @@ Zig uses `--max-memory=...`; `zig cc` passes `-Wl,--max-memory=...` to the Wasm 
 Each component should have at least one direct smoke test through `qip`.
 
 ```bash
-printf 'hello' | qip run components/utf8/your-module.wasm
+printf 'hello' | qip run components/text/your-module.wasm
 ```
 
 Use inline Zig `test` blocks for checks tied to the implementation. They are
@@ -443,7 +443,7 @@ the best place for:
 Run them directly while iterating:
 
 ```bash
-zig test components/utf8/your-module.zig
+zig test components/text/your-module.zig
 ```
 
 Keep portable behavior in a Compliance oracle when alternative
@@ -462,8 +462,8 @@ cmp expected.bin /tmp/out.bin
 For validators, test both success and failure:
 
 ```bash
-printf 'valid' | qip run components/utf8/your-validator.wasm
-printf '\xff' | qip run components/utf8/your-validator.wasm
+printf 'valid' | qip run components/text/your-validator.wasm
+printf '\xff' | qip run components/text/your-validator.wasm
 ```
 
 For a fallible validator, test recovery on a reused instance: reject a range of
