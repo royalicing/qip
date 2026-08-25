@@ -347,6 +347,137 @@ test("qip-play reports pointer leave outside the render surface", () => {
   element._detachInputHandlers();
 });
 
+test("qip-play observes its viewport intersection and disconnects cleanly", () => {
+  const originalIntersectionObserver = globalThis.IntersectionObserver;
+  let callback = null;
+  let observed = null;
+  let disconnectN = 0;
+  globalThis.IntersectionObserver = class {
+    constructor(next) {
+      callback = next;
+    }
+
+    observe(target) {
+      observed = target;
+    }
+
+    disconnect() {
+      disconnectN++;
+    }
+  };
+
+  try {
+    const element = new QIPPlayElement();
+    let cancelN = 0;
+    let resumeN = 0;
+    element._cancelScheduledLoop = () => {
+      cancelN++;
+    };
+    element._resumeLoop = () => {
+      resumeN++;
+    };
+    element._nextWakeAtMS = 200;
+
+    element._setupIntersectionObserver();
+    assert.equal(observed, element);
+    callback([{ target: element, isIntersecting: false }]);
+    assert.equal(element._isIntersecting, false);
+    assert.equal(element._nextWakeAtMS, 200, "suspension preserves the overdue wake");
+    assert.equal(cancelN, 1);
+    assert.equal(resumeN, 1);
+
+    callback([{ target: element, isIntersecting: true }]);
+    assert.equal(element._isIntersecting, true);
+    assert.equal(element._needsRender, true);
+    assert.equal(cancelN, 2);
+    assert.equal(resumeN, 2);
+
+    element.disconnectedCallback();
+    assert.equal(disconnectN, 1);
+    assert.equal(element._intersectionObserver, null);
+  } finally {
+    globalThis.IntersectionObserver = originalIntersectionObserver;
+  }
+});
+
+test("qip-play keeps scheduling normally without IntersectionObserver", () => {
+  const originalIntersectionObserver = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = undefined;
+  try {
+    const element = new QIPPlayElement();
+    element._setupIntersectionObserver();
+    assert.equal(element._intersectionObserver, null);
+    assert.equal(element._isIntersecting, true);
+    element._nextWakeAtMS = 20;
+    assert.equal(element._hasPendingFutureWork(), true);
+    assert.equal(element._hasReadyWork(20), true);
+  } finally {
+    globalThis.IntersectionObserver = originalIntersectionObserver;
+  }
+});
+
+test("qip-play suspends offscreen wakes but keeps input eligible", () => {
+  const element = new QIPPlayElement();
+  element._isIntersecting = false;
+  element._needsRender = true;
+  element._nextWakeAtMS = 20;
+
+  assert.equal(element._hasReadyWork(20), false);
+  assert.equal(element._hasPendingFutureWork(), false);
+
+  element._queueKeyEvent(0xff0d, 1, 30);
+  assert.equal(element._hasPendingFutureWork(), true);
+  assert.equal(element._nextDelayMS(20), 10);
+  assert.equal(element._hasReadyWork(30), true);
+});
+
+test("qip-play performs one late update and render after re-entering the viewport", () => {
+  const wasm = readFileSync("components/interactive/chronograph.wasm");
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), {});
+  const element = new QIPPlayElement();
+  element._exports = instance.exports;
+  element._memory = instance.exports.memory;
+  element._uniforms = [];
+  element._outputCapacity = instance.exports.output_bytes_cap();
+
+  const initial = element._runInitialContentRender();
+  const parsed = element._readKTX2Output(initial.rendered);
+  element._runBootstrapUpdate();
+  assert.equal(element._nextWakeAtMS, 201);
+
+  let drawN = 0;
+  element._renderWidth = parsed.width;
+  element._renderHeight = parsed.height;
+  element._expectedOutputBytes = parsed.pixels.byteLength;
+  element._canvas = { width: parsed.width, height: parsed.height };
+  element._ctx = {
+    createImageData(width, height) {
+      return { data: new Uint8ClampedArray(width * height * 4) };
+    },
+    putImageData() {
+      drawN++;
+    },
+  };
+  element._imageData = element._ctx.createImageData(parsed.width, parsed.height);
+  element._stats = { textContent: "" };
+  element._timeOriginMS = 1000;
+  element._isIntersecting = false;
+
+  element._frameUpdate(1401);
+  assert.equal(element._updateN, 1);
+  assert.equal(element._renderN, 1);
+  assert.equal(drawN, 0);
+
+  element._isIntersecting = true;
+  element._needsRender = true;
+  element._frameUpdate(1401);
+  assert.equal(element._finishedAtMS, 401);
+  assert.equal(element._nextWakeAtMS, 601);
+  assert.equal(element._updateN, 2);
+  assert.equal(element._renderN, 2);
+  assert.equal(drawN, 1);
+});
+
 test("qip-play runs initial Content render and separate Timed KTX2 updates", () => {
   const wasm = readFileSync("components/interactive/god-rays-optimized.wasm");
   const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), {});

@@ -1197,6 +1197,8 @@ class QIPPlayElement extends HTMLElement {
     this._boundBlur = null;
     this._boundInputChange = null;
     this._boundVisibilityChange = null;
+    this._intersectionObserver = null;
+    this._isIntersecting = true;
     this._inputElement = null;
     this._sourceElement = null;
     this._eventN = 0;
@@ -1228,15 +1230,11 @@ class QIPPlayElement extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (this._rafID !== 0 && typeof cancelAnimationFrame === "function") {
-      cancelAnimationFrame(this._rafID);
-      this._rafID = 0;
+    this._cancelScheduledLoop();
+    if (this._intersectionObserver) {
+      this._intersectionObserver.disconnect();
+      this._intersectionObserver = null;
     }
-    if (this._timeoutID !== 0) {
-      clearTimeout(this._timeoutID);
-      this._timeoutID = 0;
-    }
-    this._timeoutTargetMS = 0;
     this._nextWakeAtMS = 0;
     this._timeOriginMS = 0;
     this._detachInputBinding();
@@ -1353,6 +1351,7 @@ class QIPPlayElement extends HTMLElement {
     }
     this.appendChild(this._stats);
     this._attachInputHandlers();
+    this._setupIntersectionObserver();
     if (typeof document.addEventListener === "function") {
       this._boundVisibilityChange = () => {
         if (!document.hidden) {
@@ -1362,6 +1361,45 @@ class QIPPlayElement extends HTMLElement {
       };
       document.addEventListener("visibilitychange", this._boundVisibilityChange);
     }
+  }
+
+  _setupIntersectionObserver() {
+    if (typeof globalThis.IntersectionObserver !== "function") {
+      return;
+    }
+    this._intersectionObserver = new globalThis.IntersectionObserver((entries) => {
+      let latest = null;
+      for (const entry of entries) {
+        if (entry.target === this) latest = entry;
+      }
+      if (!latest) return;
+      const isIntersecting = Boolean(latest.isIntersecting);
+      if (isIntersecting === this._isIntersecting) return;
+
+      this._isIntersecting = isIntersecting;
+      this._cancelScheduledLoop();
+      if (isIntersecting) this._needsRender = true;
+      // Offscreen Timed wakes are suspended, but queued user input remains
+      // eligible so a focused component cannot accumulate stale events.
+      this._resumeLoop();
+    });
+    this._intersectionObserver.observe(this);
+  }
+
+  _cancelScheduledLoop() {
+    if (this._rafID !== 0 && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this._rafID);
+      this._rafID = 0;
+    }
+    if (this._timeoutID !== 0) {
+      clearTimeout(this._timeoutID);
+      this._timeoutID = 0;
+    }
+    this._timeoutTargetMS = 0;
+  }
+
+  _canPresent() {
+    return this._isIntersecting && !document.hidden;
   }
 
   _setupInputBinding(inputElement) {
@@ -1565,7 +1603,7 @@ class QIPPlayElement extends HTMLElement {
     this._exports.begin_update_at(qipPlayNowMSArg(begunAtMS));
     this._applyUniforms();
     const eventResult = this._drainEvents(nowMS);
-    const shouldRender = renderRequested || (!document.hidden && eventResult.accepted);
+    const shouldRender = this._canPresent() && (renderRequested || eventResult.accepted);
     let rendered = null;
     let renderMS = 0;
     const nextWakeAtMS = this._readFinishedUpdate(begunAtMS);
@@ -1998,9 +2036,10 @@ class QIPPlayElement extends HTMLElement {
   _frameUpdate(nowMS) {
     if (!this._exports) return;
     const updateNowMS = this._elapsedFromPerfNow(nowMS);
-    const wakeDue = this._nextWakeAtMS > 0 && updateNowMS >= this._nextWakeAtMS;
+    const wakeDue = this._isIntersecting && this._nextWakeAtMS > 0 && updateNowMS >= this._nextWakeAtMS;
     const eventsDue = this._hasDueEvents(updateNowMS);
-    if (!wakeDue && !eventsDue && !this._needsRender) return;
+    const presentationDue = this._needsRender && this._canPresent();
+    if (!wakeDue && !eventsDue && !presentationDue) return;
     if (!wakeDue && !eventsDue) {
       this._needsRender = false;
       this._applyUniforms();
@@ -2010,8 +2049,8 @@ class QIPPlayElement extends HTMLElement {
       this._presentKTX2Output(this._readKTX2Output(rendered), renderMS);
       return;
     }
-    const renderRequested = this._needsRender || (wakeDue && !document.hidden);
-    this._needsRender = false;
+    const renderRequested = this._canPresent() && (this._needsRender || wakeDue);
+    if (renderRequested) this._needsRender = false;
     const result = this._runUpdate(updateNowMS, renderRequested);
     if (this._logTimings) {
       console.log(
@@ -2043,10 +2082,10 @@ class QIPPlayElement extends HTMLElement {
   }
 
   _hasReadyWork(nowMS) {
-    if (this._needsRender) {
+    if (this._needsRender && this._canPresent()) {
       return true;
     }
-    if (this._nextWakeAtMS > 0 && nowMS >= this._nextWakeAtMS) {
+    if (this._isIntersecting && this._nextWakeAtMS > 0 && nowMS >= this._nextWakeAtMS) {
       return true;
     }
     if (
@@ -2079,7 +2118,7 @@ class QIPPlayElement extends HTMLElement {
   }
 
   _hasPendingFutureWork() {
-    if (this._nextWakeAtMS > 0) {
+    if (this._isIntersecting && this._nextWakeAtMS > 0) {
       return true;
     }
     if (this._pendingEvents.length > 0) {
@@ -2090,7 +2129,7 @@ class QIPPlayElement extends HTMLElement {
 
   _nextDelayMS(nowMS) {
     let nextAt = Number.MAX_SAFE_INTEGER;
-    if (this._nextWakeAtMS > 0) {
+    if (this._isIntersecting && this._nextWakeAtMS > 0) {
       nextAt = Math.min(nextAt, this._nextWakeAtMS);
     }
     if (this._pendingEvents.length > 0) {

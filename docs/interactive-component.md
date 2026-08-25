@@ -147,6 +147,14 @@ set `canvas-width` and `canvas-height`, or the
 `--qip-play-canvas-width` and `--qip-play-canvas-height` CSS properties.
 Attributes take precedence.
 
+`<qip-play>` suspends scheduled Timed wakes and rendering while its element is
+outside the viewport. It preserves the component's next wake deadline. When
+the element re-enters, the host delivers one late update at the current time,
+renders the current state, and schedules the next returned wake. Component
+time therefore continues while execution is suspended. Queued user input can
+still open an offscreen update, but it does not cause an offscreen render.
+Browsers without `IntersectionObserver` keep the component running.
+
 Pointer coordinates are converted from the displayed canvas box to rendered
 pixel coordinates. This permits a high-resolution rendered image to use a
 smaller CSS presentation size.
