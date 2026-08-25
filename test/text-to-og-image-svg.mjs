@@ -45,11 +45,11 @@ test("renders a left-aligned title and smaller subtitle with configurable colors
   ).toString("utf8");
   assert.equal(inputContentType, "application/x-www-form-urlencoded");
   assert.equal(
-    instance.exports.uniform_set_text_color(0xffffffff) >>> 0,
+    instance.exports.uniform_set_text_color_rgba(0xffffffff) >>> 0,
     0xffffffff,
   );
   assert.equal(
-    instance.exports.uniform_set_background_color(0x4b2e83ff),
+    instance.exports.uniform_set_background_color_rgba(0x4b2e83ff),
     0x4b2e83ff,
   );
   assert.equal(instance.exports.uniform_set_font_weight(700), 700);
@@ -81,8 +81,8 @@ test("selects regular outlines and preserves alpha in colors", async () => {
   assert.equal(instance.exports.uniform_set_font_weight(400), 400);
   assert.equal(instance.exports.uniform_set_font_max_size(64), 64);
   assert.equal(instance.exports.uniform_set_font_size, undefined);
-  instance.exports.uniform_set_text_color(0x11223344);
-  instance.exports.uniform_set_background_color(0xaabbccff);
+  instance.exports.uniform_set_text_color_rgba(0x11223344);
+  instance.exports.uniform_set_background_color_rgba(0xaabbccff);
   const svg = render(instance, form("Café & jalapeño!", "Crème brûlée"));
   assert.match(svg, /<rect [^>]*fill="#aabbcc"\/\>/);
   assert.match(svg, /<g fill="#11223344" [^>]*data-font-weight="400"/);
@@ -106,8 +106,8 @@ test("requires a title and rejects malformed form data", async () => {
 
 test("uniforms reset to authored defaults after render", async () => {
   const instance = await instantiate();
-  instance.exports.uniform_set_text_color(0x11223344);
-  instance.exports.uniform_set_background_color(0xaabbccff);
+  instance.exports.uniform_set_text_color_rgba(0x11223344);
+  instance.exports.uniform_set_background_color_rgba(0xaabbccff);
   instance.exports.uniform_set_font_weight(400);
   instance.exports.uniform_set_font_max_size(64);
   const configured = render(instance, form("A"));

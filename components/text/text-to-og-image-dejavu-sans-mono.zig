@@ -53,12 +53,12 @@ export fn output_content_type_size() u32 {
     return @as(u32, @intCast(OUTPUT_CONTENT_TYPE.len));
 }
 
-export fn uniform_set_text_color(value: u32) u32 {
+export fn uniform_set_text_color_rgba(value: u32) u32 {
     text_color_rgba = value;
     return text_color_rgba;
 }
 
-export fn uniform_set_background_color(value: u32) u32 {
+export fn uniform_set_background_color_rgba(value: u32) u32 {
     background_color_rgba = value;
     return background_color_rgba;
 }
@@ -384,8 +384,8 @@ test "supports latin-1 glyph lookup including e-acute" {
 
 test "render resets colors to black text on white" {
     input_buf[0] = 'A';
-    _ = uniform_set_text_color(0xff0000ff);
-    _ = uniform_set_background_color(0x0000ffff);
+    _ = uniform_set_text_color_rgba(0xff0000ff);
+    _ = uniform_set_background_color_rgba(0x0000ffff);
     try std.testing.expectEqual(@as(u32, BMP_OUTPUT_SIZE), renderImpl(1));
     try std.testing.expect(outputHasPixel(0, 0, 255, 255));
     try std.testing.expect(outputHasPixel(255, 0, 0, 255));

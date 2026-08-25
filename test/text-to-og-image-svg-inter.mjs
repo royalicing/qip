@@ -45,8 +45,8 @@ function firstTwoXPositions(svg) {
 
 test("renders a left-aligned Inter title and smaller subtitle", async () => {
   const instance = await instantiate();
-  instance.exports.uniform_set_text_color(0xffffffff);
-  instance.exports.uniform_set_background_color(0x4b2e83ff);
+  instance.exports.uniform_set_text_color_rgba(0xffffffff);
+  instance.exports.uniform_set_background_color_rgba(0x4b2e83ff);
   const svg = render(
     instance,
     form(
@@ -116,8 +116,8 @@ test("supports common title punctuation and rejects unsupported scripts", async 
 
 test("uniforms reset to authored defaults after render", async () => {
   const instance = await instantiate();
-  instance.exports.uniform_set_text_color(0x11223344);
-  instance.exports.uniform_set_background_color(0xaabbccff);
+  instance.exports.uniform_set_text_color_rgba(0x11223344);
+  instance.exports.uniform_set_background_color_rgba(0xaabbccff);
   instance.exports.uniform_set_font_weight(400);
   instance.exports.uniform_set_font_max_size(64);
   const configured = render(instance, form("A"));

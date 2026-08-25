@@ -175,8 +175,8 @@ const initialState = new URLSearchParams(location.search);
 if (initialState.has("title")) titleInput.value = initialState.get("title");
 if (initialState.has("subtitle")) subtitleInput.value = initialState.get("subtitle");
 for (const [name, input] of [
-  ["text_color", textColor],
-  ["background_color", backgroundColor],
+  ["text_color_rgba", textColor],
+  ["background_color_rgba", backgroundColor],
 ]) {
   const value = initialState.get(name);
   if (value && /^#?[0-9a-f]{6}$/i.test(value)) {
@@ -227,8 +227,8 @@ function renderSVG(exports, input) {
   );
   const { read, written } = encoder.encodeInto(input, inputBuffer);
   if (read !== input.length) throw Error("Form data is too long.");
-  exports.uniform_set_text_color(rgba(textColor.value));
-  exports.uniform_set_background_color(rgba(backgroundColor.value));
+  exports.uniform_set_text_color_rgba(rgba(textColor.value));
+  exports.uniform_set_background_color_rgba(rgba(backgroundColor.value));
   exports.uniform_set_font_max_size(selectedMaxFontSize());
   exports.uniform_set_font_weight(Number(fontWeight.value));
   const output = renderOutput(exports, written);
@@ -357,8 +357,8 @@ function replaceURLState() {
   const url = new URL(location.href);
   url.searchParams.set("title", titleInput.value);
   url.searchParams.set("subtitle", subtitleInput.value);
-  url.searchParams.set("text_color", textColor.value);
-  url.searchParams.set("background_color", backgroundColor.value);
+  url.searchParams.set("text_color_rgba", textColor.value);
+  url.searchParams.set("background_color_rgba", backgroundColor.value);
   url.searchParams.set("font_max_size", fontMaxSize.value);
   url.searchParams.set("font_weight", fontWeight.value);
   history.replaceState(null, "", url);
@@ -452,8 +452,8 @@ export function renderOGImageToSVG({
   if (read !== form.length) {
     throw new RangeError("Open Graph image input is too large");
   }
-  ogImageRenderer.uniform_set_text_color(textColor);
-  ogImageRenderer.uniform_set_background_color(backgroundColor);
+  ogImageRenderer.uniform_set_text_color_rgba(textColor);
+  ogImageRenderer.uniform_set_background_color_rgba(backgroundColor);
   ogImageRenderer.uniform_set_font_max_size(fontMaxSize);
   ogImageRenderer.uniform_set_font_weight(fontWeight);
 

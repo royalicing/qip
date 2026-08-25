@@ -63,14 +63,14 @@ uint32_t output_content_type_size() {
     return (uint32_t)(sizeof(output_content_type) - 1);
 }
 
-__attribute__((export_name("uniform_set_text_color")))
-uint32_t uniform_set_text_color(uint32_t value) {
+__attribute__((export_name("uniform_set_text_color_rgba")))
+uint32_t uniform_set_text_color_rgba(uint32_t value) {
     text_color_rgba = value;
     return text_color_rgba;
 }
 
-__attribute__((export_name("uniform_set_background_color")))
-uint32_t uniform_set_background_color(uint32_t value) {
+__attribute__((export_name("uniform_set_background_color_rgba")))
+uint32_t uniform_set_background_color_rgba(uint32_t value) {
     background_color_rgba = value;
     return background_color_rgba;
 }

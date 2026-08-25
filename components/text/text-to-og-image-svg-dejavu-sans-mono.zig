@@ -7,8 +7,8 @@
 //! title size, with a 24px minimum.
 //!
 //! Auto-fit selects the largest even title size from 112px down to 32px that
-//! fits inside 96px horizontal and 72px vertical margins. The `text_color` and
-//! `background_color` uniforms accept packed 0xRRGGBBAA values. `font_weight`
+//! fits inside 96px horizontal and 72px vertical margins. The `text_color_rgba`
+//! and `background_color_rgba` uniforms accept packed 0xRRGGBBAA values. `font_weight`
 //! values below 550 select Regular 400 for the title; other values select Bold
 //! 700. `font_max_size=0` uses the default 112px auto-fit ceiling; other
 //! values set a ceiling clamped to 32-160px. Layout can select a smaller size.
@@ -22,7 +22,7 @@
 //! Example:
 //!   printf '%s' 'title=Reusable+components&subtitle=Rendered+with+DejaVu' |
 //!     qip run -- text-to-og-image-svg-dejavu-sans-mono.wasm \
-//!       '?text_color=0xffffffff&background_color=0x4b2e83ff' > og-image.svg
+//!       -u text_color_rgba=0xffffffff -u background_color_rgba=0x4b2e83ff > og-image.svg
 //!
 //! This is a bounded Latin-1 title-card renderer, not a general text layout
 //! engine. It does not perform kerning, shaping, bidirectional layout,
@@ -54,8 +54,8 @@ const MAX_CODEPOINTS: usize = 1_024;
 const MAX_LINES_PER_FIELD: usize = 16;
 const FIELD_BYTES_CAP: usize = 2 * 1024;
 
-const DEFAULT_TEXT_COLOR: u32 = 0x101010ff;
-const DEFAULT_BACKGROUND_COLOR: u32 = 0xeecc33ff;
+const DEFAULT_TEXT_COLOR_RGBA: u32 = 0x101010ff;
+const DEFAULT_BACKGROUND_COLOR_RGBA: u32 = 0xeecc33ff;
 const DEFAULT_FONT_WEIGHT: u32 = 700;
 const DEFAULT_REQUESTED_MAX_FONT_SIZE: u32 = 0;
 
@@ -68,8 +68,8 @@ var subtitle_codepoints: [MAX_CODEPOINTS]u32 = undefined;
 var title_lines: [MAX_LINES_PER_FIELD]Line = undefined;
 var subtitle_lines: [MAX_LINES_PER_FIELD]Line = undefined;
 
-var text_color: u32 = DEFAULT_TEXT_COLOR;
-var background_color: u32 = DEFAULT_BACKGROUND_COLOR;
+var text_color_rgba: u32 = DEFAULT_TEXT_COLOR_RGBA;
+var background_color_rgba: u32 = DEFAULT_BACKGROUND_COLOR_RGBA;
 var font_weight: u32 = DEFAULT_FONT_WEIGHT;
 var requested_max_font_size: u32 = DEFAULT_REQUESTED_MAX_FONT_SIZE;
 
@@ -179,14 +179,14 @@ export fn output_content_type_size() u32 {
     return @intCast(OUTPUT_CONTENT_TYPE.len);
 }
 
-export fn uniform_set_text_color(value: u32) u32 {
-    text_color = value;
-    return text_color;
+export fn uniform_set_text_color_rgba(value: u32) u32 {
+    text_color_rgba = value;
+    return text_color_rgba;
 }
 
-export fn uniform_set_background_color(value: u32) u32 {
-    background_color = value;
-    return background_color;
+export fn uniform_set_background_color_rgba(value: u32) u32 {
+    background_color_rgba = value;
+    return background_color_rgba;
 }
 
 export fn uniform_set_font_weight(value: u32) u32 {
@@ -224,8 +224,8 @@ export fn render(input_size_u32: u32) packed struct(u64) {
 }
 
 fn resetUniforms() void {
-    text_color = DEFAULT_TEXT_COLOR;
-    background_color = DEFAULT_BACKGROUND_COLOR;
+    text_color_rgba = DEFAULT_TEXT_COLOR_RGBA;
+    background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
     font_weight = DEFAULT_FONT_WEIGHT;
     requested_max_font_size = DEFAULT_REQUESTED_MAX_FONT_SIZE;
 }
@@ -241,7 +241,7 @@ fn renderSvg(input: []const u8, output: []u8) RenderError!usize {
 
     try out.write("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1200\" height=\"630\" viewBox=\"0 0 1200 630\">");
     try out.write("<rect width=\"1200\" height=\"630\" fill=\"");
-    try out.color(background_color);
+    try out.color(background_color_rgba);
     try out.write("\"/>");
 
     const block_top = (@as(f32, @floatFromInt(HEIGHT)) - layout.block_height) / 2;
@@ -288,7 +288,7 @@ fn writeTextGroup(
     use_bold: bool,
 ) RenderError!void {
     try out.write("<g fill=\"");
-    try out.color(text_color);
+    try out.color(text_color_rgba);
     try out.write("\" stroke=\"none\" data-role=\"");
     try out.write(role);
     try out.write("\" data-font-family=\"DejaVu Sans Mono\" data-font-weight=\"");
@@ -591,8 +591,8 @@ test "lays out a left-aligned title and smaller subtitle" {
 }
 
 test "switches between regular and bold and formats colors" {
-    text_color = 0x11223344;
-    background_color = 0xaabbccff;
+    text_color_rgba = 0x11223344;
+    background_color_rgba = 0xaabbccff;
     font_weight = 400;
     var rendered: [1024 * 1024]u8 = undefined;
     const size = try renderSvg("title=Caf%C3%A9%21&subtitle=Cr%C3%A8me+br%C3%BBl%C3%A9e", &rendered);
@@ -605,8 +605,8 @@ test "switches between regular and bold and formats colors" {
 test "render resets all uniforms to authored defaults" {
     const input = "title=A";
     @memcpy(input_buf[0..input.len], input);
-    _ = uniform_set_text_color(0x11223344);
-    _ = uniform_set_background_color(0xaabbccff);
+    _ = uniform_set_text_color_rgba(0x11223344);
+    _ = uniform_set_background_color_rgba(0xaabbccff);
     _ = uniform_set_font_weight(400);
     _ = uniform_set_font_max_size(64);
     const configured_size = renderImpl(input.len);

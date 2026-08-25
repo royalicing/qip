@@ -29,8 +29,8 @@ for (const component of components) {
     const memory = new Uint8Array(e.memory.buffer);
     memory[e.input_ptr()] = "A".charCodeAt(0);
 
-    e.uniform_set_text_color(0xff0000ff);
-    e.uniform_set_background_color(0x0000ffff);
+    e.uniform_set_text_color_rgba(0xff0000ff);
+    e.uniform_set_background_color_rgba(0x0000ffff);
     const configuredSize = qipRenderSize(e, 1);
     const configured = memory.slice(qipRenderedOutputPointer(e), qipRenderedOutputPointer(e) + configuredSize);
     assert.equal(hasPixel(configured, 0, 0, 255, 255), true);

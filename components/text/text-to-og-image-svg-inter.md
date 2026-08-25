@@ -17,7 +17,7 @@ and 72px vertical margins.
 printf '%s' 'title=Inter+makes+Open+Graph+titles+clear&subtitle=Reusable+paths%2C+wrapping%2C+and+kerning.' |
   qip run -- \
     components/text/text-to-og-image-svg-inter.wasm \
-    -u text_color=0xffffffff -u background_color=0x4b2e83ff -u font_weight=700 \
+    -u text_color_rgba=0xffffffff -u background_color_rgba=0x4b2e83ff -u font_weight=700 \
     components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm \
     components/image/bmp/bmp-to-png.wasm \
   > og-image.png
@@ -29,8 +29,8 @@ field cause a trap. An empty title is valid, including when the subtitle is also
 
 The component accepts these uniforms:
 
-- `text_color`: packed `0xRRGGBBAA`; the default is `0x101010ff`.
-- `background_color`: packed `0xRRGGBBAA`; the default is `0xeecc33ff`.
+- `text_color_rgba`: packed `0xRRGGBBAA`; the default is `0x101010ff`.
+- `background_color_rgba`: packed `0xRRGGBBAA`; the default is `0xeecc33ff`.
 - `font_weight`: values below 550 select Regular 400 for the title; other values
   select Bold 700. The default is 700. The subtitle always uses Regular.
 - `font_max_size`: `0` uses the default 112px auto-fit ceiling. Other values
