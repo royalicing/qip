@@ -93,7 +93,7 @@ test("qipx falls back, vendors atomically, and then stays local", async () => {
       "https://qip.dev/text/trim.wasm",
       "https://mirror.example/text/trim.wasm",
     ]);
-    assert.equal(requests[0][1].redirect, "error");
+    assert.equal(requests[0][1].redirect, "manual");
     assert.equal(await readFile("output.txt", "utf8"), "hello");
     assert.deepEqual(await readFile("text/trim.wasm"), trimWasm);
 
@@ -109,6 +109,73 @@ test("qipx falls back, vendors atomically, and then stays local", async () => {
       "text/trim.wasm",
     ]));
     assert.equal(await readFile("second-output.txt", "utf8"), "hello");
+  });
+});
+
+test("qipx follows same-origin HTTPS redirects", async () => {
+  await inTemporaryDirectory(async () => {
+    await writeFile("input.txt", "  hello  ");
+    const requests = [];
+    await withFetch(async (url) => {
+      requests.push(url);
+      if (requests.length === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "/components/text/trim.wasm" },
+        });
+      }
+      return new Response(trimWasm, { status: 200 });
+    }, () => main([
+      "qip.dev",
+      "run",
+      "-i",
+      "input.txt",
+      "-o",
+      "output.txt",
+      "text/trim.wasm",
+    ]));
+
+    assert.deepEqual(requests, [
+      "https://qip.dev/text/trim.wasm",
+      "https://qip.dev/components/text/trim.wasm",
+    ]);
+    assert.equal(await readFile("output.txt", "utf8"), "hello");
+    assert.deepEqual(await readFile("text/trim.wasm"), trimWasm);
+  });
+});
+
+test("qipx rejects redirects outside the source HTTPS origin", async () => {
+  await inTemporaryDirectory(async () => {
+    await assert.rejects(withFetch(
+      async () => new Response(null, {
+        status: 302,
+        headers: { location: "https://mirror.example/text/trim.wasm" },
+      }),
+      () => main(["qip.dev", "run", "text/trim.wasm"]),
+    ), /redirected outside its HTTPS origin/);
+    await assert.rejects(readFile("text/trim.wasm"), { code: "ENOENT" });
+  });
+});
+
+test("qipx follows no more than two same-origin redirects", async () => {
+  await inTemporaryDirectory(async () => {
+    const requests = [];
+    await assert.rejects(withFetch(async (url) => {
+      requests.push(url);
+      return new Response(null, {
+        status: 302,
+        headers: { location: `/redirect-${requests.length}.wasm` },
+      });
+    }, () => main([
+      "qip.dev",
+      "run",
+      "text/redirect.wasm",
+    ])), /exceeded the 2-redirect limit/);
+    assert.deepEqual(requests, [
+      "https://qip.dev/text/redirect.wasm",
+      "https://qip.dev/redirect-1.wasm",
+      "https://qip.dev/redirect-2.wasm",
+    ]);
   });
 });
 
@@ -147,7 +214,7 @@ test("qipx rejects downloads larger than 16 MiB without saving them", async () =
 
 test("qipx never replaces an existing local file", async () => {
   await inTemporaryDirectory(async () => {
-    await mkdir("utf8");
+    await mkdir("text");
     await writeFile("text/local.wasm", "local but invalid");
     let requests = 0;
     await assert.rejects(withFetch(async () => {

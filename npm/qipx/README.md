@@ -75,8 +75,8 @@ are not fetched.
 
 Connection failures, TLS failures, timeouts, HTTP 404 or 410, and HTTP 5xx
 responses advance to the next host. Other HTTP errors and invalid component
-bytes stop resolution. Downloads reject redirects, time out after 30 seconds,
-and have a 16 MiB decoded-byte limit.
+bytes stop resolution. Downloads follow at most two redirects on the same
+HTTPS origin, time out after 30 seconds, and have a 16 MiB decoded-byte limit.
 
 ### Uniforms
 

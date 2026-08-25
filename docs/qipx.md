@@ -48,7 +48,11 @@ Only missing, safe relative paths that end in `.wasm` can use a host. Absolute p
 
 Host fallback handles unavailable sources: connection and TLS failures, timeouts, HTTP 404 or 410, and HTTP 5xx responses. Other HTTP errors stop resolution. A response that is not valid for its command also stops resolution and is not saved. This prevents a bad first host from being hidden by a later mirror.
 
-Downloads use HTTPS, reject redirects, time out after 30 seconds, and have a 16 MiB decoded-byte limit. Supplying a host trusts it to provide executable component bytes. A fallback host also learns each component path requested from it.
+Downloads use HTTPS, follow at most two redirects on the same HTTPS origin,
+time out after 30 seconds, and have a 16 MiB decoded-byte limit. A redirect to
+a different origin stops resolution. Supplying a host trusts it to provide
+executable component bytes. A fallback host also learns each component path
+requested from it.
 
 ### Dry run
 

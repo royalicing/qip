@@ -35,6 +35,7 @@ function usage() {
 
 const downloadByteLimit = 16 * 1024 * 1024;
 const downloadTimeoutMilliseconds = 30_000;
+const redirectLimit = 2;
 const knownCommands = new Set(["run", "dry", "dry-run", "bench", "comply"]);
 
 function parseHost(value) {
@@ -125,19 +126,33 @@ async function readDownload(response, url) {
 
 async function fetchSource(source) {
   let response;
-  try {
-    response = await fetch(source.url, {
-      redirect: "error",
-      signal: AbortSignal.timeout(downloadTimeoutMilliseconds),
-    });
-  } catch (error) {
-    return { unavailable: true, reason: error.message ?? String(error) };
+  let url = source.url;
+  const sourceOrigin = new URL(source.url).origin;
+  const signal = AbortSignal.timeout(downloadTimeoutMilliseconds);
+  for (let redirects = 0; redirects <= redirectLimit; redirects += 1) {
+    try {
+      response = await fetch(url, { redirect: "manual", signal });
+    } catch (error) {
+      return { unavailable: true, reason: error.message ?? String(error) };
+    }
+    if (response.status < 300 || response.status > 399) break;
+    if (response.body) await response.body.cancel();
+    if (redirects === redirectLimit) {
+      throw new Error(`${source.url} exceeded the ${redirectLimit}-redirect limit`);
+    }
+    const location = response.headers.get("location");
+    if (!location) throw new Error(`${url} returned HTTP ${response.status} without Location`);
+    const next = new URL(location, url);
+    if (next.protocol !== "https:" || next.origin !== sourceOrigin || next.username || next.password) {
+      throw new Error(`${url} redirected outside its HTTPS origin`);
+    }
+    url = next.href;
   }
   if (response.status === 404 || response.status === 410 || response.status >= 500) {
     return { unavailable: true, reason: `HTTP ${response.status}` };
   }
-  if (response.status !== 200) throw new Error(`${source.url} returned HTTP ${response.status}`);
-  return { unavailable: false, bytes: await readDownload(response, source.url) };
+  if (response.status !== 200) throw new Error(`${url} returned HTTP ${response.status}`);
+  return { unavailable: false, bytes: await readDownload(response, url), url };
 }
 
 function pathIsInside(root, child) {
@@ -195,7 +210,7 @@ async function resolveSource(plan, validate) {
       unavailable.push(`${source.url}: ${fetched.reason}`);
       continue;
     }
-    validate(fetched.bytes, source.url);
+    validate(fetched.bytes, fetched.url);
     const installed = await vendorDownload(plan.filePath, fetched.bytes);
     validate(installed, plan.filePath);
     return installed;

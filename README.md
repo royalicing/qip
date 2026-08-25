@@ -527,6 +527,7 @@ echo "World" | qip bench -i - --benchtime=2s --node components/text/hello.wasm
 - [ ] Add `github:owner/repo/subdir` content roots to `qip-router`, pinned to one repository snapshot per load.
 - [ ] Add AVIF encoding with Display P3 HDR with either PQ (Perceptual Quantizer) or HLG.
 - [x] Allow ordered HTTPS host fallback in qipx: `qipx qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm`
+- [ ] Decide whether qipx redirects may target any configured HTTPS host, not only the source origin. Keep the two-redirect limit and reject unconfigured origins; define whether a failed redirected request resumes the original fallback sequence and may request the target host twice.
 - [ ] Investigate if qip-component-to-c is affected by https://trustsig.eu/blog/wasm2c-tableflip-unchecked-calloc/
 - [ ] Remove `@memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);` — just render directly to output_buf instead of ktx_buf.
 - [ ] For interactive components should we inline the ktx2 header write function into components?
