@@ -216,6 +216,7 @@ fn writeF32(output: []u8, offset: usize, value: f32) void {
 fn drawChronograph(seconds: f32) void {
     drawStaticDial();
     drawHand(seconds);
+    drawGlassReflection();
 }
 
 fn drawStaticDial() void {
@@ -283,6 +284,63 @@ fn drawHand(seconds: f32) void {
     drawLine(CX, CY, hand_x, hand_y, scale(2), C_ACCENT);
     fillCircle(CX, CY, scale(8), C_ACCENT_DARK);
     fillCircle(CX, CY, scale(4), .{ 0xB9, 0xD3, 0xE2, 0xFF });
+}
+
+fn drawGlassReflection() void {
+    // A rotated, shallow curve reads as a reflected window across domed
+    // crystal. Draw it after the hand so the highlight belongs to the glass,
+    // not the dial. The HDR expansion lifts its near-neutral bright pixels
+    // above diffuse white while the same geometry remains visible in SDR.
+    const crystal_radius_squared = scale(143) * scale(143);
+
+    // The curved window reflection occupies only the upper portion of the
+    // crystal. Restricting the scan avoids paying for transparent glass over
+    // the complete dial on every frame.
+    var y = CY - scale(143);
+    while (y <= CY + scale(38)) : (y += 1) {
+        const dy_i = y - CY;
+        const dy: f32 = @floatFromInt(dy_i);
+        var x = CX - scale(143);
+        var along = -scaleF(143) * 0.819152 - dy * 0.573576;
+        var across = -scaleF(143) * 0.573576 + dy * 0.819152;
+        while (x <= CX + scale(132)) : ({
+            x += 1;
+            along += 0.819152;
+            across += 0.573576;
+        }) {
+            const dx_i = x - CX;
+            const distance_squared_i = dx_i * dx_i + dy_i * dy_i;
+            if (distance_squared_i > crystal_radius_squared) continue;
+
+            // Rotate the reflected window about 35 degrees. A small quadratic
+            // bend follows the convex crystal instead of making a flat stripe.
+            if (along < -scaleF(132) or along > scaleF(120) or
+                across < -scaleF(136) or across > -scaleF(30)) continue;
+
+            const end_fade = @min(
+                std.math.clamp((along + scaleF(132)) / scaleF(28), 0.0, 1.0),
+                std.math.clamp((scaleF(108) - along) / scaleF(28), 0.0, 1.0),
+            );
+            const curve = -scaleF(76) + along * along * 0.00075;
+            const curve_distance = @abs(across - curve);
+
+            const wash_ellipse =
+                ((along - scaleF(4)) * (along - scaleF(4))) / (scaleF(116) * scaleF(116)) +
+                ((across + scaleF(83)) * (across + scaleF(83))) / (scaleF(52) * scaleF(52));
+            const wash = std.math.clamp((1.0 - wash_ellipse) / 0.72, 0.0, 1.0);
+            if (wash > 0.0) blendPixelCoverage(x, y, .{ 0xF4, 0xFA, 0xFF, 0x2A }, wash);
+
+            const broad = std.math.clamp((scaleF(27) - curve_distance) / scaleF(20), 0.0, 1.0) * end_fade;
+            if (broad > 0.0) blendPixelCoverage(x, y, .{ 0xF7, 0xFB, 0xFF, 0x34 }, broad);
+
+            const sharp = std.math.clamp(1.0 - curve_distance / scaleF(2), 0.0, 1.0) * end_fade;
+            if (sharp > 0.0) blendPixelCoverage(x, y, .{ 0xFF, 0xFF, 0xFF, 0xA8 }, sharp);
+
+            const echo_distance = @abs(across - (curve + scaleF(21)));
+            const echo = std.math.clamp(1.0 - echo_distance / scaleF(4), 0.0, 1.0) * end_fade;
+            if (echo > 0.0) blendPixelCoverage(x, y, .{ 0xE8, 0xF4, 0xFF, 0x3C }, echo);
+        }
+    }
 }
 
 fn drawBackground() void {
