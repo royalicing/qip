@@ -1437,7 +1437,7 @@ class QIPPlayElement extends HTMLElement {
     canvas.style.display = "block";
     canvas.style.width = cssPresentation.canvasWidth;
     canvas.style.height = cssPresentation.canvasHeight;
-    canvas.style.touchAction = "none";
+    canvas.style.touchAction = this.getAttribute("touch-action")?.trim() || "none";
     canvas.tabIndex = initial
       ? (this.hasAttribute("tabindex") ? this.tabIndex : 0)
       : (oldCanvas?.tabIndex ?? 0);
@@ -1805,7 +1805,7 @@ class QIPPlayElement extends HTMLElement {
       return;
     }
 
-    event.preventDefault();
+    if (this._canvas.style.touchAction === "none") event.preventDefault();
 
     const coords = qipPlayCanvasXY(
       this._canvas,

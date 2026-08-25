@@ -347,6 +347,37 @@ test("qip-play reports pointer leave outside the render surface", () => {
   element._detachInputHandlers();
 });
 
+test("qip-play preserves permitted touch scrolling while dispatching pointers", () => {
+  const element = new QIPPlayElement();
+  element._exports = { pointer_event() {} };
+  element._renderWidth = 360;
+  element._renderHeight = 360;
+  element._eventNowMS = () => 17;
+  element._resumeLoop = () => {};
+  element._queuePointerEvent = () => {};
+  element._canvas = {
+    style: { touchAction: "pan-y" },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 360, height: 360 };
+    },
+  };
+  let preventedN = 0;
+  const event = {
+    buttons: 1,
+    clientX: 180,
+    clientY: 180,
+    preventDefault() {
+      preventedN++;
+    },
+  };
+
+  element._dispatchPointer(event);
+  assert.equal(preventedN, 0);
+  element._canvas.style.touchAction = "none";
+  element._dispatchPointer(event);
+  assert.equal(preventedN, 1);
+});
+
 test("qip-play observes its viewport intersection and disconnects cleanly", () => {
   const originalIntersectionObserver = globalThis.IntersectionObserver;
   let callback = null;
@@ -537,6 +568,7 @@ test("qip-play parses HDR KTX2 and reports its tone-mapped fallback profile", ()
   instance.exports.uniform_set_hdr(1);
 
   const element = new QIPPlayElement();
+  element.getAttribute = (name) => name === "touch-action" ? "pan-y" : "";
   element._exports = instance.exports;
   element._memory = instance.exports.memory;
   element._outputCapacity = instance.exports.output_bytes_cap();
@@ -572,6 +604,9 @@ test("qip-play parses HDR KTX2 and reports its tone-mapped fallback profile", ()
       width: 0,
       height: 0,
       tabIndex: 0,
+      addEventListener() {},
+      removeEventListener() {},
+      focus() {},
       replaceWith() {
         replaceN++;
       },
@@ -592,6 +627,7 @@ test("qip-play parses HDR KTX2 and reports its tone-mapped fallback profile", ()
   };
   try {
     element._installPresentation(parsed);
+    assert.equal(element._canvas.style.touchAction, "pan-y");
     element._stats = { textContent: "" };
     element._presentPixels(parsed.pixels, 1);
     assert.equal(drawN, 1);

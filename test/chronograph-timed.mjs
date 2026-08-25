@@ -26,7 +26,7 @@ test("chronograph exposes a Timed canonical KTX2 component", () => {
   assert.equal(typeof exports.uniform_set_current_seconds, "function");
   assert.equal(typeof exports.uniform_set_hdr, "function");
   assert.equal(exports.key_event, undefined);
-  assert.equal(exports.pointer_event, undefined);
+  assert.equal(typeof exports.pointer_event, "function");
 
   const contentType = new TextDecoder().decode(new Uint8Array(
     exports.memory.buffer,
@@ -111,9 +111,36 @@ test("one clock uniform seeds autonomous Timed updates", () => {
   assert.notEqual(digest(output(exports, size)), initial);
 });
 
+test("horizontal drag tilts the dial and release animates toward rest", () => {
+  const exports = instantiate();
+  exports.uniform_set_current_seconds(14);
+  const size = renderSize(exports, 0);
+  const faceOn = digest(output(exports, size));
+
+  exports.begin_update_at(1n);
+  assert.equal(exports.pointer_event(1, 180, 180), 1);
+  assert.equal(exports.finish_update(), 201n);
+
+  exports.begin_update_at(2n);
+  assert.equal(exports.pointer_event(1, 260, 180), 1);
+  assert.equal(exports.finish_update(), 202n);
+  assert.equal(renderSize(exports, 0), size);
+  const tilted = digest(output(exports, size));
+  assert.notEqual(tilted, faceOn);
+
+  exports.begin_update_at(3n);
+  assert.equal(exports.pointer_event(0, 260, 180), 1);
+  assert.equal(exports.finish_update(), 17n);
+  exports.begin_update_at(17n);
+  assert.equal(exports.finish_update(), 33n);
+  assert.equal(renderSize(exports, 0), size);
+  assert.notEqual(digest(output(exports, size)), tilted);
+});
+
 test("chronograph traps on Timed lifecycle misuse", () => {
   const exports = instantiate();
   assert.throws(() => exports.begin_update_at(1n), WebAssembly.RuntimeError);
+  assert.throws(() => exports.pointer_event(1, 180, 180), WebAssembly.RuntimeError);
   renderSize(exports, 0);
   assert.throws(() => exports.finish_update(), WebAssembly.RuntimeError);
   exports.begin_update_at(1n);
