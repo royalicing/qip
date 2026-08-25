@@ -523,7 +523,9 @@ echo "World" | qip bench -i - --benchtime=2s --node components/text/hello.wasm
 ## TODO
 
 - [ ] Add `--view-source` to `npx qip-router warc`, including recipe source and view-source records.
+- [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
 - [ ] Add `github:owner/repo/subdir` content roots to `qip-router`, pinned to one repository snapshot per load.
+- [ ] Add AVIF encoding with Display P3 HDR with either PQ (Perceptual Quantizer) or HLG.
 - [x] Allow ordered HTTPS host fallback in qipx: `qipx qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm`
 - [ ] Investigate if qip-component-to-c is affected by https://trustsig.eu/blog/wasm2c-tableflip-unchecked-calloc/
 - [ ] Remove `@memcpy(ktx_buf[ktx.HEADER_SIZE..], output_buf[0..]);` — just render directly to output_buf instead of ktx_buf.
@@ -533,8 +535,7 @@ echo "World" | qip bench -i - --benchtime=2s --node components/text/hello.wasm
 - [ ] Should uniforms return their previous value? This means we can bring a component back to its original state.
 - [ ] Ensure we always `new TextDecoder("utf-8", { fatal: true })`
 - [ ] Add `/text` and `/image` pages with list of wasm modules. I think image should include any with input or output image.
-- [ ] Should we drop `/components` prefix from web path?
-- [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
+- [x] Should we drop `/components` prefix from web path?
 - [ ] Recipes page: interactive upload and text entry
 - [x] Recipes page: copy recipe as source code (e.g. as JavaScript)
 - [ ] Extend `content-recipe-to-browser-javascript` with per-stage uniforms: add an optional recipe CSV query column, apply `uniform_set_<key>` functions in sorted order before each render, parse `i32`, `i64`, `f32`, and `f64` values, reject duplicate keys, missing setters, and host-managed multi-parameter hooks, and support optional runtime overrides. Consider stable stage IDs before exposing overrides for multi-stage recipes.
