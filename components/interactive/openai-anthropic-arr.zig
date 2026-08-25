@@ -49,8 +49,8 @@ const C_OPENAI: Color = .{ 0x31, 0xD7, 0xB7, 0xFF };
 const C_ANTHROPIC: Color = .{ 0xFF, 0x8B, 0x52, 0xFF };
 
 const MIN_MONTH: i32 = 0; // 2023-12
-const MAX_MONTH: i32 = 29; // 2026-05
-const ARR_LINEAR_MAX_B: f64 = 50.0;
+const MAX_MONTH: i32 = 33; // 2026-09, leaving space after the latest point
+const ARR_LINEAR_MAX_B: f64 = 70.0;
 const ARR_LOG_MIN_B: f64 = 0.1;
 const ARR_LOG_MAX_B: f64 = 100.0;
 
@@ -85,6 +85,7 @@ const OPENAI_POINTS = [_]ARRPoint{
     .{ .month = 19, .label = "JUL 25", .arr_b = 12.0, .note = "REUTERS / THE INFORMATION: $12B ANNUALIZED REVENUE." },
     .{ .month = 24, .label = "2025", .arr_b = 20.0, .note = "OPENAI CFO: $20B+ ARR IN 2025." },
     .{ .month = 27, .label = "MAR 26", .arr_b = 24.0, .note = "OPENAI UPDATE: $2B MONTHLY REVENUE, ABOUT $24B ANNUALIZED." },
+    .{ .month = 32, .label = "AUG 26", .arr_b = 40.0, .note = "SOURCE: BLOOMBERG, AUG 13 2026. ANNUALIZED REVENUE TOPPED $40B." },
 };
 
 const ANTHROPIC_POINTS = [_]ARRPoint{
@@ -96,6 +97,7 @@ const ANTHROPIC_POINTS = [_]ARRPoint{
     .{ .month = 27, .label = "MAR 26", .arr_b = 19.0, .note = "AXIOS: $19B RUN-RATE IN EARLY MARCH." },
     .{ .month = 28, .label = "APR 26", .arr_b = 30.0, .note = "ANTHROPIC: RUN-RATE REVENUE SURPASSED $30B." },
     .{ .month = 29, .label = "MAY 26", .arr_b = 47.0, .note = "FT / MARKETWATCH: RUN-RATE REVENUE CROSSED $47B." },
+    .{ .month = 31, .label = "JUL 26", .arr_b = 65.0, .note = "SOURCE: BLOOMBERG, AUG 18 2026. RUN RATE HIT $65B AT END-JULY." },
 };
 
 var output_buf: [OUTPUT_BYTES]u8 = undefined;
@@ -288,7 +290,7 @@ fn drawChart() void {
 
 fn drawYAxis() void {
     var buf: [24]u8 = undefined;
-    const linear_ticks = [_]f64{ 0, 10, 20, 30, 40, 50 };
+    const linear_ticks = [_]f64{ 0, 10, 20, 30, 40, 50, 60, 70 };
     const log_ticks = [_]f64{ 0.1, 1, 10, 100 };
     const ticks: []const f64 = switch (scale_mode) {
         .linear => linear_ticks[0..],
@@ -675,4 +677,13 @@ fn blendPixelPhysical(x: i32, y: i32, c: Color) void {
 
 test "latest Anthropic ARR is above latest OpenAI run-rate milestone" {
     try std.testing.expect(ANTHROPIC_POINTS[ANTHROPIC_POINTS.len - 1].arr_b > OPENAI_POINTS[OPENAI_POINTS.len - 1].arr_b);
+}
+
+test "latest milestones cite Bloomberg in hover detail" {
+    const openai = OPENAI_POINTS[OPENAI_POINTS.len - 1];
+    const anthropic = ANTHROPIC_POINTS[ANTHROPIC_POINTS.len - 1];
+    try std.testing.expectEqual(@as(f64, 40.0), openai.arr_b);
+    try std.testing.expectEqual(@as(f64, 65.0), anthropic.arr_b);
+    try std.testing.expect(std.mem.indexOf(u8, openai.note, "SOURCE: BLOOMBERG") != null);
+    try std.testing.expect(std.mem.indexOf(u8, anthropic.note, "SOURCE: BLOOMBERG") != null);
 }
