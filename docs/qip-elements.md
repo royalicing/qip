@@ -243,6 +243,41 @@ These checks run after the module bytes are fetched and before `WebAssembly.comp
 </qip-play>
 ```
 
+A direct `<source>` is shorthand for one interactive step. Use ordered
+`<qip-step>` wrappers to pass each rendered frame through finite Content
+post-processing components:
+
+```html
+<qip-play debug>
+  <qip-step name="desktop">
+    <source src="/interactive/macintosh-1bit.wasm" type="application/wasm" />
+  </qip-step>
+  <qip-step name="duotone">
+    <source src="/image/ktx2/ktx2-duotone-to-ktx2-rgba32float-display-p3-linear.wasm"
+            type="application/wasm"
+            data-uniform-highlight_r="2.4"
+            data-uniform-highlight_g="0.42"
+            data-uniform-highlight_b="0.015" />
+  </qip-step>
+</qip-play>
+```
+
+This example maps the light end of the image to HDR orange. Change the three
+`highlight` uniforms to author another linear Display P3 color without changing
+the Interactive component.
+
+The first step must implement Interactive. Later steps must implement finite
+Content, accept and emit `image/ktx2`, and must not export Timed or Eventful
+capabilities. `<qip-play>` sends pointer and keyboard events only to the first
+step. It copies each KTX2 result into the next component's bounded input memory
+and presents only the last result. Timed post-processing is not supported yet.
+
+Each step selects one matching `<source>` child. This keeps multiple sources as
+alternatives instead of treating adjacent sources as an implicit pipeline. Do
+not mix direct `<source>` children and `<qip-step>` children. With `debug`, the
+statistics include Wasm size, memory, latest render time, and render count for
+each named step.
+
 The distinction from `<qip-edit>` is not merely that both accept interaction. Editing changes declared source inputs and produces finite results; playing interacts with a running component whose state persists between events. A fallback, poster, or initial snapshot may be rendered ahead of time, but the experience requires client activation to become interactive.
 
 The element supports the [Timed and Eventful

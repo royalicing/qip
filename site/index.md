@@ -45,6 +45,29 @@ qip-edit source { display: none }
     border: 0;
     background: white;
 }
+
+.macintosh-1bit-comparison {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 24px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 0.5lh;
+}
+
+.macintosh-1bit-comparison figure {
+    flex: 0 0 512px;
+    margin: 0;
+}
+
+.macintosh-1bit-comparison qip-play {
+    cursor: none;
+    image-rendering: pixelated;
+}
+
+.macintosh-1bit-comparison figcaption {
+    margin-top: 0.25lh;
+}
 </style>
 
 <h1>Components that are<br> <em>Quick</em> to make/maintain/run, <em>Isolated</em> from net/disk/deps, <em>Portable</em> to web/server/native.</h1>
@@ -221,6 +244,78 @@ Drag either watch horizontally to tilt it. The component redraws its SDF dial
 directly through a one-axis transform, moves the crystal and bezel
 reflections with the angle, and returns to rest at 60 Hz after release.
 Vertical touch gestures remain available for page scrolling.
+
+---
+
+The same component can keep its working display in the original Macintosh
+512×342 one-bit format, then expand it only when QIP asks for output. Drag its
+window or disk, or open a menu. Each bitmap pixel is one CSS pixel; Retina
+displays expand it to device pixels without smoothing.
+
+<div class="macintosh-1bit-comparison" aria-label="One-bit Macintosh SDR, pink, orange, and yellow comparison">
+  <figure>
+    <qip-play canvas-width="512px" canvas-height="342px">
+      <qip-step name="desktop">
+        <source src="/interactive/macintosh-1bit.wasm" type="application/wasm" />
+      </qip-step>
+    </qip-play>
+    <figcaption>RGBA8 sRGB</figcaption>
+  </figure>
+  <figure>
+    <qip-play debug canvas-width="512px" canvas-height="342px">
+      <qip-step name="desktop">
+        <source src="/interactive/macintosh-1bit.wasm" type="application/wasm" />
+      </qip-step>
+      <qip-step name="duotone">
+        <source
+          src="/image/ktx2/ktx2-duotone-to-ktx2-rgba32float-display-p3-linear.wasm"
+          type="application/wasm"
+        />
+      </qip-step>
+    </qip-play>
+    <figcaption>HDR pink · RGBA32F display-p3-linear</figcaption>
+  </figure>
+  <figure>
+    <qip-play canvas-width="512px" canvas-height="342px">
+      <qip-step name="desktop">
+        <source src="/interactive/macintosh-1bit.wasm" type="application/wasm" />
+      </qip-step>
+      <qip-step name="duotone">
+        <source
+          src="/image/ktx2/ktx2-duotone-to-ktx2-rgba32float-display-p3-linear.wasm"
+          type="application/wasm"
+          data-uniform-highlight_r="2.4"
+          data-uniform-highlight_g="0.42"
+          data-uniform-highlight_b="0.015"
+        />
+      </qip-step>
+    </qip-play>
+    <figcaption>HDR orange · RGBA32F display-p3-linear</figcaption>
+  </figure>
+  <figure>
+    <qip-play canvas-width="512px" canvas-height="342px">
+      <qip-step name="desktop">
+        <source src="/interactive/macintosh-1bit.wasm" type="application/wasm" />
+      </qip-step>
+      <qip-step name="duotone">
+        <source
+          src="/image/ktx2/ktx2-duotone-to-ktx2-rgba32float-display-p3-linear.wasm"
+          type="application/wasm"
+          data-uniform-highlight_r="2.4"
+          data-uniform-highlight_g="1.65"
+          data-uniform-highlight_b="0.04"
+        />
+      </qip-step>
+    </qip-play>
+    <figcaption>HDR yellow · RGBA32F display-p3-linear</figcaption>
+  </figure>
+</div>
+
+Every desktop instance draws into a packed 21,888-byte bitplane and emits the
+same RGBA8 sRGB frame. The color pipelines then give that ordinary frame to the
+same finite Content component. Uniforms map black to near-black ink and white
+to HDR pink, orange, or yellow in linear Display P3. Debug metrics on the pink
+example break out the cost and memory of each `<qip-step>`.
 
 ---
 
