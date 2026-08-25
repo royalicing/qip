@@ -17,7 +17,12 @@ Pixels are four little-endian IEEE 754 `f32` values in linear-light RGBA order.
 This gives image transforms a file-shaped boundary without converting working
 pixels back to 8-bit sRGB after every component.
 
-The accepted profile is intentionally narrow:
+The Display P3 RGBA32F profiles use the same float payload and narrow KTX2
+shape. Their DFD declares Display P3 primaries and either a linear or sRGB
+transfer function. Values above one retain HDR headroom. The transfer-encoded
+profile remains float32; it is not a packed binary16 payload.
+
+The original linear working profile is intentionally narrow:
 
 - MIME type: `image/ktx2`
 - `vkFormat`: `VK_FORMAT_R32G32B32A32_SFLOAT` (109)
@@ -27,6 +32,11 @@ The accepted profile is intentionally narrow:
 - top-to-bottom, left-to-right (`KTXorientation=rd`)
 - one tightly packed level at byte offset 224
 - at most 25,000,000 pixels and 8192 pixels on either axis
+
+The two Display P3 float profiles keep the same limits, Vulkan format, payload
+offset, orientation, and straight alpha. Their DFD uses Display P3 primaries.
+The `-linear` profile declares a linear transfer function; the presentation
+profile declares the sRGB transfer function used by Display P3.
 
 The strict profile keeps parsing small and makes the pixel payload directly
 addressable in Wasm memory. It is not a general KTX2 decoder. Files with mip
@@ -59,6 +69,12 @@ muted colour, cool shadows, and warm highlights. Its `strength` uniform accepts
 place, preserves alpha and container bytes, and retains excursions outside the
 LUT's 0 through 1 domain. The LUT is source code in this repository and is
 covered by the repository's Apache-2.0 license.
+
+`ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm`
+applies the Display P3 transfer function to RGB in place. It preserves alpha
+and extended float values. Use it at a presentation boundary which accepts
+transfer-encoded P3. Keep the linear profile between filters that operate in
+linear light.
 
 `ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm` converts linear colour to 8-bit sRGB and
 writes an uncompressed, bottom-up BGRA BMP. Converting through both adapters

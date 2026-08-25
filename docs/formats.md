@@ -19,7 +19,7 @@ Current formats directly supported by a qip command or supported by this repo’
 - `application/zip`: compressed directory archive for broad tool compatibility
 - `application/x-www-form-urlencoded`: small named UTF-8 form fields
 - `image/bmp`: simple uncompressed raster interchange
-- `image/ktx2`: canonical RGBA8 sRGB images and linear RGBA32F working images
+- `image/ktx2`: canonical RGBA8 sRGB images and narrow RGBA32F working or presentation profiles
 - `image/jp2`: JPEG 2000 still images
 - `image/svg+xml`: vector graphics that work great with LLMs
 - `image/x-icon`
@@ -56,6 +56,7 @@ Examples:
 - `components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm` rasterizes SVG directly to canonical 8-bit sRGB KTX2
 - `components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.wasm` wraps sRGB BGRA bytes as `VK_FORMAT_B8G8R8A8_SRGB image/ktx2`
 - `components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm` applies a LUT in place to linear RGBA32F `image/ktx2`
+- `components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm` applies the Display P3 transfer function while retaining float HDR headroom
 - `components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm` maps linear RGBA32F `image/ktx2 -> image/bmp`
 - `components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm` unwraps sRGB BGRA KTX2 pixels as `image/bmp`
 - `components/font/ttf/ttf-to-svg-paths-csv.wasm` maps `font/ttf -> text/csv`
@@ -73,7 +74,9 @@ Tradeoffs:
 
 - BMP is larger than PNG/JPEG on disk, but excellent as an internal interchange format because it is straightforward to parse and transform.
 - The repository's narrow KTX2 profiles store one uncompressed
-  `VK_FORMAT_R8G8B8A8_SRGB` or `VK_FORMAT_R32G32B32A32_SFLOAT` image. Content
+  `VK_FORMAT_R8G8B8A8_SRGB` or `VK_FORMAT_R32G32B32A32_SFLOAT` image. The DFD
+  distinguishes linear BT.709, linear Display P3, and transfer-encoded Display
+  P3 float data. Content
   components can address either payload directly. The float profile costs 16
   bytes per pixel. Neither profile accepts KTX2's compressed, mipmapped, array,
   or cubemap variants. See the
@@ -153,6 +156,8 @@ Use these naming rules for image components:
 | `ktx2-r8g8b8a8-srgb` | A complete KTX2 file with QIP's canonical 8-bit sRGB Vulkan payload format | A BMP or a headerless Canvas `ImageData` buffer |
 | `ktx2-b8g8r8a8-srgb` | A complete KTX2 file with the named alternate Vulkan payload format | QIP's canonical 8-bit KTX2 profile |
 | `ktx2-rgba32float` | A complete KTX2 file with QIP's linear RGBA `f32` working profile | Tile-contract RGBA32Float memory |
+| `ktx2-rgba32float-display-p3-linear` | A complete KTX2 file with linear Display P3 RGBA `f32`, including values outside 0 through 1 | A guarantee that the browser can present HDR |
+| `ktx2-rgba32float-display-p3` | A complete KTX2 file with transfer-encoded Display P3 RGBA `f32` | Binary16 storage or an 8-bit Display P3 image |
 | `b8g8r8a8-srgb` | A pixel format: four 8-bit channels and sRGB RGB values | Container headers, dimensions, row orientation, or mip levels |
 
 The `-srgb` suffix records QIP's supported colour interpretation. It does not
@@ -255,6 +260,7 @@ If you need:
 - Simple raster interchange between components: use `image/bmp`
 - General 8-bit sRGB Content images: use the repository's narrow `image/ktx2` `VK_FORMAT_R8G8B8A8_SRGB` profile
 - Chained Content image transforms that need linear floating-point pixels: use the repository's narrow `image/ktx2` RGBA32F profile
+- Composable wide-gamut or HDR pixels: use linear Display P3 RGBA32F, then apply the Display P3 transfer function at the presentation boundary
 - General text transforms: use `UTF-8` components in `components/text/`
 - Image filter pipelines: use `RGBA32Float` via `qip image`
 

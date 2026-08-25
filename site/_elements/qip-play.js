@@ -550,7 +550,7 @@ function qipPlayReadSlice(memory, ptr, len, label) {
 const QIP_PLAY_KTX2_IDENTIFIER = [
   0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
 ];
-const QIP_PLAY_KTX2_DFD = [
+const QIP_PLAY_KTX2_RGBA8_SRGB_DFD = [
   0x5c, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0x58, 0, 1, 1, 2, 0,
   0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0,
@@ -558,6 +558,18 @@ const QIP_PLAY_KTX2_DFD = [
   0x10, 0, 7, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0,
   0x18, 0, 7, 0x1f, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0,
 ];
+const QIP_PLAY_KTX2_RGBA32F_DISPLAY_P3_LINEAR_DFD = [
+  0x5c, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0x58, 0, 1, 12, 1, 0,
+  0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0x1f, 0xc0, 0, 0, 0, 0, 0, 0, 0x80, 0xbf, 0, 0, 0x80, 0x3f,
+  0x20, 0, 0x1f, 0xc1, 0, 0, 0, 0, 0, 0, 0x80, 0xbf, 0, 0, 0x80, 0x3f,
+  0x40, 0, 0x1f, 0xc2, 0, 0, 0, 0, 0, 0, 0x80, 0xbf, 0, 0, 0x80, 0x3f,
+  0x60, 0, 0x1f, 0xcf, 0, 0, 0, 0, 0, 0, 0x80, 0xbf, 0, 0, 0x80, 0x3f,
+];
+const QIP_PLAY_KTX2_RGBA32F_DISPLAY_P3_DFD = [
+  ...QIP_PLAY_KTX2_RGBA32F_DISPLAY_P3_LINEAR_DFD,
+];
+QIP_PLAY_KTX2_RGBA32F_DISPLAY_P3_DFD[14] = 2;
 const QIP_PLAY_KTX2_KVD = [
   0x12, 0, 0, 0, 0x4b, 0x54, 0x58, 0x6f, 0x72, 0x69, 0x65, 0x6e,
   0x74, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0, 0x72, 0x64, 0, 0, 0,
@@ -571,7 +583,7 @@ function qipPlayMatchesBytes(bytes, offset, expected) {
   return true;
 }
 
-function qipPlayParseKTX2RGBA8(bytes) {
+function qipPlayParseKTX2(bytes) {
   if (bytes.length < 224 || !qipPlayMatchesBytes(bytes, 0, QIP_PLAY_KTX2_IDENTIFIER)) {
     throw new Error("qip-play Timed output is not canonical KTX2");
   }
@@ -586,21 +598,307 @@ function qipPlayParseKTX2RGBA8(bytes) {
   };
   const width = u32(20);
   const height = u32(24);
-  const pixelBytes = width * height * 4;
+  const vkFormat = u32(12);
+  const typeSize = u32(16);
+  let bytesPerPixel;
+  let dfd;
+  let profile;
+  if (vkFormat === 43 && typeSize === 1) {
+    bytesPerPixel = 4;
+    dfd = QIP_PLAY_KTX2_RGBA8_SRGB_DFD;
+    profile = {
+      pixelFormat: "rgba-unorm8",
+      colorSpace: "srgb",
+    };
+  } else if (vkFormat === 109 && typeSize === 4 && bytes[118] === 1) {
+    bytesPerPixel = 16;
+    dfd = QIP_PLAY_KTX2_RGBA32F_DISPLAY_P3_LINEAR_DFD;
+    profile = {
+      pixelFormat: "rgba-float32",
+      colorSpace: "display-p3-linear",
+    };
+  } else if (vkFormat === 109 && typeSize === 4 && bytes[118] === 2) {
+    bytesPerPixel = 16;
+    dfd = QIP_PLAY_KTX2_RGBA32F_DISPLAY_P3_DFD;
+    profile = {
+      pixelFormat: "rgba-float32",
+      colorSpace: "display-p3",
+    };
+  } else {
+    throw new Error("qip-play Timed output uses an unsupported KTX2 pixel format");
+  }
+  const pixelBytes = width * height * bytesPerPixel;
   if (
-    u32(12) !== 43 || u32(16) !== 1 || width === 0 || height === 0 ||
+    width === 0 || height === 0 ||
     u32(28) !== 0 || u32(32) !== 0 || u32(36) !== 1 || u32(40) !== 1 ||
-    u32(44) !== 0 || u32(48) !== 104 || u32(52) !== QIP_PLAY_KTX2_DFD.length ||
+    u32(44) !== 0 || u32(48) !== 104 || u32(52) !== dfd.length ||
     u32(56) !== 196 || u32(60) !== QIP_PLAY_KTX2_KVD.length ||
     u64(64) !== 0 || u64(72) !== 0 || u64(80) !== 224 ||
     u64(88) !== pixelBytes || u64(96) !== pixelBytes ||
     bytes.length !== 224 + pixelBytes ||
-    !qipPlayMatchesBytes(bytes, 104, QIP_PLAY_KTX2_DFD) ||
+    !qipPlayMatchesBytes(bytes, 104, dfd) ||
     !qipPlayMatchesBytes(bytes, 196, QIP_PLAY_KTX2_KVD)
   ) {
-    throw new Error("qip-play Timed output is outside the canonical KTX2 RGBA8 sRGB profile");
+    throw new Error("qip-play Timed output is outside a supported canonical KTX2 profile");
   }
-  return { width, height, pixels: bytes.subarray(224) };
+  const payload = bytes.subarray(224);
+  if (profile.pixelFormat === "rgba-float32") {
+    if ((payload.byteOffset & 3) !== 0) {
+      throw new Error("qip-play RGBA32F KTX2 payload is not four-byte aligned");
+    }
+    return {
+      width,
+      height,
+      profile,
+      sourceBytes: payload,
+      pixels: new Float32Array(payload.buffer, payload.byteOffset, payload.byteLength / 4),
+    };
+  }
+  return { width, height, profile, sourceBytes: payload, pixels: payload };
+}
+
+function qipPlayProfileName(profile) {
+  return profile.pixelFormat + " " + profile.colorSpace;
+}
+
+function qipPlayProfileKey(profile) {
+  return profile.pixelFormat + ":" + profile.colorSpace;
+}
+
+function qipPlayLinearToTransfer(value) {
+  const magnitude = Math.abs(value);
+  if (magnitude <= 0.0031308) return value * 12.92;
+  const encoded = 1.055 * Math.pow(magnitude, 1 / 2.4) - 0.055;
+  return value < 0 ? -encoded : encoded;
+}
+
+function qipPlayTransferToLinear(value) {
+  const magnitude = Math.abs(value);
+  if (magnitude <= 0.04045) return value / 12.92;
+  const linear = Math.pow((magnitude + 0.055) / 1.055, 2.4);
+  return value < 0 ? -linear : linear;
+}
+
+function qipPlayLinearP3ToLinearSRGB(r, g, b) {
+  return [
+    1.224745 * r - 0.224904 * g,
+    -0.042058 * r + 1.042081 * g,
+    -0.019642 * r - 0.078655 * g + 1.098537 * b,
+  ];
+}
+
+function qipPlayFloatToUNorm8(value) {
+  const finite = Number.isFinite(value) ? value : 0;
+  return Math.round(Math.min(1, Math.max(0, finite)) * 255);
+}
+
+function qipPlayToneMapLinear(value) {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (value <= 0.9) return value;
+  return 0.9 + 0.1 * (1 - Math.exp(-(value - 0.9) / 0.5));
+}
+
+function qipPlayCopyLinearFloat16(destination, source) {
+  destination.set(source);
+}
+
+function qipPlayCopyTransferFloat16(destination, source) {
+  for (let i = 0; i < source.length; i += 4) {
+    destination[i] = qipPlayLinearToTransfer(source[i]);
+    destination[i + 1] = qipPlayLinearToTransfer(source[i + 1]);
+    destination[i + 2] = qipPlayLinearToTransfer(source[i + 2]);
+    destination[i + 3] = source[i + 3];
+  }
+}
+
+function qipPlayCopyEncodedToLinearFloat16(destination, source) {
+  for (let i = 0; i < source.length; i += 4) {
+    destination[i] = qipPlayTransferToLinear(source[i]);
+    destination[i + 1] = qipPlayTransferToLinear(source[i + 1]);
+    destination[i + 2] = qipPlayTransferToLinear(source[i + 2]);
+    destination[i + 3] = source[i + 3];
+  }
+}
+
+function qipPlayCopyToneMappedP3(destination, source) {
+  for (let i = 0; i < source.length; i += 4) {
+    destination[i] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(qipPlayToneMapLinear(source[i])));
+    destination[i + 1] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(qipPlayToneMapLinear(source[i + 1])));
+    destination[i + 2] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(qipPlayToneMapLinear(source[i + 2])));
+    destination[i + 3] = qipPlayFloatToUNorm8(source[i + 3]);
+  }
+}
+
+function qipPlayCopyEncodedToneMappedP3(destination, source) {
+  for (let i = 0; i < source.length; i += 4) {
+    destination[i] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(qipPlayToneMapLinear(qipPlayTransferToLinear(source[i]))));
+    destination[i + 1] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(qipPlayToneMapLinear(qipPlayTransferToLinear(source[i + 1]))));
+    destination[i + 2] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(qipPlayToneMapLinear(qipPlayTransferToLinear(source[i + 2]))));
+    destination[i + 3] = qipPlayFloatToUNorm8(source[i + 3]);
+  }
+}
+
+function qipPlayCopyToneMappedSRGB(destination, source) {
+  for (let i = 0; i < source.length; i += 4) {
+    const rgb = qipPlayLinearP3ToLinearSRGB(
+      qipPlayToneMapLinear(source[i]),
+      qipPlayToneMapLinear(source[i + 1]),
+      qipPlayToneMapLinear(source[i + 2]),
+    );
+    destination[i] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(rgb[0]));
+    destination[i + 1] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(rgb[1]));
+    destination[i + 2] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(rgb[2]));
+    destination[i + 3] = qipPlayFloatToUNorm8(source[i + 3]);
+  }
+}
+
+function qipPlayCopyEncodedToneMappedSRGB(destination, source) {
+  for (let i = 0; i < source.length; i += 4) {
+    const rgb = qipPlayLinearP3ToLinearSRGB(
+      qipPlayToneMapLinear(qipPlayTransferToLinear(source[i])),
+      qipPlayToneMapLinear(qipPlayTransferToLinear(source[i + 1])),
+      qipPlayToneMapLinear(qipPlayTransferToLinear(source[i + 2])),
+    );
+    destination[i] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(rgb[0]));
+    destination[i + 1] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(rgb[1]));
+    destination[i + 2] = qipPlayFloatToUNorm8(qipPlayLinearToTransfer(rgb[2]));
+    destination[i + 3] = qipPlayFloatToUNorm8(source[i + 3]);
+  }
+}
+
+function qipPlayTryHDRPresentation(parsed, colorSpace, convert) {
+  if (typeof globalThis.Float16Array !== "function") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = parsed.width;
+  canvas.height = parsed.height;
+  let ctx;
+  try {
+    ctx = canvas.getContext("2d", {
+      alpha: true,
+      desynchronized: true,
+      colorSpace,
+      colorType: "float16",
+    });
+  } catch {
+    return null;
+  }
+  if (!ctx) return null;
+  const attributes = typeof ctx.getContextAttributes === "function"
+    ? ctx.getContextAttributes()
+    : null;
+  if (!attributes || attributes.colorSpace !== colorSpace || attributes.colorType !== "float16") {
+    return null;
+  }
+  let imageData;
+  try {
+    imageData = ctx.createImageData(parsed.width, parsed.height, {
+      colorSpace,
+      pixelFormat: "rgba-float16",
+    });
+  } catch {
+    return null;
+  }
+  if (!(imageData.data instanceof globalThis.Float16Array)) return null;
+  return {
+    canvas,
+    ctx,
+    imageData,
+    convert,
+    canvasProfile: { pixelFormat: "rgba-float16", colorSpace },
+  };
+}
+
+function qipPlayTryUNormPresentation(parsed, colorSpace, convert) {
+  const canvas = document.createElement("canvas");
+  canvas.width = parsed.width;
+  canvas.height = parsed.height;
+  let ctx;
+  try {
+    ctx = canvas.getContext("2d", {
+      alpha: true,
+      desynchronized: true,
+      colorSpace,
+    });
+  } catch {
+    return null;
+  }
+  if (!ctx) return null;
+  if (colorSpace !== "srgb" && typeof ctx.getContextAttributes === "function") {
+    if (ctx.getContextAttributes().colorSpace !== colorSpace) return null;
+  }
+  let imageData;
+  try {
+    imageData = ctx.createImageData(parsed.width, parsed.height, { colorSpace });
+  } catch {
+    if (colorSpace !== "srgb") return null;
+    try {
+      imageData = ctx.createImageData(parsed.width, parsed.height);
+    } catch {
+      return null;
+    }
+  }
+  if (!(imageData.data instanceof Uint8ClampedArray)) return null;
+  return {
+    canvas,
+    ctx,
+    imageData,
+    convert,
+    canvasProfile: { pixelFormat: "rgba-unorm8", colorSpace },
+  };
+}
+
+function qipPlayCreatePresentation(parsed) {
+  if (parsed.profile.pixelFormat === "rgba-unorm8" && parsed.profile.colorSpace === "srgb") {
+    const presentation = qipPlayTryUNormPresentation(
+      parsed,
+      "srgb",
+      (destination, source) => destination.set(source),
+    );
+    if (!presentation) throw new Error("2D canvas context is unavailable");
+    return presentation;
+  }
+
+  if (parsed.profile.pixelFormat === "rgba-float32" && parsed.profile.colorSpace === "display-p3") {
+    return qipPlayTryHDRPresentation(
+      parsed,
+      "display-p3",
+      qipPlayCopyLinearFloat16,
+    ) || qipPlayTryHDRPresentation(
+      parsed,
+      "display-p3-linear",
+      qipPlayCopyEncodedToLinearFloat16,
+    ) || qipPlayTryUNormPresentation(
+      parsed,
+      "display-p3",
+      qipPlayCopyEncodedToneMappedP3,
+    ) || qipPlayTryUNormPresentation(
+      parsed,
+      "srgb",
+      qipPlayCopyEncodedToneMappedSRGB,
+    ) || (() => {
+      throw new Error("2D canvas context is unavailable");
+    })();
+  }
+
+  return qipPlayTryHDRPresentation(
+    parsed,
+    "display-p3-linear",
+    qipPlayCopyLinearFloat16,
+  ) || qipPlayTryHDRPresentation(
+    parsed,
+    "display-p3",
+    qipPlayCopyTransferFloat16,
+  ) || qipPlayTryUNormPresentation(
+    parsed,
+    "display-p3",
+    qipPlayCopyToneMappedP3,
+  ) || qipPlayTryUNormPresentation(
+    parsed,
+    "srgb",
+    qipPlayCopyToneMappedSRGB,
+  ) || (() => {
+    throw new Error("2D canvas context is unavailable");
+  })();
 }
 
 function qipPlayExtractUniforms(sourceElement) {
@@ -837,7 +1135,7 @@ function qipPlayPresentation(element, renderWidth) {
 
 /**
  * <qip-play> is a light-DOM browser host for QIP Eventful components with
- * canonical KTX2 RGBA8 sRGB output.
+ * canonical KTX2 RGBA8 sRGB or RGBA32F linear Display P3 output.
  *
  * Static module policy:
  *
@@ -866,6 +1164,12 @@ class QIPPlayElement extends HTMLElement {
     this._canvas = null;
     this._ctx = null;
     this._imageData = null;
+    this._presentationConvert = null;
+    this._presentationSourceProfileKey = "";
+    this._presentationN = 0;
+    this._outputProfile = null;
+    this._canvasProfile = null;
+    this._debugPreviousPixels = null;
     this._stats = null;
 
     this._outputBytes = 0;
@@ -1016,20 +1320,12 @@ class QIPPlayElement extends HTMLElement {
     const parsed = this._readKTX2Output(initial.rendered);
     this._renderWidth = parsed.width;
     this._renderHeight = parsed.height;
-    this._expectedOutputBytes = parsed.pixels.byteLength;
+    this._expectedOutputBytes = parsed.sourceBytes.byteLength;
     this._outputBytes = initial.rendered.outputLen;
     this._initialFrame = { ...initial, parsed };
 
-    this._canvas = document.createElement("canvas");
-    this._canvas.width = this._renderWidth;
-    this._canvas.height = this._renderHeight;
     const presentation = qipPlayPresentation(this, this._renderWidth);
-    this._canvas.style.display = "block";
-    this._canvas.style.width = presentation.canvasWidth;
-    this._canvas.style.height = presentation.canvasHeight;
-    this._canvas.style.touchAction = "none";
-    this._canvas.tabIndex = this.hasAttribute("tabindex") ? this.tabIndex : 0;
-    this.removeAttribute("tabindex");
+    this._installPresentation(parsed);
 
     this._stats = document.createElement("aside");
     this._stats.setAttribute("aria-label", "qip-play stats");
@@ -1041,18 +1337,6 @@ class QIPPlayElement extends HTMLElement {
     this._stats.style.whiteSpace = "pre-wrap";
     this._stats.style.lineHeight = "1.35";
     this._updateStats();
-
-    this._ctx = this._canvas.getContext("2d", {
-      alpha: false,
-      desynchronized: true,
-    });
-    if (!this._ctx) {
-      throw new Error("2D canvas context is unavailable");
-    }
-    this._imageData = this._ctx.createImageData(
-      this._renderWidth,
-      this._renderHeight,
-    );
 
     if (this._initialFrame) {
       this._presentPixels(
@@ -1101,6 +1385,45 @@ class QIPPlayElement extends HTMLElement {
       inputElement.addEventListener("change", this._boundInputChange);
     }
     this._writeInputText(String(inputElement.value ?? ""));
+  }
+
+  _installPresentation(parsed) {
+    const initial = this._presentationN === 0;
+    const replacement = qipPlayCreatePresentation(parsed);
+    const oldCanvas = this._canvas;
+    const hadFocus = oldCanvas && typeof document !== "undefined" && document.activeElement === oldCanvas;
+    if (oldCanvas) this._detachInputHandlers();
+
+    const canvas = replacement.canvas;
+    const cssPresentation = qipPlayPresentation(this, parsed.width);
+    canvas.style.display = "block";
+    canvas.style.width = cssPresentation.canvasWidth;
+    canvas.style.height = cssPresentation.canvasHeight;
+    canvas.style.touchAction = "none";
+    canvas.tabIndex = initial
+      ? (this.hasAttribute("tabindex") ? this.tabIndex : 0)
+      : (oldCanvas?.tabIndex ?? 0);
+    if (initial) this.removeAttribute("tabindex");
+
+    this._canvas = canvas;
+    this._ctx = replacement.ctx;
+    this._imageData = replacement.imageData;
+    this._presentationConvert = replacement.convert;
+    this._presentationSourceProfileKey = qipPlayProfileKey(parsed.profile);
+    this._outputProfile = parsed.profile;
+    this._canvasProfile = replacement.canvasProfile;
+    this._renderWidth = parsed.width;
+    this._renderHeight = parsed.height;
+    this._expectedOutputBytes = parsed.sourceBytes.byteLength;
+    this._hasRenderedFrame = false;
+    this._debugPreviousPixels = null;
+    this._presentationN++;
+
+    if (oldCanvas && typeof oldCanvas.replaceWith === "function") {
+      oldCanvas.replaceWith(canvas);
+      this._attachInputHandlers();
+      if (hadFocus && typeof canvas.focus === "function") canvas.focus();
+    }
   }
 
   _detachInputBinding() {
@@ -1193,7 +1516,7 @@ class QIPPlayElement extends HTMLElement {
       outputLen,
       "output_ptr/output_bytes_cap",
     );
-    return qipPlayParseKTX2RGBA8(bytes);
+    return qipPlayParseKTX2(bytes);
   }
 
   _runInitialContentRender() {
@@ -1274,14 +1597,27 @@ class QIPPlayElement extends HTMLElement {
   }
 
   _presentKTX2Output(parsed, renderMS) {
-    if (parsed.width !== this._renderWidth || parsed.height !== this._renderHeight) {
+    const descriptorChanged =
+      parsed.width !== this._renderWidth ||
+      parsed.height !== this._renderHeight ||
+      (this._presentationSourceProfileKey !== "" &&
+        qipPlayProfileKey(parsed.profile) !== this._presentationSourceProfileKey);
+    if (this._presentationSourceProfileKey !== "" && descriptorChanged) {
+      this._installPresentation(parsed);
+    } else if (parsed.width !== this._renderWidth || parsed.height !== this._renderHeight) {
+      // Direct host tests can supply their own canvas without running _init().
       this._renderWidth = parsed.width;
       this._renderHeight = parsed.height;
-      this._expectedOutputBytes = parsed.pixels.byteLength;
+      this._expectedOutputBytes = parsed.sourceBytes.byteLength;
       this._canvas.width = parsed.width;
       this._canvas.height = parsed.height;
       this._imageData = this._ctx.createImageData(parsed.width, parsed.height);
       this._hasRenderedFrame = false;
+    }
+    if (this._presentationSourceProfileKey === "") {
+      this._presentationSourceProfileKey = qipPlayProfileKey(parsed.profile);
+      this._outputProfile = parsed.profile;
+      this._canvasProfile = parsed.profile;
     }
     this._renderN++;
     this._presentPixels(parsed.pixels, renderMS);
@@ -1789,14 +2125,23 @@ class QIPPlayElement extends HTMLElement {
     let unchanged = false;
     if (this._debugStats && this._hasRenderedFrame) {
       const compareStart = qipPlayPerfNow();
-      unchanged = qipPlayByteSlicesEqual(this._imageData.data, bytes);
+      if (this._debugPreviousPixels && this._debugPreviousPixels.length === bytes.length) {
+        unchanged = true;
+        for (let i = 0; i < bytes.length; i++) {
+          if (this._debugPreviousPixels[i] !== bytes[i]) {
+            unchanged = false;
+            break;
+          }
+        }
+      }
       compareMS = qipPlayPerfNow() - compareStart;
       if (unchanged) {
         this._unchangedRenderN++;
       }
     }
     const drawStart = qipPlayPerfNow();
-    this._imageData.data.set(bytes);
+    const convert = this._presentationConvert || ((destination, source) => destination.set(source));
+    convert(this._imageData.data, bytes);
     this._ctx.putImageData(this._imageData, 0, 0);
     const drawMS = qipPlayPerfNow() - drawStart;
     this._drawN++;
@@ -1805,6 +2150,7 @@ class QIPPlayElement extends HTMLElement {
     this._lastCompareMS = compareMS;
     this._lastDrawMS = drawMS;
     this._lastRenderUnchanged = unchanged;
+    if (this._debugStats) this._debugPreviousPixels = bytes.slice();
     this._updateStats();
     if (this._logTimings && reason === "initial") {
       console.log(
@@ -1825,6 +2171,10 @@ class QIPPlayElement extends HTMLElement {
       qipPlayFormatByteSize(this._wasmByteLength) +
       " | memory " +
       qipPlayFormatByteSize(this._memory.buffer.byteLength) +
+      (this._outputProfile && this._canvasProfile
+        ? " | output " + qipPlayProfileName(this._outputProfile) +
+          " | canvas " + qipPlayProfileName(this._canvasProfile)
+        : "") +
       " | update " +
       qipPlayFormatCount(this._updateN) +
       " " +

@@ -193,23 +193,30 @@ QIP Interactive Components receive keyboard & pointer events and render out pixe
 
 Use `<qip-play>` to render them in the browser, or use our SDK to render them in Swift.
 
-<qip-play canvas-width="min(180px, 100%)" canvas-height="auto">
-  <source id="home-chronograph-source" src="/interactive/chronograph.wasm" type="application/wasm" data-uniform-current_seconds="0" />
-</qip-play>
+<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">
+  <qip-play canvas-width="min(180px, 100%)" canvas-height="auto">
+    <source class="home-chronograph-source" src="/interactive/chronograph.wasm" type="application/wasm" data-uniform-current_seconds="0" data-uniform-hdr="0" />
+  </qip-play>
+  <qip-play canvas-width="min(180px, 100%)" canvas-height="auto">
+    <source class="home-chronograph-source" src="/interactive/chronograph.wasm" type="application/wasm" data-uniform-current_seconds="0" data-uniform-hdr="1" />
+  </qip-play>
+</div>
 
 <script type="module">
-const chronographSource = document.querySelector("#home-chronograph-source");
-chronographSource.setAttribute(
-  "data-uniform-current_seconds",
-  String((Date.now() / 1000) % 60),
-);
+const currentSeconds = String((Date.now() / 1000) % 60);
+for (const source of document.querySelectorAll(".home-chronograph-source")) {
+  source.setAttribute("data-uniform-current_seconds", currentSeconds);
+}
 </script>
 
 A small JavaScript host passes the current second once as a uniform. The Timed
 component then advances from the explicit lifecycle timestamps and requests an
 update every 200 ms, matching the five steps per second of an 18,000 vph
 mechanical movement. That keeps the clock input explicit without giving Wasm
-ambient clock access.
+ambient clock access. The first instance emits the compatible RGBA8 sRGB
+profile. The second emits linear Display P3 float pixels with HDR highlights.
+`<qip-play>` uses a float16 canvas when the browser supports one and tone maps
+the same highlights for an 8-bit canvas otherwise.
 
 ---
 

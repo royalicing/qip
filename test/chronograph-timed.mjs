@@ -24,6 +24,7 @@ test("chronograph exposes a Timed canonical KTX2 component", () => {
   assert.equal(typeof exports.begin_update_at, "function");
   assert.equal(typeof exports.finish_update, "function");
   assert.equal(typeof exports.uniform_set_current_seconds, "function");
+  assert.equal(typeof exports.uniform_set_hdr, "function");
   assert.equal(exports.key_event, undefined);
   assert.equal(exports.pointer_event, undefined);
 
@@ -44,6 +45,29 @@ test("chronograph exposes a Timed canonical KTX2 component", () => {
   assert.equal(header.getUint32(24, true), 360);
   assert.equal(bytes[224 + 3], 0, "outer background should be transparent");
   assert.equal(bytes[224 + (180 * 360 + 180) * 4 + 3], 255, "dial should remain opaque");
+});
+
+test("HDR chronograph emits RGBA32F linear Display P3 and resets to SDR", () => {
+  const exports = instantiate();
+  exports.uniform_set_current_seconds(15.2);
+  assert.equal(exports.uniform_set_hdr(1), 1);
+  const hdrSize = renderSize(exports, 0);
+  const bytes = output(exports, hdrSize);
+  const header = new DataView(bytes.buffer, bytes.byteOffset, 224);
+  assert.equal(hdrSize, 224 + 360 * 360 * 16);
+  assert.equal(header.getUint32(12, true), 109);
+  assert.equal(header.getUint32(16, true), 4);
+  assert.equal(bytes[117], 12, "DFD should identify Display P3 primaries");
+  assert.equal(bytes[118], 1, "DFD should identify a linear transfer function");
+
+  const pixels = new Float32Array(bytes.buffer, bytes.byteOffset + 224, 360 * 360 * 4);
+  assert.equal(pixels[3], 0, "outer background should remain transparent");
+  assert.ok(pixels.some((value, index) => index % 4 !== 3 && value > 1));
+
+  const sdrSize = renderSize(exports, 0);
+  const sdr = output(exports, sdrSize);
+  assert.equal(sdrSize, 224 + 360 * 360 * 4);
+  assert.equal(new DataView(sdr.buffer, sdr.byteOffset, 20).getUint32(12, true), 43);
 });
 
 test("current_seconds changes the hand and updates publish only through render", () => {

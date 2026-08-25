@@ -37,8 +37,9 @@ pointer_event(button_mask: i32, x_px: i32, y_px: i32) -> i32
 
 The component declares its rendered format through Content metadata. Pixel
 components in this repository normally return `image/ktx2` with canonical
-`ktx2-r8g8b8a8-srgb` data. An Interactive component can instead render HTML,
-terminal data, or another declared format.
+`ktx2-r8g8b8a8-srgb` data. `<qip-play>` also accepts the repository's narrow
+linear and transfer-encoded Display P3 RGBA32F profiles. An Interactive
+component can instead render HTML, terminal data, or another declared format.
 
 ## Lifecycle
 
@@ -149,6 +150,14 @@ Attributes take precedence.
 Pointer coordinates are converted from the displayed canvas box to rendered
 pixel coordinates. This permits a high-resolution rendered image to use a
 smaller CSS presentation size.
+
+For linear Display P3 RGBA32F output, `<qip-play>` first tries a float16 linear
+Display P3 canvas. It then tries transfer-encoded float16 Display P3. If the
+browser does not expose either canvas, the host reuses an 8-bit `ImageData` and
+tone maps the pixels to Display P3 or sRGB. The stats line reports both the
+component output profile and the canvas profile. A change in dimensions or
+profile replaces the canvas and its context because those context settings are
+immutable.
 
 Add `debug` to `<qip-play>` to report output comparisons and unchanged renders.
 The comparison scans the complete output, so keep it disabled for normal use.

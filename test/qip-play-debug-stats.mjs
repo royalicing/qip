@@ -37,6 +37,8 @@ globalThis.HTMLElement = class {
   }
 
   replaceChildren() {}
+
+  removeAttribute() {}
 };
 
 globalThis.customElements = {
@@ -395,6 +397,95 @@ test("qip-play runs initial Content render and separate Timed KTX2 updates", () 
   assert.equal(element._drawN, 1);
   assert.equal(drawN, 1);
   assert.match(element._stats.textContent, /\| update +3 /);
+});
+
+test("qip-play parses HDR KTX2 and reports its tone-mapped fallback profile", () => {
+  const wasm = readFileSync("components/interactive/chronograph.wasm");
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(wasm), {});
+  instance.exports.uniform_set_current_seconds(15.2);
+  instance.exports.uniform_set_hdr(1);
+
+  const element = new QIPPlayElement();
+  element._exports = instance.exports;
+  element._memory = instance.exports.memory;
+  element._outputCapacity = instance.exports.output_bytes_cap();
+  const rendered = element._decodeRenderResult(instance.exports.render(0));
+  const parsed = element._readKTX2Output(rendered);
+  assert.deepEqual(parsed.profile, {
+    pixelFormat: "rgba-float32",
+    colorSpace: "display-p3-linear",
+  });
+  assert.equal(parsed.pixels.constructor, Float32Array);
+  assert.equal(parsed.pixels.length, 360 * 360 * 4);
+  const renderedBytes = new Uint8Array(
+    instance.exports.memory.buffer,
+    rendered.outputPtr,
+    rendered.outputLen,
+  );
+  renderedBytes[118] = 2;
+  assert.equal(
+    element._readKTX2Output(rendered).profile.colorSpace,
+    "display-p3",
+  );
+  renderedBytes[118] = 1;
+
+  const originalCreateElement = document.createElement;
+  const originalFloat16Array = globalThis.Float16Array;
+  let drawN = 0;
+  let replaceN = 0;
+  globalThis.Float16Array = undefined;
+  document.createElement = (name) => {
+    assert.equal(name, "canvas");
+    return {
+      style: {},
+      width: 0,
+      height: 0,
+      tabIndex: 0,
+      replaceWith() {
+        replaceN++;
+      },
+      getContext(_kind, options) {
+        return {
+          getContextAttributes() {
+            return { colorSpace: options.colorSpace };
+          },
+          createImageData(width, height) {
+            return { data: new Uint8ClampedArray(width * height * 4) };
+          },
+          putImageData() {
+            drawN++;
+          },
+        };
+      },
+    };
+  };
+  try {
+    element._installPresentation(parsed);
+    element._stats = { textContent: "" };
+    element._presentPixels(parsed.pixels, 1);
+    assert.equal(drawN, 1);
+    assert.deepEqual(element._outputProfile, parsed.profile);
+    assert.deepEqual(element._canvasProfile, {
+      pixelFormat: "rgba-unorm8",
+      colorSpace: "display-p3",
+    });
+    assert.match(
+      element._stats.textContent,
+      /output rgba-float32 display-p3-linear \| canvas rgba-unorm8 display-p3/,
+    );
+    element._presentKTX2Output({
+      ...parsed,
+      profile: {
+        ...parsed.profile,
+        colorSpace: "display-p3",
+      },
+    }, 2);
+    assert.equal(element._presentationN, 2);
+    assert.equal(replaceN, 1, "a profile change should replace the canvas");
+  } finally {
+    document.createElement = originalCreateElement;
+    globalThis.Float16Array = originalFloat16Array;
+  }
 });
 
 test("qip-play batches timestamp-free Interactive events inside an update", () => {

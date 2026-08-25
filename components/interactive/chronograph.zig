@@ -1,13 +1,17 @@
 const std = @import("std");
-const ktx = @import("ktx2_rgba8_srgb");
+const ktx_sdr = @import("ktx2_rgba8_srgb");
+const ktx_hdr = @import("ktx2_rgba32float_display_p3_linear");
 const font = @import("assets/inter_display_bold_chronograph_digits.zig");
 
 const DRAW_SCALE: i32 = 1;
 const RENDER_W: usize = 360;
 const RENDER_H: usize = 360;
-const PIXEL_BYTES: usize = RENDER_W * RENDER_H * 4;
-const OUTPUT_BYTES: usize = ktx.HEADER_SIZE + PIXEL_BYTES;
-const OUTPUT_CONTENT_TYPE = ktx.CONTENT_TYPE;
+const PIXEL_COUNT: usize = RENDER_W * RENDER_H;
+const SDR_PIXEL_BYTES: usize = PIXEL_COUNT * 4;
+const SDR_OUTPUT_BYTES: usize = ktx_sdr.HEADER_SIZE + SDR_PIXEL_BYTES;
+const HDR_PIXEL_BYTES: usize = PIXEL_COUNT * 16;
+const HDR_OUTPUT_BYTES: usize = ktx_hdr.HEADER_SIZE + HDR_PIXEL_BYTES;
+const OUTPUT_CONTENT_TYPE = ktx_sdr.CONTENT_TYPE;
 const WAKE_INTERVAL_MS: i64 = 200;
 
 const CX: i32 = @intCast(RENDER_W / 2);
@@ -24,7 +28,7 @@ const C_ACCENT: Color = .{ 0x00, 0x72, 0xAD, 0xFF };
 const C_ACCENT_DARK: Color = .{ 0x00, 0x38, 0x68, 0xFF };
 const C_SHADOW: Color = .{ 0x0A, 0x1D, 0x2D, 0x4A };
 
-var output_buf: [OUTPUT_BYTES]u8 = undefined;
+var output_buf: [HDR_OUTPUT_BYTES]u8 align(16) = undefined;
 
 const Phase = enum { initializing, ready, updating };
 var phase: Phase = .initializing;
@@ -34,6 +38,7 @@ var clock_seconds: f32 = 0;
 var committed_seconds: f32 = 0;
 var uniform_seconds: f32 = 0;
 var uniform_seconds_set: bool = false;
+var uniform_hdr: bool = false;
 var last_host_seconds: f32 = 0;
 var host_seconds_seen: bool = false;
 
@@ -46,7 +51,7 @@ export fn input_bytes_cap() u32 {
 }
 
 export fn output_bytes_cap() u32 {
-    return @intCast(OUTPUT_BYTES);
+    return @intCast(HDR_OUTPUT_BYTES);
 }
 
 export fn output_content_type_ptr() u32 {
@@ -69,6 +74,11 @@ export fn uniform_set_current_seconds(value: f32) f32 {
     uniform_seconds = normalized;
     uniform_seconds_set = true;
     return quantizeSeconds(normalized);
+}
+
+export fn uniform_set_hdr(value: u32) u32 {
+    uniform_hdr = value != 0;
+    return @intFromBool(uniform_hdr);
 }
 
 export fn begin_update_at(now_ms: i64) void {
@@ -108,10 +118,23 @@ fn renderImpl(input_size: u32) u32 {
         committed_seconds = quantizeSeconds(clock_seconds);
     }
 
-    _ = ktx.writeHeader(&output_buf, RENDER_W, RENDER_H) orelse @trap();
-    drawChronograph(committed_seconds);
+    const output_size = if (uniform_hdr)
+        renderHDR(committed_seconds)
+    else
+        renderSDR(committed_seconds);
     resetUniform();
-    return @intCast(OUTPUT_BYTES);
+    return @intCast(output_size);
+}
+
+noinline fn renderSDR(seconds: f32) usize {
+    _ = ktx_sdr.writeHeader(output_buf[0..SDR_OUTPUT_BYTES], RENDER_W, RENDER_H) orelse @trap();
+    drawChronograph(seconds);
+    return SDR_OUTPUT_BYTES;
+}
+
+noinline fn renderHDR(seconds: f32) usize {
+    _ = renderSDR(seconds);
+    return expandToHDR();
 }
 
 export fn render(input_size: u32) packed struct(u64) {
@@ -129,6 +152,7 @@ export fn render(input_size: u32) packed struct(u64) {
 fn resetUniform() void {
     uniform_seconds = 0;
     uniform_seconds_set = false;
+    uniform_hdr = false;
 }
 
 fn normalizeSeconds(value: f32) f32 {
@@ -142,7 +166,51 @@ fn quantizeSeconds(value: f32) f32 {
 }
 
 fn pixels() []u8 {
-    return output_buf[ktx.HEADER_SIZE..];
+    return output_buf[ktx_sdr.HEADER_SIZE..SDR_OUTPUT_BYTES];
+}
+
+noinline fn expandToHDR() usize {
+    // Expand backward so the float32 destination cannot overwrite RGBA8
+    // source pixels which the conversion has not read yet.
+    const output = output_buf[0..];
+    var pixel_index = PIXEL_COUNT;
+    while (pixel_index > 0) {
+        pixel_index -= 1;
+        const source_index = ktx_sdr.HEADER_SIZE + pixel_index * 4;
+        const r = ktx_hdr.SRGB8_TO_LINEAR[output[source_index]];
+        const g = ktx_hdr.SRGB8_TO_LINEAR[output[source_index + 1]];
+        const b = ktx_hdr.SRGB8_TO_LINEAR[output[source_index + 2]];
+        const a = @as(f32, @floatFromInt(output[source_index + 3])) / 255.0;
+        const hdr_rgb = expandHighlight(r, g, b, a);
+        const destination_index = ktx_hdr.HEADER_SIZE + pixel_index * 16;
+        writeF32(output, destination_index, hdr_rgb[0]);
+        writeF32(output, destination_index + 4, hdr_rgb[1]);
+        writeF32(output, destination_index + 8, hdr_rgb[2]);
+        writeF32(output, destination_index + 12, a);
+    }
+    return ktx_hdr.writeHeader(output, RENDER_W, RENDER_H) orelse @trap();
+}
+
+fn expandHighlight(r: f32, g: f32, b: f32, alpha: f32) [3]f32 {
+    if (alpha <= 0.0) return .{ 0.0, 0.0, 0.0 };
+
+    // Raise neutral silver reflections above diffuse white. Saturated blue
+    // receives a smaller lift so the hand catches an HDR display without
+    // changing the authored hue on SDR fallback paths.
+    const luma = r * 0.22897 + g * 0.69174 + b * 0.07929;
+    const neutral = 1.0 - std.math.clamp((@max(r, @max(g, b)) - @min(r, @min(g, b))) * 4.0, 0.0, 1.0);
+    const reflection = std.math.clamp((luma - 0.68) / 0.32, 0.0, 1.0) * neutral * alpha;
+    const reflection_scale = 1.0 + 1.5 * reflection;
+    const blue_lift = std.math.clamp(b - r - 0.12, 0.0, 1.0) * alpha;
+    return .{
+        r * reflection_scale,
+        g * reflection_scale + blue_lift * 0.18,
+        b * reflection_scale + blue_lift * 1.35,
+    };
+}
+
+fn writeF32(output: []u8, offset: usize, value: f32) void {
+    std.mem.writeInt(u32, output[offset..][0..4], @bitCast(value), .little);
 }
 
 fn drawChronograph(seconds: f32) void {
@@ -435,7 +503,7 @@ test "renders the requested second as canonical KTX2" {
     resetForTest();
     try std.testing.expectApproxEqAbs(@as(f32, 15.2), uniform_set_current_seconds(75.39), 0.001);
     const size = renderImpl(0);
-    const image = ktx.parse(output_buf[0..size]).?;
+    const image = ktx_sdr.parse(output_buf[0..size]).?;
     try std.testing.expectEqual(RENDER_W, image.width);
     try std.testing.expectEqual(RENDER_H, image.height);
     try std.testing.expectEqual(@as(u8, 0), image.pixels[3]);
@@ -451,6 +519,29 @@ test "renders the requested second as canonical KTX2" {
         }
     }
     try std.testing.expect(has_antialiased_silhouette);
+}
+
+test "HDR uniform emits linear Display P3 float pixels with extended highlights" {
+    resetForTest();
+    _ = uniform_set_current_seconds(15.2);
+    try std.testing.expectEqual(@as(u32, 1), uniform_set_hdr(7));
+    const size = renderImpl(0);
+    try std.testing.expectEqual(HDR_OUTPUT_BYTES, size);
+    const image = ktx_hdr.parse(output_buf[0..size]).?;
+    try std.testing.expectEqual(RENDER_W, image.width);
+    try std.testing.expectEqual(RENDER_H, image.height);
+    try std.testing.expectEqual(@as(f32, 0), image.pixels[3]);
+
+    var has_extended_value = false;
+    var channel: usize = 0;
+    while (channel < image.pixels.len) : (channel += 4) {
+        if (image.pixels[channel] > 1.0 or image.pixels[channel + 1] > 1.0 or image.pixels[channel + 2] > 1.0) {
+            has_extended_value = true;
+            break;
+        }
+    }
+    try std.testing.expect(has_extended_value);
+    try std.testing.expect(!uniform_hdr);
 }
 
 test "Timed update commits a fifth-second step and schedules 200 ms" {

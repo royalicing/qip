@@ -204,6 +204,9 @@ components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.wasm: components/im
 components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm: components/image/ktx2/%.wasm: components/image/ktx2/%.zig components/image/lib/ktx2-rgba32float.zig
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba32float -Mroot=$< -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig -femit-bin=$@
 
+components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm: components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.zig components/image/lib/ktx2-rgba32float-display-p3-linear.zig components/image/lib/ktx2-rgba32float-display-p3.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba32float_display_p3_linear --dep ktx2_rgba32float_display_p3 -Mroot=$< -Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig --dep ktx2_rgba32float_display_p3_linear -Mktx2_rgba32float_display_p3=components/image/lib/ktx2-rgba32float-display-p3.zig -femit-bin=$@
+
 components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm: components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.zig components/image/lib/ktx2-bgra8-srgb.zig
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_bgra8_srgb -Mroot=$< -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig -femit-bin=$@
 
@@ -241,9 +244,9 @@ components/interactive/gameboy-camera.wasm components/interactive/liars-dice.was
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
 components/interactive/aces-up.wasm components/interactive/browser-security.wasm components/interactive/calculator.wasm components/interactive/chronograph.wasm components/interactive/cover-flow-lofi.wasm components/interactive/dock-magnification.wasm components/interactive/formula-1-map.wasm components/interactive/gif-player.wasm components/interactive/god-rays.wasm components/interactive/graph-calculator.wasm components/interactive/ieee-754-floats.wasm components/interactive/layout-systems.wasm components/interactive/mandelbrot.wasm components/interactive/moon-phases.wasm components/interactive/openai-anthropic-arr.wasm components/interactive/page-load-waterfall.wasm components/interactive/paint.wasm components/interactive/perlin-noise.wasm components/interactive/photo-light-table.wasm components/interactive/ps2-menu.wasm components/interactive/render-counts.wasm components/interactive/shadow-rendering.wasm components/interactive/shutterstock-earnings.wasm components/interactive/snake.wasm components/interactive/sudoku.wasm components/interactive/tetris.wasm components/interactive/tile-world-12x12.wasm components/interactive/web-mechanics.wasm components/interactive/webos-card-view.wasm components/interactive/xbox-dashboard.wasm: components/interactive/%.wasm: components/interactive/%.zig components/image/lib/ktx2-rgba8-srgb.zig
-	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb $(if $(filter components/interactive/chronograph.wasm,$@),--dep ktx2_rgba32float_display_p3_linear) -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig $(if $(filter components/interactive/chronograph.wasm,$@),-Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig) -femit-bin=$@
 
-components/interactive/chronograph.wasm: components/interactive/assets/inter_display_bold_chronograph_digits.zig
+components/interactive/chronograph.wasm: components/interactive/assets/inter_display_bold_chronograph_digits.zig components/image/lib/ktx2-rgba32float-display-p3-linear.zig
 
 components/application/wasm/wasm-strict-profile.wasm: ZIG_WASM_MAX_MEMORY = 20971520
 components/application/wasm/wasm-strict-profile.wasm: components/application/wasm/wasm-strict-profile.zig components/application/wasm/lib/wasm-reader.zig
@@ -397,6 +400,7 @@ components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268
 components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm: ZIG_WASM_MAX_MEMORY = 536870912
 components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 536870912
 components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
+components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm: ZIG_WASM_MAX_MEMORY = 536870912
 components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
 components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
 components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
@@ -809,6 +813,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/bmp-b8g8r8a8-srgb-webp-lossless.mjs
 	node --test test/bmp-b8g8r8a8-icc-to-srgb.mjs
 	node --test test/ktx2-rgba32float.mjs
+	node --test test/ktx2-display-p3.mjs
 	node --test test/ktx2-rgba8-srgb.mjs
 	node --test test/ktx2-rgba8-webp.mjs
 	node --test test/ktx2-rgba8-png-avif.mjs
@@ -972,6 +977,12 @@ test-zig: $(ZIG_TEST_FILES)
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
 		elif [ "$$f" = "components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-rgba32float-look-warm-fade.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba32float -Mroot="$$f" -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig || status=1; \
+		elif [ "$$f" = "components/interactive/chronograph.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb --dep ktx2_rgba32float_display_p3_linear -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig || status=1; \
+		elif [ "$$f" = "components/image/lib/ktx2-rgba32float-display-p3.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba32float_display_p3_linear -Mroot="$$f" -Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig || status=1; \
+		elif [ "$$f" = "components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba32float_display_p3_linear --dep ktx2_rgba32float_display_p3 -Mroot="$$f" -Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig --dep ktx2_rgba32float_display_p3_linear -Mktx2_rgba32float_display_p3=components/image/lib/ktx2-rgba32float-display-p3.zig || status=1; \
 		elif [ "$$f" = "components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_bgra8_srgb -Mroot="$$f" -Mktx2_bgra8_srgb=components/image/lib/ktx2-bgra8-srgb.zig || status=1; \
 		elif [ "$$f" = "components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.zig" ] || [ "$$f" = "components/interactive/aces-up.zig" ] || [ "$$f" = "components/interactive/gameboy-camera.zig" ] || [ "$$f" = "components/interactive/gif-player.zig" ] || [ "$$f" = "components/interactive/god-rays-optimized.zig" ] || [ "$$f" = "components/interactive/god-rays.zig" ] || [ "$$f" = "components/interactive/tic-tac-toe-sun-moon.zig" ] || [ "$$f" = "components/interactive/browser-security.zig" ] || [ "$$f" = "components/interactive/calculator.zig" ] || [ "$$f" = "components/interactive/chronograph.zig" ] || [ "$$f" = "components/interactive/cover-flow-lofi.zig" ] || [ "$$f" = "components/interactive/dock-magnification.zig" ] || [ "$$f" = "components/interactive/formula-1-map.zig" ] || [ "$$f" = "components/interactive/graph-calculator.zig" ] || [ "$$f" = "components/interactive/ieee-754-floats.zig" ] || [ "$$f" = "components/interactive/layout-systems.zig" ] || [ "$$f" = "components/interactive/mandelbrot.zig" ] || [ "$$f" = "components/interactive/moon-phases.zig" ] || [ "$$f" = "components/interactive/openai-anthropic-arr.zig" ] || [ "$$f" = "components/interactive/page-load-waterfall.zig" ] || [ "$$f" = "components/interactive/paint.zig" ] || [ "$$f" = "components/interactive/perlin-noise.zig" ] || [ "$$f" = "components/interactive/photo-light-table.zig" ] || [ "$$f" = "components/interactive/ps2-menu.zig" ] || [ "$$f" = "components/interactive/render-counts.zig" ] || [ "$$f" = "components/interactive/shadow-rendering.zig" ] || [ "$$f" = "components/interactive/shutterstock-earnings.zig" ] || [ "$$f" = "components/interactive/side-scroller-platformer.zig" ] || [ "$$f" = "components/interactive/snake.zig" ] || [ "$$f" = "components/interactive/spreadsheet.zig" ] || [ "$$f" = "components/interactive/sudoku.zig" ] || [ "$$f" = "components/interactive/tetris.zig" ] || [ "$$f" = "components/interactive/tile-world-12x12.zig" ] || [ "$$f" = "components/interactive/vector-editor.zig" ] || [ "$$f" = "components/interactive/web-mechanics.zig" ] || [ "$$f" = "components/interactive/webos-card-view.zig" ] || [ "$$f" = "components/interactive/xbox-dashboard.zig" ] || [ "$$f" = "components/interactive/cover-flow.zig" ]; then \
