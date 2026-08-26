@@ -108,20 +108,8 @@ renderer reuses right-side feedback lanes to keep cyclic graphs compact.
 
 ## CLI
 
-```bash
-go install github.com/royalicing/qip@latest
-curl -O https://qip.dev/text/vnd.mermaid/mermaid-to-unicode-html.wasm
-
-printf '%s\n' \
-  'graph TD' \
-  '  Start[Request received] --> Auth{Authenticated?}' \
-  '  Auth -->|yes| Rate{Rate limit OK?}' \
-  '  Auth -->|no| R401[401 Unauthorized]' \
-  '  Rate -->|yes| H(Handle request)' \
-  '  Rate -->|no| R429[429 Too Many Requests]' \
-  '  H -.-> Log[Audit log]' \
-  '  H ==> Resp[200 OK]' \
-  | qip run mermaid-to-unicode-html.wasm > graph.html
+```sh
+printf 'graph TD\n  Request --> Response\n' | npx @qip.dev/qipx qip.dev run text/vnd.mermaid/mermaid-to-unicode-html.wasm > graph.html
 ```
 
 ## JavaScript

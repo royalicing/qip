@@ -132,13 +132,13 @@ download it. Files are not uploaded.
   </div>
 
   <label id="image-resize-drop" class="image-resize-drop">
-    <span><strong>Drop images here</strong><br>or choose several files</span>
+    <span><strong>Drop JPEG, PNG, WebP, or AVIF images here</strong><br>or choose several files</span>
     <input id="image-resize-input" type="file" multiple
       accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.png,.webp,.avif">
   </label>
 
   <div class="image-resize-toolbar">
-    <button id="image-resize-clear" type="button" disabled>Clear list</button>
+    <button id="image-resize-remove-all" type="button" disabled>Remove all</button>
     <button id="image-resize-cancel" type="button" hidden>Cancel current resize</button>
   </div>
   <p id="image-resize-status" class="image-resize-status" role="status" aria-live="polite"></p>
@@ -155,7 +155,7 @@ const formatInput = document.getElementById("image-resize-format");
 const qualityInput = document.getElementById("image-resize-quality");
 const qualityOutput = document.getElementById("image-resize-quality-output");
 const qualityLabel = document.getElementById("image-resize-quality-label");
-const clearButton = document.getElementById("image-resize-clear");
+const removeAllButton = document.getElementById("image-resize-remove-all");
 const cancelButton = document.getElementById("image-resize-cancel");
 const status = document.getElementById("image-resize-status");
 const list = document.getElementById("image-resize-list");
@@ -235,14 +235,14 @@ function outputName(format) {
 function setIdleStatus() {
   if (activeId !== 0) return;
   if (records.size === 0) {
-    status.textContent = "Add JPEG, PNG, WebP, or AVIF images.";
+    status.textContent = "";
   } else {
     status.textContent = `${records.size} image${records.size === 1 ? "" : "s"} ready. Resizing starts when you download one.`;
   }
 }
 
 function updateControls() {
-  clearButton.disabled = records.size === 0 || activeId !== 0;
+  removeAllButton.disabled = records.size === 0 || activeId !== 0;
   cancelButton.hidden = activeId === 0;
 }
 
@@ -475,7 +475,7 @@ formatInput.addEventListener("change", () => {
   qualityLabel.hidden = !lossy;
   settingsChanged();
 });
-clearButton.addEventListener("click", () => {
+removeAllButton.addEventListener("click", () => {
   for (const id of Array.from(records.keys())) removeRecord(id);
 });
 cancelButton.addEventListener("click", () => {
@@ -504,47 +504,44 @@ setIdleStatus();
 
 ## Processing
 
-The maximum dimensions define a box. Every output preserves the source aspect
-ratio and fits inside that box. **Enlarge** is off by default, so an image that
-already fits is not enlarged. When enlargement is enabled, Mitchell-Netravali
-reconstruction scales smaller images up to fit. Lanczos3 handles reductions.
+Each image keeps its aspect ratio and fits inside the maximum dimensions.
+**Enlarge** is off by default. Changing the settings does no work until you
+press **Resize and download** for an image.
 
-The page chooses the decoder from the selected file type and chooses the
-resizer after reading the decoded dimensions. This is direct dispatch in
-JavaScript; the page does not use `<qip-step>` fallback. The decoded image,
-resizer input and output, and encoder input use canonical RGBA8 sRGB KTX2.
+Processing stays in your browser. Images can be at most 8192 pixels per edge,
+25 megapixels, and 64 MiB compressed. Animation and source metadata are not
+preserved. JPEG output replaces transparency with white.
 
-WebP lossy and JPEG show a quality slider. WebP lossless and PNG do not,
-because their pixel output is lossless. JPEG cannot store transparency, so its
-component composites transparent pixels against white. Quality numbers are
-specific to each codec; JPEG quality 85 and WebP quality 85 do not promise the
-same visual result.
+## CLI
 
-Processing is sequential to bound peak memory. The worker caches compiled Wasm
-modules, but each operation creates fresh component instances. Changing the
-maximum dimensions or output settings does not process or retain output
-images. Each row uses the settings in effect when **Resize and download** is
-pressed.
-
-The components limit images to 8192 pixels per edge and 25 megapixels. A
-compressed input must be no larger than 64 MiB. This tool creates new pixels
-and does not preserve indexed palettes, animation, or source metadata.
-
-## Use the resize components directly
-
-Set both dimensions explicitly:
+Resize a JPEG to fit within 1200 × 800 pixels, then encode it as lossy WebP:
 
 ```sh
-./qip run -i input.ktx2 -o thumbnail.ktx2 \
-  components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm \
-  -u width=1200 -u height=800
+npx @qip.dev/qipx qip.dev run \
+  image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm \
+  image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm \
+  -u width=1200 -u height=800 \
+  image/ktx2/ktx2-r8g8b8a8-srgb-to-webp-lossy.wasm \
+  -u quality=85 \
+  < photo.jpg > thumbnail.webp
 ```
 
-Omit one dimension to preserve the source aspect ratio. Omit both to halve with
-Lanczos3 or double with Mitchell. Each component accepts and emits canonical
-RGBA8 sRGB `image/ktx2`, is limited to 8192 pixels per axis and 25 megapixels,
-and reserves 287.4 MiB of fixed Wasm memory.
+The first run downloads the components from qip.dev. Later runs use the local
+copies. Omit one dimension to derive it from the source aspect ratio.
+
+The resize components accept and emit canonical RGBA8 sRGB `image/ktx2`. They
+are limited to 8192 pixels per axis and 25 megapixels, and reserve 287.4 MiB of
+fixed Wasm memory.
 
 The filters decode sRGB to linear light and premultiply alpha before sampling.
 They return straight-alpha sRGB bytes. Lanczos3 preserves detail well during
 reduction, but can ring around sharp high-contrast edges.
+
+## Download
+
+- <a href="/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm" download>ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm</a> — <qip-content-size src="/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm"></qip-content-size>
+- <a href="/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm" download>ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm</a> — <qip-content-size src="/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm"></qip-content-size>
+- <a href="/image/ktx2/ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm" download>ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm</a> — <qip-content-size src="/image/ktx2/ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm"></qip-content-size>
+- <a href="/image/ktx2/ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm" download>ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm</a> — <qip-content-size src="/image/ktx2/ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm"></qip-content-size>
+- <a href="/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm" download>ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm</a> — <qip-content-size src="/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm"></qip-content-size>
+- <a href="/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm" download>ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm</a> — <qip-content-size src="/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm"></qip-content-size>

@@ -59,6 +59,8 @@ Examples:
 - `components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm` applies the Display P3 transfer function while retaining float HDR headroom
 - `components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm` reduces canonical RGBA8 sRGB KTX2 in linear light with premultiplied alpha
 - `components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm` enlarges canonical RGBA8 sRGB KTX2 with balanced Mitchell-Netravali bicubic reconstruction
+- `components/image/ktx2/ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm` and `ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm` resize the linear BT.709 float32 profile
+- `components/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm` and `ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm` resize the linear Display P3 float32 profile without clipping HDR RGB values
 - `components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm` maps linear RGBA32F `image/ktx2 -> image/bmp`
 - `components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm` unwraps sRGB BGRA KTX2 pixels as `image/bmp`
 - `components/font/ttf/ttf-to-svg-paths-csv.wasm` maps `font/ttf -> text/csv`
@@ -187,6 +189,8 @@ ceilings to both input and output. They resample RGBA8 sRGB in linear light and
 with premultiplied alpha, then return straight-alpha RGBA8 sRGB. Reduction and
 enlargement are separate components so a pipeline cannot silently use an
 enlargement kernel for thumbnail generation or a reduction kernel for upscaling.
+The float32 variants require the exact linear BT.709 or linear Display P3
+profile named in the component filename and preserve that profile in output.
 
 These limits cost memory even for small conversions because the modules use
 fixed Wasm memories. PNG decoding uses fixed scanline batches and reserves

@@ -95,6 +95,20 @@ intermediate, one channel at a time. Their fixed 287.4 MiB memory holds the
 Use a simpler fixed-ratio or nearest-neighbor component when that fixed memory
 cost is larger than the quality requirement permits.
 
+The float32 equivalents name their complete colour profile:
+
+- `ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm`
+- `ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm`
+- `ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm`
+- `ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm`
+
+They use the same uniforms, defaults, kernels, and direction rejection. They
+filter the already-linear values, preserve negative and HDR RGB values, and
+clamp alpha to 0 through 1 after kernel overshoot. Each component accepts only
+the profile named in its filename and writes the same profile. Transfer-encoded
+Display P3 is not accepted. The 25-megapixel input, output, and single-channel
+intermediate require 859.6 MiB of fixed Wasm memory.
+
 `../bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm` decodes 32-bit uncompressed BMP
 BGRA pixels. It converts sRGB colour channels to linear `f32`; alpha remains a
 straight normalized value.

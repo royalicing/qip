@@ -80,8 +80,12 @@ Related tools: [image color palette](/image-color-palette), [favicon generator](
 
 - [`ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm) reduces canonical RGBA8 sRGB KTX2 with a three-lobe Lanczos filter.
 - [`ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm) enlarges canonical RGBA8 sRGB KTX2 with balanced Mitchell-Netravali bicubic reconstruction.
+- [`ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm`](/image/ktx2/ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm) reduces linear BT.709 float32 KTX2.
+- [`ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm`](/image/ktx2/ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm) enlarges linear BT.709 float32 KTX2.
+- [`ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm`](/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm) reduces linear Display P3 float32 KTX2 and preserves HDR RGB values.
+- [`ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm`](/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm) enlarges linear Display P3 float32 KTX2 and preserves HDR RGB values.
 
-Both components filter in linear light with premultiplied alpha. They expose
+The components filter in linear light with premultiplied alpha. They expose
 `width` and `height` uniforms, preserve aspect ratio when one dimension is
 omitted, and recoverably reject the opposite scaling direction.
 

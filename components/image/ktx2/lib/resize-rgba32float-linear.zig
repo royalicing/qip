@@ -1,17 +1,16 @@
-//! Shared separable, linear-light resampling for canonical RGBA8 sRGB KTX2.
+//! Shared separable resampling for a strict linear RGBA32F KTX2 profile.
 //! RGB is premultiplied by alpha while filtering, then returned to straight
-//! alpha. The intermediate buffer holds one float channel at a time.
+//! alpha. RGB remains unclamped so negative and HDR values survive.
 
 const std = @import("std");
-const rgba8 = @import("ktx2_rgba8_srgb");
-const rgba32f = @import("ktx2_rgba32float");
+const rgba32f = @import("ktx2_rgba32float_profile");
 
 pub const Kernel = enum { lanczos3_down, mitchell_up };
-pub const CONTENT_TYPE = rgba8.CONTENT_TYPE;
+pub const CONTENT_TYPE = rgba32f.CONTENT_TYPE;
 
-const CAP: usize = rgba8.MAX_FILE_SIZE;
-const MAX_PIXELS = rgba8.MAX_PIXELS;
-const MAX_DIMENSION = rgba8.MAX_DIMENSION;
+const CAP: usize = rgba32f.MAX_FILE_SIZE;
+const MAX_PIXELS = rgba32f.MAX_PIXELS;
+const MAX_DIMENSION = rgba32f.MAX_DIMENSION;
 const MAX_AXIS_WEIGHTS = MAX_DIMENSION * 8;
 
 pub const RenderResult = packed struct(u64) {
@@ -39,10 +38,6 @@ pub fn inputBytesCap() u32 {
 
 pub fn outputBytesCap() u32 {
     return CAP;
-}
-
-pub fn outputPtr() u32 {
-    return @intCast(@intFromPtr(&output));
 }
 
 pub fn setWidth(value: u32) u32 {
@@ -79,7 +74,6 @@ fn lanczos3(value: f32) f32 {
 fn mitchell(value: f32) f32 {
     const x = @abs(value);
     if (x >= 2.0) return 0.0;
-    // Mitchell-Netravali's balanced B = C = 1/3 reconstruction filter.
     if (x < 1.0) return ((7.0 * x - 12.0) * x * x + 16.0 / 3.0) / 6.0;
     return (((-7.0 / 3.0 * x + 12.0) * x - 20.0) * x + 32.0 / 3.0) / 6.0;
 }
@@ -106,10 +100,8 @@ fn buildAxisPlan(source_size: usize, destination_size: usize, comptime kernel: K
     var destination: usize = 0;
     while (destination < destination_size) : (destination += 1) {
         const center = (@as(f32, @floatFromInt(destination)) + 0.5) / scale - 0.5;
-        const first_float = @ceil(center - radius);
-        const last_float = @floor(center + radius);
-        const first_unclamped: i32 = @intFromFloat(first_float);
-        const last_unclamped: i32 = @intFromFloat(last_float);
+        const first_unclamped: i32 = @intFromFloat(@ceil(center - radius));
+        const last_unclamped: i32 = @intFromFloat(@floor(center + radius));
         const first = @max(first_unclamped, 0);
         const last = @min(last_unclamped, @as(i32, @intCast(source_size - 1)));
         if (first > last) @trap();
@@ -142,11 +134,11 @@ fn buildAxisPlan(source_size: usize, destination_size: usize, comptime kernel: K
     }
 }
 
-fn sourceChannel(pixels: []const u8, pixel: usize, channel: usize) f32 {
+fn sourceChannel(pixels: []align(1) const f32, pixel: usize, channel: usize) f32 {
     const offset = pixel * 4;
-    const alpha = @as(f32, @floatFromInt(pixels[offset + 3])) / 255.0;
+    const alpha = pixels[offset + 3];
     if (channel == 3) return alpha;
-    return rgba32f.SRGB8_TO_LINEAR[pixels[offset + channel]] * alpha;
+    return pixels[offset + channel] * alpha;
 }
 
 // Keep this large global behind a many-item pointer. Zig 0.15.2's LLVM Wasm
@@ -165,7 +157,7 @@ fn intermediateGet(index: usize) f32 {
     return pixels[index];
 }
 
-fn horizontalPass(source: rgba8.Image, destination_width: usize, channel: usize) void {
+fn horizontalPass(source: rgba32f.Image, destination_width: usize, channel: usize) void {
     var y: usize = 0;
     while (y < source.height) : (y += 1) {
         var x: usize = 0;
@@ -183,21 +175,7 @@ fn horizontalPass(source: rgba8.Image, destination_width: usize, channel: usize)
     }
 }
 
-fn writeAlpha(pixel: usize, value: f32, destination: []u8) void {
-    const alpha = @min(@as(f32, 1.0), @max(@as(f32, 0.0), value));
-    const encoded: u16 = @intFromFloat(alpha * 65535.0 + 0.5);
-    destination[pixel * 4] = @truncate(encoded);
-    destination[pixel * 4 + 1] = @truncate(encoded >> 8);
-}
-
-fn readAlpha16(pixel: usize, destination: []const u8) u16 {
-    const offset = pixel * 4;
-    return @as(u16, destination[offset]) | (@as(u16, destination[offset + 1]) << 8);
-}
-
-fn verticalPass(destination_width: usize, destination_height: usize, channel: usize, destination: []u8) void {
-    if (destination_width == 0 or destination_height == 0) @trap();
-    if (destination_width * destination_height * 4 > destination.len) @trap();
+fn verticalPass(destination_width: usize, destination_height: usize, channel: usize, destination: []align(1) f32) void {
     var y: usize = 0;
     while (y < destination_height) : (y += 1) {
         var x: usize = 0;
@@ -207,38 +185,22 @@ fn verticalPass(destination_width: usize, destination_height: usize, channel: us
             var weight_index: usize = axis_offsets[y];
             const weight_end: usize = axis_offsets[y + 1];
             while (weight_index < weight_end) : (weight_index += 1) {
-                const intermediate_index = source_y * destination_width + x;
-                if (weight_index >= axis_weights.len) @trap();
-                const sample = intermediateGet(intermediate_index);
-                const weight = axis_weights[weight_index];
-                sum += sample * weight;
+                sum += intermediateGet(source_y * destination_width + x) * axis_weights[weight_index];
                 source_y += 1;
             }
 
-            const pixel = y * destination_width + x;
+            const offset = (y * destination_width + x) * 4;
             if (channel == 3) {
-                writeAlpha(pixel, sum, destination);
+                destination[offset + 3] = @min(@as(f32, 1.0), @max(@as(f32, 0.0), sum));
             } else {
-                const alpha16 = readAlpha16(pixel, destination);
-                const alpha = @as(f32, @floatFromInt(alpha16)) / 65535.0;
-                const encoded = if (alpha > 0.0000153) rgba32f.linearToSrgb8(sum / alpha) else 0;
-                const offset = pixel * 4;
-                if (channel < 2) {
-                    destination[offset + 2 + channel] = encoded;
-                } else {
-                    const red = destination[offset + 2];
-                    const green = destination[offset + 3];
-                    destination[offset] = red;
-                    destination[offset + 1] = green;
-                    destination[offset + 2] = encoded;
-                    destination[offset + 3] = @intCast((@as(u32, alpha16) + 128) / 257);
-                }
+                const alpha = destination[offset + 3];
+                destination[offset + channel] = if (alpha > 0.000001) sum / alpha else 0.0;
             }
         }
     }
 }
 
-fn resample(source: rgba8.Image, destination_width: usize, destination_height: usize, comptime kernel: Kernel, destination: []u8) void {
+fn resample(source: rgba32f.Image, destination_width: usize, destination_height: usize, comptime kernel: Kernel, destination: []align(1) f32) void {
     buildAxisPlan(source.width, destination_width, kernel);
     horizontalPass(source, destination_width, 3);
     buildAxisPlan(source.height, destination_height, kernel);
@@ -260,7 +222,7 @@ pub fn render(input_size_in: u32, comptime kernel: Kernel) RenderResult {
 
     const input_size: usize = input_size_in;
     if (input_size > input.len) @trap();
-    const source = rgba8.parse(input[0..input_size]) orelse @trap();
+    const source = rgba32f.parse(input[0..input_size]) orelse @trap();
     if (width == 0 and height == 0) {
         switch (kernel) {
             .lanczos3_down => {
@@ -279,15 +241,17 @@ pub fn render(input_size_in: u32, comptime kernel: Kernel) RenderResult {
     }
     const destination_width = width;
     const destination_height = height;
-    _ = rgba8.fileSize(destination_width, destination_height) orelse @trap();
+    const output_size = rgba32f.fileSize(destination_width, destination_height) orelse @trap();
 
     switch (kernel) {
         .lanczos3_down => if (destination_width > source.width or destination_height > source.height) return rejected(),
         .mitchell_up => if (destination_width < source.width or destination_height < source.height) return rejected(),
     }
 
-    const output_size = rgba8.writeHeader(&output, destination_width, destination_height) orelse @trap();
-    const destination = output[rgba8.HEADER_SIZE..output_size];
+    _ = rgba32f.writeHeader(&output, destination_width, destination_height) orelse @trap();
+    const payload = output[rgba32f.HEADER_SIZE..output_size];
+    const destination_ptr: [*]align(1) f32 = @ptrCast(payload.ptr);
+    const destination = destination_ptr[0 .. payload.len / 4];
     resample(source, destination_width, destination_height, kernel, destination);
     return .{ .output_size = @intCast(output_size), .output_ptr = @intCast(@intFromPtr(&output)), .failed = 0 };
 }
