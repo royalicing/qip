@@ -92,6 +92,7 @@ type options struct {
 	viewSource             bool
 	traceWith              string
 	modulePolicy           wasminspect.ModulePolicy
+	hosts                  []qinternal.ComponentHost
 }
 
 func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGrow bool) error {
@@ -105,10 +106,10 @@ func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGro
 	return nil
 }
 
-const usageMain = "Usage: qip <command> [args]\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate Content components and run Compliance oracles\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
-const usageRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
-const usageDry = "Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
-const usageBench = "Usage: qip bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--node] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
+const usageMain = "Usage: qip [host ...] <command> [args]\n\nHosts are dotted DNS names with optional ports. Missing safe relative .wasm files\nare requested over HTTPS in host order and saved at their original paths.\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate Content components and run Compliance oracles\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
+const usageRun = "Usage: qip [host ...] run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
+const usageDry = "Usage: qip [host ...] dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
+const usageBench = "Usage: qip [host ...] bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--node] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
 const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [-u <key=value> ...] ..."
 const usageComply = "Usage: qip comply [options] <file-or-dir> [...]"
@@ -125,7 +126,7 @@ const usageHelp = "Usage: qip help [command]"
 const legacyDevNotice = "qip: `qip dev` has moved to `qip router dev`; please update your command. `qip dev` will continue to work for now."
 
 const helpRun = "Usage: qip run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--trace-with <application/wasm component>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...\n\nQIP component contracts:\n  Run mode:\n    - Exports render(input_size) -> i64, input_ptr, and input_utf8_cap or input_bytes_cap\n    - render returns the output pointer and size, or recoverable rejection\n    - Exports output_utf8_cap or output_bytes_cap\n    - Optional uniforms: uniform_set_<key>(value)\n  Image mode:\n    - Exports tile_rgba32float_64x64, input_ptr, input_bytes_cap\n    - Optional: uniform_set_width_and_height, calculate_halo_px\n\nOutput:\n  - Default output is stdout.\n  - Use -o <path> to write to a file.\n  - If -o ends with .png/.jpg/.jpeg/.bmp and pipeline output is an image,\n    qip re-encodes to the requested output image format.\n\nModule policy:\n  - Modules containing memory.grow are rejected by default.\n  - --allow-memory-grow permits growth and requires --max-memory <bytes>.\n  - --max-memory rejects modules whose declared memory minimum or maximum exceeds the byte cap.\n    A module with memory but no declared maximum is rejected when this flag is set.\n\nTracing:\n  - --trace-with runs a Wasm-to-Wasm instrumentation component after a trap,\n    then retries the failing module with qip_trace.before_load, before_store,\n    and after_store imports to report recent memory events.\n\nUniform args:\n  Place -u <key=value> or --uniform <key=value> after the component it configures.\n  Repeat the option to set more than one uniform. Legacy '?key=value' arguments remain supported.\n  i32 uniforms are unsigned; use i64 for signed integers.\n  Example: components/text/text-to-bmp.wasm -u cols=120 -u leading=24\n  Example: components/text/text-to-path-svg-dejavu-sans-mono.wasm -u width=900 -u height=400 -u font_size=48\n\nCapacity compatibility:\n  --capacities-must-fit rejects a connection between Content components when the producer's maximum output capacity exceeds the consumer's input capacity.\n\nComposition:\n  If a component exports tile_rgba32float_64x64, qip run composes a contiguous image stage block.\n  Input to that block must be BMP bytes and the block outputs BMP bytes.\n  Run stages may follow and will receive BMP bytes.\n\nExample:\n  echo '<svg width=\"32\" height=\"32\"><rect width=\"32\" height=\"32\" fill=\"#d52b1e\" /><rect x=\"13\" y=\"6\" width=\"6\" height=\"20\" fill=\"#ffffff\" /><rect x=\"6\" y=\"13\" width=\"20\" height=\"6\" fill=\"#ffffff\" /></svg>' | ./qip run -o out.ico components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm"
-const helpDryRun = `Usage: qip dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...
+const helpDryRun = `Usage: qip [host ...] dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ...
 
 Validates and describes the same prepared pipeline as qip run without reading
 input, calling render, or writing output. A compatible plan exits 0. Invalid
@@ -160,7 +161,7 @@ Output:
      Note: step 2 (components/text/html/html-page-wrap.wasm): previous output capacity 2.0 MiB (2097152 bytes) exceeds this input capacity 256.0 KiB (262144 bytes); qip run remains valid when the actual intermediate output fits
   Total declared buffer capacity: 4.8 MiB (4980736 bytes)
   Warnings: 1`
-const helpComply = `Usage: qip comply [options] <file-or-dir> [...]
+const helpComply = `Usage: qip [host ...] comply [options] <file-or-dir> [...]
 
 Options:
   --with <compliance.wasm>        Run a Compliance oracle (repeatable)
@@ -224,12 +225,21 @@ func main() {
 		gameOver(usageMain)
 	}
 
+	hosts, commandArgs, err := parseHostedInvocation(args)
+	if err != nil {
+		gameOver("%v", err)
+	}
+	activeComponentHosts = hosts
+	args = commandArgs
+
 	if args[0] == "help" || args[0] == "doc" {
 		helpCmd(args[1:])
 	} else if args[0] == "run" {
 		runCmd(args[1:])
 	} else if args[0] == "dry" {
 		dryCmd(args[1:])
+	} else if args[0] == "dry-run" {
+		dryRunCmd(args[1:])
 	} else if args[0] == "bench" {
 		benchCmd(args[1:])
 	} else if args[0] == "score" {
@@ -249,6 +259,35 @@ func main() {
 	}
 }
 
+var activeComponentHosts []qinternal.ComponentHost
+
+func parseHostedInvocation(args []string) ([]qinternal.ComponentHost, []string, error) {
+	known := map[string]bool{"run": true, "dry": true, "dry-run": true, "bench": true, "comply": true}
+	ordinary := map[string]bool{"run": true, "dry": true, "dry-run": true, "bench": true, "comply": true, "help": true, "doc": true, "score": true, "image": true, "dev": true, "router": true, "form": true}
+	if len(args) == 0 || ordinary[args[0]] {
+		return nil, args, nil
+	}
+	commandIndex := -1
+	for i, arg := range args {
+		if known[arg] {
+			commandIndex = i
+			break
+		}
+	}
+	if commandIndex <= 0 {
+		return nil, args, nil
+	}
+	hosts := make([]qinternal.ComponentHost, commandIndex)
+	for i, value := range args[:commandIndex] {
+		host, err := qinternal.ParseComponentHost(value)
+		if err != nil {
+			return nil, nil, err
+		}
+		hosts[i] = host
+	}
+	return hosts, args[commandIndex:], nil
+}
+
 func legacyDevCmd(args []string) {
 	writeLegacyDevNotice(os.Stderr)
 	devCmd(args)
@@ -262,12 +301,12 @@ func helpCmd(args []string) {
 	if len(args) == 0 {
 		fmt.Println(usageMain)
 		fmt.Println()
-		fmt.Println(helpRun)
+		fmt.Println(strings.Replace(helpRun, "Usage: qip run", "Usage: qip [host ...] run", 1))
 		return
 	}
 	switch args[0] {
 	case "run":
-		fmt.Println(helpRun)
+		fmt.Println(strings.Replace(helpRun, "Usage: qip run", "Usage: qip [host ...] run", 1))
 	case "dry":
 		fmt.Println(helpDryRun)
 	case "bench":
@@ -308,7 +347,7 @@ func formCmd(args []string) {
 }
 
 func complyCmd(args []string) {
-	if err := qinternal.RunComplyCommand(args); err != nil {
+	if err := qinternal.RunComplyCommandWithHosts(args, activeComponentHosts); err != nil {
 		if errors.Is(err, qinternal.ErrComplyFailed) {
 			os.Exit(1)
 		}
@@ -421,6 +460,7 @@ func parseRunCommandArgs(args []string, commandName string) (runCommandConfig, e
 		outputPath: "-",
 		timeoutMS:  5000,
 	}
+	config.opts.hosts = activeComponentHosts
 	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var verbose bool
@@ -513,6 +553,7 @@ func benchCmd(args []string) {
 	opts := options{
 		contentTypeChecking:    ContentTypeCheckingStrong,
 		trustFirstStageContent: true,
+		hosts:                  activeComponentHosts,
 	}
 	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

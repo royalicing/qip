@@ -42,6 +42,22 @@ You can read more about the [Content component contract in our docs](./docs/cont
 
 You can pipe the results of other CLI tools to stdin or pass files in via `-i`. You can also chain multiple QIP components together.
 
+Put one or more HTTPS hosts before `run`, `dry run`, `bench`, or `comply` to
+load a missing component by its relative path:
+
+```bash
+printf '# Hello\n' \
+  | qip qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm
+```
+
+The CLI checks the local path first. If it is missing, the CLI tries each host
+in order, validates the response, and saves it at the original path. Hosts must
+be dotted DNS names with optional ports. Do not include a scheme or path.
+Downloads use the same rules as `qipx`: HTTPS only, a 30-second timeout, a
+16 MiB limit, and at most two redirects on the same origin. Only safe relative
+paths ending in `.wasm` are eligible. `qip dry run` prints the source plan and
+does not make network requests.
+
 ```bash
 # Normalize phone number
 echo "+1 (212) 555-0100" | qip run components/text/e164.wasm

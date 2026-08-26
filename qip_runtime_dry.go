@@ -108,6 +108,9 @@ func dryRunCmd(args []string) {
 }
 
 func executeDryRun(baseCtx context.Context, config runCommandConfig, out io.Writer) error {
+	if len(config.opts.hosts) > 0 {
+		return executeHostedDryRun(baseCtx, config, out)
+	}
 	execCtx, cancel := wasmruntime.WithExecutionTimeout(baseCtx, time.Duration(config.timeoutMS)*time.Millisecond)
 	defer cancel()
 
@@ -117,6 +120,96 @@ func executeDryRun(baseCtx context.Context, config runCommandConfig, out io.Writ
 	}
 	defer prepared.pipeline.Close(context.Background())
 	writeDryRunReport(out, prepared.plan)
+	return nil
+}
+
+func executeHostedDryRun(baseCtx context.Context, config runCommandConfig, out io.Writer) error {
+	type observation struct {
+		invocation ComponentInvocation
+		plan       qinternal.ComponentSourcePlan
+		state      string
+		body       []byte
+	}
+	observations := make([]observation, 0, len(config.componentInvocations))
+	for _, invocation := range config.componentInvocations {
+		plan := qinternal.PlanComponentSources(invocation.Source, config.opts.hosts)
+		state, body, err := qinternal.ObserveLocalComponentSource(plan)
+		if err != nil {
+			return err
+		}
+		observations = append(observations, observation{invocation: invocation, plan: plan, state: state, body: body})
+	}
+
+	fmt.Fprintln(out, "Sources:")
+	for componentIndex, observation := range observations {
+		indent := "  "
+		if len(observations) > 1 {
+			fmt.Fprintf(out, "  Component %d: %s\n", componentIndex+1, observation.plan.FilePath)
+			indent = "    "
+		}
+		for sourceIndex, source := range observation.plan.Sources {
+			label := source.Path
+			if source.Kind == "https" {
+				label = source.URL
+			}
+			fmt.Fprintf(out, "%s%d  %-5s  %s\n", indent, sourceIndex, source.Kind, label)
+		}
+	}
+	fmt.Fprintln(out, "\nResolution:")
+	for componentIndex, observation := range observations {
+		indent := "  "
+		if len(observations) > 1 {
+			fmt.Fprintf(out, "  Component %d: %s\n", componentIndex+1, observation.plan.FilePath)
+			indent = "    "
+		}
+		fmt.Fprintf(out, "%s0  %s\n", indent, observation.state)
+		for sourceIndex := 1; sourceIndex < len(observation.plan.Sources); sourceIndex++ {
+			fmt.Fprintf(out, "%s%d  unexamined\n", indent, sourceIndex)
+		}
+	}
+
+	fmt.Fprintln(out, "\nValidation:")
+	missing := 0
+	for _, observation := range observations {
+		if observation.state == "missing" {
+			fmt.Fprintf(out, "  %s: deferred (local file missing)\n", observation.invocation.Source)
+			missing++
+			continue
+		}
+		if err := validateRunnableModuleCandidate(observation.body, observation.invocation.Source, config.opts, observation.invocation.UniformValues); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "  %s: valid\n", observation.invocation.Source)
+	}
+	if missing > 0 {
+		suffix := "s"
+		if missing == 1 {
+			suffix = ""
+		}
+		fmt.Fprintf(out, "Pipeline compatibility: deferred (%d component%s missing locally)\n", missing, suffix)
+		return nil
+	}
+
+	execCtx, cancel := wasmruntime.WithExecutionTimeout(baseCtx, time.Duration(config.timeoutMS)*time.Millisecond)
+	defer cancel()
+	components := make([]ResolvedComponent, len(observations))
+	for i, observation := range observations {
+		components[i] = ResolvedComponent{Name: observation.invocation.Source, WASM: observation.body, UniformValues: observation.invocation.UniformValues}
+	}
+	pipeline, err := compileResolvedComponents(execCtx, components, config.opts)
+	if err != nil {
+		return err
+	}
+	defer pipeline.Close(context.Background())
+	descriptions, err := describeRunPipeline(execCtx, pipeline)
+	if err != nil {
+		return err
+	}
+	plan, err := planRunPipelineWithOptions(descriptions, runPipelinePlanningOptions{capacitiesMustFit: config.opts.capacitiesMustFit})
+	if err != nil {
+		return err
+	}
+	writeDryRunReport(out, plan)
 	return nil
 }
 

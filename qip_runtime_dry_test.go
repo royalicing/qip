@@ -13,6 +13,39 @@ import (
 	"github.com/royalicing/qip/internal/wasmruntime"
 )
 
+func TestHostedDryRunPlansMissingSourcesWithoutNetworkOrWrites(t *testing.T) {
+	missing := "testdata/host-dry-run-missing/component.wasm"
+	config := runCommandConfig{
+		opts: options{hosts: []qinternal.ComponentHost{
+			{Authority: "qip.dev", Origin: "https://qip.dev"},
+			{Authority: "mirror.example:8443", Origin: "https://mirror.example:8443"},
+		}},
+		timeoutMS: 5000,
+		componentInvocations: []ComponentInvocation{{
+			Source: missing,
+		}},
+	}
+	var output bytes.Buffer
+	if err := executeDryRun(context.Background(), config, &output); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	for _, want := range []string{
+		"https://qip.dev/testdata/host-dry-run-missing/component.wasm",
+		"https://mirror.example:8443/testdata/host-dry-run-missing/component.wasm",
+		"0  missing",
+		"1  unexamined",
+		"deferred (local file missing)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("dry run wrote component: %v", err)
+	}
+}
+
 func TestExecuteDryRunDoesNotCallRender(t *testing.T) {
 	config, err := parseRunCommandArgs([]string{
 		"--timeout-ms", "250",

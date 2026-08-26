@@ -26,7 +26,7 @@ func newQIPRuntime(opts options) *QIPRuntime {
 func (runtime *QIPRuntime) ResolveComponents(invocations []ComponentInvocation) ([]ResolvedComponent, error) {
 	components := make([]ResolvedComponent, len(invocations))
 	for i, invocation := range invocations {
-		body, err := readModuleSource(invocation.Source)
+		body, err := resolveModuleSourceWithUniforms(invocation.Source, runtime.options, invocation.UniformValues)
 		if err != nil {
 			return nil, err
 		}

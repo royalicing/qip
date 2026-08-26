@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -8,11 +9,14 @@ import (
 	"os"
 	"strings"
 
+	qinternal "github.com/royalicing/qip/internal"
 	"github.com/royalicing/qip/internal/wasminspect"
+	"github.com/royalicing/qip/internal/wasmruntime"
+	"github.com/tetratelabs/wazero"
 )
 
 func readModulePath(path string, opts options) ([]byte, error) {
-	body, err := readModuleSource(path)
+	body, err := resolveModuleSource(path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -20,6 +24,53 @@ func readModulePath(path string, opts options) ([]byte, error) {
 		return nil, err
 	}
 	return body, nil
+}
+
+func resolveModuleSource(path string, opts options) ([]byte, error) {
+	return resolveModuleSourceWithUniforms(path, opts, nil)
+}
+
+func resolveModuleSourceWithUniforms(path string, opts options, uniforms map[string]string) ([]byte, error) {
+	if len(opts.hosts) == 0 || strings.HasPrefix(path, "https://") {
+		return readModuleSource(path)
+	}
+	return qinternal.ResolveComponentSource(context.Background(), path, opts.hosts, func(body []byte, label string) error {
+		return validateRunnableModuleCandidate(body, label, opts, uniforms)
+	})
+}
+
+func validateRunnableModuleCandidate(body []byte, label string, opts options, uniforms map[string]string) error {
+	if err := logAndValidateModule(label, body, opts); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	runtime := wasmruntime.New(ctx)
+	defer runtime.Close(ctx)
+	compiled, err := runtime.CompileModule(ctx, body)
+	if err != nil {
+		return fmt.Errorf("Wasm module %q could not be compiled: %w", label, err)
+	}
+	defer compiled.Close(ctx)
+	mod, err := runtime.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName("host-source-validation"))
+	if err != nil {
+		return fmt.Errorf("Wasm module %q could not be instantiated: %w", label, err)
+	}
+	defer mod.Close(ctx)
+	if err := applyModuleUniforms(ctx, mod, uniforms); err != nil {
+		return err
+	}
+	if mod.ExportedFunction("tile_rgba32float_64x64") != nil {
+		stage, err := loadTileStage(ctx, mod)
+		if err != nil {
+			return err
+		}
+		_ = stage
+		return nil
+	}
+	if _, err := inspectRunModuleContract(ctx, mod); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
 }
 
 func readModuleSource(path string) ([]byte, error) {

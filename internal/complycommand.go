@@ -80,6 +80,10 @@ type complianceOutcomes struct {
 }
 
 func RunComplyCommand(args []string) error {
+	return RunComplyCommandWithHosts(args, nil)
+}
+
+func RunComplyCommandWithHosts(args []string, hosts []ComponentHost) error {
 	fs := flag.NewFlagSet("comply", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var withCompliances stringListFlag
@@ -117,7 +121,7 @@ func RunComplyCommand(args []string) error {
 		return errors.New(usageComply)
 	}
 
-	implPaths, err := discoverComplyWasmFiles(paths)
+	implPaths, err := discoverComplyWasmFilesWithHosts(paths, hosts)
 	if err != nil {
 		return err
 	}
@@ -128,7 +132,14 @@ func RunComplyCommand(args []string) error {
 	compliances := make([]complianceSpec, 0, len(withCompliances))
 	slices.Sort(withCompliances)
 	for i, path := range withCompliances {
-		body, err := readComplyModulePath(path)
+		body, err := readComplyModulePath(path, hosts, func(body []byte, label string) error {
+			if straightLineOracles {
+				if err := wasminspect.ValidateStraightLineComplyOracle(body); err != nil {
+					return fmt.Errorf("Compliance oracle %q: %w", label, err)
+				}
+			}
+			return validateComplianceOracleContract(body, label)
+		})
 		if err != nil {
 			return fmt.Errorf("failed to read --with %q: %w", path, err)
 		}
@@ -154,7 +165,7 @@ func RunComplyCommand(args []string) error {
 	}
 	pass, fail := 0, 0
 	for _, implPath := range implPaths {
-		implPass, implFail := runComplyForImplementation(implPath, compliances, seedPtr, maxMemory, verbose)
+		implPass, implFail := runComplyForImplementation(implPath, compliances, seedPtr, maxMemory, verbose, hosts)
 		pass += implPass
 		fail += implFail
 	}
@@ -166,6 +177,10 @@ func RunComplyCommand(args []string) error {
 }
 
 func discoverComplyWasmFiles(paths []string) ([]string, error) {
+	return discoverComplyWasmFilesWithHosts(paths, nil)
+}
+
+func discoverComplyWasmFilesWithHosts(paths []string, hosts []ComponentHost) ([]string, error) {
 	files := make([]string, 0)
 	seen := map[string]bool{}
 	for _, path := range paths {
@@ -179,6 +194,13 @@ func discoverComplyWasmFiles(paths []string) ([]string, error) {
 		}
 		info, err := os.Stat(path)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && len(hosts) > 0 && RemotelyEligibleComponentPath(path) {
+				if !seen[path] {
+					seen[path] = true
+					files = append(files, path)
+				}
+				continue
+			}
 			return nil, err
 		}
 		if !info.IsDir() {
@@ -212,8 +234,16 @@ func discoverComplyWasmFiles(paths []string) ([]string, error) {
 	return files, nil
 }
 
-func runComplyForImplementation(implPath string, compliances []complianceSpec, seed *int32, maxMemory uint64, verbose bool) (pass int, fail int) {
-	implWasm, err := readComplyModulePath(implPath)
+func runComplyForImplementation(implPath string, compliances []complianceSpec, seed *int32, maxMemory uint64, verbose bool, hosts []ComponentHost) (pass int, fail int) {
+	implWasm, err := readComplyModulePath(implPath, hosts, func(body []byte, label string) error {
+		if maxMemory > 0 {
+			if err := wasminspect.ValidateModulePolicy(body, wasminspect.ModulePolicy{MaxMemoryBytes: maxMemory}); err != nil {
+				return err
+			}
+		}
+		_, err := validateBaseContract(label, body)
+		return err
+	})
 	if err != nil {
 		fmt.Printf("FAIL %s: %v\n", implPath, err)
 		return 0, 1
@@ -299,7 +329,7 @@ func normalizeComplyArgs(args []string) []string {
 	return NormalizeFlagArgs(args, flagsWithValue)
 }
 
-func readComplyModulePath(path string) ([]byte, error) {
+func readComplyModulePath(path string, hosts []ComponentHost, validate func([]byte, string) error) ([]byte, error) {
 	if strings.HasPrefix(path, "https://") {
 		resp, err := http.Get(path)
 		if err != nil {
@@ -310,13 +340,73 @@ func readComplyModulePath(path string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error reading response: %v", err)
 		}
+		if err := validate(body, path); err != nil {
+			return nil, err
+		}
 		return body, nil
+	}
+	if len(hosts) > 0 {
+		return ResolveComponentSource(context.Background(), path, hosts, validate)
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading file: %v", err)
 	}
+	if err := validate(body, path); err != nil {
+		return nil, err
+	}
 	return body, nil
+}
+
+func validateComplianceOracleContract(body []byte, label string) error {
+	ctx := context.Background()
+	r := wasmruntime.NewRunToCompletion(ctx)
+	defer r.Close(ctx)
+	compiled, err := r.CompileModule(ctx, body)
+	if err != nil {
+		return fmt.Errorf("Compliance oracle %q could not be compiled", label)
+	}
+	defer compiled.Close(ctx)
+	funcs := compiled.ExportedFunctions()
+	comply, ok := funcs["comply"]
+	if !ok {
+		return fmt.Errorf("Compliance oracle %q must export comply", label)
+	}
+	if err := requireSignature(comply, nil, []api.ValueType{api.ValueTypeI32}, "comply"); err != nil {
+		return fmt.Errorf("Compliance oracle %q: %w", label, err)
+	}
+	if _, ok := compiled.ExportedMemories()["memory"]; !ok {
+		return fmt.Errorf("Compliance oracle %q must export memory", label)
+	}
+	if len(compiled.ImportedMemories()) != 0 {
+		return fmt.Errorf("Compliance oracle %q imports memory; only qip bridge functions are supported", label)
+	}
+	type signature struct {
+		params  []api.ValueType
+		results []api.ValueType
+	}
+	i32 := api.ValueTypeI32
+	i64 := api.ValueTypeI64
+	bridge := map[string]signature{
+		"set_uniform_u32":             {params: []api.ValueType{i32, i32, i32}, results: []api.ValueType{i32}},
+		"must_render_exactly":         {params: []api.ValueType{i64, i32, i32, i32, i32}, results: []api.ValueType{i32}},
+		"must_trap":                   {params: []api.ValueType{i64, i32, i32}, results: []api.ValueType{i32}},
+		"must_reject":                 {params: []api.ValueType{i64, i32, i32}, results: []api.ValueType{i32}},
+		"must_render_into":            {params: []api.ValueType{i64, i32, i32, i32, i32}, results: []api.ValueType{i32}},
+		"must_render_into_emit_error": {params: []api.ValueType{i64, i32, i32}, results: []api.ValueType{i32}},
+		"must_render_into_finish":     {params: []api.ValueType{i64, i32}, results: []api.ValueType{i32}},
+	}
+	for _, imported := range compiled.ImportedFunctions() {
+		moduleName, name, _ := imported.Import()
+		want, ok := bridge[name]
+		if moduleName != bridgeHostModuleName || !ok {
+			return fmt.Errorf("Compliance oracle %q imports unsupported function %s.%s", label, moduleName, name)
+		}
+		if !sameTypes(imported.ParamTypes(), want.params) || !sameTypes(imported.ResultTypes(), want.results) {
+			return fmt.Errorf("Compliance oracle %q import %s.%s has invalid signature", label, moduleName, name)
+		}
+	}
+	return nil
 }
 
 func validateBaseContract(label string, implWasm []byte) (baseValidationResult, error) {
