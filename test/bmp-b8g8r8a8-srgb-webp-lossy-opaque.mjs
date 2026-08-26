@@ -100,7 +100,7 @@ test("opaque WebP accepts BGR/BGRX and composites declared V5 alpha", async () =
   assert.ok(!bgrOutput.includes(Buffer.from("ALPH")));
 
   const background = 0x2468ac;
-  assert.equal(exports.uniform_set_background_color(0xff2468ac), background);
+  assert.equal(exports.uniform_set_background_color_rgb(0xff2468ac), background);
   const withAlpha = (x, y) => ({
     ...rgbAt(x, y),
     a: (x * 37 + y * 23) & 0xff,

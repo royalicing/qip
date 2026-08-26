@@ -64,7 +64,7 @@ function encode(bmp, { quality = 85, subsample = 2, background = 0xffffff } = {}
   assert.equal(exportedString(exports, "output_content_type_ptr", "output_content_type_size"), "image/jpeg");
   exports.uniform_set_quality(quality);
   exports.uniform_set_subsample(subsample);
-  exports.uniform_set_background_color(background);
+  exports.uniform_set_background_color_rgb(background);
   new Uint8Array(exports.memory.buffer, exports.input_ptr(), bmp.length).set(bmp);
   const size = qipRenderSize(exports, bmp.length);
   assert.ok(size > 100);

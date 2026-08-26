@@ -36,7 +36,7 @@ static uint32_t quality = 95;
 static uint32_t method = 4;
 static uint32_t sharp_yuv = 1;
 static uint32_t low_memory = 1;
-static uint32_t background_color = 0xffffffu;
+static uint32_t background_color_rgb = 0xffffffu;
 
 typedef struct ArenaBlock {
   uint32_t size;
@@ -240,9 +240,9 @@ uint32_t uniform_set_low_memory(uint32_t value) {
   return low_memory;
 }
 
-uint32_t uniform_set_background_color(uint32_t value) {
-  background_color = value & 0xffffffu;
-  return background_color;
+uint32_t uniform_set_background_color_rgb(uint32_t value) {
+  background_color_rgb = value & 0xffffffu;
+  return background_color_rgb;
 }
 
 uint32_t arena_peak_bytes(void) { return (uint32_t)arena_peak; }
@@ -374,9 +374,9 @@ uint64_t render(uint32_t input_size_value) {
       }
     }
   } else {
-    const uint8_t bg_r = (uint8_t)(background_color >> 16);
-    const uint8_t bg_g = (uint8_t)(background_color >> 8);
-    const uint8_t bg_b = (uint8_t)background_color;
+    const uint8_t bg_r = (uint8_t)(background_color_rgb >> 16);
+    const uint8_t bg_g = (uint8_t)(background_color_rgb >> 8);
+    const uint8_t bg_b = (uint8_t)background_color_rgb;
     size_t offset;
     for (offset = 0; offset < pixel_bytes; offset += 4u) {
       uint8_t* const pixel = input_buf + offset;

@@ -952,8 +952,9 @@ function qipPlayDirectChildren(element, name) {
   return Array.from(element?.children || []).filter((child) => qipPlayElementName(child) === name);
 }
 
-function qipPlaySelectStepSource(stepElement) {
+function qipPlaySelectStepSources(stepElement) {
   const sources = qipPlayDirectChildren(stepElement, "source");
+  const selected = [];
   for (const source of sources) {
     const type = (source.getAttribute("type") || "application/wasm").trim().toLowerCase();
     if (type !== "application/wasm") continue;
@@ -961,9 +962,12 @@ function qipPlaySelectStepSource(stepElement) {
     if (media !== "" && typeof globalThis.matchMedia === "function" && !globalThis.matchMedia(media).matches) {
       continue;
     }
-    return source;
+    selected.push(source);
   }
-  throw new Error("<qip-step> requires a matching <source type=\"application/wasm\">");
+  if (selected.length === 0) {
+    throw new Error("<qip-step> requires a matching <source type=\"application/wasm\">");
+  }
+  return selected;
 }
 
 function qipPlaySourceSteps(element) {
@@ -973,15 +977,15 @@ function qipPlaySourceSteps(element) {
     if (directSources.length > 0) {
       throw new Error("<qip-play> cannot mix direct <source> children with <qip-step>");
     }
-    return wrappedSteps.map((stepElement) => ({
-      stepElement,
-      sourceElement: qipPlaySelectStepSource(stepElement),
-    }));
+    return wrappedSteps.map((stepElement) => {
+      const sourceElements = qipPlaySelectStepSources(stepElement);
+      return { stepElement, sourceElements, sourceElement: sourceElements[0] };
+    });
   }
   if (directSources.length !== 1) {
     throw new Error("<qip-play> requires one direct <source> or one or more <qip-step> children");
   }
-  return [{ stepElement: null, sourceElement: directSources[0] }];
+  return [{ stepElement: null, sourceElements: directSources, sourceElement: directSources[0] }];
 }
 
 function qipPlayReadDeclaredContentType(exportsObj, memory, ptrName, sizeName) {
@@ -1002,6 +1006,57 @@ function qipPlayStepLabel(stepRecord, index) {
   const src = (stepRecord.sourceElement.getAttribute("src") || "").trim();
   const filename = src.split("/").filter(Boolean).at(-1) || "step";
   return String(index + 1) + ":" + filename.replace(/\.wasm$/i, "");
+}
+
+function qipPlaySourceLabel(sourceElement) {
+  const src = (sourceElement.getAttribute("src") || "").trim();
+  return src.split("/").filter(Boolean).at(-1)?.replace(/\.wasm$/i, "") || "source";
+}
+
+function qipPlayValidatePostStage(stage, precedingOutputType) {
+  let expectedInputType = null;
+  let expectedOutputType = null;
+  for (const candidate of stage.candidates) {
+    for (const name of ["input_ptr", "input_bytes_cap", "output_bytes_cap", "render"]) {
+      if (!(name in candidate.exports)) {
+        throw new Error("qip-play post-processing step " + stage.label + " missing export " + name);
+      }
+    }
+    if ("begin_update_at" in candidate.exports || "finish_update" in candidate.exports) {
+      throw new Error("qip-play post-processing step " + stage.label + " must be finite Content; Timed steps are not supported yet");
+    }
+    if ("key_event" in candidate.exports || "pointer_event" in candidate.exports) {
+      throw new Error("qip-play post-processing step " + stage.label + " must not be Eventful");
+    }
+    const inputType = qipPlayReadDeclaredContentType(
+      candidate.exports, candidate.memory, "input_content_type_ptr", "input_content_type_size",
+    );
+    const outputType = qipPlayReadDeclaredContentType(
+      candidate.exports, candidate.memory, "output_content_type_ptr", "output_content_type_size",
+    );
+    if (inputType === "" || outputType === "") {
+      throw new Error("qip-play post-processing alternatives must declare exact input and output content types");
+    }
+    if (expectedInputType === null) {
+      expectedInputType = inputType;
+      expectedOutputType = outputType;
+    } else if (inputType !== expectedInputType || outputType !== expectedOutputType) {
+      throw new Error("qip-play alternatives in step " + stage.label + " must declare identical input and output content types");
+    }
+    candidate.inputType = inputType;
+    candidate.outputType = outputType;
+    candidate.inputCapacity = qipPlayReadI32Export(candidate.exports, "input_bytes_cap");
+    candidate.inputPtr = qipPlayReadI32Export(candidate.exports, "input_ptr");
+  }
+  if (expectedInputType !== precedingOutputType) {
+    throw new Error(
+      "qip-play step " + stage.label + " input type " + expectedInputType +
+      " does not match preceding output type " + precedingOutputType,
+    );
+  }
+  stage.inputType = expectedInputType;
+  stage.outputType = expectedOutputType;
+  return expectedOutputType;
 }
 
 function qipPlayByteSlicesEqual(a, b) {
@@ -1316,33 +1371,52 @@ class QIPPlayElement extends HTMLElement {
     const loaded = [];
     for (let index = 0; index < stepRecords.length; index++) {
       const stepRecord = stepRecords[index];
-      const srcRaw = (stepRecord.sourceElement.getAttribute("src") || "").trim();
-      if (srcRaw === "") {
-        throw new Error("<qip-play> <source> requires a non-empty src");
+      const candidateSources = index === 0 ? [stepRecord.sourceElement] : stepRecord.sourceElements;
+      const candidates = [];
+      for (const candidateSource of candidateSources) {
+        const srcRaw = (candidateSource.getAttribute("src") || "").trim();
+        if (srcRaw === "") {
+          throw new Error("<qip-play> <source> requires a non-empty src");
+        }
+        const sourceURL = new URL(srcRaw, document.baseURI).toString();
+        const moduleBytes = await qipPlayLoadModuleBytes(sourceURL);
+        qipPlayValidateWasmModulePolicy(moduleBytes, policy, sourceURL);
+        const instantiated = await WebAssembly.instantiate(moduleBytes, {});
+        const exportsObj =
+          (instantiated && instantiated.instance && instantiated.instance.exports) ||
+          (instantiated && instantiated.exports) ||
+          null;
+        if (!exportsObj) throw new Error("failed to access wasm exports for qip-play module");
+        if (!(exportsObj.memory instanceof WebAssembly.Memory)) {
+          throw new Error("qip-play module must export memory");
+        }
+        candidates.push({
+          sourceElement: candidateSource,
+          sourceURL,
+          sourceLabel: qipPlaySourceLabel(candidateSource),
+          moduleBytes: moduleBytes.byteLength,
+          exports: exportsObj,
+          memory: exportsObj.memory,
+          outputCapacity: qipPlayReadI32Export(exportsObj, "output_bytes_cap"),
+          renderN: 0,
+          lastRenderMS: 0,
+        });
       }
-      const sourceURL = new URL(srcRaw, document.baseURI).toString();
-      const moduleBytes = await qipPlayLoadModuleBytes(sourceURL);
-      qipPlayValidateWasmModulePolicy(moduleBytes, policy, sourceURL);
-      const instantiated = await WebAssembly.instantiate(moduleBytes, {});
-      const exportsObj =
-        (instantiated && instantiated.instance && instantiated.instance.exports) ||
-        (instantiated && instantiated.exports) ||
-        null;
-      if (!exportsObj) throw new Error("failed to access wasm exports for qip-play module");
-      if (!(exportsObj.memory instanceof WebAssembly.Memory)) {
-        throw new Error("qip-play module must export memory");
+      const label = qipPlayStepLabel(stepRecord, index);
+      if (index === 0) {
+        loaded.push({ ...stepRecord, ...candidates[0], label, candidates });
+      } else {
+        loaded.push({
+          ...stepRecord,
+          label,
+          candidates,
+          moduleBytes: candidates.reduce((total, candidate) => total + candidate.moduleBytes, 0),
+          renderN: 0,
+          lastRenderMS: 0,
+          selectedSourceLabel: "",
+          selectedCandidate: null,
+        });
       }
-      loaded.push({
-        ...stepRecord,
-        label: qipPlayStepLabel(stepRecord, index),
-        sourceURL,
-        moduleBytes: moduleBytes.byteLength,
-        exports: exportsObj,
-        memory: exportsObj.memory,
-        outputCapacity: qipPlayReadI32Export(exportsObj, "output_bytes_cap"),
-        renderN: 0,
-        lastRenderMS: 0,
-      });
     }
 
     const primary = loaded[0];
@@ -1362,32 +1436,11 @@ class QIPPlayElement extends HTMLElement {
       }
     }
 
+    let precedingOutputType = qipPlayReadDeclaredContentType(
+      primary.exports, primary.memory, "output_content_type_ptr", "output_content_type_size",
+    );
     for (const stage of loaded.slice(1)) {
-      for (const name of ["input_ptr", "input_bytes_cap", "output_bytes_cap", "render"]) {
-        if (!(name in stage.exports)) {
-          throw new Error("qip-play post-processing step " + stage.label + " missing export " + name);
-        }
-      }
-      if ("begin_update_at" in stage.exports || "finish_update" in stage.exports) {
-        throw new Error("qip-play post-processing step " + stage.label + " must be finite Content; Timed steps are not supported yet");
-      }
-      if ("key_event" in stage.exports || "pointer_event" in stage.exports) {
-        throw new Error("qip-play post-processing step " + stage.label + " must not be Eventful");
-      }
-      const inputType = qipPlayReadDeclaredContentType(
-        stage.exports, stage.memory, "input_content_type_ptr", "input_content_type_size",
-      );
-      if (inputType !== "" && inputType !== "image/ktx2") {
-        throw new Error("qip-play post-processing step " + stage.label + " must accept image/ktx2");
-      }
-      const outputType = qipPlayReadDeclaredContentType(
-        stage.exports, stage.memory, "output_content_type_ptr", "output_content_type_size",
-      );
-      if (outputType !== "image/ktx2") {
-        throw new Error("qip-play post-processing step " + stage.label + " must emit image/ktx2");
-      }
-      stage.inputCapacity = qipPlayReadI32Export(stage.exports, "input_bytes_cap");
-      stage.inputPtr = qipPlayReadI32Export(stage.exports, "input_ptr");
+      precedingOutputType = qipPlayValidatePostStage(stage, precedingOutputType);
     }
 
     this._exports = exportsObj;
@@ -1616,7 +1669,7 @@ class QIPPlayElement extends HTMLElement {
     }
   }
 
-  _decodeRenderResult(renderResult, step = null) {
+  _decodeRenderResult(renderResult, step = null, allowFailure = false) {
     const exportsObj = step?.exports || this._exports;
     if (typeof renderResult !== "bigint") {
       throw new TypeError("qip-play render export must have signature render(i32) -> i64");
@@ -1628,12 +1681,18 @@ class QIPPlayElement extends HTMLElement {
         throw new Error("qip-play render returned failure without failure_modes_per_input_offset");
       }
       const modes = qipPlayReadI32Export(exportsObj, "failure_modes_per_input_offset") >>> 0;
-      if (modes === 0) throw new Error("qip-play input was rejected");
-      const position = Math.floor(outputLen / modes);
-      const mode = outputLen % modes;
-      throw new Error(modes === 1
-        ? "qip-play input was rejected at input offset " + position
-        : "qip-play input was rejected at input offset " + position + " with mode " + mode);
+      if (modes === 0 && outputLen !== 0) {
+        throw new Error("qip-play render returned failure detail despite declaring no failure modes");
+      }
+      const position = modes === 0 ? 0 : Math.floor(outputLen / modes);
+      const mode = modes === 0 ? 0 : outputLen % modes;
+      const message = modes === 0
+        ? "qip-play input was rejected"
+        : modes === 1
+          ? "qip-play input was rejected at input offset " + position
+          : "qip-play input was rejected at input offset " + position + " with mode " + mode;
+      if (allowFailure) return { failed: true, failureDetail: outputLen, message };
+      throw new Error(message);
     }
     return {
       outputLen,
@@ -1689,25 +1748,46 @@ class QIPPlayElement extends HTMLElement {
         rendered.outputLen,
         "qip-play pipeline input",
       );
-      if (inputBytes.byteLength > stage.inputCapacity) {
-        throw new Error(
-          "qip-play post-processing step " + stage.label + " input exceeds input_bytes_cap",
+      const candidates = stage.selectedCandidate
+        ? [stage.selectedCandidate]
+        : stage.candidates || [stage];
+      const stageIsCandidate = !stage.candidates;
+      let accepted = null;
+      let stageRenderMS = 0;
+      for (const candidate of candidates) {
+        if (inputBytes.byteLength > candidate.inputCapacity) continue;
+        const destination = qipPlayReadSlice(
+          candidate.memory,
+          candidate.inputPtr,
+          candidate.inputCapacity,
+          "qip-play post-processing input_ptr/input_bytes_cap",
         );
+        destination.set(inputBytes, 0);
+        for (const uniform of qipPlayExtractUniforms(candidate.sourceElement)) {
+          qipPlayApplyUniform(candidate.exports, uniform);
+        }
+        const candidateStart = qipPlayPerfNow();
+        const outcome = this._decodeRenderResult(
+          candidate.exports.render(inputBytes.byteLength), candidate, true,
+        );
+        const candidateMS = qipPlayPerfNow() - candidateStart;
+        candidate.lastRenderMS = candidateMS;
+        candidate.renderN++;
+        stageRenderMS += candidateMS;
+        if (!outcome.failed) {
+          accepted = outcome;
+          stage.selectedCandidate = candidate;
+          stage.candidates = [candidate];
+          stage.selectedSourceLabel = candidate.sourceLabel || qipPlaySourceLabel(candidate.sourceElement);
+          break;
+        }
       }
-      const destination = qipPlayReadSlice(
-        stage.memory,
-        stage.inputPtr,
-        stage.inputCapacity,
-        "qip-play post-processing input_ptr/input_bytes_cap",
-      );
-      destination.set(inputBytes, 0);
-      for (const uniform of qipPlayExtractUniforms(stage.sourceElement)) {
-        qipPlayApplyUniform(stage.exports, uniform);
+      stage.lastRenderMS = stageRenderMS;
+      if (!stageIsCandidate) stage.renderN++;
+      if (!accepted) {
+        throw new Error("qip-play post-processing step " + stage.label + " was rejected by every source");
       }
-      const stageStart = qipPlayPerfNow();
-      rendered = this._decodeRenderResult(stage.exports.render(inputBytes.byteLength), stage);
-      stage.lastRenderMS = qipPlayPerfNow() - stageStart;
-      stage.renderN++;
+      rendered = accepted;
     }
     return { rendered, renderMS: qipPlayPerfNow() - pipelineStart };
   }
@@ -2348,7 +2428,8 @@ class QIPPlayElement extends HTMLElement {
       return;
     }
     const memoryBytes = this._steps.length > 0
-      ? this._steps.reduce((total, step) => total + step.memory.buffer.byteLength, 0)
+      ? this._steps.reduce((total, step) => total + (step.candidates || [step])
+        .reduce((candidateTotal, candidate) => candidateTotal + candidate.memory.buffer.byteLength, 0), 0)
       : this._memory.buffer.byteLength;
     let text =
       "wasm " +
@@ -2379,9 +2460,11 @@ class QIPPlayElement extends HTMLElement {
       for (const step of this._steps) {
         text += "\n" + step.label +
           " | wasm " + qipPlayFormatByteSize(step.moduleBytes) +
-          " | memory " + qipPlayFormatByteSize(step.memory.buffer.byteLength) +
+          " | memory " + qipPlayFormatByteSize((step.candidates || [step])
+            .reduce((total, candidate) => total + candidate.memory.buffer.byteLength, 0)) +
           " | render " + qipPlayFormatCount(step.renderN) +
-          " " + qipPlayFormatMS(step.lastRenderMS) + " ms";
+          " " + qipPlayFormatMS(step.lastRenderMS) + " ms" +
+          (step.selectedSourceLabel ? " | source " + step.selectedSourceLabel : "");
       }
     }
     this._stats.textContent = text;

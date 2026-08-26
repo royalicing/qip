@@ -77,10 +77,6 @@ export fn uniform_set_background_color_rgba(value: u32) u32 {
     return background_color_rgba;
 }
 
-export fn uniform_set_background_color(value: u32) u32 {
-    return uniform_set_background_color_rgba(value);
-}
-
 fn resetBackgroundColorUniform() void {
     background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
 }

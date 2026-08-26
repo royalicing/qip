@@ -42,7 +42,7 @@ function setUniforms(quality) {
   } else {
     exports.uniform_set_quality(quality);
     exports.uniform_set_subsample(2);
-    exports.uniform_set_background_color(0xffffff);
+    exports.uniform_set_background_color_rgb(0xffffff);
   }
 }
 

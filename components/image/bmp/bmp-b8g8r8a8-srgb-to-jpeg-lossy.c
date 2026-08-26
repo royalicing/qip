@@ -31,7 +31,7 @@ static uint8_t row_buf[ROW_CAP] __attribute__((aligned(16)));
 
 static uint32_t quality = 85;
 static uint32_t subsample = 2;
-static uint32_t background_color = 0xffffffu;
+static uint32_t background_color_rgb = 0xffffffu;
 static size_t arena_used;
 static size_t arena_peak;
 static size_t arena_alloc_count;
@@ -252,9 +252,9 @@ uint32_t uniform_set_subsample(uint32_t value) {
   subsample = value > 2 ? 2 : value;
   return subsample;
 }
-uint32_t uniform_set_background_color(uint32_t value) {
-  background_color = value & 0xffffffu;
-  return background_color;
+uint32_t uniform_set_background_color_rgb(uint32_t value) {
+  background_color_rgb = value & 0xffffffu;
+  return background_color_rgb;
 }
 
 uint32_t arena_peak_bytes(void) { return (uint32_t)arena_peak; }
@@ -395,9 +395,9 @@ uint64_t render(uint32_t input_size_value) {
       if (has_explicit_alpha) {
         uint32_t alpha = source[(size_t)x * 4u + 3u];
         uint32_t inverse = 255u - alpha;
-        blue = (blue * alpha + (background_color & 0xffu) * inverse + 127u) / 255u;
-        green = (green * alpha + ((background_color >> 8) & 0xffu) * inverse + 127u) / 255u;
-        red = (red * alpha + ((background_color >> 16) & 0xffu) * inverse + 127u) / 255u;
+        blue = (blue * alpha + (background_color_rgb & 0xffu) * inverse + 127u) / 255u;
+        green = (green * alpha + ((background_color_rgb >> 8) & 0xffu) * inverse + 127u) / 255u;
+        red = (red * alpha + ((background_color_rgb >> 16) & 0xffu) * inverse + 127u) / 255u;
       }
       row_buf[(size_t)x * 3u + 0u] = (uint8_t)red;
       row_buf[(size_t)x * 3u + 1u] = (uint8_t)green;

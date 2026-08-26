@@ -31,6 +31,7 @@ Browse the complete lists of [`text/*` components](/text) and [`image/*` compone
 - [Favicon generator](/favicon) converts a PNG or BMP into a `favicon.ico`.
 - [BMP to WebP encoder](/webp) produces lossy or exact lossless WebP locally.
 - [Image compressor](/image-compress) compares lossy WebP, AVIF, and JPEG encodes locally, ordered by file size.
+- [High-quality image resizer](/image-resize) uses Lanczos3 for reduction and Mitchell-Netravali bicubic reconstruction for enlargement.
 - [WebP to PNG or BMP](/webp-to-png) decodes static lossy or lossless WebP locally.
 - [Syntax highlighter](/syntax-highlight) turns pasted code into self-contained highlighted HTML.
 - [HTML accessibility tree](/accessibility-tree) shows the roles and accessible names screen readers compute from your HTML.

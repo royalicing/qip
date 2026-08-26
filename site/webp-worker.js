@@ -22,7 +22,7 @@ self.onmessage = async (event) => {
       exports.uniform_set_sharp_yuv(options.sharpYuv ? 1 : 0);
       exports.uniform_set_low_memory(options.lowMemory ? 1 : 0);
       if (mode === "opaque") {
-        exports.uniform_set_background_color(options.backgroundColor);
+        exports.uniform_set_background_color_rgb(options.backgroundColor);
       }
     }
 

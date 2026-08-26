@@ -272,11 +272,39 @@ capabilities. `<qip-play>` sends pointer and keyboard events only to the first
 step. It copies each KTX2 result into the next component's bounded input memory
 and presents only the last result. Timed post-processing is not supported yet.
 
-Each step selects one matching `<source>` child. This keeps multiple sources as
-alternatives instead of treating adjacent sources as an implicit pipeline. Do
-not mix direct `<source>` children and `<qip-step>` children. With `debug`, the
-statistics include Wasm size, memory, latest render time, and render count for
-each named step.
+The first step selects its first matching `<source>` child through normal media
+selection. A later step treats matching sources as ordered executable
+alternatives. On the first frame, `<qip-play>` calls each candidate until one
+accepts the input with a successful Content result. It retains that component
+instance for later frames. A recoverable rejection tries the next source; a
+trap stops the pipeline because the component instance is no longer safe to
+reuse.
+
+Every alternative in one step must declare identical, non-empty input and
+output content types. The input type must also match the preceding step's
+declared output type. The host loads and validates every candidate before it
+starts. All downloaded Wasm counts toward the step's byte total. After a source
+accepts the first frame, the host releases its references to the unselected
+instances so their fixed memories can be collected. For example, a resize step
+can choose its direction without putting image-size policy in JavaScript:
+
+```html
+<qip-step name="resize">
+  <source src="/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm"
+          type="application/wasm"
+          data-uniform-width="1200" />
+  <source src="/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm"
+          type="application/wasm"
+          data-uniform-width="1200" />
+</qip-step>
+```
+
+Both components declare `image/ktx2 -> image/ktx2`. The reduction component
+accepts when 1200 pixels does not enlarge an axis. Otherwise it returns a
+recoverable rejection and the Mitchell component gets the same input. Do not
+mix direct `<source>` children and `<qip-step>` children. With `debug`, the
+statistics include all alternatives' Wasm size, retained memory, the selected
+source, latest render time, and render count for each named step.
 
 The distinction from `<qip-edit>` is not merely that both accept interaction. Editing changes declared source inputs and produces finite results; playing interacts with a running component whose state persists between events. A fallback, poster, or initial snapshot may be rendered ahead of time, but the experience requires client activation to become interactive.
 

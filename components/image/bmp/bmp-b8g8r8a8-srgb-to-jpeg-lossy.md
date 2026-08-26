@@ -14,7 +14,7 @@ Uniforms:
 - `quality` is `1` through `100`, defaulting to `85`. Zero is clamped to one.
 - `subsample` is `0` for 4:4:4, `1` for 4:2:2, or `2` for 4:2:0. The default is
   4:2:0.
-- `background_color` is packed `0xRRGGBB`, defaulting to white. Explicit V5
+- `background_color_rgb` is packed `0xRRGGBB`, defaulting to white. Explicit V5
   alpha is composited onto this color because JPEG cannot store transparency.
   BI_RGB's unused fourth byte is treated as opaque.
 

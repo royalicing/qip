@@ -58,6 +58,43 @@ RGBA32F-to-RGBA8 compaction independent of row-order scratch memory.
 
 ## Components
 
+`ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm` reduces canonical RGBA8 sRGB
+KTX2 with a separable three-lobe Lanczos filter. `width` and `height` select
+the output dimensions. Omit one dimension to preserve the input aspect ratio,
+or omit both to reduce each axis by one half. The component rejects an output
+that enlarges either axis. Direction mismatch is a recoverable rejection, so a
+host can try another component on the same input without treating the module as
+broken.
+
+`ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm` enlarges the same profile with
+the balanced Mitchell-Netravali bicubic filter (`B = C = 1/3`). It uses the
+same dimension uniforms, doubles both axes by default, and rejects an output
+that reduces either axis. This direction mismatch is also recoverable. An axis
+whose size does not change passes through an identity filter instead of
+receiving unnecessary bicubic softening.
+
+Both resizers decode sRGB values to linear light before filtering. They
+premultiply RGB by alpha, extend edge pixels across the filter support, and
+return straight-alpha RGBA8 sRGB. This prevents hidden RGB in transparent
+pixels from bleeding into visible edges. The output remains the canonical
+KTX2 profile, so either component can sit between a decoder and an encoder:
+
+```sh
+./qip run -i input.ktx2 -o thumbnail.ktx2 \
+  components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm \
+  -u width=1200 -u height=800
+
+./qip run -i input.ktx2 -o enlarged.ktx2 \
+  components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm \
+  -u width=2400
+```
+
+The resizers use center-convention coordinates and a separable float32
+intermediate, one channel at a time. Their fixed 287.4 MiB memory holds the
+25-megapixel input and output capacities plus one 25-megapixel float channel.
+Use a simpler fixed-ratio or nearest-neighbor component when that fixed memory
+cost is larger than the quality requirement permits.
+
 `../bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm` decodes 32-bit uncompressed BMP
 BGRA pixels. It converts sRGB colour channels to linear `f32`; alpha remains a
 straight normalized value.
