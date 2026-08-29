@@ -3,11 +3,14 @@
 //! alpha. RGB remains unclamped so negative and HDR values survive.
 
 const std = @import("std");
+const root = @import("root");
 const rgba32f = @import("ktx2_rgba32float_profile");
 
 pub const Kernel = enum { lanczos3_down, mitchell_up };
 pub const CONTENT_TYPE = rgba32f.CONTENT_TYPE;
 
+const USE_SIMD = @hasDecl(root, "RESIZE_SIMD") and root.RESIZE_SIMD;
+const Vec4 = @Vector(4, f32);
 const CAP: usize = rgba32f.MAX_FILE_SIZE;
 const MAX_PIXELS = rgba32f.MAX_PIXELS;
 const MAX_DIMENSION = rgba32f.MAX_DIMENSION;
@@ -144,7 +147,8 @@ fn sourceChannel(pixels: []align(1) const f32, pixel: usize, channel: usize) f32
 // Keep this large global behind a many-item pointer. Zig 0.15.2's LLVM Wasm
 // backend can materialize a directly runtime-indexed array as a stack
 // temporary, which attempts to copy this approximately 100 MiB buffer and
-// traps. The pointer makes each access an explicit scalar load or store.
+// traps. The pointer makes each access an explicit scalar or unaligned vector
+// load or store instead.
 fn intermediateSet(index: usize, value: f32) void {
     if (index >= MAX_PIXELS) @trap();
     const pixels: [*]f32 = @ptrCast(&intermediate[0]);
@@ -155,6 +159,12 @@ fn intermediateGet(index: usize) f32 {
     if (index >= MAX_PIXELS) @trap();
     const pixels: [*]const f32 = @ptrCast(&intermediate[0]);
     return pixels[index];
+}
+
+fn intermediateGet4(index: usize) Vec4 {
+    if (index + 4 > MAX_PIXELS) @trap();
+    const pixels: [*]const f32 = @ptrCast(&intermediate[0]);
+    return @as(*align(1) const Vec4, @ptrCast(&pixels[index])).*;
 }
 
 fn horizontalPass(source: rgba32f.Image, destination_width: usize, channel: usize) void {
@@ -179,6 +189,39 @@ fn verticalPass(destination_width: usize, destination_height: usize, channel: us
     var y: usize = 0;
     while (y < destination_height) : (y += 1) {
         var x: usize = 0;
+        if (USE_SIMD) {
+            while (x + 4 <= destination_width) : (x += 4) {
+                var sum: Vec4 = @splat(0.0);
+                var source_y: usize = axis_first[y];
+                var weight_index: usize = axis_offsets[y];
+                const weight_end: usize = axis_offsets[y + 1];
+                while (weight_index < weight_end) : (weight_index += 1) {
+                    const samples = intermediateGet4(source_y * destination_width + x);
+                    sum += samples * @as(Vec4, @splat(axis_weights[weight_index]));
+                    source_y += 1;
+                }
+
+                if (channel == 3) {
+                    const clamped = @min(@as(Vec4, @splat(1.0)), @max(@as(Vec4, @splat(0.0)), sum));
+                    inline for (0..4) |lane| {
+                        const offset = (y * destination_width + x + lane) * 4;
+                        destination[offset + 3] = clamped[lane];
+                    }
+                } else {
+                    const base = (y * destination_width + x) * 4;
+                    const alpha = Vec4{
+                        destination[base + 3],
+                        destination[base + 7],
+                        destination[base + 11],
+                        destination[base + 15],
+                    };
+                    const values = @select(f32, alpha > @as(Vec4, @splat(0.000001)), sum / alpha, @as(Vec4, @splat(0.0)));
+                    inline for (0..4) |lane| {
+                        destination[base + lane * 4 + channel] = values[lane];
+                    }
+                }
+            }
+        }
         while (x < destination_width) : (x += 1) {
             var sum: f32 = 0.0;
             var source_y: usize = axis_first[y];

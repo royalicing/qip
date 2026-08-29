@@ -1,7 +1,11 @@
 const std = @import("std");
+const root = @import("root");
 
 const OUTPUT_KTX2 = true;
 const ktx2 = @import("ktx2_rgba8_srgb");
+const OUTPUT_FLOAT = @hasDecl(root, "SVG_RASTERIZE_RGBA32FLOAT") and root.SVG_RASTERIZE_RGBA32FLOAT;
+const ANTIALIAS = OUTPUT_FLOAT or (@hasDecl(root, "SVG_RASTERIZE_ANTIALIAS") and root.SVG_RASTERIZE_ANTIALIAS);
+const ktx2_float = if (ANTIALIAS) @import("ktx2_rgba32float") else struct {};
 
 // TODO(svg): Required paint parsing to be practical for SVG icons/text:
 // - Add css color functions: rgb(), rgba(), hsl(), hsla()
@@ -15,14 +19,19 @@ const INPUT_CAP: u32 = 1024 * 1024;
 const MAX_PIXELS: u32 = 25_000_000;
 const MAX_DIMENSION: u32 = 8192;
 const OUTPUT_HEADER_SIZE: u32 = if (OUTPUT_KTX2) 224 else 54;
-const OUTPUT_CAP: u32 = MAX_PIXELS * 4 + OUTPUT_HEADER_SIZE;
+const OUTPUT_PIXEL_SIZE: u32 = if (OUTPUT_FLOAT) 16 else 4;
+const OUTPUT_CAP: u32 = MAX_PIXELS * OUTPUT_PIXEL_SIZE + OUTPUT_HEADER_SIZE;
+const WORK_PIXEL_SIZE: u32 = if (ANTIALIAS) 16 else OUTPUT_PIXEL_SIZE;
+const WORK_CAP: u32 = MAX_PIXELS * WORK_PIXEL_SIZE + OUTPUT_HEADER_SIZE;
 const INPUT_CONTENT_TYPE = "image/svg+xml";
 const OUTPUT_CONTENT_TYPE = if (OUTPUT_KTX2) "image/ktx2" else "image/bmp";
 const DEFAULT_BACKGROUND_COLOR_RGBA: u32 = 0x00000000;
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var output_buf: [OUTPUT_CAP]u8 = undefined;
+var output_buf: [WORK_CAP]u8 = undefined;
 var background_color_rgba: u32 = DEFAULT_BACKGROUND_COLOR_RGBA;
+var output_width: u32 = 0;
+var output_height: u32 = 0;
 
 export fn input_ptr() u32 {
     return @as(u32, @intCast(@intFromPtr(&input_buf)));
@@ -77,8 +86,22 @@ export fn uniform_set_background_color_rgba(value: u32) u32 {
     return background_color_rgba;
 }
 
+export fn uniform_set_width(value: u32) u32 {
+    if (!ANTIALIAS) return 0;
+    output_width = @min(value, MAX_DIMENSION);
+    return output_width;
+}
+
+export fn uniform_set_height(value: u32) u32 {
+    if (!ANTIALIAS) return 0;
+    output_height = @min(value, MAX_DIMENSION);
+    return output_height;
+}
+
 fn resetBackgroundColorUniform() void {
     background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA;
+    output_width = 0;
+    output_height = 0;
 }
 
 const Mat = struct {
@@ -131,6 +154,17 @@ const PathSegment = struct {
     by: f32,
 };
 
+const PathIntersection = struct {
+    x: f32,
+    winding_delta: i32,
+};
+
+// Rendering is single-threaded and non-reentrant. Keeping scanline scratch out
+// of the Wasm stack avoids combining it with the bounded 4096-segment path
+// array in drawPathFill.
+var path_intersections: [MAX_PATH_SEGMENTS]PathIntersection = undefined;
+var path_scanline_coverage: [MAX_DIMENSION]u8 = undefined;
+
 const ParserCtx = struct {
     input: []const u8,
     width: u32,
@@ -138,6 +172,8 @@ const ParserCtx = struct {
     pixel_base: u32,
     out_len: u32,
 };
+
+const Vec4f = @Vector(4, f32);
 
 fn matIdentity() Mat {
     return Mat{ .a = 1, .b = 0, .c = 0, .d = 1, .tx = 0, .ty = 0 };
@@ -368,7 +404,16 @@ fn parseTransform(value: []const u8) Mat {
         if (idx < value.len and value[idx] == ')') idx += 1;
 
         var op = matIdentity();
-        if (strEq(name, "translate")) {
+        if (strEq(name, "matrix") and count == 6) {
+            op = Mat{
+                .a = nums[0],
+                .b = nums[1],
+                .c = nums[2],
+                .d = nums[3],
+                .tx = nums[4],
+                .ty = nums[5],
+            };
+        } else if (strEq(name, "translate")) {
             const tx = if (count >= 1) nums[0] else 0.0;
             const ty = if (count >= 2) nums[1] else 0.0;
             op = Mat{ .a = 1, .b = 0, .c = 0, .d = 1, .tx = tx, .ty = ty };
@@ -395,7 +440,37 @@ fn parseTransform(value: []const u8) Mat {
     return result;
 }
 
+fn floatPixelPtr(ctx: *ParserCtx, x: u32, y: u32) *align(1) Vec4f {
+    const idx: usize = ctx.pixel_base + (y * ctx.width + x) * 16;
+    return @ptrCast(&output_buf[idx]);
+}
+
+fn blendPixelCoverage(ctx: *ParserCtx, x: i32, y: i32, color: Color, coverage: f32) void {
+    if (!ANTIALIAS) @compileError("float coverage is only available in an antialiased renderer");
+    if (color.a == 0 or coverage <= 0) return;
+    if (x < 0 or y < 0) return;
+    const ux: u32 = @intCast(x);
+    const uy: u32 = @intCast(y);
+    if (ux >= ctx.width or uy >= ctx.height) return;
+
+    const paint_alpha = @as(f32, @floatFromInt(color.a)) / 255.0;
+    const source_alpha = @min(@as(f32, 1.0), coverage) * paint_alpha;
+    const inverse_alpha: Vec4f = @splat(1.0 - source_alpha);
+    const source: Vec4f = .{
+        ktx2_float.SRGB8_TO_LINEAR[color.r] * source_alpha,
+        ktx2_float.SRGB8_TO_LINEAR[color.g] * source_alpha,
+        ktx2_float.SRGB8_TO_LINEAR[color.b] * source_alpha,
+        source_alpha,
+    };
+    const pixel = floatPixelPtr(ctx, ux, uy);
+    pixel.* = source + pixel.* * inverse_alpha;
+}
+
 fn setPixel(ctx: *ParserCtx, x: i32, y: i32, color: Color) void {
+    if (ANTIALIAS) {
+        blendPixelCoverage(ctx, x, y, color, 1.0);
+        return;
+    }
     if (color.a == 0) return;
     if (x < 0 or y < 0) return;
     const ux: u32 = @intCast(x);
@@ -407,6 +482,243 @@ fn setPixel(ctx: *ParserCtx, x: i32, y: i32, color: Color) void {
     output_buf[idx + 1] = color.g;
     output_buf[idx + 2] = if (OUTPUT_KTX2) color.b else color.r;
     output_buf[idx + 3] = color.a;
+}
+
+fn finishAntialiasedPixels(ctx: *ParserCtx) void {
+    if (!ANTIALIAS) return;
+    var pixel_index: u32 = 0;
+    const pixel_count = ctx.width * ctx.height;
+    while (pixel_index < pixel_count) : (pixel_index += 1) {
+        const byte_index: usize = ctx.pixel_base + pixel_index * 16;
+        const pixel: *align(1) Vec4f = @ptrCast(&output_buf[byte_index]);
+        const alpha = pixel.*[3];
+        if (OUTPUT_FLOAT and alpha > 0.0) {
+            const inverse_alpha: Vec4f = @splat(1.0 / alpha);
+            const straight = pixel.* * inverse_alpha;
+            pixel.* = .{ straight[0], straight[1], straight[2], alpha };
+        } else if (OUTPUT_FLOAT) {
+            pixel.* = @splat(0.0);
+        } else {
+            const destination = ctx.pixel_base + pixel_index * 4;
+            if (alpha > 0.0) {
+                const inverse_alpha = 1.0 / alpha;
+                output_buf[destination] = ktx2_float.linearToSrgb8(pixel.*[0] * inverse_alpha);
+                output_buf[destination + 1] = ktx2_float.linearToSrgb8(pixel.*[1] * inverse_alpha);
+                output_buf[destination + 2] = ktx2_float.linearToSrgb8(pixel.*[2] * inverse_alpha);
+                output_buf[destination + 3] = ktx2_float.linearToUnorm8(alpha);
+            } else {
+                @memset(output_buf[destination .. destination + 4], 0);
+            }
+        }
+    }
+}
+
+const AA_GRID: i32 = 4;
+const AA_SAMPLE_X: Vec4f = .{ 0.125, 0.375, 0.625, 0.875 };
+
+fn sampleLocalX(inv: Mat, x: i32, sample_y: f32) Vec4f {
+    const xs = @as(Vec4f, @splat(@as(f32, @floatFromInt(x)))) + AA_SAMPLE_X;
+    return @as(Vec4f, @splat(inv.a)) * xs + @as(Vec4f, @splat(inv.c * sample_y + inv.tx));
+}
+
+fn sampleLocalY(inv: Mat, x: i32, sample_y: f32) Vec4f {
+    const xs = @as(Vec4f, @splat(@as(f32, @floatFromInt(x)))) + AA_SAMPLE_X;
+    return @as(Vec4f, @splat(inv.b)) * xs + @as(Vec4f, @splat(inv.d * sample_y + inv.ty));
+}
+
+fn maskCount(mask: @Vector(4, bool)) i32 {
+    return @reduce(.Add, @select(i32, mask, @as(@Vector(4, i32), @splat(1)), @as(@Vector(4, i32), @splat(0))));
+}
+
+fn rectCoverage(inv: Mat, x: i32, y: i32, x0: f32, y0: f32, x1: f32, y1: f32) f32 {
+    var covered: i32 = 0;
+    var sample_row: i32 = 0;
+    while (sample_row < AA_GRID) : (sample_row += 1) {
+        const sy = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / @as(f32, @floatFromInt(AA_GRID));
+        const lx = sampleLocalX(inv, x, sy);
+        const ly = sampleLocalY(inv, x, sy);
+        covered += maskCount((lx >= @as(Vec4f, @splat(x0))) & (lx <= @as(Vec4f, @splat(x1))) &
+            (ly >= @as(Vec4f, @splat(y0))) & (ly <= @as(Vec4f, @splat(y1))));
+    }
+    return @as(f32, @floatFromInt(covered)) / 16.0;
+}
+
+fn rectStrokeCoverage(inv: Mat, x: i32, y: i32, ox0: f32, oy0: f32, ox1: f32, oy1: f32, ix0: f32, iy0: f32, ix1: f32, iy1: f32, has_inner: bool) f32 {
+    var covered: i32 = 0;
+    var sample_row: i32 = 0;
+    while (sample_row < AA_GRID) : (sample_row += 1) {
+        const sy = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / 4.0;
+        const lx = sampleLocalX(inv, x, sy);
+        const ly = sampleLocalY(inv, x, sy);
+        const outer = (lx >= @as(Vec4f, @splat(ox0))) & (lx <= @as(Vec4f, @splat(ox1))) &
+            (ly >= @as(Vec4f, @splat(oy0))) & (ly <= @as(Vec4f, @splat(oy1)));
+        const inner = if (has_inner)
+            (lx >= @as(Vec4f, @splat(ix0))) & (lx <= @as(Vec4f, @splat(ix1))) &
+                (ly >= @as(Vec4f, @splat(iy0))) & (ly <= @as(Vec4f, @splat(iy1)))
+        else
+            @as(@Vector(4, bool), @splat(false));
+        covered += maskCount(outer & !inner);
+    }
+    return @as(f32, @floatFromInt(covered)) / 16.0;
+}
+
+fn circleCoverage(inv: Mat, x: i32, y: i32, cx: f32, cy: f32, inner_r2: f32, outer_r2: f32) f32 {
+    var covered: i32 = 0;
+    var sample_row: i32 = 0;
+    while (sample_row < AA_GRID) : (sample_row += 1) {
+        const sy = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / 4.0;
+        const dx = sampleLocalX(inv, x, sy) - @as(Vec4f, @splat(cx));
+        const dy = sampleLocalY(inv, x, sy) - @as(Vec4f, @splat(cy));
+        const distance2 = dx * dx + dy * dy;
+        covered += maskCount((distance2 >= @as(Vec4f, @splat(inner_r2))) & (distance2 <= @as(Vec4f, @splat(outer_r2))));
+    }
+    return @as(f32, @floatFromInt(covered)) / 16.0;
+}
+
+fn polygonCoverage(inv: Mat, x: i32, y: i32, xs: *const [MAX_POINTS]f32, ys: *const [MAX_POINTS]f32, count: usize) f32 {
+    var covered: i32 = 0;
+    var sample_row: i32 = 0;
+    while (sample_row < AA_GRID) : (sample_row += 1) {
+        const sy = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / 4.0;
+        const lx = sampleLocalX(inv, x, sy);
+        const ly = sampleLocalY(inv, x, sy);
+        var inside: @Vector(4, bool) = @splat(false);
+        var prior: usize = count - 1;
+        var edge: usize = 0;
+        while (edge < count) : (edge += 1) {
+            const xi: Vec4f = @splat(xs[edge]);
+            const yi: Vec4f = @splat(ys[edge]);
+            const xj: Vec4f = @splat(xs[prior]);
+            const yj: Vec4f = @splat(ys[prior]);
+            const intersects = ((yi > ly) != (yj > ly)) & (lx < (xj - xi) * (ly - yi) / (yj - yi + @as(Vec4f, @splat(0.0000001))) + xi);
+            inside = inside != intersects;
+            prior = edge;
+        }
+        covered += maskCount(inside);
+    }
+    return @as(f32, @floatFromInt(covered)) / 16.0;
+}
+
+fn segmentStrokeCoverage(inv: Mat, x: i32, y: i32, ax: f32, ay: f32, bx: f32, by: f32, half_width2: f32) f32 {
+    const vx: Vec4f = @splat(bx - ax);
+    const vy: Vec4f = @splat(by - ay);
+    const vv = vx * vx + vy * vy;
+    var covered: i32 = 0;
+    var sample_row: i32 = 0;
+    while (sample_row < AA_GRID) : (sample_row += 1) {
+        const sy = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / 4.0;
+        const wx = sampleLocalX(inv, x, sy) - @as(Vec4f, @splat(ax));
+        const wy = sampleLocalY(inv, x, sy) - @as(Vec4f, @splat(ay));
+        var t: Vec4f = @splat(0.0);
+        if (vv[0] > 0.0000001) t = @min(@as(Vec4f, @splat(1.0)), @max(@as(Vec4f, @splat(0.0)), (wx * vx + wy * vy) / vv));
+        const dx = wx - t * vx;
+        const dy = wy - t * vy;
+        covered += maskCount(dx * dx + dy * dy <= @as(Vec4f, @splat(half_width2)));
+    }
+    return @as(f32, @floatFromInt(covered)) / 16.0;
+}
+
+fn polygonStrokeCoverage(inv: Mat, x: i32, y: i32, xs: *const [MAX_POINTS]f32, ys: *const [MAX_POINTS]f32, count: usize, half_width2: f32) f32 {
+    var covered: i32 = 0;
+    var sample_row: i32 = 0;
+    while (sample_row < AA_GRID) : (sample_row += 1) {
+        const sy = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / 4.0;
+        const lx = sampleLocalX(inv, x, sy);
+        const ly = sampleLocalY(inv, x, sy);
+        var near: @Vector(4, bool) = @splat(false);
+        var prior: usize = count - 1;
+        var edge: usize = 0;
+        while (edge < count) : (edge += 1) {
+            const ax: Vec4f = @splat(xs[prior]);
+            const ay: Vec4f = @splat(ys[prior]);
+            const vx: Vec4f = @splat(xs[edge] - xs[prior]);
+            const vy: Vec4f = @splat(ys[edge] - ys[prior]);
+            const wx = lx - ax;
+            const wy = ly - ay;
+            const vv = vx * vx + vy * vy;
+            var t: Vec4f = @splat(0.0);
+            if (vv[0] > 0.0000001) t = @min(@as(Vec4f, @splat(1.0)), @max(@as(Vec4f, @splat(0.0)), (wx * vx + wy * vy) / vv));
+            const dx = wx - t * vx;
+            const dy = wy - t * vy;
+            near = near | (dx * dx + dy * dy <= @as(Vec4f, @splat(half_width2)));
+            prior = edge;
+        }
+        covered += maskCount(near);
+    }
+    return @as(f32, @floatFromInt(covered)) / 16.0;
+}
+
+fn intersectionLessThan(_: void, left: PathIntersection, right: PathIntersection) bool {
+    return left.x < right.x;
+}
+
+fn addScanlineSpanCoverage(width: u32, start_x: f32, end_x: f32) void {
+    if (!(end_x > start_x) or end_x <= 0.0 or start_x >= @as(f32, @floatFromInt(width))) return;
+    var first: i32 = @intFromFloat(@floor(start_x));
+    var last: i32 = @intFromFloat(@floor(end_x));
+    if (first < 0) first = 0;
+    if (last >= @as(i32, @intCast(width))) last = @as(i32, @intCast(width)) - 1;
+    if (last < first) return;
+
+    var x = first;
+    while (x <= last) : (x += 1) {
+        if (x > first and x < last) {
+            path_scanline_coverage[@intCast(x)] += 4;
+            continue;
+        }
+        const samples = @as(Vec4f, @splat(@as(f32, @floatFromInt(x)))) + AA_SAMPLE_X;
+        const count = maskCount((samples >= @as(Vec4f, @splat(start_x))) & (samples < @as(Vec4f, @splat(end_x))));
+        path_scanline_coverage[@intCast(x)] += @intCast(count);
+    }
+}
+
+fn drawPathScanlines(ctx: *ParserCtx, color: Color, segments: *const [MAX_PATH_SEGMENTS]PathSegment, seg_count: usize, x0: i32, y0: i32, x1: i32, y1: i32) void {
+    var y = y0;
+    while (y <= y1) : (y += 1) {
+        @memset(path_scanline_coverage[@intCast(x0)..@intCast(x1 + 1)], 0);
+
+        var sample_row: i32 = 0;
+        while (sample_row < AA_GRID) : (sample_row += 1) {
+            const sample_y = @as(f32, @floatFromInt(y)) + (@as(f32, @floatFromInt(sample_row)) + 0.5) / @as(f32, @floatFromInt(AA_GRID));
+            var intersection_count: usize = 0;
+            var edge: usize = 0;
+            while (edge < seg_count) : (edge += 1) {
+                const segment = segments[edge];
+                var delta: i32 = 0;
+                if (segment.ay <= sample_y and segment.by > sample_y) {
+                    delta = -1;
+                } else if (segment.ay > sample_y and segment.by <= sample_y) {
+                    delta = 1;
+                } else {
+                    continue;
+                }
+                const x = segment.ax + (sample_y - segment.ay) * (segment.bx - segment.ax) / (segment.by - segment.ay);
+                path_intersections[intersection_count] = .{ .x = x, .winding_delta = delta };
+                intersection_count += 1;
+            }
+
+            std.sort.heap(PathIntersection, path_intersections[0..intersection_count], {}, intersectionLessThan);
+            var winding: i32 = 0;
+            var intersection: usize = 0;
+            while (intersection < intersection_count) {
+                const span_start = path_intersections[intersection].x;
+                while (intersection < intersection_count and path_intersections[intersection].x == span_start) : (intersection += 1) {
+                    winding += path_intersections[intersection].winding_delta;
+                }
+                if (intersection < intersection_count and winding != 0) {
+                    addScanlineSpanCoverage(ctx.width, span_start, path_intersections[intersection].x);
+                }
+            }
+        }
+
+        var x = x0;
+        while (x <= x1) : (x += 1) {
+            const covered = path_scanline_coverage[@intCast(x)];
+            if (covered != 0) {
+                blendPixelCoverage(ctx, x, y, color, @as(f32, @floatFromInt(covered)) / 16.0);
+            }
+        }
+    }
 }
 
 fn drawRect(ctx: *ParserCtx, transform: Mat, color: Color, rect: Rect) void {
@@ -442,6 +754,10 @@ fn drawRect(ctx: *ParserCtx, transform: Mat, color: Color, rect: Rect) void {
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, rectCoverage(inv, x, y, rect.x, rect.y, rect.x + rect.w, rect.y + rect.h));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -497,6 +813,10 @@ fn drawRectStroke(ctx: *ParserCtx, transform: Mat, color: Color, rect: Rect, str
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, rectStrokeCoverage(inv, x, y, ox0_local, oy0_local, ox1_local, oy1_local, ix0, iy0, ix1, iy1, has_inner));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -535,6 +855,10 @@ fn drawCircle(ctx: *ParserCtx, transform: Mat, color: Color, circle: Circle) voi
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, circleCoverage(inv, x, y, circle.cx, circle.cy, 0.0, r2));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -574,6 +898,10 @@ fn drawCircleStroke(ctx: *ParserCtx, transform: Mat, color: Color, circle: Circl
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, circleCoverage(inv, x, y, circle.cx, circle.cy, inner_r2, outer_r2));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -616,6 +944,10 @@ fn drawPolygon(ctx: *ParserCtx, transform: Mat, color: Color, xs: *const [MAX_PO
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, polygonCoverage(inv, x, y, xs, ys, count));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -720,6 +1052,10 @@ fn drawPolygonStroke(ctx: *ParserCtx, transform: Mat, color: Color, stroke_width
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, polygonStrokeCoverage(inv, x, y, xs, ys, count, half_w2));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -774,6 +1110,10 @@ fn drawSegmentStroke(ctx: *ParserCtx, transform: Mat, color: Color, stroke_width
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
         while (x <= x1) : (x += 1) {
+            if (ANTIALIAS) {
+                blendPixelCoverage(ctx, x, y, color, segmentStrokeCoverage(inv, x, y, ax, ay, bx, by, half_w2));
+                continue;
+            }
             const px = @as(f32, @floatFromInt(x)) + 0.5;
             const py = @as(f32, @floatFromInt(y)) + 0.5;
             const local = matApply(inv, px, py);
@@ -1070,7 +1410,6 @@ fn drawPathFill(ctx: *ParserCtx, transform: Mat, color: Color, d: []const u8) vo
     }
     if (seg_count == 0) return;
 
-    const inv = matInverse(transform) orelse return;
     var min_x = std.math.inf(f32);
     var min_y = std.math.inf(f32);
     var max_x = -std.math.inf(f32);
@@ -1080,6 +1419,9 @@ fn drawPathFill(ctx: *ParserCtx, transform: Mat, color: Color, d: []const u8) vo
     while (i < seg_count) : (i += 1) {
         const p0 = matApply(transform, segments[i].ax, segments[i].ay);
         const p1 = matApply(transform, segments[i].bx, segments[i].by);
+        if (ANTIALIAS) {
+            segments[i] = .{ .ax = p0[0], .ay = p0[1], .bx = p1[0], .by = p1[1] };
+        }
         if (p0[0] < min_x) min_x = p0[0];
         if (p1[0] < min_x) min_x = p1[0];
         if (p0[0] > max_x) max_x = p0[0];
@@ -1099,7 +1441,14 @@ fn drawPathFill(ctx: *ParserCtx, transform: Mat, color: Color, d: []const u8) vo
     if (y0 < 0) y0 = 0;
     if (x1 >= @as(i32, @intCast(ctx.width))) x1 = @as(i32, @intCast(ctx.width)) - 1;
     if (y1 >= @as(i32, @intCast(ctx.height))) y1 = @as(i32, @intCast(ctx.height)) - 1;
+    if (x0 > x1 or y0 > y1) return;
 
+    if (ANTIALIAS) {
+        drawPathScanlines(ctx, color, &segments, seg_count, x0, y0, x1, y1);
+        return;
+    }
+
+    const inv = matInverse(transform) orelse return;
     var y: i32 = y0;
     while (y <= y1) : (y += 1) {
         var x: i32 = x0;
@@ -1549,13 +1898,33 @@ fn parseElements(ctx: *ParserCtx, idx: *usize, root_transform: Mat, root_fill: C
     }
 }
 
-fn findSvgSize(input: []const u8) ?[2]u32 {
+const SvgViewport = struct {
+    width: u32,
+    height: u32,
+    transform: Mat,
+};
+
+fn parseViewBox(value: []const u8) ?[4]f32 {
+    var result: [4]f32 = undefined;
+    var idx: usize = 0;
+    var count: usize = 0;
+    while (count < result.len) : (count += 1) {
+        skipWsCommas(value, &idx);
+        result[count] = parseFloat(value, &idx) orelse return null;
+    }
+    skipWsCommas(value, &idx);
+    if (idx != value.len or result[2] <= 0 or result[3] <= 0) return null;
+    return result;
+}
+
+fn findSvgViewport(input: []const u8) ?SvgViewport {
     var idx: usize = 0;
     while (idx + 4 < input.len) : (idx += 1) {
         if (input[idx] == '<' and input[idx + 1] == 's' and input[idx + 2] == 'v' and input[idx + 3] == 'g') {
             idx += 4;
             var width: ?u32 = null;
             var height: ?u32 = null;
+            var view_box: ?[4]f32 = null;
             while (idx < input.len) {
                 skipWs(input, &idx);
                 if (idx >= input.len) break;
@@ -1577,9 +1946,43 @@ fn findSvgSize(input: []const u8) ?[2]u32 {
                     if (parseNumber(value)) |v| width = @intFromFloat(v);
                 } else if (strEq(name, "height")) {
                     if (parseNumber(value)) |v| height = @intFromFloat(v);
+                } else if (strEq(name, "viewBox")) {
+                    view_box = parseViewBox(value);
                 }
-                if (width != null and height != null) return .{ width.?, height.? };
             }
+
+            const resolved_width = if (ANTIALIAS and output_width != 0)
+                output_width
+            else if (width) |value|
+                value
+            else if (view_box) |box|
+                @as(u32, @intFromFloat(@ceil(box[2])))
+            else
+                return null;
+            const resolved_height = if (ANTIALIAS and output_height != 0)
+                output_height
+            else if (height) |value|
+                value
+            else if (view_box) |box|
+                @as(u32, @intFromFloat(@ceil(box[3])))
+            else
+                return null;
+
+            var transform = matIdentity();
+            if (view_box) |box| {
+                const sx = @as(f32, @floatFromInt(resolved_width)) / box[2];
+                const sy = @as(f32, @floatFromInt(resolved_height)) / box[3];
+                const scale = @min(sx, sy);
+                transform = .{
+                    .a = scale,
+                    .b = 0,
+                    .c = 0,
+                    .d = scale,
+                    .tx = (@as(f32, @floatFromInt(resolved_width)) - box[2] * scale) * 0.5 - box[0] * scale,
+                    .ty = (@as(f32, @floatFromInt(resolved_height)) - box[3] * scale) * 0.5 - box[1] * scale,
+                };
+            }
+            return .{ .width = resolved_width, .height = resolved_height, .transform = transform };
         }
     }
     return null;
@@ -1601,18 +2004,22 @@ fn renderImpl(input_size: u32) ?u32 {
     if (input_size > INPUT_CAP) @trap();
     const input = input_buf[0..input_size];
 
-    const dims = findSvgSize(input) orelse return null;
-    const width = dims[0];
-    const height = dims[1];
+    const viewport = findSvgViewport(input) orelse return null;
+    const width = viewport.width;
+    const height = viewport.height;
     if (width == 0 or height == 0) return null;
     if (width > MAX_DIMENSION or height > MAX_DIMENSION or
         @as(u64, width) * @as(u64, height) > MAX_PIXELS) return null;
 
-    const pixel_bytes: u64 = @as(u64, width) * @as(u64, height) * 4;
+    const pixel_count: u64 = @as(u64, width) * @as(u64, height);
+    const pixel_bytes: u64 = pixel_count * OUTPUT_PIXEL_SIZE;
+    const work_pixel_bytes: u64 = pixel_count * WORK_PIXEL_SIZE;
     const header_size: u32 = OUTPUT_HEADER_SIZE;
     const needed: u64 = @as(u64, header_size) + pixel_bytes;
+    const work_needed: u64 = @as(u64, header_size) + work_pixel_bytes;
     if (needed > OUTPUT_CAP) return null;
-    const needed_usize: usize = @intCast(needed);
+    if (work_needed > WORK_CAP) return null;
+    const work_needed_usize: usize = @intCast(work_needed);
 
     var i: usize = 0;
     while (i < header_size) : (i += 1) {
@@ -1620,14 +2027,27 @@ fn renderImpl(input_size: u32) ?u32 {
     }
     const bg = colorFromRgba(background_color_rgba);
     var off: usize = header_size;
-    while (off < needed_usize) : (off += 4) {
-        output_buf[off] = if (OUTPUT_KTX2) bg.r else bg.b;
-        output_buf[off + 1] = bg.g;
-        output_buf[off + 2] = if (OUTPUT_KTX2) bg.b else bg.r;
-        output_buf[off + 3] = bg.a;
+    while (off < work_needed_usize) : (off += WORK_PIXEL_SIZE) {
+        if (ANTIALIAS) {
+            const alpha = @as(f32, @floatFromInt(bg.a)) / 255.0;
+            const pixel: *align(1) Vec4f = @ptrCast(&output_buf[off]);
+            pixel.* = .{
+                ktx2_float.SRGB8_TO_LINEAR[bg.r] * alpha,
+                ktx2_float.SRGB8_TO_LINEAR[bg.g] * alpha,
+                ktx2_float.SRGB8_TO_LINEAR[bg.b] * alpha,
+                alpha,
+            };
+        } else {
+            output_buf[off] = if (OUTPUT_KTX2) bg.r else bg.b;
+            output_buf[off + 1] = bg.g;
+            output_buf[off + 2] = if (OUTPUT_KTX2) bg.b else bg.r;
+            output_buf[off + 3] = bg.a;
+        }
     }
 
-    if (OUTPUT_KTX2) {
+    if (OUTPUT_FLOAT) {
+        _ = ktx2_float.writeHeader(&output_buf, width, height) orelse return null;
+    } else if (OUTPUT_KTX2) {
         _ = ktx2.writeHeader(&output_buf, width, height) orelse return null;
     } else {
         // BMP header (BITMAPFILEHEADER + BITMAPINFOHEADER).
@@ -1659,7 +2079,8 @@ fn renderImpl(input_size: u32) ?u32 {
     var idx: usize = 0;
     const default_fill = Color{ .r = 0, .g = 0, .b = 0, .a = 255 };
     const default_stroke = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
-    parseElements(&ctx, &idx, matIdentity(), default_fill, default_stroke, 1.0);
+    parseElements(&ctx, &idx, viewport.transform, default_fill, default_stroke, 1.0);
+    finishAntialiasedPixels(&ctx);
 
     return ctx.out_len;
 }

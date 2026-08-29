@@ -109,6 +109,29 @@ the profile named in its filename and writes the same profile. Transfer-encoded
 Display P3 is not accepted. The 25-megapixel input, output, and single-channel
 intermediate require 859.6 MiB of fixed Wasm memory.
 
+Each resizer also has a `-simd.wasm` variant. It processes four adjacent
+destination pixels in the vertical pass with Wasm `f32x4` operations, then
+uses the scalar path for the final one to three pixels of a row. The horizontal
+pass remains scalar because its source positions are indirect and its RGBA
+channels are interleaved. SIMD and scalar variants produce identical bytes.
+Use the scalar component as a fallback for a host that cannot compile Wasm
+SIMD. The image-resize worker tries the SIMD RGBA8 component first and compiles
+the scalar component if that fails.
+
+`ktx2-rgba32float-bt709-linear-resize-up-mitchell-odin-simd.wasm` is a measured
+Odin prototype of the BT.709 float32 enlargement component. It has exact
+output tests and a repeatable benchmark, but it is not yet the default and does
+not replace the complete Zig resize family. Run a reused-instance V8 comparison
+with any representative KTX2 input:
+
+```sh
+node --expose-gc tools/bench-ktx2-resize-simd.mjs \
+  input.ktx2 2400 1600 \
+  components/image/ktx2/ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm \
+  components/image/ktx2/ktx2-rgba32float-bt709-linear-resize-up-mitchell-simd.wasm \
+  components/image/ktx2/ktx2-rgba32float-bt709-linear-resize-up-mitchell-odin-simd.wasm
+```
+
 `../bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm` decodes 32-bit uncompressed BMP
 BGRA pixels. It converts sRGB colour channels to linear `f32`; alpha remains a
 straight normalized value.
@@ -164,6 +187,13 @@ transfer characteristic, and BT.601 matrix coefficients in CICP metadata.
 `../svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm` renders SVG directly
 into canonical top-down RGBA. It shares the parser and rasterizer with the BMP
 component but writes pixels in their final KTX2 order.
+
+`../svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm` uses SIMD
+scanline path coverage with a 4 by 4 sample grid and composites premultiplied
+paint in linear light. It returns straight-alpha linear BT.709 RGBA32F. The
+matched-quality `../svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm`
+quantizes the final image once and is useful when a downstream stage requires
+canonical RGBA8.
 
 `ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm` accepts either exact sRGB
 component order and writes an 8-bit RGBA PNG. RGBA rows pass directly into PNG

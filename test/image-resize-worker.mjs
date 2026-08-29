@@ -19,9 +19,9 @@ const context = vm.createContext({
   self: {},
 });
 const workerSource = readFileSync("site/image-resize-worker.js", "utf8") +
-  "\nglobalThis.__imageResizeWorkerTest = { run, readKTX2Size, calculateDimensions, ENCODERS };";
+  "\nglobalThis.__imageResizeWorkerTest = { run, readKTX2Size, calculateDimensions, RESIZE_PATHS, ENCODERS };";
 vm.runInContext(workerSource, context, { filename: "site/image-resize-worker.js" });
-const { run, readKTX2Size, calculateDimensions, ENCODERS } =
+const { run, readKTX2Size, calculateDimensions, RESIZE_PATHS, ENCODERS } =
   context.__imageResizeWorkerTest;
 
 function module(path) {
@@ -56,6 +56,15 @@ test("image resize worker components enforce their explicit directions", () => {
   const enlargement = run(up, input, { width: 768, height: 513 });
   assert.equal(enlargement.status, "accepted");
   assert.deepEqual({ ...readKTX2Size(enlargement.output) }, { width: 768, height: 513 });
+});
+
+test("image resize worker prefers SIMD and retains scalar fallbacks", () => {
+  for (const config of Object.values(RESIZE_PATHS)) {
+    assert.equal(config.paths.length, 2);
+    assert.match(config.paths[0], /-simd\.wasm$/);
+    assert.doesNotMatch(config.paths[1], /-simd\.wasm$/);
+    for (const path of config.paths) assert.equal(existsSync(`components${path}`), true, path);
+  }
 });
 
 test("image resize dimensions fit the box and enlarge only when requested", () => {

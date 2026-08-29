@@ -6,7 +6,8 @@ supported SVG subset directly into QIP's canonical
 their final top-down (`KTXorientation=rd`) order. Use this component for new
 pipelines. Use the BMP variant only when the next stage requires BMP.
 
-The SVG root must declare numeric `width` and `height` attributes. The
+The SVG root must declare numeric `width` and `height` attributes or a
+`viewBox`. A viewBox-only document uses the viewBox dimensions. The
 `background_color_rgba` uniform accepts `0xRRGGBBAA` and defaults to transparent
 black. The output retains straight alpha when no opaque background is
 requested. The uniform resets to its default after each render.

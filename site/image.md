@@ -29,7 +29,9 @@ Related tool: [WebP to PNG or BMP](/webp-to-png).
 
 ## SVG (`image/svg+xml`)
 
-- [`svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm) rasterizes the supported SVG subset to canonical RGBA8 sRGB KTX2. Use this output for new pipelines.
+- [`svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm) uses SIMD scanline path coverage with a 4 by 4 sample grid and linear-light compositing, then writes linear BT.709 RGBA32F KTX2.
+- [`svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm) uses the same antialiasing path, then quantizes the completed image to canonical RGBA8 sRGB KTX2.
+- [`svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm) provides the faster center-sampled baseline in canonical RGBA8 sRGB KTX2.
 - [`svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm) provides BMP output for stages that still require it.
 - [`svg-recolor-current-color.wasm`](/image/svg+xml/svg-recolor-current-color.wasm) replaces supported `currentColor` uses with a supplied color.
 - [`svg-to-data-uri.wasm`](/image/svg+xml/svg-to-data-uri.wasm) percent-encodes SVG bytes as a data URI.

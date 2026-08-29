@@ -7,11 +7,17 @@ const DECODER_PATHS = {
 
 const RESIZE_PATHS = {
   down: {
-    path: "/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm",
+    paths: [
+      "/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3-simd.wasm",
+      "/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm",
+    ],
     algorithm: "Lanczos3 reduction",
   },
   up: {
-    path: "/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm",
+    paths: [
+      "/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell-simd.wasm",
+      "/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm",
+    ],
     algorithm: "Mitchell-Netravali enlargement",
   },
 };
@@ -48,6 +54,7 @@ const ENCODERS = {
 };
 
 const compiledModules = new Map();
+const compiledChoices = new Map();
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
@@ -63,6 +70,30 @@ async function compile(path) {
     return await pending;
   } catch (error) {
     compiledModules.delete(path);
+    throw error;
+  }
+}
+
+async function compileFirst(paths) {
+  let pending = compiledChoices.get(paths);
+  if (pending === undefined) {
+    pending = (async () => {
+      let lastError;
+      for (const path of paths) {
+        try {
+          return { module: await compile(path), path };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError;
+    })();
+    compiledChoices.set(paths, pending);
+  }
+  try {
+    return await pending;
+  } catch (error) {
+    compiledChoices.delete(paths);
     throw error;
   }
 }
@@ -128,11 +159,13 @@ async function resize(input, source, target) {
     ? "down"
     : "up";
   const candidate = RESIZE_PATHS[direction];
-  const result = run(await compile(candidate.path), input, target);
+  const compiled = await compileFirst(candidate.paths);
+  const result = run(compiled.module, input, target);
   if (result.status !== "accepted") {
     throw Error(`${candidate.algorithm} rejected the calculated dimensions.`);
   }
-  return { output: result.output, algorithm: candidate.algorithm };
+  const simd = compiled.path.endsWith("-simd.wasm") ? " (SIMD)" : "";
+  return { output: result.output, algorithm: `${candidate.algorithm}${simd}` };
 }
 
 self.onmessage = async (event) => {

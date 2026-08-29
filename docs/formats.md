@@ -38,6 +38,7 @@ Examples:
 
 - `qip router warc ...` emits `application/warc`
 - `components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm` maps `image/svg+xml` directly to canonical RGBA8 sRGB `image/ktx2`
+- `components/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm` maps `image/svg+xml` to antialiased, linear BT.709 RGBA32F `image/ktx2`
 - `components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm` maps `image/svg+xml -> image/bmp` for BMP-based pipelines
 - `components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm` maps `image/jp2 -> image/bmp`
 - `components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm` maps profiled `image/bmp -> image/bmp` and removes the source ICC profile
