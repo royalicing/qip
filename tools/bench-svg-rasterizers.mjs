@@ -22,6 +22,10 @@ const rgba8SimdUrl = new URL(
   "../components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm",
   import.meta.url,
 );
+const thorvgUrl = new URL(
+  "../components/image/svg+xml/svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.wasm",
+  import.meta.url,
+);
 
 function decodeResult(result) {
   const bits = BigInt.asUintN(64, result);
@@ -71,6 +75,7 @@ const implementations = [
   { name: "RGBA8 center sample", url: rgba8Url, bytesPerPixel: 4 },
   { name: "RGBA8 SIMD scanline 4x4", url: rgba8SimdUrl, bytesPerPixel: 4 },
   { name: "RGBA32F SIMD scanline 4x4", url: floatUrl, bytesPerPixel: 16 },
+  { name: "RGBA8 ThorVG CPU", url: thorvgUrl, bytesPerPixel: 4 },
 ];
 const results = [];
 
@@ -97,6 +102,7 @@ for (const implementation of implementations) {
 const rgba8 = results[0];
 const rgba8Simd = results[1];
 const float = results[2];
+const thorvg = results[3];
 const rgba8Pixels = new Uint8Array(
   rgba8.exports.memory.buffer,
   rgba8.result.pointer + 224,
@@ -130,6 +136,7 @@ for (const result of results) {
 console.log(`Scanline speedup over center sample: ${(rgba8.meanMs / float.meanMs).toFixed(2)}x`);
 console.log(`Matched-quality RGBA8 relative time: ${(rgba8Simd.meanMs / float.meanMs).toFixed(2)}x`);
 console.log(`RGBA32F output-size ratio: ${(float.result.size / rgba8.result.size).toFixed(2)}x`);
+console.log(`ThorVG relative time to matched-quality RGBA8: ${(thorvg.meanMs / rgba8Simd.meanMs).toFixed(2)}x`);
 console.log(`RGBA32F fractional-alpha pixels: ${fractionalAlphaPixels}`);
 console.log(
   `Mean absolute channel difference after linear-to-sRGB conversion: ${(

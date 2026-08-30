@@ -488,6 +488,17 @@ OPENJPEG_LIB_ROOT := $(OPENJPEG_ROOT)/src/lib/openjp2
 OPENJPEG_DEC_NAMES := thread bio cio dwt event ht_dec image invert j2k jp2 mct mqc openjpeg opj_clock pi t1 t2 tcd tgt function_list opj_malloc sparse_array
 OPENJPEG_DEC_C_SOURCES := $(addprefix $(OPENJPEG_LIB_ROOT)/,$(addsuffix .c,$(OPENJPEG_DEC_NAMES)))
 
+THORVG_ROOT := third_party/thorvg-1.1.1
+THORVG_COMMON_NAMES := tvgCompressor tvgMath tvgStr
+THORVG_RENDERER_NAMES := tvgAccessor tvgAnimation tvgCanvas tvgFill tvgInitializer tvgLoaderMgr tvgPaint tvgPicture tvgRender tvgSaver tvgScene tvgShape tvgTaskScheduler tvgText
+THORVG_CPU_NAMES := tvgSwBlendOp tvgSwFill tvgSwImage tvgSwMemPool tvgSwPostEffect tvgSwRaster tvgSwRenderer tvgSwRle tvgSwShape tvgSwStroke tvgSwUtil
+THORVG_SVG_NAMES := tvgSvgBuilder tvgSvgCssStyle tvgSvgLoader tvgSvgPath tvgSvgUtil tvgXmlParser
+THORVG_CPP_SOURCES := $(addprefix $(THORVG_ROOT)/src/common/,$(addsuffix .cpp,$(THORVG_COMMON_NAMES)))
+THORVG_CPP_SOURCES += $(addprefix $(THORVG_ROOT)/src/renderer/,$(addsuffix .cpp,$(THORVG_RENDERER_NAMES)))
+THORVG_CPP_SOURCES += $(addprefix $(THORVG_ROOT)/src/renderer/cpu_engine/,$(addsuffix .cpp,$(THORVG_CPU_NAMES)))
+THORVG_CPP_SOURCES += $(addprefix $(THORVG_ROOT)/src/loaders/svg/,$(addsuffix .cpp,$(THORVG_SVG_NAMES)))
+THORVG_CPP_SOURCES += $(THORVG_ROOT)/src/loaders/raw/tvgRawLoader.cpp
+
 LIBAVIF_ROOT := third_party/libavif-1.4.1
 LIBAOM_ROOT := third_party/libaom-3.13.0
 MOZJPEG_ROOT := third_party/mozjpeg-4.1.1
@@ -503,6 +514,7 @@ EMSDK_ROOT ?= $(shell mise where emsdk@$(EMSDK_VERSION) 2>/dev/null)
 EMSDK_UPSTREAM := $(EMSDK_ROOT)/upstream
 EMSDK_SYSROOT := $(EMCC_CACHE)/sysroot
 EMSDK_LTO_LIBDIR := $(EMSDK_SYSROOT)/lib/wasm32-emscripten/lto
+EMSDK_LIBDIR := $(EMSDK_SYSROOT)/lib/wasm32-emscripten
 EMSDK_LTO_STAMP := $(EMCC_CACHE)/qip-lto-system-libs.stamp
 EMSDK_CLANG := $(EMSDK_UPSTREAM)/bin/clang
 EMSDK_WASM_OPT := $(EMSDK_UPSTREAM)/bin/wasm-opt
@@ -516,6 +528,7 @@ LIBWEBP_KTX_LOSSY_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-srgb-to-webp-los
 LIBWEBP_KTX_LOSSLESS_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.raw.wasm
 LIBWEBP_KTX_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/webp-to-ktx2-r8g8b8a8-srgb.raw.wasm
 OPENJPEG_DEC_CLANG_RAW_WASM := $(EMCC_CACHE)/jp2-to-bmp-b8g8r8a8-srgb.raw.wasm
+THORVG_SVG_CLANG_RAW_WASM := $(EMCC_CACHE)/svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.raw.wasm
 AVIF_AOM_BUILD := $(EMCC_CACHE)/libaom-3.13.0-qip-encode-decode
 AVIF_LIBAVIF_BUILD := $(EMCC_CACHE)/libavif-1.4.1-qip-encode-decode
 AVIF_AOM_STAMP := $(EMCC_CACHE)/qip-libaom-3.13.0-encode-decode.stamp
@@ -539,6 +552,10 @@ LIBWEBP_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_DEC_CLANG_EXPORTS),-X
 OPENJPEG_DEC_CLANG_EXPORTS := render input_ptr input_bytes_cap output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count
 OPENJPEG_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(OPENJPEG_DEC_CLANG_EXPORTS),-Xlinker --export=$(name))
 OPENJPEG_CLANG_FEATURE_FLAGS = $(LIBWEBP_CLANG_FEATURE_FLAGS)
+THORVG_SVG_CLANG_EXPORTS := render input_ptr input_bytes_cap output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_width uniform_set_height uniform_set_background_color_rgba arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count __wasm_call_ctors
+THORVG_SVG_CLANG_EXPORT_FLAGS := $(foreach name,$(THORVG_SVG_CLANG_EXPORTS),-Xlinker --export=$(name))
+THORVG_INCLUDE_FLAGS := -I$(THORVG_ROOT)/qip -I$(THORVG_ROOT)/inc -I$(THORVG_ROOT)/src/common -I$(THORVG_ROOT)/src/renderer -I$(THORVG_ROOT)/src/renderer/cpu_engine -I$(THORVG_ROOT)/src/loaders -I$(THORVG_ROOT)/src/loaders/svg -I$(THORVG_ROOT)/src/loaders/raw -Icomponents/image/lib
+THORVG_CLANG_FLAGS := -std=c++14 -O3 -ffunction-sections -fdata-sections -msimd128 -mbulk-memory -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-stack-protector -fno-math-errno -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fno-builtin-memcpy -U__STDCPP_THREADS__ -D_LIBCPP_ABI_VERSION=2 -DTVG_STATIC -DNDEBUG
 LIBWEBP_CLANG_FEATURE_FLAGS := -msimd128 -mbulk-memory -DEMSCRIPTEN=1 -D__SSE__=1 -D__SSE2__=1 -D__SSE3__=1 -D__SSSE3__=1 -D__SSE4_1__=1
 
 AVIF_CMAKE_C_FLAGS := -I$(AVIF_COMPAT_ROOT) -O3 -DNDEBUG -flto -ffunction-sections -fdata-sections -msimd128 -mbulk-memory -fno-builtin-setjmp -fno-builtin-longjmp -sSUPPORT_LONGJMP=0
@@ -560,6 +577,7 @@ LCMS_CLANG_WRAP_FLAGS := $(foreach name,$(LCMS_CLANG_WRAP_NAMES),-Xlinker --wrap
 $(EMSDK_LTO_STAMP):
 	mkdir -p $(EMCC_CACHE)
 	$(EMSDK_EMBUILDER) build sysroot
+	$(EMSDK_EMBUILDER) build libc++-noexcept libc++abi-noexcept
 	$(EMSDK_EMBUILDER) --lto build libc libcompiler_rt libc_rt_wasm libstandalonewasm
 	touch $@
 
@@ -609,6 +627,12 @@ $(OPENJPEG_DEC_CLANG_RAW_WASM): components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.c 
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -isystem $(EMSDK_SYSROOT)/include/compat -I$(OPENJPEG_LIB_ROOT) -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(OPENJPEG_CLANG_FEATURE_FLAGS) -DOPJ_STATIC -DMUTEX_stub -DNDEBUG -nostdlib $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(OPENJPEG_DEC_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
 
 components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm: $(OPENJPEG_DEC_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(THORVG_SVG_CLANG_RAW_WASM): components/image/svg+xml/svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.cpp components/image/lib/ktx2-rgba8-srgb.h $(THORVG_CPP_SOURCES) $(THORVG_ROOT)/qip/config.h $(THORVG_ROOT)/src/common/tvgLock.h $(THORVG_ROOT)/src/renderer/tvgLoader.h $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) $(THORVG_INCLUDE_FLAGS) $(THORVG_CLANG_FLAGS) -nostdlib -Wl,--gc-sections $< $(THORVG_CPP_SOURCES) -L$(EMSDK_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=536870912 -Wl,--max-memory=536870912 $(WASM_STACK_FLAG) $(THORVG_SVG_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc++-noexcept -lc++abi-noexcept -lc_rt_wasm -o $@
+
+components/image/svg+xml/svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.wasm: $(THORVG_SVG_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-simd --enable-bulk-memory --strip-debug --strip-producers $< -o $@
 
 $(AVIF_AOM_STAMP): $(AVIF_AOM_SOURCE_FILES) $(AVIF_COMPAT_ROOT)/setjmp.h
@@ -786,6 +810,7 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/qipx-hosts.mjs
 	node --test test/svg-rasterizer-content.mjs
 	node --test test/svg-rasterizer-rgba32float-simd.mjs
+	node --test test/svg-rasterizer-thorvg.mjs
 	node --test test/qip-play-debug-stats.mjs
 	node --test test/qip-play-steps.mjs
 	node --test test/ktx2-resize.mjs
@@ -877,11 +902,12 @@ test-node: qip components recipes/application/warc/25-add-content-size.wasm comp
 	node --test test/form-data-to-tar.mjs
 	node --test test/wasm-trap-instance-continues.mjs
 
-test-svg-rasterizers: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm components/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm components/application/wasm/wasm-bounded-output.wasm
+test-svg-rasterizers: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm components/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm components/image/svg+xml/svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.wasm components/application/wasm/wasm-bounded-output.wasm
 	$(ZIG_ENV) zig test components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig $(ZIG_TEST_FLAGS)
 	$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot=components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig
 	node --test test/svg-rasterizer-content.mjs
 	node --test test/svg-rasterizer-rgba32float-simd.mjs
+	node --test test/svg-rasterizer-thorvg.mjs
 
 test-wasm-bounded-output: components/application/wasm/wasm-bounded-output.wasm
 	$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep wasm_reader -Mroot=components/application/wasm/wasm-bounded-output.zig -Mwasm_reader=components/application/wasm/lib/wasm-reader.zig

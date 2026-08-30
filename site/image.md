@@ -29,6 +29,7 @@ Related tool: [WebP to PNG or BMP](/webp-to-png).
 
 ## SVG (`image/svg+xml`)
 
+- [`svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-thorvg-to-ktx2-r8g8b8a8-srgb.wasm) uses ThorVG's CPU renderer for broader SVG paint support and antialiased RGBA8 sRGB KTX2 output. This build does not include fonts or embedded raster-image decoders.
 - [`svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm) uses SIMD scanline path coverage with a 4 by 4 sample grid and linear-light compositing, then writes linear BT.709 RGBA32F KTX2.
 - [`svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.wasm) uses the same antialiasing path, then quantizes the completed image to canonical RGBA8 sRGB KTX2.
 - [`svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm) provides the faster center-sampled baseline in canonical RGBA8 sRGB KTX2.

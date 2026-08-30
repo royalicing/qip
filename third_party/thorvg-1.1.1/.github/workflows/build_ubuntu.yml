@@ -1,0 +1,100 @@
+name: Ubuntu
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  WGPU_NATIVE_VERSION: v29.0.1.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install Packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install meson ninja-build libturbojpeg0-dev libpng-dev libwebp-dev
+
+    - name: Build
+      run: |
+        meson setup build -Dlog=true -Dengines="cpu, gl" -Dloaders=all -Dsavers=all -Dbindings=capi -Dtools=all
+        sudo ninja -C build install
+
+  compact_test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install Packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install meson ninja-build
+
+    - name: Build
+      run: |
+        meson setup build -Dlog=true -Dengines="cpu, gl" -Dloaders=all -Dsavers=all -Dstatic=true -Dthreads=false
+        sudo ninja -C build install
+
+  unit_test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install Packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja-build pkg-config valgrind curl jq unzip libturbojpeg0-dev libpng-dev libwebp-dev libegl-dev libgl1-mesa-dev
+
+    - name: Install wgpu_native
+      run: |
+        bash .github/workflows/install_wgpu_native.sh
+
+    - name: Build
+      run: |
+        meson setup build -Dloaders="all" -Dengines="all" -Dsavers="all" -Dbindings="capi" -Dtests=true --errorlogs
+        sudo ninja -C build install
+        env LIBGL_ALWAYS_SOFTWARE=1 meson test -C build --print-errorlogs --timeout 120
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: UnitTestReport
+        path: build/meson-logs/testlog.txt
+
+    - name: Run memcheck Script(valgrind)
+      run: |
+        export PATH=$PATH:~/.local/bin/
+        chmod +x "${GITHUB_WORKSPACE}/.github/workflows/memcheck_valgrind.sh"
+        "${GITHUB_WORKSPACE}/.github/workflows/memcheck_valgrind.sh"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build & Run memcheck Script(ASAN)
+      run: |
+        sudo rm -rf ./build
+        meson setup build -Db_sanitize="address,undefined" -Dloaders="all" -Dsavers="all" -Dtests="true" -Dbindings="capi"
+        sudo ninja -C build install
+        export PATH=$PATH:~/.local/bin/
+        chmod +x "${GITHUB_WORKSPACE}/.github/workflows/memcheck_asan.sh"
+        "${GITHUB_WORKSPACE}/.github/workflows/memcheck_asan.sh"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
