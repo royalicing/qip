@@ -15,6 +15,7 @@ For qip's one-input/one-output component model, stable interchange formats make 
 Current formats directly supported by a qip command or supported by this repo’s modules in `components/`:
 
 - `application/warc`: website snapshots
+- `application/pdf`: fixed-layout documents and vector artwork
 - `application/x-tar`: directory archive as one input/output blob
 - `application/zip`: compressed directory archive for broad tool compatibility
 - `application/x-www-form-urlencoded`: small named UTF-8 form fields
@@ -70,6 +71,7 @@ Examples:
 - `components/application/x-tar/tar-to-zip.wasm` maps `application/x-tar -> application/zip`
 - `components/application/zip/zip-to-tar.wasm` maps `application/zip -> application/x-tar`
 - `components/text/text-to-og-image-svg-inter.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
+- `components/image/svg+xml/svg-to-pdf-inter-font.wasm` maps a strict `image/svg+xml` vector subset to PDF/A-2b `application/pdf` with embedded Inter text
 - `components/text/text-to-og-image-svg-dejavu-sans-mono.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
 - `components/application/zip/zip-list-entries-csv.wasm` maps `application/zip -> text/csv`
 - `components/application/zip/zip-list-files-csv.wasm` maps `application/zip -> text/csv`

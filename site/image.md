@@ -35,6 +35,7 @@ Related tool: [WebP to PNG or BMP](/webp-to-png).
 - [`svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm) provides the faster center-sampled baseline in canonical RGBA8 sRGB KTX2.
 - [`svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm`](/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm) provides BMP output for stages that still require it.
 - [`svg-recolor-current-color.wasm`](/image/svg+xml/svg-recolor-current-color.wasm) replaces supported `currentColor` uses with a supplied color.
+- [`svg-to-pdf-inter-font.wasm`](/image/svg+xml/svg-to-pdf-inter-font.wasm) converts a strict SVG vector subset to single-page PDF/A-2b with complete embedded Inter Regular, Bold, Italic, and Bold Italic text. It preserves paths, groups, affine transforms, supported native gradients, and element/group opacity; unsupported SVG rejects rather than rasterizing.
 - [`svg-to-data-uri.wasm`](/image/svg+xml/svg-to-data-uri.wasm) percent-encodes SVG bytes as a data URI.
 
 Related tools: [SVG data URI](/svg-data-uri), [QR code maker](/qr), and [Open Graph image maker](/og-image).
