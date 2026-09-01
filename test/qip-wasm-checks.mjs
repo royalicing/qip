@@ -28,6 +28,9 @@ const boundedOutput = fileURLToPath(
 const wasmCounts = fileURLToPath(
   new URL("../components/application/wasm/wasm-counts.wasm", import.meta.url),
 );
+const wasmRenderCyclomaticComplexity = fileURLToPath(
+  new URL("../components/application/wasm/render-cyclomatic-complexity.wasm", import.meta.url),
+);
 const nontrappingDivides = fileURLToPath(
   new URL("../components/application/wasm/wasm-nontrapping-divides.wasm", import.meta.url),
 );
@@ -50,6 +53,7 @@ async function ensurePrerequisites(t) {
     await access(boundedLoops, constants.R_OK);
     await access(boundedOutput, constants.R_OK);
     await access(wasmCounts, constants.R_OK);
+    await access(wasmRenderCyclomaticComplexity, constants.R_OK);
     await access(nontrappingDivides, constants.R_OK);
     await access(core10Validator, constants.R_OK);
     await access(luhn, constants.R_OK);
@@ -133,6 +137,32 @@ test("wasm-counts emits stable long-form integer CSV", async (t) => {
   assert.ok(rows.get("potentially_trapping_instructions") > 0);
 });
 
+test("wasm-counts has no indirect calls", async (t) => {
+  await ensurePrerequisites(t);
+
+  const result = await runQip(["run", "-i", wasmCounts, "--", wasmCounts]);
+  assert.equal(result.code, 0, result.stderr.toString("utf8"));
+  assert.match(result.stdout.toString("utf8"), /^calls_indirect,0$/m);
+});
+
+test("render-cyclomatic-complexity follows render calls once", async (t) => {
+  await ensurePrerequisites(t);
+
+  const dir = await mkdtemp(join(tmpdir(), "qip-render-cyclomatic-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const modulePath = join(dir, "reachable-branches.wasm");
+  const outputPath = join(dir, "complexity.txt");
+  const module = renderCyclomaticComplexityModule();
+  assert.equal(WebAssembly.validate(module), true);
+  await writeFile(modulePath, module);
+
+  const result = await runQip([
+    "run", "-i", modulePath, "-o", outputPath, "--", wasmRenderCyclomaticComplexity,
+  ]);
+  assert.equal(result.code, 0, result.stderr.toString("utf8"));
+  assert.deepEqual(await readFile(outputPath), Buffer.from("4"));
+});
+
 function encodeU32(value) {
   const bytes = [];
   let remaining = value >>> 0;
@@ -152,6 +182,33 @@ function wasmSection(id, payload) {
 function wasmName(value) {
   const bytes = [...Buffer.from(value)];
   return [...encodeU32(bytes.length), ...bytes];
+}
+
+function renderCyclomaticComplexityModule() {
+  const bodies = [
+    [0x00, 0x10, 0x01, 0x10, 0x02, 0x0b],
+    [0x00, 0x41, 0x00, 0x04, 0x40, 0x0b, 0x10, 0x00, 0x10, 0x03, 0x0b],
+    [0x00, 0x41, 0x00, 0x0d, 0x00, 0x0b],
+    [
+      0x00,
+      0x02, 0x40,
+      0x02, 0x40,
+      0x41, 0x00,
+      0x0e, 0x02, 0x00, 0x01, 0x00,
+      0x0b, 0x0b, 0x0b,
+    ],
+    [0x00, 0x41, 0x00, 0x04, 0x40, 0x0b, 0x0b],
+  ];
+  const code = [bodies.length];
+  for (const body of bodies) code.push(...encodeU32(body.length), ...body);
+
+  return new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    ...wasmSection(1, [0x01, 0x60, 0x00, 0x00]),
+    ...wasmSection(3, [bodies.length, ...new Array(bodies.length).fill(0)]),
+    ...wasmSection(7, [0x01, ...wasmName("render"), 0x00, 0x00]),
+    ...wasmSection(10, code),
+  ]);
 }
 
 function singleVoidFunctionModule(ops) {

@@ -124,9 +124,31 @@ const Output = struct {
     }
 };
 
+fn decimalDigits(value: u64) usize {
+    var remaining = value;
+    var digits: usize = 1;
+    while (remaining >= 10) : (remaining /= 10) digits += 1;
+    return digits;
+}
+
+fn decimalText(buffer: []u8, value: u64) zip.Error![]const u8 {
+    const length = decimalDigits(value);
+    if (length > buffer.len) return error.OutputOverflow;
+
+    var remaining = value;
+    var pos = length;
+    while (pos != 0) {
+        pos -= 1;
+        const digit: u8 = @intCast(remaining % 10);
+        buffer[pos] = '0' + digit;
+        remaining /= 10;
+    }
+    return buffer[0..length];
+}
+
 fn appendDecimal(out: []u8, index: *usize, value: u64) zip.Error!void {
     var digits: [20]u8 = undefined;
-    const text = std.fmt.bufPrint(&digits, "{d}", .{value}) catch return error.OutputOverflow;
+    const text = try decimalText(&digits, value);
     if (text.len > out.len - index.*) return error.OutputOverflow;
     @memcpy(out[index.*..][0..text.len], text);
     index.* += text.len;
@@ -135,7 +157,7 @@ fn appendDecimal(out: []u8, index: *usize, value: u64) zip.Error!void {
 fn paxRecordLength(key: []const u8, value: []const u8) usize {
     var length = 1 + key.len + 1 + value.len + 1;
     while (true) {
-        const digits = std.fmt.count("{d}", .{length});
+        const digits = decimalDigits(length);
         const next = digits + 1 + key.len + 1 + value.len + 1;
         if (next == length) return length;
         length = next;
@@ -229,7 +251,20 @@ fn tarHeader(
 }
 
 fn formatPaxName(buffer: []u8, index: usize) zip.Error![]const u8 {
-    return std.fmt.bufPrint(buffer, "PaxHeaders/qip-{d:0>5}", .{index}) catch error.OutputOverflow;
+    const prefix = "PaxHeaders/qip-";
+    const digits: usize = 5;
+    if (index > 99_999 or buffer.len < prefix.len + digits) return error.OutputOverflow;
+    @memcpy(buffer[0..prefix.len], prefix);
+
+    var remaining = index;
+    var pos = prefix.len + digits;
+    while (pos != prefix.len) {
+        pos -= 1;
+        const digit: u8 = @intCast(remaining % 10);
+        buffer[pos] = '0' + digit;
+        remaining /= 10;
+    }
+    return buffer[0 .. prefix.len + digits];
 }
 
 fn asciiDrive(component: []const u8) bool {
@@ -300,15 +335,15 @@ fn emitEntry(out: *Output, input: []const u8, entry: zip.Entry, index: usize) zi
         if (!link_fits) try appendPaxRecord(&pax_scratch, &pax_len, "linkpath", link);
         var number: [20]u8 = undefined;
         if (!mtime_fits) {
-            const text = std.fmt.bufPrint(&number, "{d}", .{entry.mtime}) catch return error.OutputOverflow;
+            const text = try decimalText(&number, entry.mtime);
             try appendPaxRecord(&pax_scratch, &pax_len, "mtime", text);
         }
         if (!uid_fits) {
-            const text = std.fmt.bufPrint(&number, "{d}", .{entry.uid}) catch return error.OutputOverflow;
+            const text = try decimalText(&number, entry.uid);
             try appendPaxRecord(&pax_scratch, &pax_len, "uid", text);
         }
         if (!gid_fits) {
-            const text = std.fmt.bufPrint(&number, "{d}", .{entry.gid}) catch return error.OutputOverflow;
+            const text = try decimalText(&number, entry.gid);
             try appendPaxRecord(&pax_scratch, &pax_len, "gid", text);
         }
         const header = try out.reserve(TAR_BLOCK);

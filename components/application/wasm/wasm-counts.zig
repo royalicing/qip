@@ -77,11 +77,30 @@ const Writer = struct {
         self.off += bytes.len;
     }
 
+    fn writeU64(self: *Writer, value: u64) CountError!void {
+        var decimal: [20]u8 = undefined;
+        var remaining = value;
+        var start = decimal.len;
+
+        if (remaining == 0) {
+            start -= 1;
+            decimal[start] = '0';
+        } else {
+            while (remaining != 0) {
+                start -= 1;
+                const digit: u8 = @intCast(remaining % 10);
+                decimal[start] = '0' + digit;
+                remaining /= 10;
+            }
+        }
+
+        try self.write(decimal[start..]);
+    }
+
     fn row(self: *Writer, comptime name: []const u8, value: u64) CountError!void {
         try self.write(name ++ ",");
-        var buf: [32]u8 = undefined;
-        const number = std.fmt.bufPrint(&buf, "{d}\n", .{value}) catch unreachable;
-        try self.write(number);
+        try self.writeU64(value);
+        try self.write("\n");
     }
 };
 

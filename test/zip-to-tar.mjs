@@ -19,6 +19,10 @@ const component = join(
   process.cwd(),
   "components/application/zip/zip-to-tar.wasm",
 );
+const wasmCounts = join(
+  process.cwd(),
+  "components/application/wasm/wasm-counts.wasm",
+);
 const reverse = join(
   process.cwd(),
   "components/application/x-tar/tar-to-zip.wasm",
@@ -237,6 +241,13 @@ function rawStoredBlocks(parts) {
   }
   return Buffer.concat(blocks);
 }
+
+test("zip-to-tar has no indirect calls", async () => {
+  const { stdout } = await execFileAsync(qip, [
+    "run", "-i", component, "--", wasmCounts,
+  ]);
+  assert.match(stdout, /^calls_indirect,0$/m);
+});
 
 test("zip-to-tar converts stored, DEFLATE, metadata, names, and symlinks", async () => {
   const mtime = 1_700_000_001;

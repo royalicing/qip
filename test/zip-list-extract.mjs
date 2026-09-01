@@ -17,6 +17,10 @@ const filesComponent = join(
   process.cwd(),
   "components/application/zip/zip-list-files-csv.wasm",
 );
+const wasmCounts = join(
+  process.cwd(),
+  "components/application/wasm/wasm-counts.wasm",
+);
 const extractComponent = join(
   process.cwd(),
   "components/application/zip/zip-extract-file.wasm",
@@ -99,6 +103,15 @@ async function runComponent(directory, inputPath, outputName, component, query) 
   await execFileAsync(qip, args);
   return readFile(outputPath);
 }
+
+test("ZIP listing components have no indirect calls", async () => {
+  for (const component of [entriesComponent, filesComponent]) {
+    const { stdout } = await execFileAsync(qip, [
+      "run", "-i", component, "--", wasmCounts,
+    ]);
+    assert.match(stdout, /^calls_indirect,0$/m);
+  }
+});
 
 test("ZIP listings expose entry and dense regular-file indices", async () => {
   const directory = await mkdtemp(join(tmpdir(), "qip-zip-list-"));

@@ -1,4 +1,3 @@
-const std = @import("std");
 const zip = @import("zip.zig");
 
 const Writer = struct {
@@ -11,16 +10,35 @@ const Writer = struct {
         self.index += value.len;
     }
 
-    fn number(self: *Writer, value: anytype) zip.Error!void {
-        var buffer: [32]u8 = undefined;
-        const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch return error.OutputOverflow;
-        try self.write(text);
+    fn number(self: *Writer, value: u64) zip.Error!void {
+        var buffer: [20]u8 = undefined;
+        var remaining = value;
+        var start = buffer.len;
+
+        if (remaining == 0) {
+            start -= 1;
+            buffer[start] = '0';
+        } else {
+            while (remaining != 0) {
+                start -= 1;
+                const digit: u8 = @intCast(remaining % 10);
+                buffer[start] = '0' + digit;
+                remaining /= 10;
+            }
+        }
+        try self.write(buffer[start..]);
     }
 
     fn mode(self: *Writer, value: u16) zip.Error!void {
-        var buffer: [8]u8 = undefined;
-        const text = std.fmt.bufPrint(&buffer, "{o:0>4}", .{value}) catch return error.OutputOverflow;
-        try self.write(text);
+        var buffer: [4]u8 = undefined;
+        var remaining = value;
+        var pos = buffer.len;
+        while (pos != 0) {
+            pos -= 1;
+            buffer[pos] = @intCast('0' + (remaining & 7));
+            remaining >>= 3;
+        }
+        try self.write(&buffer);
     }
 
     fn quoted(self: *Writer, value: []const u8) zip.Error!void {

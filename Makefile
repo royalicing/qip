@@ -317,6 +317,10 @@ components/application/wasm/wasm-counts.wasm: ZIG_WASM_MAX_MEMORY = 12582912
 components/application/wasm/wasm-counts.wasm: components/application/wasm/wasm-counts.zig components/application/wasm/lib/wasm-reader.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+components/application/wasm/render-cyclomatic-complexity.wasm: ZIG_WASM_MAX_MEMORY = 12582912
+components/application/wasm/render-cyclomatic-complexity.wasm: components/application/wasm/render-cyclomatic-complexity.zig components/application/wasm/lib/wasm-reader.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 components/application/wasm/wasm-nontrapping-divides.wasm: ZIG_WASM_MAX_MEMORY = 25165824
 components/application/wasm/wasm-nontrapping-divides.wasm: components/application/wasm/wasm-nontrapping-divides.zig components/application/wasm/lib/wasm-reader.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
