@@ -82,6 +82,7 @@ Related tools: [image color palette](/image-color-palette), [favicon generator](
 
 ### Resize
 
+- [`ktx2-r8g8b8a8-srgb-double.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm) doubles canonical RGBA8 sRGB KTX2 with exact nearest-neighbor pixel replication.
 - [`ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm) reduces canonical RGBA8 sRGB KTX2 with a three-lobe Lanczos filter.
 - [`ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm) enlarges canonical RGBA8 sRGB KTX2 with balanced Mitchell-Netravali bicubic reconstruction.
 - [`ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm`](/image/ktx2/ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm) reduces linear BT.709 float32 KTX2.
@@ -97,8 +98,10 @@ Related tool: [high-quality image resizer](/image-resize).
 
 ### Decode and encode
 
+- [`ktx2-r8g8b8a8-srgb-color-palette.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.wasm) returns up to eight representative colors as JSON.
 - [`ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm`](/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm) converts 8-bit BGRA sRGB KTX2 to BMP.
 - [`ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm) converts 8-bit RGBA sRGB KTX2 to BMP.
+- [`ktx2-r8g8b8a8-srgb-to-favicon.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.wasm) creates a single-image ICO favicon from canonical RGBA8 sRGB KTX2 up to 256×256.
 - [`ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.wasm`](/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.wasm) encodes lossy AVIF.
 - [`ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm`](/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm) encodes lossy JPEG.
 - [`ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm`](/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm) encodes PNG.

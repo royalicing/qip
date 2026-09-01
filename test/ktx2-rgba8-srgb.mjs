@@ -13,10 +13,13 @@ const execFileP = promisify(execFile);
 const qip = fileURLToPath(new URL("../qip", import.meta.url));
 const bmpToRgba8 = fileURLToPath(new URL("../components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.wasm", import.meta.url));
 const rgba8ToBmp = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm", import.meta.url));
+const rgba8ToFavicon = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.wasm", import.meta.url));
+const rgba8Palette = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.wasm", import.meta.url));
+const rgba8Double = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm", import.meta.url));
 const rgba8ToFloat = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm", import.meta.url));
 const floatToRgba8 = fileURLToPath(new URL("../components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm", import.meta.url));
 
-const modules = [bmpToRgba8, rgba8ToBmp, rgba8ToFloat, floatToRgba8];
+const modules = [bmpToRgba8, rgba8ToBmp, rgba8ToFavicon, rgba8Palette, rgba8Double, rgba8ToFloat, floatToRgba8];
 
 async function ensurePrerequisites(t) {
   try {
@@ -94,6 +97,40 @@ test("RGBA8 KTX2 round trips BMP pixels and both BMP row orders", async (t) => {
     const output = await runPipeline([bmpToRgba8, rgba8ToBmp], input, join(dir, `${topDown ? "top" : "bottom"}-out.bmp`));
     assert.deepEqual(logicalRgba(output), logicalRgba(bmp));
   }
+});
+
+test("RGBA8 KTX2 converts directly to a single-image ICO favicon", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-rgba8-favicon-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(2, 2, (x, y) => [x ? 0 : 255, y ? 0 : 255, x && y ? 255 : 0, 64 + x * 32 + y * 64]));
+  await runPipeline([bmpToRgba8], bmpPath, join(dir, "in.ktx2"));
+  const ico = await runPipeline([rgba8ToFavicon], join(dir, "in.ktx2"), join(dir, "favicon.ico"));
+
+  assert.equal(ico.readUInt16LE(0), 0);
+  assert.equal(ico.readUInt16LE(2), 1);
+  assert.equal(ico.readUInt16LE(4), 1);
+  assert.equal(ico[6], 2);
+  assert.equal(ico[7], 2);
+  assert.equal(ico.readUInt16LE(12), 32);
+  assert.equal(ico.readUInt32LE(22), 40);
+  assert.equal(ico.readUInt32LE(30), 4, "DIB height includes XOR and AND bitmaps");
+  assert.equal(ico.length, 86);
+});
+
+test("RGBA8 KTX2 returns a palette and doubles pixels exactly", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-rgba8-tools-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(2, 1, (x) => x ? [0, 0, 255, 255] : [255, 0, 0, 255]));
+  await runPipeline([bmpToRgba8], bmpPath, join(dir, "in.ktx2"));
+  const palette = JSON.parse((await runPipeline([rgba8Palette], join(dir, "in.ktx2"), join(dir, "palette.json"))).toString("utf8"));
+  assert.deepEqual(palette.colors.map(({ hex }) => hex).sort(), ["#0000ff", "#ff0000"]);
+
+  const doubled = await runPipeline([rgba8Double], join(dir, "in.ktx2"), join(dir, "double.ktx2"));
+  assert.equal(doubled.readUInt32LE(20), 4);
+  assert.equal(doubled.readUInt32LE(24), 2);
+  assert.deepEqual([...doubled.subarray(224)], [255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255]);
 });
 
 test("RGBA8 to RGBA32F to RGBA8 is byte-exact", async (t) => {

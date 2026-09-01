@@ -161,6 +161,20 @@ swaps BGRA to the canonical top-down RGBA payload.
 `ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm` performs the inverse row and
 channel conversion and writes a bottom-up BMP.
 
+`ktx2-r8g8b8a8-srgb-to-favicon.wasm` writes a single BMP-backed ICO image for
+a canonical KTX2 no larger than 256×256. It reverses KTX2's top-down rows and
+swaps RGBA to BGRA for the ICO bitmap. Use `bmp-to-ico.wasm` when the source is
+already BMP; neither component resizes an image.
+
+`ktx2-r8g8b8a8-srgb-color-palette.wasm` returns up to eight representative
+RGB colours in the same JSON shape as `bmp-color-palette.wasm`. It ignores
+alpha when counting colours.
+
+`ktx2-r8g8b8a8-srgb-double.wasm` replicates each pixel into an exact 2×2
+block. It does not use the linear-light Mitchell reconstruction used by the
+general KTX2 enlargement component. Its output is limited to 25 MP, so its
+input is limited to 6.25 MP.
+
 `ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm` converts sRGB colour to linear
 `f32`. `ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm` converts back to sRGB bytes.
 Both conversions preserve straight alpha and operate in place because their
