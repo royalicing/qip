@@ -1279,18 +1279,22 @@ class QIPEditElement extends HTMLElement {
     for (const outputElement of this._outputElements) {
       qipEditClearGeneratedAlertRole(outputElement);
       if (isImage) {
-        const imageElement = outputElement.querySelector("img");
-        if (imageElement) {
-          if (imageURL === "") {
-            const blob = new Blob([result.bytes], { type: contentType });
-            imageURL = URL.createObjectURL(blob);
-          }
-          if (!imageElement.hasAttribute("alt")) {
-            imageElement.alt = "qip-edit output";
-          }
-          imageElement.src = imageURL;
-          continue;
+        let imageElement = outputElement.querySelector("img");
+        if (!imageElement) {
+          imageElement = document.createElement("img");
+          outputElement.replaceChildren(imageElement);
         }
+        if (imageURL === "") {
+          const blob = new Blob([result.bytes], { type: contentType });
+          imageURL = URL.createObjectURL(blob);
+        }
+        if (!imageElement.hasAttribute("alt")) {
+          imageElement.alt = "qip-edit output";
+        }
+        imageElement.hidden = false;
+        outputElement.querySelector("[data-qip-error]")?.remove();
+        imageElement.src = imageURL;
+        continue;
       }
       if (decodedText !== null) {
         qipEditRenderTextOutput(outputElement, decodedText, contentType, false);
@@ -1315,6 +1319,19 @@ class QIPEditElement extends HTMLElement {
     this._revokeObjectURLs();
     const message = err instanceof Error ? err.message : String(err);
     for (const outputElement of this._outputElements) {
+      const imageElement = outputElement.querySelector("img");
+      if (imageElement) {
+        imageElement.hidden = true;
+        let errorElement = outputElement.querySelector("[data-qip-error]");
+        if (!errorElement) {
+          errorElement = document.createElement("pre");
+          errorElement.setAttribute("data-qip-error", "");
+          errorElement.setAttribute("role", "alert");
+          outputElement.append(errorElement);
+        }
+        errorElement.textContent = "Preview error: " + message;
+        continue;
+      }
       qipEditSetGeneratedAlertRole(outputElement);
       qipEditRenderTextOutput(outputElement, "Preview error: " + message, "text/plain", true);
     }
