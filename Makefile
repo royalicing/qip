@@ -318,6 +318,10 @@ components/font/ttf/ttf-to-svg-paths-csv.wasm components/font/ttf/ttf-to-svg-pat
 
 components/text/text-to-og-image-svg-dejavu-sans-mono.wasm: components/text/dejavu_sans_mono_56_latin1_paths.zig components/text/dejavu_sans_mono_bold_56_latin1_paths.zig
 
+components/text/text-to-path-svg-dejavu-sans-mono-bold.wasm: components/text/dejavu_sans_mono_bold_paths.zig
+
+components/text/text-to-path-svg-dejavu-sans-mono.wasm: components/text/dejavu_sans_mono_paths.zig
+
 components/text/text-to-og-image-svg-inter.wasm: components/text/lib/inter_display_latin_paths.zig components/text/lib/inter_display_bold_latin_paths.zig
 
 components/application/wasm/qip-component-to-c.wasm: ZIG_WASM_MAX_MEMORY = 41943040

@@ -1,5 +1,5 @@
 const std = @import("std");
-const font = @import("dejavu_sans_mono_56_latin1_paths.zig");
+const font = @import("dejavu_sans_mono_paths.zig");
 
 const INPUT_CAP: usize = 65536;
 const OUTPUT_CAP: usize = 8 * 1024 * 1024;
@@ -11,7 +11,7 @@ const DEFAULT_WIDTH: u32 = 1200;
 const DEFAULT_HEIGHT: u32 = 630;
 const MIN_FONT_SIZE: i32 = 8;
 const MAX_FONT_SIZE: i32 = 1024;
-const DEFAULT_FONT_SIZE: f32 = font.BASE_FONT_SIZE;
+const DEFAULT_FONT_SIZE: f32 = 56.0;
 const PADDING_X: f32 = 72.0;
 const PADDING_Y: f32 = 72.0;
 const EXTRA_LEADING: f32 = 8.0;
@@ -92,13 +92,11 @@ fn appendFloat(out_idx: *usize, value: f32) !void {
 }
 
 fn glyphIndexForCodepoint(cp: u32) ?usize {
-    if (cp >= font.ASCII_START and cp <= font.ASCII_END) {
-        return @intCast(cp - font.ASCII_START);
-    }
-    if (cp >= font.LATIN1_START and cp <= font.LATIN1_END) {
-        return font.ASCII_COUNT + @as(usize, @intCast(cp - font.LATIN1_START));
-    }
-    return null;
+    return font.glyphIndex(cp);
+}
+
+fn isCombiningMark(cp: u32) bool {
+    return cp >= 0x0300 and cp <= 0x036F;
 }
 
 fn decodeUtf8One(input: []const u8, idx: *usize) u32 {
@@ -158,10 +156,10 @@ const Layout = struct {
 };
 
 fn computeLayout() Layout {
-    const scale = font_size_px / font.BASE_FONT_SIZE;
+    const scale = font_size_px / font.UNITS_PER_EM;
     const advance = font.ADVANCE_X * scale;
-    const row_h = (font.LINE_HEIGHT + EXTRA_LEADING) * scale;
-    const baseline = font.BASELINE_Y * scale;
+    const row_h = font.LINE_HEIGHT * scale + EXTRA_LEADING * (font_size_px / DEFAULT_FONT_SIZE);
+    const baseline = font.ASCENDER * scale;
     const drawable_w = @as(f32, @floatFromInt(canvas_width)) - 2.0 * PADDING_X;
     const drawable_h = @as(f32, @floatFromInt(canvas_height)) - 2.0 * PADDING_Y;
 
@@ -185,8 +183,8 @@ fn measureWordCols(input: []const u8, start: usize, max_cols: u32) u32 {
     var cols: u32 = 0;
     while (i < input.len and cols < max_cols) {
         if (isWordDelimiter(input[i])) break;
-        _ = decodeUtf8One(input, &i);
-        cols += 1;
+        const cp = decodeUtf8One(input, &i);
+        if (!isCombiningMark(cp)) cols += 1;
     }
     return cols;
 }
@@ -237,13 +235,15 @@ fn countRows(input: []const u8, layout: Layout) u32 {
             }
         }
 
-        _ = decodeUtf8One(input, &i);
-        col += 1;
-        if (col >= layout.max_cols) {
-            rows += 1;
-            col = 0;
+        const cp = decodeUtf8One(input, &i);
+        if (!isCombiningMark(cp)) {
+            col += 1;
+            if (col >= layout.max_cols) {
+                rows += 1;
+                col = 0;
+            }
+            prev_was_delim = (c == ' ');
         }
-        prev_was_delim = (c == ' ');
     }
     return rows;
 }
@@ -269,6 +269,9 @@ fn renderImpl(input_size: u32) u32 {
     var col: u32 = 0;
     var i: usize = 0;
     var prev_was_delim = true;
+    var last_base_row: u32 = 0;
+    var last_base_col: u32 = 0;
+    var has_base = false;
     const fallback_idx = glyphIndexForCodepoint('?').?;
 
     while (i < input.len and row < rows and row < layout.max_rows) {
@@ -279,6 +282,7 @@ fn renderImpl(input_size: u32) u32 {
             col = 0;
             i += 1;
             prev_was_delim = true;
+            has_base = false;
             continue;
         }
         if (c == '\n') {
@@ -286,6 +290,7 @@ fn renderImpl(input_size: u32) u32 {
             col = 0;
             i += 1;
             prev_was_delim = true;
+            has_base = false;
             continue;
         }
         if (c == '\t') {
@@ -300,11 +305,15 @@ fn renderImpl(input_size: u32) u32 {
             }
             i += 1;
             prev_was_delim = true;
+            has_base = false;
             continue;
         }
 
-        if (prev_was_delim and c != ' ' and col > 0) {
-            const word_cols = measureWordCols(input, i, layout.max_cols);
+        const glyph_start = i;
+        const cp = decodeUtf8One(input, &i);
+        const combining = isCombiningMark(cp);
+        if (!combining and prev_was_delim and c != ' ' and col > 0) {
+            const word_cols = measureWordCols(input, glyph_start, layout.max_cols);
             if (word_cols <= layout.max_cols and col + word_cols > layout.max_cols) {
                 row += 1;
                 col = 0;
@@ -312,12 +321,14 @@ fn renderImpl(input_size: u32) u32 {
             }
         }
 
-        const cp = decodeUtf8One(input, &i);
         const glyph_idx = glyphIndexForCodepoint(cp) orelse fallback_idx;
         const path_d = font.glyph_paths[glyph_idx];
         if (path_d.len > 0) {
-            const x = PADDING_X + @as(f32, @floatFromInt(col)) * layout.advance;
-            const y = PADDING_Y + layout.baseline + @as(f32, @floatFromInt(row)) * layout.row_h;
+            if (combining and !has_base) continue;
+            const draw_col = if (combining) last_base_col else col;
+            const draw_row = if (combining) last_base_row else row;
+            const x = PADDING_X + @as(f32, @floatFromInt(draw_col)) * layout.advance;
+            const y = PADDING_Y + layout.baseline + @as(f32, @floatFromInt(draw_row)) * layout.row_h;
             appendSlice(&out_idx, "<path d=\"") catch return 0;
             appendSlice(&out_idx, path_d) catch return 0;
             appendSlice(&out_idx, "\" transform=\"translate(") catch return 0;
@@ -329,6 +340,10 @@ fn renderImpl(input_size: u32) u32 {
             appendSlice(&out_idx, ")\"/>") catch return 0;
         }
 
+        if (combining) continue;
+        last_base_row = row;
+        last_base_col = col;
+        has_base = true;
         col += 1;
         if (col >= layout.max_cols) {
             row += 1;
@@ -353,8 +368,55 @@ export fn render(input_size: u32) packed struct(u64) {
     };
 }
 
-test "supports latin-1 glyph path lookup including e-acute" {
+test "uses native font metrics for size-independent tracking" {
+    font_size_px = 56.0;
+    const at_base_size = computeLayout();
+    try std.testing.expectApproxEqAbs(@as(f32, 1233.0 / 2048.0 * 56.0), at_base_size.advance, 0.0001);
+
+    font_size_px = 1024.0;
+    const at_large_size = computeLayout();
+    try std.testing.expectApproxEqAbs(at_base_size.advance * (1024.0 / 56.0), at_large_size.advance, 0.001);
+    font_size_px = DEFAULT_FONT_SIZE;
+}
+
+test "supports terminal diagram glyph path lookup" {
     try std.testing.expect(glyphIndexForCodepoint('A') != null);
     try std.testing.expect(glyphIndexForCodepoint(0x00E9) != null); // é
-    try std.testing.expect(glyphIndexForCodepoint(0x20AC) == null); // €
+    try std.testing.expect(glyphIndexForCodepoint(0x010D) != null); // č
+    try std.testing.expect(glyphIndexForCodepoint(0x03A9) != null); // Ω
+    try std.testing.expect(glyphIndexForCodepoint(0x0416) != null); // Ж
+    try std.testing.expect(glyphIndexForCodepoint(0x1EA1) != null); // ạ
+    try std.testing.expect(glyphIndexForCodepoint(0x2070) != null); // ⁰
+    try std.testing.expect(glyphIndexForCodepoint(0x2081) != null); // ₁
+    try std.testing.expect(glyphIndexForCodepoint(0x2153) != null); // ⅓
+    try std.testing.expect(glyphIndexForCodepoint(0x2014) != null); // —
+    try std.testing.expect(glyphIndexForCodepoint(0x20AC) != null); // €
+    try std.testing.expect(glyphIndexForCodepoint(0x250C) != null); // ┌
+    try std.testing.expect(glyphIndexForCodepoint(0x2500) != null); // ─
+    try std.testing.expect(glyphIndexForCodepoint(0x2192) != null); // →
+    try std.testing.expect(glyphIndexForCodepoint(0x21AF) != null); // ↯
+    try std.testing.expect(glyphIndexForCodepoint(0x25E7) != null); // ◧
+    try std.testing.expect(glyphIndexForCodepoint(0x29D7) != null); // ⧗
+    try std.testing.expect(glyphIndexForCodepoint(0x2200) != null); // ∀
+    try std.testing.expect(glyphIndexForCodepoint(0x2318) != null); // ⌘
+    try std.testing.expect(glyphIndexForCodepoint(0x2605) != null); // ★
+    try std.testing.expect(glyphIndexForCodepoint(0x2713) != null); // ✓
+    try std.testing.expect(glyphIndexForCodepoint(0x27F6) != null); // ⟶
+    try std.testing.expect(glyphIndexForCodepoint(0x2A2F) != null); // ⨯
+    try std.testing.expect(glyphIndexForCodepoint(0x1F642) == null); // 🙂
+}
+
+test "combining marks share their base glyph transform" {
+    const input = "A\xCC\x81"; // A + combining acute accent
+    @memcpy(input_buf[0..input.len], input);
+    const output_size = renderImpl(input.len);
+    const svg = output_buf[0..output_size];
+    const marker = "transform=\"";
+    const first_marker = std.mem.indexOf(u8, svg, marker).?;
+    const first_start = first_marker + marker.len;
+    const first_end = first_start + std.mem.indexOf(u8, svg[first_start..], "\"/>").?;
+    const second_marker = first_end + std.mem.indexOf(u8, svg[first_end..], marker).?;
+    const second_start = second_marker + marker.len;
+    const second_end = second_start + std.mem.indexOf(u8, svg[second_start..], "\"/>").?;
+    try std.testing.expectEqualStrings(svg[first_start..first_end], svg[second_start..second_end]);
 }
