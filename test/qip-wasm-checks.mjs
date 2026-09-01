@@ -625,12 +625,11 @@ test("bounded loops stage rejects an unbounded loop", async (t) => {
   assert.match(result.stderr.toString("utf8"), /component rejected input/);
 });
 
-test("qip score reports fixed-bound loop warnings", async (t) => {
+test("qip score warns that Wasm checker components replace it", async (t) => {
   await ensurePrerequisites(t);
 
   const result = await runQip(["score", infiniteLoop]);
   assert.equal(result.code, 0, result.stderr.toString("utf8"));
-  const stdout = result.stdout.toString("utf8");
-  assert.match(stdout, /WARN\(loop-bound\)/);
-  assert.match(stdout, /fixed_bound_loops: WARN/);
+  assert.match(result.stderr.toString("utf8"), /qip score is deprecated/);
+  assert.match(result.stderr.toString("utf8"), /wasm-bounded-loops\.wasm/);
 });

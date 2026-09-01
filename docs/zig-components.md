@@ -476,10 +476,13 @@ Review the binary shape before trusting the source shape:
 
 ```bash
 wasm-objdump -x components/bytes/your-module.wasm
-qip score components/application/wasm/your-module.wasm
+qip run -i components/application/wasm/your-module.wasm -- \
+  components/application/wasm/wasm-validate-core-1.0.wasm \
+  components/application/wasm/wasm-strict-profile.wasm \
+  components/application/wasm/wasm-bounded-loops.wasm
 ```
 
-Use `qip score` as a quick smell test for imports, indirect calls, recursion, loop-bound evidence, and control-flow weight. Use `components/application/wasm/wasm-validate-core-1.0.wasm` for WebAssembly Core 1.0 specification validation. Use the policy checkers `components/application/wasm/wasm-strict-profile.wasm` (fixed memory, no imports, no banned instructions, no recursion, and static content-type metadata) and `components/application/wasm/wasm-bounded-loops.wasm` (fixed-bound loops) when the valid module should also obey the strict profile. Use `components/application/wasm/wasm-bounded-output.wasm` when `render` carries the recognized proof that its successful result does not exceed the static output capacity.
+`qip score` is deprecated. Use `components/application/wasm/wasm-validate-core-1.0.wasm` for WebAssembly Core 1.0 validation. Use `components/application/wasm/wasm-strict-profile.wasm` for fixed memory, no imports, no banned instructions, no recursion, and static content-type metadata. Add `components/application/wasm/wasm-bounded-loops.wasm` to prove fixed loop bounds. Use `components/application/wasm/wasm-bounded-output.wasm` when `render` carries the recognized proof that its successful result does not exceed the static output capacity. Use `components/application/wasm/wasm-counts.wasm` for factual CSV metrics.
 
 The QIP ABI can be expressed in WebAssembly Core 1.0, while the standard
 component build targets Core 2.0 features such as bulk memory. Current Chrome,

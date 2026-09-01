@@ -1145,6 +1145,7 @@ install:
 	go install github.com/royalicing/qip@latest
 
 score: qip
+	@echo "make score is deprecated; use wasm-safety-report for strict policy checks or wasm-counts.wasm for factual metrics."
 	@files="$$(find components -type f -name '*.wasm' | LC_ALL=C sort)"; \
 	if [ -z "$$files" ]; then \
 		echo "No .wasm files found under components/"; \

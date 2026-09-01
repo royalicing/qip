@@ -1,49 +1,60 @@
 # Hard Limits
 
-QIP components run behind a byte-oriented interface. The host writes input into
-linear memory, calls a known export, and reads the output. A component does not
-receive a filesystem, network connection, clock, DOM, cookies, environment
-variables, GPU access, or application secrets unless the host explicitly passes
-that information in.
+QIP runs a component through a byte interface. The host writes input to Wasm
+linear memory, calls a known export, and reads output. A normal component does
+not receive a file system, network, clock, DOM, cookies, environment variables,
+GPU access, or application secrets. The host must pass needed data as input, a
+uniform, or an event.
 
-This boundary is useful only if its resource limits are also explicit. A module
-that cannot access the network but can allocate without limit or run forever is
-still difficult to operate safely.
+This boundary does not set a resource limit by itself. A component with no
+network access can still use too much memory or run for too long. QIP uses
+separate controls for host access, memory, and execution time.
 
-QIP therefore separates three controls:
-
-| Control | What it limits | How QIP applies it |
+| Control | Limit | Normal QIP rule |
 | --- | --- | --- |
-| Host access | What the component can observe or change | No WASI; only documented contract imports |
-| Linear memory | How much memory the component can declare | Fixed by default; optional `--max-memory` cap |
-| Execution time | How long a CLI stage may run | `--timeout-ms` |
+| Host access | Data and services a component can use | No WASI. The host provides only imports required by the selected contract. |
+| Linear memory | Declared Wasm memory size and growth | Reject `memory.grow` by default. An optional byte cap checks declared memory limits. |
+| Execution time | Time for one executed CLI stage | `--timeout-ms` stops a stage that exceeds its time limit. |
 
-The host-access boundary and fixed-memory policy are the normal component model.
-A host may permit memory growth explicitly, but it must also set a byte cap.
+ABI capacity checks stop host copies outside the advertised input and output
+buffers. They do not give a module a total memory budget or prove that its
+Wasm code uses the buffers correctly.
 
-## Where The CLI Enforces Each Rule
+## What Each Command Checks
 
-This page is the canonical map of Wasm validation in the CLI:
+The CLI does not enable the strict Wasm profile or loop proof by default.
+Those checks are QIP components that process Wasm bytes. Normal components can
+use valid Wasm features that the strict tier rejects.
 
-| Rule | `qip run` | `qip dry run` | `qip comply` |
-| --- | --- | --- | --- |
-| Component ABI and pipeline compatibility | Before execution | Yes, using the same pipeline planner | Base ABI and static contract checks for the implementation |
-| Reject `memory.grow` | Every pipeline component, by default | Every pipeline component, by default | Not applied to the implementation |
-| Enforce declared memory bounds | With `--max-memory` | With `--max-memory` | Not applied to the implementation |
-| Strict Wasm artifact structure | Only when `wasm-strict-profile.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
-| Recognizable bounded loops | Only when `wasm-bounded-loops.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
-| Recognizable bounded render output | Only when `wasm-bounded-output.wasm` is executed on input bytes | Validates the checker pipeline but does not inspect input bytes | Not currently applied |
-| Straight-line Compliance oracle | Not applicable | Not applicable | With `--straight-line-oracles`, applied to every `--with` oracle |
+| Check | `run`, `dry run`, `bench`, and `image` | `comply` |
+| --- | --- | --- |
+| Component contract and pipeline compatibility | Yes | Base Content ABI and static QIP getter checks |
+| Reject `memory.grow` | Yes, unless `--allow-memory-grow` is set | No |
+| Check declared memory against `--max-memory` | Yes, when set | Yes, when set |
+| Reject indirect calls | No | No |
+| Strict Wasm profile | Only with `wasm-strict-profile.wasm` in the pipeline | No |
+| Prove loop bounds | Only with `wasm-bounded-loops.wasm` in the pipeline | No |
+| Prove render output size | Only with `wasm-bounded-output.wasm` in the pipeline | No |
+| Require straight-line Compliance oracles | No | Only with `--straight-line-oracles` |
 
-`qip run` and `qip dry run` share the Go module-policy validator. The strict
-artifact and bounded-loop checks are currently executable QIP components, not
-implicit modes of that validator. Dry run never reads or executes the input
-being checked, so it cannot certify an artifact merely by planning the checker
-pipeline.
+`qip dry run` prepares and validates a pipeline, but it does not read input or
+call `render`. A checker in that pipeline is checked as a component. Dry run
+does not inspect the Wasm file that the checker would process at run time.
 
-## Apply A Runtime Policy
+`qip comply` always checks the base Content ABI. It also checks static QIP
+getter functions when those exports exist. Its `--max-memory` option checks
+only the implementation memory declaration. It does not reject `memory.grow`,
+run the strict profile, or prove loop bounds for the implementation.
 
-The same policy controls work with text, binary, and image components:
+`qip score` is deprecated. It reports heuristic metrics that do not form a
+policy decision. Use the Wasm checker components below. They accept Wasm bytes
+as input, pass the bytes through on success, and reject them when their rule
+fails. Use `wasm-counts.wasm` when you need factual CSV metrics rather than a
+pass/fail check.
+
+## Run With A Memory And Time Policy
+
+Use these flags on commands that execute components:
 
 ```bash
 qip run --timeout-ms 1000 --max-memory 67108864 components/text/trim.wasm
@@ -51,18 +62,22 @@ qip bench -i input.txt --timeout-ms 1000 --max-memory 67108864 components/text/t
 qip image -i in.png -o out.png --timeout-ms 1000 --max-memory 8388608 components/rgba/invert.wasm
 ```
 
-- `--max-memory <bytes>` rejects a module when its declared memory minimum or
-  maximum exceeds the cap. It also rejects a module that declares memory without
-  a maximum.
-- Modules containing `memory.grow` are rejected by default. Equal initial and
-  maximum memory declarations are not enough: allocator or runtime code may
-  still contain the instruction, even though it can only fail.
-- `--allow-memory-grow` permits `memory.grow` and requires `--max-memory` in the
-  same command.
-- `--timeout-ms <ms>` limits the execution time of each CLI stage. It deals with
-  runaway execution, not allocation.
+- `--max-memory <bytes>` rejects a module when a declared memory minimum or
+  maximum is larger than the cap. It also rejects a declared memory with no
+  maximum.
+- `memory.grow` is rejected by default. Equal initial and maximum memory sizes
+  do not change this rule. Allocator code can contain `memory.grow` even when
+  every call to it will fail.
+- `--allow-memory-grow` permits `memory.grow` and requires
+  `--max-memory <bytes>`.
+- `--timeout-ms <ms>` limits one executed CLI stage. It limits execution time,
+  not allocation.
 
-Browser hosts expose the memory controls as attributes:
+The declared-memory cap is not a cap for the complete pipeline. QIP checks each
+component separately. `qip dry run` reports the sum of ABI buffer capacities,
+not resident Wasm memory.
+
+Browser elements use the equivalent attributes:
 
 ```html
 <qip-edit max-memory="67108864">
@@ -70,7 +85,7 @@ Browser hosts expose the memory controls as attributes:
 </qip-edit>
 ```
 
-Use `allow-memory-grow` only with an explicit cap:
+Allow memory growth only with a cap:
 
 ```html
 <qip-edit allow-memory-grow max-memory="16777216">
@@ -78,75 +93,12 @@ Use `allow-memory-grow` only with an explicit cap:
 </qip-edit>
 ```
 
-Input and output have separate bounds. The component advertises buffer
-capacities through its ABI exports; the host rejects data that does not fit.
-Those checks prevent a host copy from crossing the advertised buffer. They do
-not impose a useful total-memory budget by themselves.
+## The Strict Wasm Tier
 
-## The Strict Wasm Profile
+The strict tier is an optional artifact policy for a host that needs a small,
+statically inspectable Wasm subset. It is not the normal CLI module policy.
 
-For components that need a statically inspectable execution shape, QIP defines
-a stricter subset of WebAssembly:
-
-- wasm32 with at most one linear memory
-- no imports, including WASI and custom host callbacks
-- a declared memory maximum and no `memory.grow`
-- no shared memory or atomic instructions
-- SIMD instructions are allowed
-- no start function
-- no indirect calls
-- an acyclic direct call graph, which excludes recursion
-- statically readable constant input pointer and input/output capacity getters
-- no active data segment overlapping the declared input range
-
-Recognizable loop bounds are a separate check. They depend on conservative
-proof patterns in compiler output rather than only on structural facts in the
-artifact.
-
-### Cost Of Structural Validation
-
-Let `B` be the module size in bytes, `I` the decoded instruction count, `V` the
-number of defined functions, and `E` the number of direct calls between defined
-functions.
-
-| Rule | Time | Additional space |
-| --- | --- | --- |
-| Reject imports | `O(B)` overall | `O(1)` |
-| Validate the memory count, kind, sharing, and declared maximum | `O(B)` overall | `O(1)` |
-| Reject a start function | `O(B)` overall | `O(1)` |
-| Reject `memory.grow` | `O(I)` | `O(1)` |
-| Reject atomic instructions | `O(I)` | `O(1)` |
-| Reject indirect and reference-based calls | `O(I)` | `O(1)` |
-| Detect recursive direct-call cycles | `O(V + E)` | `O(V + E)` |
-| Resolve content-type getters and verify their initial data | `O(B)` | `O(S)` for active data segments |
-
-Every call-graph edge comes from a decoded call instruction, so `V + E` is
-bounded by the module size. The complete structural check is therefore `O(B)`
-time. The call graph accounts for its linear additional memory.
-
-The policy checker can read the module bytes once, checking every local rule
-while it decodes and collecting direct-call edges. Once decoding finishes, it
-runs a depth-first search over that graph. This is one pass over the module
-bytes plus one graph traversal, not two passes over the Wasm file. A strictly
-streaming constant-memory implementation is not sufficient for recursion:
-functions may call functions defined later, so the graph cannot generally be
-finalized while each function body is being read.
-
-This policy checker assumes its input is already a valid WebAssembly module.
-Full specification validation—section order and uniqueness, types, indices,
-limits, constant expressions, and instruction typing—is a separate concern.
-The policy reader still fails closed if it cannot safely decode an instruction
-body, but that is not a substitute for the specification's validation
-algorithm.
-
-Compliance oracles use a separate straight-line oracle rule, enabled with
-`qip comply --straight-line-oracles`. They may import only the
-documented oracle functions from the `qip` host module. The implementation
-under test remains a separate instance and is not imported or memory-linked
-into the oracle. Ordinary QIP components still use the import-free artifact
-profile above.
-
-Run the artifact checkers as a two-stage pipeline:
+Run both strict-tier stages on a Wasm file:
 
 ```bash
 qip run -i component.wasm -- \
@@ -154,33 +106,81 @@ qip run -i component.wasm -- \
   components/application/wasm/wasm-bounded-loops.wasm
 ```
 
-`wasm-strict-profile` checks imports, memory shape, banned instructions, indirect
-calls, recursion, and statically readable content-type metadata.
-`wasm-bounded-loops` checks loop bounds. Keeping these checks separate allows a
-host to enforce the structural profile while using a runtime mechanism for
-execution, such as a timeout or fuel meter.
+For untrusted Wasm bytes, validate the core module first:
 
-These policy components accept the original module unchanged or reject it with
-the `failed` bit in the `render` result. A failed proof is an expected policy
-result, so it does not trap or invalidate the checker instance. They assume that the input is valid
-Wasm; place `wasm-validate-core-1.0.wasm` first when bytes enter from an
-untrusted source.
+```bash
+qip run -i component.wasm -- \
+  components/application/wasm/wasm-validate-core-1.0.wasm \
+  components/application/wasm/wasm-strict-profile.wasm \
+  components/application/wasm/wasm-bounded-loops.wasm
+```
 
-## Bounded Output Proofs
+The profile checker assumes valid core Wasm. It fails closed when it cannot
+decode an instruction body, but it does not replace full core Wasm validation.
 
-`wasm-bounded-output` certifies that every successful exit from a Content
-component's `render(i32) -> i64` packs an output size that is no more than its
-static `output_utf8_cap()` or `output_bytes_cap()`. Run it independently after
-normal Wasm and QIP contract validation:
+### `wasm-strict-profile`
+
+`wasm-strict-profile.wasm` requires all of these properties:
+
+- wasm32 and no more than one linear memory;
+- no imports;
+- a declared memory maximum and no `memory.grow`;
+- no shared memory or atomic instructions;
+- SIMD instructions are allowed;
+- no start function;
+- no indirect or reference calls, including `call_indirect`,
+  `return_call_indirect`, and `call_ref`;
+- an acyclic direct call graph, so no recursion;
+- static input-pointer and input/output-capacity getters; and
+- no active data segment that overlaps the declared input buffer.
+
+If the module exports content-type metadata, the checker must read it from the
+initial memory image without instantiating the module.
+
+Indirect calls are not rejected by the normal CLI policy. C libraries and
+translated components can use function tables and indirect calls. Rejecting
+them for every `qip run` would reject valid existing components. The strict
+profile rejects them because it must collect the complete call graph before it
+can reject recursion.
+
+### Fixed-Bound Loops
+
+`wasm-bounded-loops.wasm` is a separate component. It proves a fixed bound for
+every Wasm loop that has a backedge. Keeping it separate lets a host use the
+structural profile with a runtime time limit or another execution meter.
+
+The checker examines the final Wasm binary, not source code. It needs one local
+counter with only recognized monotonic updates in the loop and an exit test in
+the matching direction. Recognized updates include adding or subtracting a
+constant, division or a shift toward zero, and a recognized temporary-local
+form. It also accepts the common parser step `i += 1 + len` when `len` is a
+known non-negative narrow value.
+
+The exit can use a signed or unsigned 32-bit or 64-bit comparison with a
+constant, local, global, or computed value. A countdown test with `i32.eqz` is
+also valid. The exit can branch out of the loop, return from the function, or
+pass through blocks whose paths all leave the loop or function.
+
+Any other write to the candidate counter makes the proof fail. For example,
+`i = next_pos` can move the counter away from its limit. A `loop { br 0 }` has
+no counter or exit, so the checker rejects it. A correct loop can still fail
+this conservative proof. In that case, simplify the loop, add a step budget,
+or use a runtime time limit. See [Provable Loops](provable-loops.md).
+
+### Bounded Output Proofs
+
+`wasm-bounded-output.wasm` checks the successful result of a Content
+component's `render(i32) -> i64`. It proves that the returned output size is
+not larger than the static `output_utf8_cap()` or `output_bytes_cap()` value.
 
 ```bash
 qip run -i component.wasm -- \
   components/application/wasm/wasm-bounded-output.wasm
 ```
 
-The checker is deliberately narrower than whole-program range analysis. It
-accepts a constant result within capacity or a final compiled-Wasm epilogue
-equivalent to:
+The checker accepts a constant result within the capacity. For a dynamic
+result, it accepts a final Wasm epilogue that compares the output-size local
+with the exact capacity and traps when the size is too large:
 
 ```wat
 local.get $output_size
@@ -189,80 +189,51 @@ i32.gt_u
 if
   unreachable
 end
-;; Pack output_ptr and the unchanged output_size into the i64 result.
+;; Return the unchanged output size in the low 32 bits of the i64 result.
 ```
 
-The capacity operand may instead be a `global.get` of an immutable constant
-used by the capacity export. The checked local must be returned unchanged, and
-no earlier `return` or branch may escape to the function label. These rules
-make the proof local and mechanically checkable: every normal exit crosses the
-guard, while an excessive value traps inside the component.
+The capacity can be an immutable constant global used by the capacity export.
+The checker also accepts Zig's equivalent final-block form. Every successful
+exit must use the recognized final return. An earlier `return` or a branch to
+the function label makes the proof fail.
 
-The checker also accepts the equivalent form emitted by Zig: branch out of one
-final block when `size >= capacity + 1`, return the packed result from the
-in-bound path, and place `unreachable` immediately after the block. It accepts
-that form only when the final return is the function's sole escaping exit.
+This checker proves only the returned byte count. It does not prove that the
+component wrote useful bytes, wrote inside its output buffer, or returned a
+valid output pointer. Normal QIP contract checks and component tests cover
+those conditions. A module without this proof can still be correct.
 
-The checker requires the guarded local in the low 32 bits of the packed result.
-It also requires the pointer expression to be extended to 64 bits and shifted
-left by 32 bits before the fields are combined. This certificate covers the
-returned byte count only. It does not prove that the component wrote meaningful
-output, stayed within the output buffer while writing, or returned a valid
-output pointer. Those remain QIP contract and component-correctness concerns.
-Modules without the recognized proof may still be correct; the checker fails
-closed when it cannot establish the property.
+## Cost Of The Strict Profile Check
 
-For a readable inspection report, use:
+For a valid module, let `B` be the module size in bytes, `I` the number of
+decoded instructions, `V` the number of defined functions, and `E` the number
+of direct calls between defined functions.
 
-```bash
-qip score component.wasm
-```
+| Rule | Time | Extra memory |
+| --- | --- | --- |
+| Check imports, memory shape, and start function | `O(B)` overall | `O(1)` |
+| Reject `memory.grow`, atomic instructions, and indirect calls | `O(I)` | `O(1)` |
+| Find direct-call cycles | `O(V + E)` | `O(V + E)` |
+| Read static content-type metadata and active data | `O(B)` | `O(S)` for active data segments |
 
-`fixed_bound_loops: PASS` means every backedge matched the verifier's accepted
-patterns. `WARN` means the verifier could not establish a bound. It does not
-prove that the module loops forever.
-
-## What The Loop Checker Can Prove
-
-A source-level loop bound is irrelevant if the compiler removes or obscures it.
-The checker works on the final Wasm binary. It looks for a local counter that:
-
-1. changes monotonically inside the loop; and
-2. participates in an exit comparison in the same direction.
-
-Accepted updates include adding or subtracting a constant, division or shifts
-toward zero, and those operations routed through a temporary local. The checker
-also recognizes the common parser stride `i += 1 + len` when `len` is a known
-non-negative narrow value.
-
-Exit evidence may use signed or unsigned 32-bit or 64-bit comparisons against a
-constant, local, global, or computed value. Countdown tests with `i32.eqz` are
-also accepted. The exit may branch out of the loop, return from the function, or
-pass through blocks whose paths all leave the loop or function.
-
-Any unrecognized write to the candidate counter disqualifies it. For example,
-`i = next_pos` might move the counter away from the bound. An unconditional
-`loop { br 0 }` has no counter or exit and is rejected.
-
-This is a deliberately conservative analysis, not a general termination proof.
-If a safe loop compiles into an unsupported shape, simplify its counter, add an
-explicit step budget, or run the component under a runtime execution limit.
-[Provable Loops](provable-loops.md) contains verified source-level rewrites for
-the common cases.
+The checker reads the module bytes once and records direct call edges. It then
+walks that graph to find cycles. Since every edge comes from an instruction,
+the complete structural check takes `O(B)` time. The graph needs linear extra
+memory because a function can call a function that appears later in the file.
 
 ## Build With A Memory Budget
 
-Choose the budget before selecting compiler flags. Account for input, output,
-scratch space, stack, static data, and any allocator arena. Then inspect the
-final `.wasm`; source code and linker settings do not establish the whole policy.
+Choose the budget before you select compiler flags. Include input, output,
+scratch space, stack, static data, and allocator storage. Then inspect the
+final `.wasm` file. Source code and linker flags do not prove the final policy.
 
-For small transforms, static buffers are usually the simplest arrangement. If
-an API requires an allocator, put it over a fixed buffer. Treat overflow as an
-error or trap rather than silently requesting more memory.
+For small transforms, static buffers are usually the simplest choice. If an API
+needs an allocator, place it over a fixed buffer. Treat an allocation failure
+as an error or trap. Do not request more linear memory.
 
 ### Zig
 
-Set an explicit initial and maximum memory when both should be 1 MiB:
+Set an explicit initial and maximum memory size. This example sets both to
+1 MiB:
 
 ```bash
 zig build-exe component.zig \
@@ -276,12 +247,11 @@ zig build-exe component.zig \
   -femit-bin=component.wasm
 ```
 
-The repository Makefile supplies `--max-memory=$(ZIG_WASM_MAX_MEMORY)` and
-allows individual modules to override the value. `std.heap.FixedBufferAllocator`
-is available when an allocator-shaped interface is useful without a growable
-heap.
+The repository Makefile passes `--max-memory=$(ZIG_WASM_MAX_MEMORY)`. A module
+can override that value. Use `std.heap.FixedBufferAllocator` when you need an
+allocator interface with fixed memory.
 
-### C And Clang
+### C and Clang
 
 LLVM's Wasm linker can make maximum memory equal initial memory:
 
@@ -300,25 +270,24 @@ clang --target=wasm32 -nostdlib -Oz component.c \
 
 The explicit equivalent is:
 
-```bash
+```text
 -Wl,--initial-memory=1048576 -Wl,--max-memory=1048576
 ```
 
-The same linker flags work through `zig cc`. Avoid `malloc` and libc features
-that assume a larger runtime unless you have provided and budgeted their memory.
-See the [LLVM lld WebAssembly options](https://lld.llvm.org/WebAssembly.html) for
-the linker semantics.
+These linker flags also work with `zig cc`. Avoid `malloc` and libc features
+that assume a larger runtime unless you provide and budget their memory. See
+the [LLVM lld WebAssembly options](https://lld.llvm.org/WebAssembly.html).
 
 ### Rust
 
-Rust's `wasm32-unknown-unknown` target uses `dlmalloc` as its default allocator.
-Allocator-using programs may therefore contain `memory.grow`. The linker option
-`--no-growable-memory` only makes maximum memory equal initial memory; it does
-not remove that instruction from allocator code.
+The `wasm32-unknown-unknown` target uses `dlmalloc` by default. A program that
+uses that allocator can contain `memory.grow`. `--no-growable-memory` sets the
+maximum memory size equal to the initial size. It does not remove the
+instruction from allocator code.
 
-For fixed-memory components, prefer `wasm32v1-none`, `no_std`, and either static
-buffers or an allocator backed by a fixed static region. Set the memory shape at
-link time, then let QIP inspect the final artifact:
+For fixed-memory components, use `wasm32v1-none`, `no_std`, and static buffers
+or an allocator on a fixed static region. Set the memory shape at link time and
+inspect the final artifact:
 
 ```bash
 RUSTFLAGS="-C link-arg=--initial-memory=1048576 -C link-arg=--max-memory=1048576" \
@@ -327,17 +296,14 @@ RUSTFLAGS="-C link-arg=--initial-memory=1048576 -C link-arg=--max-memory=1048576
 qip run target/wasm32v1-none/release/component.wasm
 ```
 
-If an existing Rust component depends on a growable allocator, give it an
-explicit host cap:
+If an existing component needs a growable allocator, set a host cap:
 
 ```bash
 qip run --allow-memory-grow --max-memory 16777216 component.wasm
 ```
 
-The [`wasm32-unknown-unknown` target notes](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
-describe its default allocator. The [`wasm32v1-none` target](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html)
-provides `core` and `alloc` without `std`; using `alloc` still requires a
-component-supplied allocator.
+See the Rust [wasm32-unknown-unknown target notes](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
+and [wasm32v1-none target notes](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html).
 
 ### WebAssembly Text
 
@@ -348,26 +314,26 @@ For hand-written WAT, declare equal initial and maximum page counts and omit
 (memory (export "memory") 16 16)
 ```
 
-A WebAssembly page is 64 KiB, so 16 pages is 1 MiB.
+A Wasm page is 64 KiB. This module declares 1 MiB.
 
-## When This Boundary Does Not Fit
+## When Not To Use This Boundary
 
-The restrictions buy a component that is easier to inspect, test, benchmark,
-and run in different hosts. They do not prove correctness or make untrusted
-output safe to consume. The host must still validate output according to how it
-will be used.
+These restrictions make a component easier to inspect, test, benchmark, and
+run in more than one host. They do not prove component correctness or make
+untrusted output safe. The host must still validate output for its use.
 
-QIP is a reasonable boundary for content transforms, validators, image filters,
-and small interactive renderers with known input sizes. It is a poor fit for
-work that genuinely needs open-ended allocation, operating-system services,
-threads, recursive or highly irregular control flow, or a large managed
-runtime. Keep that work in the host, or use a less restrictive execution model
-with its own resource controls.
+QIP fits content transforms, validators, image filters, and small interactive
+renderers with known input sizes. Do not use the fixed-memory or strict tier
+for work that needs open-ended allocation, operating-system services, threads,
+recursive or highly irregular control flow, or a large managed runtime. Keep
+that work in the host, or use a less restrictive execution model with its own
+resource controls.
 
-For production components:
+For a production component:
 
 1. Set a memory maximum at link time.
-2. Run the final artifact with `--max-memory` in CI; fixed memory is the default.
-3. Keep ambient capabilities in the host and pass required data as bytes.
-4. Use `--timeout-ms` for untrusted or expensive CLI stages.
-5. Benchmark with `qip bench` after the contract and limits are stable.
+2. Run the final artifact with `--max-memory` in CI. Fixed memory is the CLI
+   default.
+3. Keep host capabilities in the host and pass required data as bytes.
+4. Use `--timeout-ms` for untrusted or expensive executed stages.
+5. Run `qip bench` after the contract and resource limits are stable.

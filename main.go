@@ -106,11 +106,12 @@ func applyModulePolicyFlags(opts *options, maxMemoryBytes uint64, allowMemoryGro
 	return nil
 }
 
-const usageMain = "Usage: qip [host ...] <command> [args]\n\nHosts are dotted DNS names with optional ports. Missing safe relative .wasm files\nare requested over HTTPS in host order and saved at their original paths.\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  score    Statically score wasm module control-flow and call cost\n  image    Run wasm filters on an input image\n  comply   Validate Content components and run Compliance oracles\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
+const usageMain = "Usage: qip [host ...] <command> [args]\n\nHosts are dotted DNS names with optional ports. Missing safe relative .wasm files\nare requested over HTTPS in host order and saved at their original paths.\n\nCommands:\n  run      Run a chain of QIP components on input\n  dry run  Validate a run pipeline without executing it\n  bench    Compare one or more QIP components for output parity and performance\n  image    Run wasm filters on an input image\n  comply   Validate Content components and run Compliance oracles\n  router   Serve sites, resolve routed paths, and export route artifacts\n  form     Run an interactive QIP form component in the terminal\n  help     Show command help"
 const usageRun = "Usage: qip [host ...] run [-v] [-i <input>] [-o <output file or ->] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
 const usageDry = "Usage: qip [host ...] dry run [-v] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [--capacities-must-fit] <QIP component URL or file> [-u <key=value> ...] ..."
 const usageBench = "Usage: qip [host ...] bench -i <input> [-r <benchmark runs> | --benchtime=<duration>] [--node] [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] <component1> [component2 ...]"
-const usageScore = "Usage: qip score <component1.wasm> [component2.wasm ...]"
+const usageScore = "Deprecated: qip score reports heuristic metrics. Use Wasm checker components for policy decisions:\n  qip run -i component.wasm -- components/application/wasm/wasm-validate-core-1.0.wasm components/application/wasm/wasm-strict-profile.wasm components/application/wasm/wasm-bounded-loops.wasm\n\nCompatibility usage: qip score <component1.wasm> [component2.wasm ...]"
+const scoreDeprecatedNotice = "qip score is deprecated; use wasm-validate-core-1.0.wasm, wasm-strict-profile.wasm, and wasm-bounded-loops.wasm in a qip run pipeline."
 const usageImage = "Usage: qip image -i <input image path or -> -o <output image path> [--timeout-ms <ms>] [--max-memory <bytes>] [--allow-memory-grow] [-v] <QIP component URL or file> [-u <key=value> ...] ..."
 const usageComply = "Usage: qip comply [options] <file-or-dir> [...]"
 const usageRouteDocs = "\n\nDocumentation: https://qip.dev/docs/router"
@@ -356,6 +357,7 @@ func complyCmd(args []string) {
 }
 
 func scoreCmd(args []string) {
+	fmt.Fprintln(os.Stderr, scoreDeprecatedNotice)
 	if err := qcmd.RunScore(args, qcmd.ScoreConfig{
 		UsageScore: usageScore,
 		Stdout:     os.Stdout,

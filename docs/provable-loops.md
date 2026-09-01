@@ -4,12 +4,9 @@ QIP's loop verifier proves, from the compiled `.wasm` alone, that every loop ter
 
 The one-line summary: **give every loop a cursor that only moves one way, and test that cursor against something stable.**
 
-Every example below was compiled with the repo's production flags (`-O ReleaseSmall`) and verified against both `qip score` and the strict-tier gate components. That matters more than it sounds: two of the "obvious" fixes on this page compile into shapes that fail, because the optimizer rewrites loops. Always verify the artifact, not the source:
+Every example below was compiled with the repo's production flags (`-O ReleaseSmall`) and verified with the strict-tier components. Two of the "obvious" fixes on this page compile into shapes that fail because the optimizer rewrites loops. Always verify the artifact, not the source:
 
 ```bash
-qip score component.wasm
-# look for: fixed_bound_loops: PASS
-
 qip run -i component.wasm -- components/application/wasm/wasm-strict-profile.wasm components/application/wasm/wasm-bounded-loops.wasm
 # passes bytes through on success, rejects any strict-tier violation
 ```
@@ -224,12 +221,12 @@ Pick the budget from the input shape — bytes processed, nodes allocated, pixel
 
 ## Checklist when a loop warns
 
-1. Run `qip score` and note the function and loop index in the `fixed_bound_loops` lines.
-2. Find the loop's cursor. If there isn't one local that bounds the loop, add one (usually fuel).
-3. Make every write to that cursor a constant step, one direction only. Move other work to other locals.
-4. Put the cursor's exit test in the loop condition, compared against a constant, a local set before the loop, or a global.
-5. Rebuild and re-run `qip score`. The optimizer has the last word — verify the artifact, not the source.
+1. Run `wasm-bounded-loops.wasm` in the strict-tier pipeline.
+2. Find the loop's cursor. If there is no local that bounds the loop, add one, usually fuel.
+3. Make every write to that cursor a constant step in one direction. Move other work to other locals.
+4. Put the cursor exit test in the loop condition. Compare it with a constant, a local set before the loop, or a global.
+5. Rebuild and run the pipeline again. The optimizer changes the Wasm shape, so verify the artifact, not the source.
 
 ## When not to bother
 
-The verifier is a strict tier, not a universal requirement. Modules with genuinely irregular control flow — full parsers with backtracking, simulations, interpreters — may be better served by wall-clock limits today (`--timeout-ms`) and deterministic fuel metering once available, rather than contorted rewrites. A `WARN(loop-bound)` from `qip score` is a review prompt: prove it, budget it, or consciously run it in a less strict tier.
+The verifier is a strict tier, not a universal requirement. Modules with irregular control flow, such as parsers with backtracking, simulations, and interpreters, may work better with `--timeout-ms` or future deterministic fuel metering. If `wasm-bounded-loops.wasm` rejects a module, prove the loop, add a budget, or run it in a less strict tier.
