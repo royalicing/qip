@@ -259,6 +259,10 @@ components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.wasm: ZIG_WASM_MAX_MEMORY
 components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.wasm: components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.zig components/image/lib/ktx2-rgba8-srgb.zig
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
+components/image/ktx2/ktx2-r8g8b8a8-srgb-vectorize-to-svg.wasm: ZIG_WASM_MAX_MEMORY = 100663296
+components/image/ktx2/ktx2-r8g8b8a8-srgb-vectorize-to-svg.wasm: components/image/ktx2/ktx2-r8g8b8a8-srgb-vectorize-to-svg.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+
 components/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm: ZIG_WASM_MAX_MEMORY = 134217728
 components/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm: components/image/ktx2/ktx2-r8g8b8a8-srgb-double.zig components/image/lib/ktx2-rgba8-srgb.zig
 	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
@@ -1132,7 +1136,7 @@ test-zig: $(ZIG_TEST_FILES)
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba32float_profile -Mroot="$$f" -Mktx2_rgba32float_profile=components/image/lib/ktx2-rgba32float-display-p3-linear.zig || status=1; \
 		elif [ "$$f" = "components/image/ktx2/ktx2-duotone-to-ktx2-rgba32float-display-p3-linear.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb --dep ktx2_rgba32float_display_p3_linear -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig || status=1; \
-		elif [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-double.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-rotate-and-flip.zig" ]; then \
+		elif [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-vectorize-to-svg.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-double.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-rotate-and-flip.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
 		elif [ "$$f" = "components/image/ktx2/ktx2-rgba32float-rotate-and-flip.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba32float --dep ktx2_rgba32float_display_p3_linear --dep ktx2_rgba32float_display_p3 -Mroot="$$f" -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig -Mktx2_rgba32float_display_p3_linear=components/image/lib/ktx2-rgba32float-display-p3-linear.zig --dep ktx2_rgba32float_display_p3_linear -Mktx2_rgba32float_display_p3=components/image/lib/ktx2-rgba32float-display-p3.zig || status=1; \

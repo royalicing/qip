@@ -1,4 +1,4 @@
-import { renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
+import { ContentComponentHost, renderSize as qipRenderSize, renderedOutputPointer as qipRenderedOutputPointer } from "./lib/content-component-host.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -15,11 +15,13 @@ const bmpToRgba8 = fileURLToPath(new URL("../components/image/bmp/bmp-b8g8r8a8-s
 const rgba8ToBmp = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm", import.meta.url));
 const rgba8ToFavicon = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.wasm", import.meta.url));
 const rgba8Palette = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.wasm", import.meta.url));
+const rgba8Vectorize = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-vectorize-to-svg.wasm", import.meta.url));
 const rgba8Double = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm", import.meta.url));
+const svgToRgba8 = fileURLToPath(new URL("../components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm", import.meta.url));
 const rgba8ToFloat = fileURLToPath(new URL("../components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm", import.meta.url));
 const floatToRgba8 = fileURLToPath(new URL("../components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm", import.meta.url));
 
-const modules = [bmpToRgba8, rgba8ToBmp, rgba8ToFavicon, rgba8Palette, rgba8Double, rgba8ToFloat, floatToRgba8];
+const modules = [bmpToRgba8, rgba8ToBmp, rgba8ToFavicon, rgba8Palette, rgba8Vectorize, rgba8Double, svgToRgba8, rgba8ToFloat, floatToRgba8];
 
 async function ensurePrerequisites(t) {
   try {
@@ -131,6 +133,42 @@ test("RGBA8 KTX2 returns a palette and doubles pixels exactly", async (t) => {
   assert.equal(doubled.readUInt32LE(20), 4);
   assert.equal(doubled.readUInt32LE(24), 2);
   assert.deepEqual([...doubled.subarray(224)], [255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255]);
+});
+
+test("RGBA8 KTX2 vectorizes flat regions into SVG paths that preserve holes", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-rgba8-vectorize-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(3, 3, (x, y) => x === 1 && y === 1 ? [0, 0, 0, 0] : [0, 255, 0, 255]));
+  await runPipeline([bmpToRgba8], bmpPath, join(dir, "in.ktx2"));
+
+  const svg = await runPipeline([rgba8Vectorize], join(dir, "in.ktx2"), join(dir, "out.svg"));
+  assert.match(svg.toString("utf8"), /<path fill="#00ff00" d=".*M0 0.*M1 1.*"\/>/);
+
+  const roundTrip = await runPipeline([rgba8Vectorize, svgToRgba8], join(dir, "in.ktx2"), join(dir, "round-trip.ktx2"));
+  assert.deepEqual([...roundTrip.subarray(224)], [
+    0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
+    0, 255, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255,
+    0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
+  ]);
+});
+
+test("RGBA8 KTX2 vectorizer resets alpha threshold and reports rejection", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-ktx2-rgba8-vectorize-uniforms-"));
+  const bmpPath = join(dir, "in.bmp");
+  await writeFile(bmpPath, buildBMP(1, 1, () => [255, 0, 0, 64]));
+  const input = await runPipeline([bmpToRgba8], bmpPath, join(dir, "in.ktx2"));
+  const component = new ContentComponentHost(await readFile(rgba8Vectorize));
+
+  const retained = component.run(input, { uniforms: { alpha_threshold: 1 } });
+  assert.equal(retained.status, "accepted");
+  assert.match(new TextDecoder().decode(retained.output), /fill="#ff0000"/);
+
+  const reset = component.run(input);
+  assert.equal(reset.status, "accepted");
+  assert.doesNotMatch(new TextDecoder().decode(reset.output), /<path /);
+  assert.equal(component.run(new Uint8Array([0])).status, "rejected");
 });
 
 test("RGBA8 to RGBA32F to RGBA8 is byte-exact", async (t) => {

@@ -107,6 +107,7 @@ Related tool: [high-quality image resizer](/image-resize).
 ### Decode and encode
 
 - [`ktx2-r8g8b8a8-srgb-color-palette.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-color-palette.wasm) returns up to eight representative colors as JSON.
+- [`ktx2-r8g8b8a8-srgb-vectorize-to-svg.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-vectorize-to-svg.wasm) traces flat RGBA8 sRGB KTX2 artwork into reduced-color, grid-aligned SVG paths.
 - [`ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm`](/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm) converts 8-bit BGRA sRGB KTX2 to BMP.
 - [`ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm) converts 8-bit RGBA sRGB KTX2 to BMP.
 - [`ktx2-r8g8b8a8-srgb-to-favicon.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.wasm) creates a single-image ICO favicon from canonical RGBA8 sRGB KTX2 up to 256×256.
@@ -115,6 +116,8 @@ Related tool: [high-quality image resizer](/image-resize).
 - [`ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm`](/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm) encodes PNG.
 - [`ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.wasm`](/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.wasm) encodes exact lossless WebP.
 - [`ktx2-r8g8b8a8-srgb-to-webp-lossy.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-to-webp-lossy.wasm) encodes lossy WebP.
+
+Related tool: [image vectorizer](/image/vectorize).
 
 ### Floating-point pipeline
 

@@ -170,6 +170,15 @@ already BMP; neither component resizes an image.
 RGB colours in the same JSON shape as `bmp-color-palette.wasm`. It ignores
 alpha when counting colours.
 
+`ktx2-r8g8b8a8-srgb-vectorize-to-svg.wasm` converts a canonical KTX2 of at
+most eight million pixels into grid-aligned SVG paths. It reduces retained pixels
+to up to eight representative RGB colours, joins 4-connected regions, and
+traces their pixel edges. `colors` accepts 1 through 8 and defaults to 8;
+`alpha_threshold` accepts 1 through 255 and defaults to 128. Pixels below the
+threshold are transparent, and retained alpha is made opaque. Use it for flat
+icons, logos, diagrams, and pixel art. Do not use it for photos, gradients, or
+anti-aliased artwork: those inputs can create too many paths and are rejected.
+
 `ktx2-r8g8b8a8-srgb-double.wasm` replicates each pixel into an exact 2×2
 block. It does not use the linear-light Mitchell reconstruction used by the
 general KTX2 enlargement component. Its output is limited to 25 MP, so its
