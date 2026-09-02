@@ -94,6 +94,14 @@ The components filter in linear light with premultiplied alpha. They expose
 `width` and `height` uniforms, preserve aspect ratio when one dimension is
 omitted, and recoverably reject the opposite scaling direction.
 
+### Rotate and flip
+
+- [`ktx2-r8g8b8a8-srgb-rotate-and-flip.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-rotate-and-flip.wasm) rotates canonical RGBA8 sRGB KTX2 by right angles and flips it horizontally or vertically without changing channel values.
+- [`ktx2-rgba32float-rotate-and-flip.wasm`](/image/ktx2/ktx2-rgba32float-rotate-and-flip.wasm) provides the same operation for linear BT.709, linear Display P3, and transfer-encoded Display P3 RGBA32F KTX2, preserving each profile's metadata.
+
+Both components accept `rotation_degrees=0|90|180|270`, `flip_horizontal=0|1`,
+and `flip_vertical=0|1`. Rotation is clockwise and happens before either flip.
+
 Related tool: [high-quality image resizer](/image-resize).
 
 ### Decode and encode

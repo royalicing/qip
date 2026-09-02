@@ -175,6 +175,15 @@ block. It does not use the linear-light Mitchell reconstruction used by the
 general KTX2 enlargement component. Its output is limited to 25 MP, so its
 input is limited to 6.25 MP.
 
+`ktx2-r8g8b8a8-srgb-rotate-and-flip.wasm` and
+`ktx2-rgba32float-rotate-and-flip.wasm` apply lossless right-angle geometry.
+The first accepts the canonical RGBA8 sRGB profile. The float32 component
+preserves linear BT.709, linear Display P3, and transfer-encoded Display P3
+metadata. `rotation_degrees` accepts `0`, `90`, `180`, or `270` clockwise;
+`flip_horizontal` and `flip_vertical` accept zero or nonzero. Rotation runs
+first, then the flips apply in the rotated image's coordinates. The components
+remain separate because RGBA8 and RGBA32F use incompatible payload widths.
+
 `ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm` converts sRGB colour to linear
 `f32`. `ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm` converts back to sRGB bytes.
 Both conversions preserve straight alpha and operate in place because their
