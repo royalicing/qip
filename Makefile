@@ -269,8 +269,11 @@ components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm components/ima
 components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.zig components/image/png/png-to-bmp-b8g8r8a8-srgb.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
-components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
-	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
+components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm: components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.zig components/image/jpeg/lib/jpeg-decoder.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep jpeg_decoder -Mroot=$< -Mjpeg_decoder=components/image/jpeg/lib/jpeg-decoder.zig -femit-bin=$@
+
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig components/image/jpeg/lib/jpeg-decoder.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep jpeg_decoder -Mroot=$< --dep ktx2_rgba8_srgb -Mjpeg_decoder=components/image/jpeg/lib/jpeg-decoder.zig -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
 components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
@@ -1084,7 +1087,7 @@ test-snapshot: qip components
 	@rm -f test/latest-wasm-to-js.txt
 	diff test/expected.txt test/latest.txt && echo "Snapshots pass."
 
-ZIG_TEST_FILES := $(COMPONENT_ZIG_FILES) $(wildcard recipes/text/markdown/*.zig) $(wildcard recipes/application/warc/*.zig)
+ZIG_TEST_FILES := $(COMPONENT_ZIG_FILES) components/image/jpeg/lib/jpeg-decoder.zig $(wildcard recipes/text/markdown/*.zig) $(wildcard recipes/application/warc/*.zig)
 
 test-zig: $(ZIG_TEST_FILES)
 	@status=0; \
@@ -1132,7 +1135,9 @@ test-zig: $(ZIG_TEST_FILES)
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
 		elif [ "$$f" = "components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb-simd.zig" ] || [ "$$f" = "components/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb --dep ktx2_rgba32float -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig || status=1; \
-		elif [ "$$f" = "components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig" ] || [ "$$f" = "components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig" ]; then \
+		elif [ "$$f" = "components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig" ]; then \
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep jpeg_decoder -Mroot="$$f" --dep ktx2_rgba8_srgb -Mjpeg_decoder=components/image/jpeg/lib/jpeg-decoder.zig -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
+		elif [ "$$f" = "components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig || status=1; \
 		elif [ "$$f" = "components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.zig" ] || [ "$$f" = "components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.zig" ]; then \
 			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep ktx2_rgba8_srgb --dep ktx2_rgba32float -Mroot="$$f" -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -Mktx2_rgba32float=components/image/lib/ktx2-rgba32float.zig || status=1; \
