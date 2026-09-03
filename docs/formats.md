@@ -1,286 +1,224 @@
 # Formats and Encodings
 
-`qip` intentionally chooses old & boring open formats:
+Choose a format for each boundary between components or systems. The format
+must preserve the required data. It must also work with existing tools and
+resource limits.
 
-- Simpler parsing and fewer edge cases.
-- Broad ecosystem of existing tooling.
-- Easier for coding agents to generate correct implementations.
-- Likely to still work in 10+ years.
-- Reduced lock-in to proprietary systems.
+QIP uses stable, open formats with simple parsers. Stable formats improve
+long-term compatibility. Open formats reduce vendor lock-in. Simple formats
+help people and coding agents write correct implementations.
 
-For qip's one-input/one-output component model, stable interchange formats make QIP components more reusable.
+Many older formats were built for computers with little memory. These formats
+often divide data into records, rows, or chunks. A program can process one unit
+and then reuse its working memory. This avoids a complete object tree and a
+separate allocation for each node.
 
-## Preferred formats
+Sequential processing can reduce peak memory and parser complexity. However,
+older formats are not always more efficient. BMP is simple to decode, but BMP
+files are large. TAR supports sequential access, but TAR does not compress
+data. SQLite supports indexed queries, but SQLite needs random access to its
+pages.
 
-Current formats directly supported by a qip command or supported by this repo’s modules in `components/`:
+Before you select a format, answer these questions:
 
-- `application/warc`: website snapshots
-- `application/pdf`: fixed-layout documents and vector artwork
-- `application/x-tar`: directory archive as one input/output blob
-- `application/zip`: compressed directory archive for broad tool compatibility
-- `application/x-www-form-urlencoded`: small named UTF-8 form fields
-- `image/bmp`: simple uncompressed raster interchange
-- `image/ktx2`: canonical RGBA8 sRGB images and narrow RGBA32F working or presentation profiles
-- `image/jp2`: JPEG 2000 still images
-- `image/svg+xml`: vector graphics that work great with LLMs
-- `image/x-icon`
-- `image/gif`
-- `font/ttf`: SFNT fonts with TrueType `glyf` outlines
-- `text/markdown`
-- `text/html`
-- `text/javascript`
-- `text/x-c`
-- `text/x-swift`
-- `text/x-zig`
-- `application/vnd.sqlite3`
-- `application/xml`
+1. Which data and metadata must the boundary preserve?
+2. Which formats do both systems support?
+3. Does the operation need sequential access or random access?
+4. Is the main constraint file size, CPU time, or working memory?
 
-Examples:
+## Images
 
-- `qip router warc ...` emits `application/warc`
-- `components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm` maps `image/svg+xml` directly to canonical RGBA8 sRGB `image/ktx2`
-- `components/image/svg+xml/svg-rasterize-to-ktx2-rgba32float-bt709-linear-simd.wasm` maps `image/svg+xml` to antialiased, linear BT.709 RGBA32F `image/ktx2`
-- `components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm` maps `image/svg+xml -> image/bmp` for BMP-based pipelines
-- `components/image/jp2/jp2-to-bmp-b8g8r8a8-srgb.wasm` maps `image/jp2 -> image/bmp`
-- `components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.wasm` maps profiled `image/bmp -> image/bmp` and removes the source ICC profile
-- `components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm` maps 8-bit sRGB BGRA `image/bmp -> image/ktx2`
-- `components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-r8g8b8a8-srgb.wasm` maps BMP BGRA bytes to canonical sRGB RGBA `image/ktx2`
-- `components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm` maps canonical 8-bit sRGB KTX2 to linear RGBA32F KTX2
-- `components/image/ktx2/ktx2-rgba32float-to-ktx2-r8g8b8a8-srgb.wasm` maps linear RGBA32F KTX2 to canonical 8-bit sRGB KTX2
-- `components/image/webp/webp-to-ktx2-r8g8b8a8-srgb.wasm` decodes WebP directly to canonical 8-bit sRGB KTX2
-- `components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-webp-lossless.wasm` encodes RGBA8 or BGRA8 sRGB KTX2 directly as lossless WebP
-- `components/image/ktx2/ktx2-r8g8b8a8-srgb-to-webp-lossy.wasm` encodes canonical KTX2 directly as lossy WebP
-- `components/image/png/png-to-ktx2-r8g8b8a8-srgb.wasm` decodes PNG directly to canonical 8-bit sRGB KTX2
-- `components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-png.wasm` encodes RGBA8 or BGRA8 sRGB KTX2 directly as PNG
-- `components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-avif-lossy.wasm` encodes RGBA8 or BGRA8 sRGB KTX2 directly as lossy AVIF
-- `components/image/avif/avif-to-ktx2-r8g8b8a8-srgb.wasm` decodes a still AVIF directly to canonical 8-bit sRGB KTX2
-- `components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm` decodes JPEG directly to canonical 8-bit sRGB KTX2
-- `components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm` encodes RGBA8 or BGRA8 sRGB KTX2 directly as JPEG
-- `components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-b8g8r8a8-srgb.wasm` wraps sRGB BGRA bytes as `VK_FORMAT_B8G8R8A8_SRGB image/ktx2`
-- `components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm` applies a LUT in place to linear RGBA32F `image/ktx2`
-- `components/image/ktx2/ktx2-rgba32float-display-p3-linear-to-ktx2-rgba32float-display-p3.wasm` applies the Display P3 transfer function while retaining float HDR headroom
-- `components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-down-lanczos3.wasm` reduces canonical RGBA8 sRGB KTX2 in linear light with premultiplied alpha
-- `components/image/ktx2/ktx2-r8g8b8a8-srgb-resize-up-mitchell.wasm` enlarges canonical RGBA8 sRGB KTX2 with balanced Mitchell-Netravali bicubic reconstruction
-- `components/image/ktx2/ktx2-rgba32float-bt709-linear-resize-down-lanczos3.wasm` and `ktx2-rgba32float-bt709-linear-resize-up-mitchell.wasm` resize the linear BT.709 float32 profile
-- `components/image/ktx2/ktx2-rgba32float-display-p3-linear-resize-down-lanczos3.wasm` and `ktx2-rgba32float-display-p3-linear-resize-up-mitchell.wasm` resize the linear Display P3 float32 profile without clipping HDR RGB values
-- `components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm` maps linear RGBA32F `image/ktx2 -> image/bmp`
-- `components/image/ktx2/ktx2-b8g8r8a8-srgb-to-bmp-b8g8r8a8-srgb.wasm` unwraps sRGB BGRA KTX2 pixels as `image/bmp`
-- `components/font/ttf/ttf-to-svg-paths-csv.wasm` maps `font/ttf -> text/csv`
-- `components/font/ttf/ttf-to-svg-path-defs.wasm` maps `font/ttf -> image/svg+xml`
-- `components/application/warc/warc-to-static-tar-no-trailing-slash.wasm` maps `application/warc -> application/x-tar`
-- `components/application/x-tar/tar-to-zip.wasm` maps `application/x-tar -> application/zip`
-- `components/application/zip/zip-to-tar.wasm` maps `application/zip -> application/x-tar`
-- `components/text/text-to-og-image-svg-inter.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
-- `components/image/svg+xml/svg-to-pdf-inter-font.wasm` maps a strict `image/svg+xml` vector subset to PDF/A-2b `application/pdf` with embedded Inter text
-- `components/text/text-to-og-image-svg-dejavu-sans-mono.wasm` maps `application/x-www-form-urlencoded -> image/svg+xml`
-- `components/application/zip/zip-list-entries-csv.wasm` maps `application/zip -> text/csv`
-- `components/application/zip/zip-list-files-csv.wasm` maps `application/zip -> text/csv`
-- `components/application/zip/zip-extract-file.wasm` maps one regular ZIP entry to `application/octet-stream`; select it with `?file_index=N`
+Use an uncompressed image inside a processing pipeline when components need
+direct access to pixels. Use a compressed image at a storage, download, or
+application boundary.
 
-Tradeoffs:
+| Format | Use it for | Tradeoff |
+| --- | --- | --- |
+| QIP RGBA8 `image/ktx2` | The usual 8-bit sRGB image between Content components. | Pixels are directly addressable, but the file is not compressed. |
+| QIP RGBA32F `image/ktx2` | Image operations that must preserve linear-light precision. | The profile uses 16 bytes per pixel. |
+| `image/bmp` | A simple uncompressed raster boundary. | Parsing is simple, but files are large and row order can vary. |
+| `image/svg+xml` | Editable or resolution-independent paths, diagrams, and text. | A raster consumer must render the SVG before processing pixels. |
+| PNG | Lossless storage and broad interoperability. | Decoding needs more code and CPU time than BMP or QIP KTX2. |
+| JPEG | Small photographs for systems that need lossy compression and broad support. | JPEG does not preserve alpha and changes pixel values. |
+| WebP or AVIF | Compressed application and web boundaries. | Confirm that all target tools can decode the selected format. |
+| JPEG 2000, GIF, or ICO | Interoperation with a system that requires that format. | Convert to a QIP working format after input enters the pipeline. |
 
-- BMP is larger than PNG/JPEG on disk, but excellent as an internal interchange format because it is straightforward to parse and transform.
-- The repository's narrow KTX2 profiles store one uncompressed
-  `VK_FORMAT_R8G8B8A8_SRGB` or `VK_FORMAT_R32G32B32A32_SFLOAT` image. The DFD
-  distinguishes linear BT.709, linear Display P3, and transfer-encoded Display
-  P3 float data. Content
-  components can address either payload directly. The float profile costs 16
-  bytes per pixel. Neither profile accepts KTX2's compressed, mipmapped, array,
-  or cubemap variants. See the
-  [profile and components](https://github.com/royalicing/qip/blob/main/components/image/ktx2/README.md).
-- Tar is straightforward to process sequentially and preserves Unix archive
-  semantics. ZIP is more widely convenient at system boundaries; the
-  `tar-to-zip` component uses DEFLATE per entry when it saves space and stores
-  already-compressed data unchanged. `zip-to-tar` accepts bounded classic ZIP
-  archives, decodes stored or DEFLATE bodies directly into TAR output, and
-  uses PAX records for names or metadata that do not fit ustar fields. It
-  rejects ZIP64, encrypted and split archives, special file types, and unsafe
-  extraction paths.
+QIP can convert PNG, JPEG, WebP, AVIF, JPEG 2000, and SVG to a working raster
+format. QIP can write PNG, JPEG, WebP, AVIF, and ICO. QIP can also process GIF.
 
-  The ZIP listing components assign indices from central-directory order.
-  `entry_index` counts every explicit archive entry, while `file_index` counts
-  only regular files. This keeps `zip-extract-file.wasm -u file_index=0`
-  pointed at the first file even when directory or symlink entries precede it.
+### QIP KTX2 profiles
 
-## Image container names and pixel format names
+QIP supports two payload layouts in a small subset of KTX2:
 
-An image component name describes a container, a pixel layout, and sometimes
-a colour interpretation. `bmp-b8g8r8a8-srgb` describes a BMP file whose pixel
-array has four 8-bit channels and whose colour channels are treated as sRGB.
-By contrast, `B8G8R8A8_SRGB` without a container name is only a Vulkan pixel
-format. It does not describe a complete file by itself.
+| Profile | Payload | Use |
+| --- | --- | --- |
+| RGBA8 sRGB | `VK_FORMAT_R8G8B8A8_SRGB`, 4 bytes per pixel | General 8-bit Content images. |
+| RGBA32F | `VK_FORMAT_R32G32B32A32_SFLOAT`, 16 bytes per pixel | Linear BT.709, linear Display P3, or transfer-encoded Display P3 data. |
 
-```text
-image/bmp: QIP BMP B8G8R8A8 sRGB
+Each profile contains one uncompressed image. The profiles do not accept
+compressed textures, mipmaps, arrays, or cubemaps. Keep linear float data
+between operations that need it. Convert the final image when transfer size is
+the main constraint. See the
+[KTX2 component documentation](https://github.com/royalicing/qip/blob/main/components/image/ktx2/README.md)
+for the complete profiles.
 
-+----------------+------------------+-------------------------------+
-| BMP file header| DIB header       | pixel array                   |
-| "BM", offsets  | size, orientation| [B][G][R][A] [B][G][R][A]... |
-+----------------+------------------+-------------------------------+
-                                      8   8   8   8 bits = 32 bits
+### Image container names and pixel format names
 
-The signed BMP height controls whether rows are stored bottom-up or top-down.
-The BMP headers and that row-order rule are part of `bmp-b8g8r8a8-srgb`.
-```
+An image component name can identify a file container, a pixel layout, and a
+color interpretation. For example, `bmp-b8g8r8a8-srgb` identifies a complete
+BMP file. The pixels have four 8-bit channels in BGRA order. QIP interprets the
+color channels as sRGB.
 
-```text
-image/ktx2: QIP canonical KTX2 RGBA8 sRGB profile
-
-+----------------+-------------+------------------+-----------------------+
-| KTX2 header    | level index | DFD + metadata   | level pixel payload   |
-| vkFormat = 43  | offset, size| colour + `rd`    | [R][G][B][A] ...      |
-+----------------+-------------+------------------+-----------------------+
-       |                                                     |
-       +-- VK_FORMAT_R8G8B8A8_SRGB names these payload bytes-+
-
-The KTX2 profile fixes rows to top-down, left-to-right (`KTXorientation=rd`).
-```
-
-The BMP adapters change the container, reverse bottom-up rows when needed, and
-swap the red and blue byte positions:
+`B8G8R8A8_SRGB` identifies only a Vulkan pixel format. It does not identify a
+complete file.
 
 ```text
 bmp-b8g8r8a8-srgb             ktx2-r8g8b8a8-srgb
-BMP container                KTX2 container
-BGRA, 8 bits per channel     VK_FORMAT_R8G8B8A8_SRGB
-sRGB colour                  sRGB colour
-top-down or bottom-up    --> canonical top-down (`rd`), RGBA
+BMP container                 KTX2 container
+BGRA, 8 bits per channel      VK_FORMAT_R8G8B8A8_SRGB
+top-down or bottom-up    -->  top-down (`rd`), RGBA
 ```
 
-The floating-point adapters perform a colour and storage conversion instead:
+The adapter changes the container and channel order. The adapter also reverses
+bottom-up BMP rows. A float adapter converts 8-bit sRGB values to linear
+32-bit float values.
 
-```text
-BMP [B,G,R,A] u8 sRGB  -->  KTX2 [R,G,B,A] f32 linear
-     4 bytes per pixel          16 bytes per pixel
-```
+The container prefix is part of the component contract.
+`ktx2-r8g8b8a8-srgb` is a complete KTX2 file. `b8g8r8a8-srgb` identifies only
+the pixels. It does not specify headers, dimensions, or row orientation.
 
-Use these naming rules for image components:
+The `-srgb` suffix states QIP's color interpretation. A standard BMP header
+does not always identify sRGB. QIP treats an unprofiled BMP for this profile as
+sRGB. Use `bmp-b8g8r8a8-icc-to-srgb` first when a BMP has a different
+International Color Consortium (ICC) profile.
 
-| Name fragment | It identifies | It does not identify |
+### Raster limits
+
+Raster converters accept no more than 25,000,000 decoded pixels. Neither
+dimension can be more than 8192 pixels. Compressed PNG, JPEG, JPEG 2000, and
+WebP input also has a 64 MiB byte limit. Both limits apply. A small compressed
+file is still invalid if its decoded image exceeds the pixel limit.
+
+The ICO component writes one BMP-backed image. The image can be no larger than
+256 by 256 pixels. See [Hard Limits](/docs/hard-limits) for host memory and
+execution controls.
+
+## Text and markup
+
+QIP uses UTF-8 for all text pipelines.
+
+| Format | Use it for | Tradeoff |
 | --- | --- | --- |
-| `bmp-b8g8r8a8-srgb` | A complete BMP file, four 8-bit channels, and QIP's sRGB interpretation | A headerless pixel buffer |
-| `bmp-b8g8r8a8-icc-to-srgb` | A BMP with an explicit source ICC profile that the component converts to sRGB | An already-sRGB input profile |
-| `ktx2-r8g8b8a8-srgb` | A complete KTX2 file with QIP's canonical 8-bit sRGB Vulkan payload format | A BMP or a headerless Canvas `ImageData` buffer |
-| `ktx2-b8g8r8a8-srgb` | A complete KTX2 file with the named alternate Vulkan payload format | QIP's canonical 8-bit KTX2 profile |
-| `ktx2-rgba32float` | A complete KTX2 file with QIP's linear RGBA `f32` working profile | Tile-contract RGBA32Float memory |
-| `ktx2-rgba32float-display-p3-linear` | A complete KTX2 file with linear Display P3 RGBA `f32`, including values outside 0 through 1 | A guarantee that the browser can present HDR |
-| `ktx2-rgba32float-display-p3` | A complete KTX2 file with transfer-encoded Display P3 RGBA `f32` | Binary16 storage or an 8-bit Display P3 image |
-| `b8g8r8a8-srgb` | A pixel format: four 8-bit channels and sRGB RGB values | Container headers, dimensions, row orientation, or mip levels |
+| Plain UTF-8 text | Text that has no document structure. | The format cannot preserve structure that is not in the text itself. |
+| `text/markdown` | Documents that people must read and edit. | Markdown has fewer document semantics than HTML. |
+| `text/html` | Browser documents and structured document fragments. | A Document Object Model parser can allocate a large object tree. |
+| `text/csv` | Flat tables with a stable set of fields. | CSV does not represent nested data or independent field types. |
+| `text/css` and `text/javascript` | Web source transformations. | Treat source text as code when it crosses a trust boundary. |
+| `text/uri-list` | A sequence of resource identifiers. | The format carries a list, not resource metadata. |
+| `text/vnd.mermaid` | Diagrams that must remain text. | A presentation system must render the diagram. |
 
-The `-srgb` suffix records QIP's supported colour interpretation. It does not
-claim that ordinary BMP headers identify sRGB reliably. Components that accept
-this profile treat unprofiled colour channels as sRGB. A BMP with another
-embedded profile must pass through `bmp-b8g8r8a8-icc-to-srgb` first.
+The repository also uses registered `text/*` types for C, Swift, and Zig source
+text. A streaming parser can process many text formats with bounded working
+memory. A Document Object Model (DOM) parser allocates a tree instead.
 
-The `bmp-` prefix says that the component exchanges a complete BMP file, so
-`bmp-b8g8r8a8-srgb` does not imply a raw pixel buffer. `B8G8R8A8` spells out
-the channel widths explicitly: four 8-bit channels and 32 bits per pixel.
+## Structured data
 
-## Raster conversion limits
+| Format | Use it for | Tradeoff |
+| --- | --- | --- |
+| `application/json` | Small structured messages and broad application interoperation. | Many JSON APIs allocate a complete value tree. |
+| `application/xml` | Existing XML protocols, namespaces, or mixed text and elements. | XML has more syntax and processing rules than JSON. |
+| `text/csv` | Flat records that consumers can process in sequence. | CSV loses nested structure and data types unless the application defines a schema. |
+| `application/vnd.sqlite3` | Tables, indexes, transactions, and selective queries. | SQLite needs page access and a larger runtime than CSV. |
 
-Raster format converters use one decoded-image ceiling: 25,000,000 pixels,
-with neither dimension above 8192 pixels. A 32-bit BMP at that ceiling needs
-100,000,054 bytes including its header. BMP-consuming converters reserve an
-additional 64 KiB for larger DIB headers and metadata.
+JSON and XML permit streaming parsers. Some APIs still build a complete tree
+and increase peak memory. Check the parser API when working memory is limited.
 
-Compressed PNG, JPEG, JPEG 2000, and WebP inputs have a separate 64 MiB byte
-cap. That cap does not replace the pixel limit: a small compressed file that
-expands beyond 25 MP is rejected before its pixel buffers are written.
+SQLite can query a data set without loading the complete data set into memory.
+Use SQLite when consumers need random access or relational operations. Do not
+convert indexed or relational data to CSV when consumers still need those
+features.
 
-The canonical KTX2 resizing components apply the same dimension and pixel
-ceilings to both input and output. They resample RGBA8 sRGB in linear light and
-with premultiplied alpha, then return straight-alpha RGBA8 sRGB. Reduction and
-enlargement are separate components so a pipeline cannot silently use an
-enlargement kernel for thumbnail generation or a reduction kernel for upscaling.
-The float32 variants require the exact linear BT.709 or linear Display P3
-profile named in the component filename and preserve that profile in output.
+## Archives, forms, and web snapshots
 
-These limits cost memory even for small conversions because the modules use
-fixed Wasm memories. PNG decoding uses fixed scanline batches and reserves
-about 162 MiB; its `simd128` fork uses the same memory with vectorized row
-operations. BMP-to-PNG reserves about 332 MiB. It uses dynamic Huffman coding
-while its filtered input fits an 8 MiB token buffer, then switches to fixed
-Huffman coding for larger images. Both paths are lossless; the large-image path
-may produce a larger PNG in exchange for bounded scratch memory.
+| Format | Use it for | Tradeoff |
+| --- | --- | --- |
+| `application/x-tar` | A file collection that a component reads or writes in order. | TAR does not include compression. |
+| `application/zip` | A compressed archive for users and desktop tools. | Some ZIP operations must read the central directory at the end of the file. |
+| `application/warc` | A website snapshot with web responses and metadata. | A consumer needs WARC support or a conversion step. |
+| `application/x-www-form-urlencoded` | Small named UTF-8 form fields. | The format is not suitable for file bodies. |
+| `multipart/form-data` | Forms with files or separate metadata for each part. | Boundary parsing is more complex than URL-encoded form parsing. |
 
-`image/x-icon` remains a format-specific exception because this repository's
-ICO component writes one BMP-backed image and the directory entry represents
-at most 256×256 directly.
+QIP uses TAR as the sequential archive inside pipelines and ZIP at external
+boundaries. The ZIP-to-TAR component accepts bounded classic ZIP archives. It
+supports stored and DEFLATE entries. It rejects ZIP64, encryption, split
+archives, special file types, and unsafe extraction paths.
 
-## Encodings
+Use WARC when a website snapshot must preserve routed output and response
+metadata. For example, `qip router warc ...` writes `application/warc`. A QIP
+component can convert WARC to TAR for static hosting.
 
-Formats and encodings are at different layers:
+## Documents, fonts, and executable modules
 
-- Formats are container/file semantics (`image/svg+xml`, `application/warc`, `image/bmp`).
-- Encodings are byte/value representations used within processing stages.
+| Format | Use it for | Tradeoff |
+| --- | --- | --- |
+| `application/pdf` | Fixed page layout and vector artwork. | PDF is harder to edit than the source document or SVG. |
+| `font/ttf` | SFNT fonts with TrueType `glyf` outlines. | Consumers need a font parser or an outline conversion step. |
+| `application/wasm` | A compiled QIP component. | Wasm is executable input, not a general data format. |
 
-An exact format is also a component precondition or guarantee. A component
-which accepts `image/png` may assume a valid PNG within its documented profile;
-it does not have to validate the complete file again before expensive work.
-Passing malformed bytes to that component breaks the caller contract and may
-trap.
+QIP can extract text and images from PDF. QIP can also convert a strict SVG
+subset to PDF/A-2b. Font components can convert TrueType outlines to SVG paths
+or CSV data.
 
-A file extension, HTTP `Content-Type`, or other untrusted label does not prove
-that the bytes are valid. Validate at that boundary when later components need
-to rely on the format. A pass-through PNG validator can accept arbitrary bytes,
-export `failure_modes_per_input_offset`, reject malformed input, and expose the accepted bytes as
-`image/png` without changing them:
+Apply the validation and execution policies in
+[Hard Limits](/docs/hard-limits) before you run an untrusted Wasm module.
+
+## Formats and encodings are different layers
+
+A format defines file or container semantics. Examples include
+`image/svg+xml`, `application/warc`, and `image/bmp`. An encoding defines the
+representation of bytes or values in a processing stage.
+
+QIP supports these processing encodings:
+
+- UTF-8 for Content text through `input_utf8_cap` and `output_utf8_cap`.
+- `RGBA32Float` for image filter tiles through `tile_rgba32float_64x64`.
+- RGBA8 sRGB for interactive frame output. See the
+  [Interactive Component Contract](/docs/interactive-component).
+
+Valid UTF-8 is also valid raw byte input. Therefore, UTF-8 Content output can
+feed a raw-byte Content input. Arbitrary raw bytes cannot feed a UTF-8 input
+until the host validates the bytes.
+
+RGBA32Float Tile data is not a subtype of Content bytes. The host uses the
+image bridge to cross this boundary. The host decodes Content image bytes to
+tiles before a contiguous Tile group. The host encodes the tiles as Content
+image bytes after the Tile group.
+
+## Validate data at an untrusted boundary
+
+A content type is a component precondition or guarantee. An `image/png`
+component can rely on its documented PNG profile. It does not have to repeat
+complete validation before processing starts.
+
+A file extension or an HTTP `Content-Type` value does not prove that the bytes
+are valid. Validate untrusted data before another component relies on the
+format:
 
 ```text
-untrusted bytes -> validate PNG -> valid image/png -> expensive PNG transform
+untrusted bytes -> validate PNG -> valid image/png -> transform PNG
 ```
 
-This avoids making every downstream PNG component repeat validation. A combined
-validate-and-transform component is also valid; it accepts the wider byte
-domain and reports malformed input through its `render` result. Recipes must not infer
-validation only from a source's claimed MIME type.
+A pass-through validator can reject malformed data and return accepted bytes
+as `image/png`. A recipe must not infer validation from a claimed content type.
 
-`qip` currently supports these encodings:
+## When not to use these formats
 
-- `UTF-8` for text pipelines (`input_utf8_cap` / `output_utf8_cap`)
-- `RGBA32Float` for image filter tiles in `qip image` (`tile_rgba32float_64x64`)
+Use an application-specific format when the formats on this page cannot
+preserve the required semantics. Keep a simple format between QIP components,
+and add an adapter at system ingress or egress.
 
-UTF-8 is a valid subset of raw bytes, so a UTF-8 Content output may feed a
-raw-bytes Content input. The reverse is rejected because arbitrary bytes are
-not guaranteed to be valid UTF-8.
-
-Hosts validate arbitrary bytes when they enter the UTF-8 domain. Components
-with `input_utf8_cap` may then process the input as valid UTF-8 without checking
-the encoding again. A successful `output_utf8_cap` result preserves the
-guarantee for later UTF-8 stages. Debug and Compliance hosts may rescan output
-to detect a broken component, but normal pipeline execution does not require a
-scan between known-valid components.
-
-RGBA32Float tiles are not a subtype of Content bytes even though their storage
-lives in Wasm linear memory. A mixed run pipeline crosses that boundary only
-through the host's explicit image bridge: `image/bmp` raw bytes are decoded to
-RGBA32Float tiles for a contiguous Tile group, then encoded back to
-`image/bmp` raw bytes for the next Content step.
-- `RGBA8 sRGB` for interactive frame output ([Interactive Component Contract](/docs/interactive-component))
-
-Why these defaults:
-
-- UTF-8 is the default, broadly interoperable text encoding. It is much easier to process than alternatives like UTF-16.
-- RGBA32Float preserves precision during chained image transforms and maps cleanly to GPU/shader-style workflows.
-- RGBA8 sRGB is the practical interop default for event-driven UI frames, especially for canvas-style rendering paths.
-
-## Quick Decision Guide
-
-If you need:
-
-- One file that represents many files: use `application/x-tar`
-- A compressed archive for download or desktop tools: use `application/zip`
-- A snapshot of routed web output: use `application/warc`
-- Vector graphics interchange: use `image/svg+xml`
-- Simple raster interchange between components: use `image/bmp`
-- General 8-bit sRGB Content images: use the repository's narrow `image/ktx2` `VK_FORMAT_R8G8B8A8_SRGB` profile
-- Chained Content image transforms that need linear floating-point pixels: use the repository's narrow `image/ktx2` RGBA32F profile
-- Composable wide-gamut or HDR pixels: use linear Display P3 RGBA32F, then apply the Display P3 transfer function at the presentation boundary
-- General text transforms: use `UTF-8` components in `components/text/`
-- Image filter pipelines: use `RGBA32Float` via `qip image`
-
-## When not to use these defaults
-
-- Use richer app-specific formats only when their extra semantics are required.
-- Keep component boundaries on simple formats, then adapt at ingress/egress.
-- Use PNG/JPEG/WebP at system edges where compression is the priority.
+Do not use an uncompressed working format for downloads when transfer size is
+the main constraint. Do not use QIP's narrow KTX2 profiles when another system
+needs general KTX2 features such as compressed textures or mipmaps. Do not
+replace a normal application database or object model only to use a QIP
+pipeline.
