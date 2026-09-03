@@ -4,10 +4,14 @@
 `VK_FORMAT_R8G8B8A8_SRGB` KTX2 profile. It writes one tightly packed,
 top-down (`KTXorientation=rd`) RGBA image without a BMP intermediate.
 
-The component supports sequential Huffman 8-bit JPEG (SOF0 and SOF1),
-grayscale and three-component YCbCr images, sampling factors 1 through 2, and
-restart markers. It rejects progressive, arithmetic-coded, 12-bit, and CMYK
-streams. JPEG has no alpha channel, so every output alpha byte is 255.
+The component supports sequential and progressive Huffman 8-bit JPEG (SOF0,
+SOF1, and SOF2), grayscale and three-component colour images, and restart
+markers. It rejects arithmetic-coded, 12-bit, and CMYK streams. JPEG has no
+alpha channel, so every output alpha byte is 255.
+
+Progressive JPEG needs image-wide DCT coefficient storage before it can emit
+the first pixel. The component retains QIP's 25 MP output limit but therefore
+declares 512 MiB of fixed Wasm memory.
 
 ```sh
 ./qip run \

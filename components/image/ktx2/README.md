@@ -207,8 +207,9 @@ image limits.
 non-interlaced PNGs directly into the canonical top-down RGBA payload. It
 shares the strict parser and bounded inflater with the PNG-to-BMP component.
 
-`../jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm` decodes JPEG directly into the
-canonical payload. `ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm`
+`../jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm` decodes sequential and progressive
+Huffman JPEG directly into the canonical payload.
+`ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm`
 accepts either strict 8-bit sRGB component order, composites straight alpha
 against its configurable background, and encodes JPEG without a BMP boundary.
 

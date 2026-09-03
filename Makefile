@@ -281,9 +281,6 @@ components/image/ktx2/ktx2-r8g8b8a8-srgb-to-ktx2-rgba32float.wasm components/ima
 components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.zig components/image/png/png-to-bmp-b8g8r8a8-srgb.zig
 	$(ZIG_ENV) zig build-exe $< -target wasm32-freestanding -O ReleaseFast -fstrip -fno-entry -rdynamic --max-memory=$(ZIG_WASM_MAX_MEMORY) -mcpu=generic+simd128 -femit-bin=$@
 
-components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
-	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
-
 components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm: components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
@@ -472,7 +469,12 @@ components/image/png/png-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 201326
 components/image/png/png-to-bmp-b8g8r8a8-srgb-simd.wasm: ZIG_WASM_MAX_MEMORY = 201326592
 components/image/png/png-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 201326592
 components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
-components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 268435456
+# Progressive JPEG retains image-wide DCT coefficients. The fixed 336 MiB
+# MozJPEG arena, input, output, stack, and code fit in this 512 MiB module.
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 536870912
+# Experimental self-contained Zig progressive decoder. It retains quantized
+# coefficients and renders two MCU rows at a time, avoiding full sample planes.
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb-zig-progressive.wasm: ZIG_WASM_MAX_MEMORY = 402653184
 components/image/bmp/bmp-b8g8r8a8-srgb-to-ktx2-rgba32float.wasm: ZIG_WASM_MAX_MEMORY = 536870912
 components/image/ktx2/ktx2-rgba32float-to-bmp-b8g8r8a8-srgb.wasm: ZIG_WASM_MAX_MEMORY = 536870912
 components/image/ktx2/ktx2-rgba32float-look-warm-fade.wasm: ZIG_WASM_MAX_MEMORY = 1073741824
@@ -588,6 +590,7 @@ MOZJPEG_BUILD := $(EMCC_CACHE)/mozjpeg-4.1.1-qip
 MOZJPEG_STAMP := $(EMCC_CACHE)/qip-mozjpeg-4.1.1.stamp
 MOZJPEG_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-srgb-to-jpeg-lossy.raw.wasm
 MOZJPEG_KTX_CLANG_RAW_WASM := $(EMCC_CACHE)/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.raw.wasm
+MOZJPEG_DEC_KTX_CLANG_RAW_WASM := $(EMCC_CACHE)/jpeg-to-ktx2-r8g8b8a8-srgb.raw.wasm
 LCMS_CLANG_RAW_WASM := $(EMCC_CACHE)/bmp-b8g8r8a8-icc-to-srgb.raw.wasm
 LIBWEBP_CLANG_EXPORTS := render input_ptr input_bytes_cap output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_method uniform_set_sharp_yuv uniform_set_low_memory arena_peak_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_null_count arena_free_matched_count arena_free_unmatched_count arena_freed_bytes arena_allocation_size arena_allocation_event arena_allocation_free_event
 LIBWEBP_CLANG_EXPORT_FLAGS := $(foreach name,$(LIBWEBP_CLANG_EXPORTS),-Xlinker --export=$(name))
@@ -613,6 +616,8 @@ AVIF_DEC_CLANG_EXPORTS := render input_ptr input_bytes_cap output_bytes_cap inpu
 AVIF_DEC_CLANG_EXPORT_FLAGS := $(foreach name,$(AVIF_DEC_CLANG_EXPORTS),-Xlinker --export=$(name))
 MOZJPEG_CLANG_EXPORTS := render input_ptr input_bytes_cap output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size uniform_set_quality uniform_set_subsample uniform_set_background_color_rgb arena_peak_bytes arena_live_bytes arena_allocation_count arena_largest_allocation arena_failed_allocation arena_free_count arena_free_unmatched_count
 MOZJPEG_CLANG_EXPORT_FLAGS := $(foreach name,$(MOZJPEG_CLANG_EXPORTS),-Xlinker --export=$(name))
+MOZJPEG_DEC_KTX_CLANG_EXPORTS := render input_ptr input_bytes_cap output_bytes_cap input_content_type_ptr input_content_type_size output_content_type_ptr output_content_type_size
+MOZJPEG_DEC_KTX_CLANG_EXPORT_FLAGS := $(foreach name,$(MOZJPEG_DEC_KTX_CLANG_EXPORTS),-Xlinker --export=$(name))
 MOZJPEG_CMAKE_C_FLAGS := -O3 -DNDEBUG -DQIP_FREESTANDING=1 -flto -ffunction-sections -fdata-sections -mbulk-memory -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
 AVIF_CLANG_WRAP_NAMES := fopen fclose fread fwrite fseek feof fputc fscanf fiprintf __small_fprintf
 AVIF_CLANG_WRAP_FLAGS := $(foreach name,$(AVIF_CLANG_WRAP_NAMES),-Xlinker --wrap=$(name))
@@ -730,6 +735,15 @@ $(MOZJPEG_KTX_CLANG_RAW_WASM): components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-s
 
 components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm: $(MOZJPEG_KTX_CLANG_RAW_WASM)
 	$(EMSDK_WASM_OPT) -O3 --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+$(MOZJPEG_DEC_KTX_CLANG_RAW_WASM): components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.c components/image/lib/ktx2-rgba8-srgb.h $(MOZJPEG_STAMP) $(EMSDK_LTO_STAMP)
+	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(MOZJPEG_BUILD) -I$(MOZJPEG_ROOT) -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -mbulk-memory -DNDEBUG -nostdlib -Wl,--gc-sections $< $(MOZJPEG_BUILD)/libjpeg.a -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(ZIG_WASM_MAX_MEMORY) -Wl,--max-memory=$(ZIG_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(MOZJPEG_DEC_KTX_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@
+
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm: $(MOZJPEG_DEC_KTX_CLANG_RAW_WASM)
+	$(EMSDK_WASM_OPT) -O3 --enable-bulk-memory --strip-debug --strip-producers $< -o $@
+
+components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb-zig-progressive.wasm: components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.zig components/image/lib/ktx2-rgba8-srgb.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep ktx2_rgba8_srgb -Mroot=$< -Mktx2_rgba8_srgb=components/image/lib/ktx2-rgba8-srgb.zig -femit-bin=$@
 
 $(LCMS_CLANG_RAW_WASM): components/image/bmp/bmp-b8g8r8a8-icc-to-srgb.c $(LCMS_C_SOURCES) $(EMSDK_LTO_STAMP)
 	$(EMSDK_CLANG) --target=wasm32-unknown-emscripten --sysroot=$(EMSDK_SYSROOT) -I$(LCMS_ROOT)/include -I$(LCMS_ROOT)/src -isystem $(EMSDK_SYSROOT)/include/compat -O3 -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free $(LCMS_CLANG_FEATURE_FLAGS) -DNDEBUG -nostdlib -Wl,--gc-sections $(LCMS_CLANG_WRAP_FLAGS) $(filter %.c,$^) -L$(EMSDK_LTO_LIBDIR) -Wl,--no-entry -Wl,--initial-memory=$(LCMS_WASM_MAX_MEMORY) -Wl,--max-memory=$(LCMS_WASM_MAX_MEMORY) $(WASM_STACK_FLAG) $(LCMS_CLANG_EXPORT_FLAGS) -lc -lcompiler_rt -lc_rt_wasm -lstandalonewasm -o $@

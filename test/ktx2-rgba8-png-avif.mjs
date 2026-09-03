@@ -25,13 +25,16 @@ const avifToKtx = path("../components/image/avif/avif-to-ktx2-r8g8b8a8-srgb.wasm
 const bmpToJpeg = path("../components/image/bmp/bmp-b8g8r8a8-srgb-to-jpeg-lossy.wasm");
 const jpegToBmp = path("../components/image/jpeg/jpeg-to-bmp-b8g8r8a8-srgb.wasm");
 const jpegToKtx = path("../components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb.wasm");
+const zigJpegToKtx = path("../components/image/jpeg/jpeg-to-ktx2-r8g8b8a8-srgb-zig-progressive.wasm");
+const progressiveJpeg = path("../fixtures/j-g-d-uP-haUp0YQw-unsplash.jpg");
 const ktxToJpeg = path("../components/image/ktx2/ktx2-r8g8b8a8-or-b8g8r8a8-srgb-to-jpeg-lossy.wasm");
 const svgToBmp = path("../components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm");
 const svgToKtx = path("../components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm");
 
 const prerequisites = [qip, bmpToPng, pngToBmp, pngToKtx, bmpToRgbaKtx,
   bmpToBgraKtx, rgbaKtxToBmp, bgraKtxToBmp, ktxToPng, bmpToAvif, ktxToAvif,
-  avifToKtx, bmpToJpeg, jpegToBmp, jpegToKtx, ktxToJpeg, svgToBmp, svgToKtx];
+  avifToKtx, bmpToJpeg, jpegToBmp, jpegToKtx, zigJpegToKtx, ktxToJpeg,
+  svgToBmp, svgToKtx];
 
 async function ensurePrerequisites(t) {
   try {
@@ -67,6 +70,62 @@ function buildBMP(width, height) {
 async function run(modules, input, output) {
   await execFileP(qip, ["run", ...modules, "-i", input, "-o", output]);
   return readFile(output);
+}
+
+function jpegFrameMarker(bytes) {
+  let offset = 2;
+  while (offset + 3 < bytes.length && bytes[offset] === 0xff) {
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset++];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (marker >= 0xd0 && marker <= 0xd7) continue;
+    const size = bytes.readUInt16BE(offset);
+    if (size < 2 || offset + size > bytes.length) break;
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return marker;
+    }
+    offset += size;
+  }
+  return undefined;
+}
+
+function markJpegAsRgb(bytes) {
+  const adobe = Buffer.from([
+    0xff, 0xee, 0x00, 0x0e,
+    0x41, 0x64, 0x6f, 0x62, 0x65, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  let bodyOffset = 2;
+  if (bytes[2] === 0xff && bytes[3] === 0xe0) {
+    const size = bytes.readUInt16BE(4);
+    const payload = bytes.subarray(6, 4 + size);
+    if (payload.subarray(0, 5).toString("binary") === "JFIF\0") {
+      bodyOffset = 4 + size;
+    }
+  }
+  const rgb = Buffer.concat([bytes.subarray(0, 2), adobe, bytes.subarray(bodyOffset)]);
+  const ids = [0x52, 0x47, 0x42]; // R, G, B
+  let offset = 2;
+  while (offset + 3 < rgb.length) {
+    assert.equal(rgb[offset++], 0xff);
+    while (rgb[offset] === 0xff) offset += 1;
+    const marker = rgb[offset++];
+    const size = rgb.readUInt16BE(offset);
+    const payload = offset + 2;
+    if ([0xc0, 0xc1, 0xc2].includes(marker)) {
+      assert.equal(rgb[payload + 5], 3);
+      for (let component = 0; component < 3; component += 1) {
+        rgb[payload + 6 + component * 3] = ids[component];
+      }
+    } else if (marker === 0xda) {
+      assert.equal(rgb[payload], 3);
+      for (let component = 0; component < 3; component += 1) {
+        rgb[payload + 1 + component * 2] = ids[component];
+      }
+      return rgb;
+    }
+    offset += size;
+  }
+  assert.fail("JPEG must contain a start-of-scan marker");
 }
 
 test("direct PNG decoder matches PNG through BMP to canonical KTX2", async (t) => {
@@ -165,6 +224,45 @@ test("direct JPEG routes match their BMP equivalents", async (t) => {
   const directEncode = await run([ktxToJpeg], rgbaPath, join(dir, "direct.jpg"));
   const throughBmpEncode = await run([bmpToJpeg], bmpPath, join(dir, "through-bmp.jpg"));
   assert.deepEqual(directEncode, throughBmpEncode);
+});
+
+test("direct JPEG decoder accepts progressive Huffman JPEG", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-progressive-jpeg-ktx2-"));
+  const jpeg = await readFile(progressiveJpeg);
+  assert.equal(jpegFrameMarker(jpeg), 0xc2, "fixture must be progressive JPEG");
+
+  const ktx = await run([jpegToKtx], progressiveJpeg, join(dir, "decoded.ktx2"));
+  assert.equal(ktx.readUInt32LE(12), 43);
+  assert.equal(ktx.readUInt32LE(20), 4032);
+  assert.equal(ktx.readUInt32LE(24), 3024);
+  assert.equal(ktx.length, 224 + 4032 * 3024 * 4);
+  assert.equal(ktx[224 + 3], 255);
+  assert.equal(ktx[ktx.length - 1], 255);
+});
+
+test("self-contained Zig JPEG decoder handles encoded RGB components", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-rgb-jpeg-zig-"));
+  const bmpPath = join(dir, "input.bmp");
+  const jpegPath = join(dir, "rgb.jpg");
+  await writeFile(bmpPath, buildBMP(37, 23));
+  const encoded = await run([bmpToJpeg], bmpPath, join(dir, "encoded.jpg"));
+  await writeFile(jpegPath, markJpegAsRgb(encoded));
+
+  const ycbcr = await run([jpegToKtx], join(dir, "encoded.jpg"), join(dir, "ycbcr.ktx2"));
+  const reference = await run([jpegToKtx], jpegPath, join(dir, "mozjpeg.ktx2"));
+  const decoded = await run([zigJpegToKtx], jpegPath, join(dir, "zig.ktx2"));
+  assert.notDeepEqual(reference, ycbcr, "fixture must exercise RGB rather than YCbCr conversion");
+  assert.deepEqual(decoded, reference);
+});
+
+test("self-contained Zig JPEG decoder matches MozJPEG on progressive input", async (t) => {
+  await ensurePrerequisites(t);
+  const dir = await mkdtemp(join(tmpdir(), "qip-progressive-jpeg-zig-"));
+  const reference = await run([jpegToKtx], progressiveJpeg, join(dir, "mozjpeg.ktx2"));
+  const decoded = await run([zigJpegToKtx], progressiveJpeg, join(dir, "zig.ktx2"));
+  assert.deepEqual(decoded, reference);
 });
 
 test("SVG rasterizer writes the same canonical pixels without BMP", async (t) => {

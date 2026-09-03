@@ -1,12 +1,12 @@
-//! Converts baseline JPEG (SOF0/SOF1 sequential Huffman, 8-bit, grayscale or
-//! YCbCr, sampling factors 1-2, restart markers) to QIP's canonical KTX2
-//! RGBA8 sRGB profile.
+//! Experimental self-contained JPEG decoder for sequential and progressive
+//! Huffman JPEG (SOF0/SOF1/SOF2, 8-bit, grayscale, YCbCr, or RGB). It retains the
+//! quantized coefficients required by progressive scans, then materializes two
+//! MCU rows at a time directly into the KTX2 payload.
 //!
 //! Dequantization, the integer IDCT, chroma upsampling, and the fixed-point
 //! YCbCr conversion follow libjpeg's "islow" / "fancy upsampling" arithmetic
 //! exactly, so output matches djpeg's default (smoothed) decode bit-for-bit.
-//! Progressive, arithmetic-coded, 12-bit, 16-bit-quantizer, and CMYK streams
-//! are rejected.
+//! Arithmetic-coded, 12-bit, 16-bit-quantizer, and CMYK streams are rejected.
 
 const std = @import("std");
 pub const JPEG_OUTPUT_KTX2 = true;
@@ -22,12 +22,19 @@ const OUTPUT_HEADER_SIZE: usize = if (OUTPUT_KTX2) 224 else 54;
 const OUTPUT_CAP: usize = MAX_PIXELS * 4 + OUTPUT_HEADER_SIZE;
 // JPEG MCU padding can add up to 15 samples on both axes for 4:2:0.
 const PLANE_CAP: usize = MAX_PIXELS + MAX_DIMENSION * 32 + 256;
+const STRIPE_STRIDE: usize = MAX_DIMENSION + 16;
+const STRIPE_ROWS: usize = 32;
+const STRIPE_CAP: usize = STRIPE_STRIDE * STRIPE_ROWS;
 const MAX_COMPONENTS: usize = 3;
 const INPUT_CONTENT_TYPE = "image/jpeg";
 const OUTPUT_CONTENT_TYPE = if (OUTPUT_KTX2) "image/ktx2" else "image/bmp";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
-var plane_bufs: [MAX_COMPONENTS][PLANE_CAP]u8 = undefined;
+// A plane has one coefficient position per padded sample: 64 coefficients per
+// 8x8 block. i16 retains the full progressive coefficient range, while the
+// small stripe buffers avoid retaining decoded Y/Cb/Cr planes.
+var coefficient_bufs: [MAX_COMPONENTS][PLANE_CAP]i16 = undefined;
+var stripe_bufs: [MAX_COMPONENTS][STRIPE_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
 
 export fn input_ptr() u32 {
@@ -346,23 +353,16 @@ fn idctBlock(coef: *const [64]i64, plane: []u8, offset: usize, stride: usize) vo
     }
 }
 
-fn decodeBlock(
-    br: *BitReader,
-    comp: *Component,
-    plane: []u8,
-    offset: usize,
-    stride: usize,
-) JpegError!void {
+fn decodeSequentialBlock(br: *BitReader, comp: *Component, coefficients: *[64]i16) JpegError!void {
     const dc_table = &dc_tables[comp.dc_tbl];
     const ac_table = &ac_tables[comp.ac_tbl];
-    const qt = &quant_tables[comp.tq];
 
-    var coef = [_]i64{0} ** 64;
+    coefficients.* = @splat(0);
 
     const t = try huffDecode(br, dc_table);
     if (t > 11) return error.InvalidJpeg; // Baseline 8-bit DC categories are 0..11.
     comp.dc_pred += extend(try br.receive(@intCast(t)), @intCast(t));
-    coef[0] = @as(i64, comp.dc_pred) * qt[0];
+    coefficients[0] = std.math.cast(i16, comp.dc_pred) orelse return error.InvalidJpeg;
 
     var k: usize = 1;
     while (k < 64) {
@@ -379,11 +379,277 @@ fn decodeBlock(
         if (s > 10) return error.InvalidJpeg; // Baseline 8-bit AC categories are 1..10.
         k += r;
         if (k > 63) return error.InvalidJpeg;
-        coef[ZIGZAG[k]] = @as(i64, extend(try br.receive(s), s)) * qt[k];
+        const value = extend(try br.receive(s), s);
+        coefficients[ZIGZAG[k]] = std.math.cast(i16, value) orelse return error.InvalidJpeg;
         k += 1;
     }
+}
 
-    idctBlock(&coef, plane, offset, stride);
+fn refineCoefficient(br: *BitReader, coefficient: *i16, bit: i16) JpegError!void {
+    if (coefficient.* != 0 and try br.bit() != 0 and (coefficient.* & bit) == 0) {
+        coefficient.* += if (coefficient.* > 0) bit else -bit;
+    }
+}
+
+fn decodeProgressiveBlock(
+    br: *BitReader,
+    comp: *Component,
+    coefficients: *[64]i16,
+    ss: usize,
+    se: usize,
+    ah: u4,
+    al: u4,
+    eob_run: *usize,
+) JpegError!void {
+    const bit: i16 = @as(i16, 1) << al;
+    if (ss == 0) {
+        if (se != 0) return error.InvalidJpeg;
+        if (ah == 0) {
+            const category = try huffDecode(br, &dc_tables[comp.dc_tbl]);
+            if (category > 11) return error.InvalidJpeg;
+            comp.dc_pred += extend(try br.receive(@intCast(category)), @intCast(category));
+            coefficients[0] = std.math.cast(i16, comp.dc_pred << al) orelse return error.InvalidJpeg;
+        } else {
+            // DC refinement is a literal bitwise refinement of the signed
+            // coefficient. It consumes one bit even when the prior DC value
+            // was zero; AC refinement has different zero-coefficient rules.
+            if (try br.bit() != 0) coefficients[0] |= bit;
+        }
+        return;
+    }
+    if (ss > se or se > 63) return error.InvalidJpeg;
+    if (ah == 0) {
+        var k = ss;
+        if (eob_run.* != 0) {
+            eob_run.* -= 1;
+            return;
+        }
+        while (k <= se) {
+            const rs = try huffDecode(br, &ac_tables[comp.ac_tbl]);
+            const run: usize = rs >> 4;
+            const size: u5 = @intCast(rs & 15);
+            if (size == 0) {
+                if (run == 15) {
+                    k += 16;
+                    if (k > se + 1) return error.InvalidJpeg;
+                    continue;
+                }
+                eob_run.* = (@as(usize, 1) << @intCast(run)) + @as(usize, @intCast(try br.receive(@intCast(run))));
+                if (eob_run.* == 0) return error.InvalidJpeg;
+                eob_run.* -= 1;
+                return;
+            }
+            if (size > 10 or k + run > se) return error.InvalidJpeg;
+            k += run;
+            const value = extend(try br.receive(size), size) << al;
+            coefficients[ZIGZAG[k]] = std.math.cast(i16, value) orelse return error.InvalidJpeg;
+            k += 1;
+        }
+        return;
+    }
+
+    var k = ss;
+    if (eob_run.* == 0) {
+        while (k <= se) {
+            const rs = try huffDecode(br, &ac_tables[comp.ac_tbl]);
+            var run: i32 = rs >> 4;
+            const size: u5 = @intCast(rs & 15);
+            var new_coefficient: i16 = 0;
+            if (size != 0) {
+                // libjpeg treats a nonconforming refinement category as one
+                // refinement bit and continues with a warning.
+                new_coefficient = if (try br.bit() != 0) bit else -bit;
+            } else if (run != 15) {
+                eob_run.* = (@as(usize, 1) << @intCast(run)) + @as(usize, @intCast(try br.receive(@intCast(run))));
+                if (eob_run.* == 0) return error.InvalidJpeg;
+                break;
+            }
+            while (k <= se) {
+                const coefficient = &coefficients[ZIGZAG[k]];
+                if (coefficient.* != 0) {
+                    try refineCoefficient(br, coefficient, bit);
+                } else {
+                    run -= 1;
+                    if (run < 0) break;
+                }
+                k += 1;
+            }
+            if (size != 0) {
+                // MozJPEG's jpeg_natural_order has sixteen trailing 63s so
+                // a malformed run that lands beyond Se remains confined to
+                // the final coefficient. Match that recovery behaviour:
+                // accepting such files is useful, while writing past this
+                // block would not be safe in a fixed-memory component.
+                coefficients[ZIGZAG[@min(k, @as(usize, 63))]] = new_coefficient;
+            }
+            // The reference implementation uses a `for` loop whose update
+            // advances k after every decoded symbol. This is observable for
+            // ZRL: the inner loop stops on the sixteenth zero, then this
+            // increment moves to the following coefficient.
+            k += 1;
+        }
+    }
+    if (eob_run.* != 0) {
+        while (k <= se) : (k += 1) {
+            try refineCoefficient(br, &coefficients[ZIGZAG[k]], bit);
+        }
+        eob_run.* -= 1;
+    }
+}
+
+const Scan = struct {
+    components: [MAX_COMPONENTS]usize = undefined,
+    count: usize = 0,
+    ss: usize = 0,
+    se: usize = 0,
+    ah: u4 = 0,
+    al: u4 = 0,
+};
+
+fn decodeProgressiveScan(br: *BitReader, scan: *const Scan, mcus_x: usize, mcus_y: usize, restart_interval: usize) JpegError!void {
+    if (scan.count == 0) return error.InvalidJpeg;
+    if (scan.count != 1 and scan.ss != 0) return error.InvalidJpeg;
+    for (scan.components[0..scan.count]) |component_index| {
+        components[component_index].dc_pred = 0;
+    }
+    const first = &components[scan.components[0]];
+    // A non-interleaved scan contains the component's real block grid, not
+    // the padded iMCU grid used by an interleaved scan. At a partial right or
+    // bottom edge, `mcus_* * sampling_factor` can add a nonexistent block.
+    const scan_mcus_x = if (scan.count == 1) (first.dw + 7) / 8 else mcus_x;
+    const scan_mcus_y = if (scan.count == 1) (first.dh + 7) / 8 else mcus_y;
+    const coefficient_blocks_x = mcus_x * first.h;
+    var restarts: usize = 0;
+    var eob_run: usize = 0;
+    var mcu: usize = 0;
+    while (mcu < scan_mcus_x * scan_mcus_y) : (mcu += 1) {
+        if (restart_interval != 0 and mcu != 0 and mcu % restart_interval == 0) {
+            try br.restart(0xD0 + @as(u8, @intCast(restarts & 7)));
+            restarts += 1;
+            eob_run = 0;
+            for (scan.components[0..scan.count]) |component_index| components[component_index].dc_pred = 0;
+        }
+        const mcu_x = mcu % scan_mcus_x;
+        const mcu_y = mcu / scan_mcus_x;
+        if (scan.count == 1) {
+            const block_offset = (mcu_y * coefficient_blocks_x + mcu_x) * 64;
+            const coefficients: *[64]i16 = @ptrCast(&coefficient_bufs[scan.components[0]][block_offset]);
+            try decodeProgressiveBlock(br, first, coefficients, scan.ss, scan.se, scan.ah, scan.al, &eob_run);
+        } else {
+            for (scan.components[0..scan.count]) |component_index| {
+                const comp = &components[component_index];
+                var by: usize = 0;
+                while (by < comp.v) : (by += 1) {
+                    var bx: usize = 0;
+                    while (bx < comp.h) : (bx += 1) {
+                        const block_x = mcu_x * comp.h + bx;
+                        const block_y = mcu_y * comp.v + by;
+                        const block_offset = (block_y * mcus_x * comp.h + block_x) * 64;
+                        const coefficients: *[64]i16 = @ptrCast(&coefficient_bufs[component_index][block_offset]);
+                        try decodeProgressiveBlock(br, comp, coefficients, scan.ss, scan.se, scan.ah, scan.al, &eob_run);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn parseHuffmanSegment(input: []const u8, pos: usize) JpegError!usize {
+    const len = try readU16BE(input, pos);
+    if (len < 2 or pos + len > input.len) return error.InvalidJpeg;
+    const seg = input[pos + 2 .. pos + len];
+    var off: usize = 0;
+    while (off < seg.len) {
+        if (off + 17 > seg.len) return error.InvalidJpeg;
+        const tc = seg[off] >> 4;
+        const th = seg[off] & 15;
+        if (tc > 1 or th > 3) return error.InvalidJpeg;
+        const bits = seg[off + 1 ..][0..16];
+        var total: usize = 0;
+        for (bits) |count| total += count;
+        if (total == 0 or total > 256 or off + 17 + total > seg.len) return error.InvalidJpeg;
+        try buildHuffTable(if (tc == 0) &dc_tables[th] else &ac_tables[th], bits, seg[off + 17 ..][0..total]);
+        off += 17 + total;
+    }
+    return pos + len;
+}
+
+fn parseProgressiveScan(input: []const u8, pos: usize, ncomp: usize) JpegError!struct { scan: Scan, next: usize } {
+    const len = try readU16BE(input, pos);
+    if (len < 2 or pos + len > input.len) return error.InvalidJpeg;
+    const seg = input[pos + 2 .. pos + len];
+    const ns: usize = if (seg.len == 0) 0 else seg[0];
+    if (ns == 0 or ns > ncomp or seg.len != 1 + ns * 2 + 3) return error.InvalidJpeg;
+    var scan = Scan{ .count = ns };
+    var s: usize = 0;
+    while (s < ns) : (s += 1) {
+        const cs = seg[1 + s * 2];
+        const tables = seg[2 + s * 2];
+        var component_index: usize = 0;
+        while (component_index < ncomp and components[component_index].id != cs) : (component_index += 1) {}
+        if (component_index == ncomp) return error.InvalidJpeg;
+        scan.components[s] = component_index;
+        components[component_index].dc_tbl = tables >> 4;
+        components[component_index].ac_tbl = tables & 15;
+        if (components[component_index].dc_tbl > 3 or components[component_index].ac_tbl > 3 or !quant_defined[components[component_index].tq]) return error.InvalidJpeg;
+    }
+    scan.ss = seg[1 + ns * 2];
+    scan.se = seg[2 + ns * 2];
+    scan.ah = @intCast(seg[3 + ns * 2] >> 4);
+    scan.al = @intCast(seg[3 + ns * 2] & 15);
+    if (scan.ss > scan.se or scan.se > 63 or scan.ah > 13 or scan.al > 13 or (ns != 1 and scan.ss != 0)) return error.InvalidJpeg;
+    for (scan.components[0..ns]) |component_index| {
+        const comp = &components[component_index];
+        if (scan.ss == 0 and !dc_tables[comp.dc_tbl].defined) return error.InvalidJpeg;
+        if (scan.se != 0 and !ac_tables[comp.ac_tbl].defined) return error.InvalidJpeg;
+    }
+    return .{ .scan = scan, .next = pos + len };
+}
+
+fn decodeProgressiveScans(input: []const u8, scan_start: usize, first: *const Scan, ncomp: usize, mcus_x: usize, mcus_y: usize, initial_restart_interval: usize) JpegError!void {
+    var restart_interval = initial_restart_interval;
+    var scan = first.*;
+    var br = BitReader{ .data = input, .pos = scan_start };
+    while (true) {
+        try decodeProgressiveScan(&br, &scan, mcus_x, mcus_y, restart_interval);
+        var pos = br.pos;
+        // A progressive stream may put any number of DHT, DRI, APP, or COM
+        // segments between entropy scans. Keep walking markers until the next
+        // SOS rather than assuming one DHT is followed directly by SOS.
+        while (true) {
+            if (pos >= input.len or input[pos] != 0xFF) return error.InvalidJpeg;
+            while (pos < input.len and input[pos] == 0xFF) : (pos += 1) {}
+            if (pos >= input.len) return error.InvalidJpeg;
+            const marker = input[pos];
+            pos += 1;
+            switch (marker) {
+                0xD9 => {
+                    if (pos != input.len) return error.InvalidJpeg;
+                    return;
+                },
+                0xC4 => pos = try parseHuffmanSegment(input, pos),
+                0xDD => {
+                    const len = try readU16BE(input, pos);
+                    if (len != 4 or pos + len > input.len) return error.InvalidJpeg;
+                    restart_interval = try readU16BE(input, pos + 2);
+                    pos += len;
+                },
+                0xE0...0xEF, 0xFE => {
+                    const len = try readU16BE(input, pos);
+                    if (len < 2 or pos + len > input.len) return error.InvalidJpeg;
+                    pos += len;
+                },
+                0xDA => {
+                    const parsed = try parseProgressiveScan(input, pos, ncomp);
+                    scan = parsed.scan;
+                    br = .{ .data = input, .pos = parsed.next };
+                    break;
+                },
+                else => return error.InvalidJpeg,
+            }
+            if (marker == 0xDA) break;
+        }
+    }
 }
 
 fn readU16BE(data: []const u8, pos: usize) JpegError!u16 {
@@ -408,8 +674,9 @@ fn clampNext(k: usize, bound: usize) usize {
     return if (k + 1 >= bound) bound - 1 else k + 1;
 }
 
-fn sampleAt(comp: *const Component, plane: []const u8, x: usize, y: usize) i32 {
-    return plane[y * comp.plane_stride + @min(x, comp.dw - 1)];
+fn sampleAt(comp: *const Component, plane: []const u8, stripe_base: usize, x: usize, y: usize) i32 {
+    const clamped_y = @min(y, comp.dh - 1);
+    return plane[(clamped_y - stripe_base) * comp.plane_stride + @min(x, comp.dw - 1)];
 }
 
 // One dimension of triangle-filter upsampling by a factor of 2: `cur` is the
@@ -422,36 +689,63 @@ fn blend2x(cur: i32, near: i32, first_half: bool) i32 {
     return if (first_half) @divFloor(cur * 3 + near + 1, 4) else @divFloor(cur * 3 + near + 2, 4);
 }
 
-fn upsampledSample(comp: *const Component, plane: []const u8, px: usize, py: usize) u8 {
+fn upsampledSample(comp: *const Component, plane: []const u8, stripe_base: usize, px: usize, py: usize) u8 {
     if (comp.hs == 1 and comp.vs == 1) {
-        return @intCast(sampleAt(comp, plane, px, py));
+        return @intCast(sampleAt(comp, plane, stripe_base, px, py));
     }
     const kx = px / comp.hs;
     const ky = py / comp.vs;
     if (comp.vs == 1) {
         // h2v1: horizontal-only triangle filter.
         const near_x = if (px % 2 == 0) clampPrev(kx) else clampNext(kx, comp.dw);
-        return @intCast(blend2x(sampleAt(comp, plane, kx, ky), sampleAt(comp, plane, near_x, ky), px % 2 == 0));
+        return @intCast(blend2x(sampleAt(comp, plane, stripe_base, kx, ky), sampleAt(comp, plane, stripe_base, near_x, ky), px % 2 == 0));
     }
     if (comp.hs == 1) {
         // h1v2: vertical-only triangle filter.
         const near_y = if (py % 2 == 0) clampPrev(ky) else clampNext(ky, comp.dh);
-        return @intCast(blend2x(sampleAt(comp, plane, kx, ky), sampleAt(comp, plane, kx, near_y), py % 2 == 0));
+        return @intCast(blend2x(sampleAt(comp, plane, stripe_base, kx, ky), sampleAt(comp, plane, stripe_base, kx, near_y), py % 2 == 0));
     }
     // h2v2: vertical triangle filter first (producing a column sum weighted
     // 3:1 toward the nearer row), then a horizontal triangle filter over
     // that column sum, combining to libjpeg's 9:3:3:1 corner weights.
     const near_y = if (py % 2 == 0) clampPrev(ky) else clampNext(ky, comp.dh);
     const colsum = struct {
-        fn at(c: *const Component, pl: []const u8, k: usize, y0: usize, y1: usize) i32 {
-            return sampleAt(c, pl, k, y0) * 3 + sampleAt(c, pl, k, y1);
+        fn at(c: *const Component, pl: []const u8, base: usize, k: usize, y0: usize, y1: usize) i32 {
+            return sampleAt(c, pl, base, k, y0) * 3 + sampleAt(c, pl, base, k, y1);
         }
     }.at;
-    const this_sum = colsum(comp, plane, kx, ky, near_y);
+    const this_sum = colsum(comp, plane, stripe_base, kx, ky, near_y);
     const near_x = if (px % 2 == 0) clampPrev(kx) else clampNext(kx, comp.dw);
-    const near_sum = colsum(comp, plane, near_x, ky, near_y);
+    const near_sum = colsum(comp, plane, stripe_base, near_x, ky, near_y);
     const total = if (px % 2 == 0) this_sum * 3 + near_sum + 8 else this_sum * 3 + near_sum + 7;
     return @intCast(total >> 4);
+}
+
+fn materializeStripe(component_index: usize, mcu_y: usize, blocks_x: usize, blocks_y: usize) JpegError!usize {
+    const comp = &components[component_index];
+    // Fancy 2x vertical upsampling reads the sample immediately before and
+    // after this MCU row. Components with vs=2 have v=1, so one preceding
+    // block plus the current and following blocks fit in the fixed stripe.
+    const current_block_y = mcu_y * comp.v;
+    const first_block_y = if (comp.vs == 2 and current_block_y != 0) current_block_y - 1 else current_block_y;
+    const wanted_rows = if (comp.vs == 2) comp.v + 2 else comp.v;
+    const rows = @min(wanted_rows, blocks_y - first_block_y);
+    const stripe_base = first_block_y * 8;
+    var by: usize = 0;
+    while (by < rows) : (by += 1) {
+        var bx: usize = 0;
+        while (bx < blocks_x) : (bx += 1) {
+            const block_offset = (first_block_y + by) * blocks_x * 64 + bx * 64;
+            var dequantized = [_]i64{0} ** 64;
+            var k: usize = 0;
+            while (k < 64) : (k += 1) {
+                const natural = ZIGZAG[k];
+                dequantized[natural] = @as(i64, coefficient_bufs[component_index][block_offset + natural]) * quant_tables[comp.tq][k];
+            }
+            idctBlock(&dequantized, &stripe_bufs[component_index], by * 8 * comp.plane_stride + bx * 8, comp.plane_stride);
+        }
+    }
+    return stripe_base;
 }
 
 // libjpeg jdcolor.c fixed-point YCbCr -> RGB: SCALEBITS = 16.
@@ -467,6 +761,10 @@ fn yccToBgra(y: i32, cb: i32, cr: i32, dst: *[4]u8) void {
     dst[3] = 255;
 }
 
+fn markerPayloadStartsWith(payload: []const u8, prefix: []const u8) bool {
+    return payload.len >= prefix.len and std.mem.eql(u8, payload[0..prefix.len], prefix);
+}
+
 fn decode(input: []const u8) JpegError!usize {
     quant_defined = @splat(false);
     for (&dc_tables) |*table| table.defined = false;
@@ -480,7 +778,12 @@ fn decode(input: []const u8) JpegError!usize {
     var ncomp: usize = 0;
     var restart_interval: usize = 0;
     var seen_sof = false;
+    var progressive = false;
+    var saw_jfif = false;
+    var saw_adobe = false;
+    var adobe_transform: u8 = 0;
     var scan_start: usize = 0;
+    var first_scan = Scan{};
 
     var pos: usize = 2;
     while (pos < input.len) {
@@ -492,7 +795,7 @@ fn decode(input: []const u8) JpegError!usize {
         pos += 1;
 
         switch (marker) {
-            0xC0, 0xC1 => { // SOF0 baseline / SOF1 extended sequential Huffman.
+            0xC0, 0xC1, 0xC2 => { // Sequential or progressive Huffman, 8-bit.
                 if (seen_sof) return error.InvalidJpeg;
                 const len = try readU16BE(input, pos);
                 if (len < 8 or pos + len > input.len) return error.InvalidJpeg;
@@ -526,6 +829,7 @@ fn decode(input: []const u8) JpegError!usize {
                     components[0].v = 1;
                 }
                 seen_sof = true;
+                progressive = marker == 0xC2;
                 pos += len;
             },
             0xC4 => { // DHT
@@ -584,25 +888,38 @@ fn decode(input: []const u8) JpegError!usize {
                 const seg = input[pos + 2 .. pos + len];
                 if (seg.len < 1) return error.InvalidJpeg;
                 const ns: usize = seg[0];
-                if (ns != ncomp) return error.InvalidJpeg; // Single-scan files only.
+                if (ns == 0 or ns > ncomp) return error.InvalidJpeg;
+                if (!progressive and ns != ncomp) return error.InvalidJpeg;
                 if (seg.len != 1 + ns * 2 + 3) return error.InvalidJpeg;
+                first_scan.count = ns;
                 var s: usize = 0;
                 while (s < ns) : (s += 1) {
                     const cs = seg[1 + s * 2];
                     const tables = seg[2 + s * 2];
-                    const comp = &components[s];
-                    if (comp.id != cs) return error.InvalidJpeg; // Frame order required.
+                    var component_index: usize = 0;
+                    while (component_index < ncomp and components[component_index].id != cs) : (component_index += 1) {}
+                    if (component_index == ncomp) return error.InvalidJpeg;
+                    if (!progressive and component_index != s) return error.InvalidJpeg;
+                    first_scan.components[s] = component_index;
+                    const comp = &components[component_index];
                     comp.dc_tbl = tables >> 4;
                     comp.ac_tbl = tables & 15;
                     if (comp.dc_tbl > 3 or comp.ac_tbl > 3) return error.InvalidJpeg;
-                    if (!dc_tables[comp.dc_tbl].defined) return error.InvalidJpeg;
-                    if (!ac_tables[comp.ac_tbl].defined) return error.InvalidJpeg;
                     if (!quant_defined[comp.tq]) return error.InvalidJpeg;
                 }
-                // Baseline spectral selection 0..63, no successive approximation.
-                if (seg[1 + ns * 2] != 0 or seg[2 + ns * 2] != 63 or seg[3 + ns * 2] != 0) {
+                first_scan.ss = seg[1 + ns * 2];
+                first_scan.se = seg[2 + ns * 2];
+                first_scan.ah = @intCast(seg[3 + ns * 2] >> 4);
+                first_scan.al = @intCast(seg[3 + ns * 2] & 15);
+                if (first_scan.ss > first_scan.se or first_scan.se > 63 or first_scan.ah > 13 or first_scan.al > 13) {
                     return error.InvalidJpeg;
                 }
+                for (first_scan.components[0..ns]) |component_index| {
+                    const comp = &components[component_index];
+                    if (first_scan.ss == 0 and !dc_tables[comp.dc_tbl].defined) return error.InvalidJpeg;
+                    if (first_scan.se != 0 and !ac_tables[comp.ac_tbl].defined) return error.InvalidJpeg;
+                }
+                if (!progressive and (first_scan.ss != 0 or first_scan.se != 63 or first_scan.ah != 0 or first_scan.al != 0)) return error.InvalidJpeg;
                 scan_start = pos + len;
                 pos += len;
             },
@@ -610,6 +927,13 @@ fn decode(input: []const u8) JpegError!usize {
             0xE0...0xEF, 0xFE => { // APPn / COM
                 const len = try readU16BE(input, pos);
                 if (len < 2 or pos + len > input.len) return error.InvalidJpeg;
+                const payload = input[pos + 2 .. pos + len];
+                if (marker == 0xE0 and markerPayloadStartsWith(payload, "JFIF\x00")) {
+                    saw_jfif = true;
+                } else if (marker == 0xEE and payload.len >= 12 and markerPayloadStartsWith(payload, "Adobe")) {
+                    saw_adobe = true;
+                    adobe_transform = payload[11];
+                }
                 pos += len;
             },
             else => return error.InvalidJpeg, // Progressive, arithmetic, DNL, hierarchical, stray RST.
@@ -617,6 +941,14 @@ fn decode(input: []const u8) JpegError!usize {
         if (scan_start != 0) break;
     }
     if (scan_start == 0) return error.InvalidJpeg;
+
+    // Match libjpeg's three-component colour-space inference. JFIF declares
+    // YCbCr. Otherwise Adobe transform 0 declares RGB and transform 1 declares
+    // YCbCr; without either marker, the conventional R/G/B component IDs are
+    // sufficient to identify RGB data.
+    const encoded_rgb = ncomp == 3 and !saw_jfif and
+        ((saw_adobe and adobe_transform == 0) or
+        (!saw_adobe and components[0].id == 'R' and components[1].id == 'G' and components[2].id == 'B'));
 
     var h_max: usize = 1;
     var v_max: usize = 1;
@@ -638,6 +970,9 @@ fn decode(input: []const u8) JpegError!usize {
         comp.plane_stride = mcus_x * comp.h * 8;
         const plane_rows = mcus_y * comp.v * 8;
         if (comp.plane_stride * plane_rows > PLANE_CAP) return error.InvalidJpeg;
+        if (progressive) {
+            @memset(coefficient_bufs[c][0 .. comp.plane_stride * plane_rows], 0);
+        }
         // h_max and v_max are exact multiples of every h/v (both are in
         // {1, 2}), so these ratios and ceiling divisions are exact.
         comp.hs = h_max / comp.h;
@@ -646,6 +981,9 @@ fn decode(input: []const u8) JpegError!usize {
         comp.dh = (height * comp.v + v_max - 1) / v_max;
     }
 
+    if (progressive) {
+        try decodeProgressiveScans(input, scan_start, &first_scan, ncomp, mcus_x, mcus_y, restart_interval);
+    } else {
     var br = BitReader{ .data = input, .pos = scan_start };
     var restarts: usize = 0;
     var mcu: usize = 0;
@@ -666,9 +1004,11 @@ fn decode(input: []const u8) JpegError!usize {
             while (by < comp.v) : (by += 1) {
                 var bx: usize = 0;
                 while (bx < comp.h) : (bx += 1) {
-                    const px = (mcu_x * comp.h + bx) * 8;
-                    const py = (mcu_y * comp.v + by) * 8;
-                    try decodeBlock(&br, comp, &plane_bufs[c], py * comp.plane_stride + px, comp.plane_stride);
+                    const block_x = mcu_x * comp.h + bx;
+                    const block_y = mcu_y * comp.v + by;
+                    const block_offset = (block_y * mcus_x * comp.h + block_x) * 64;
+                    const coefficients: *[64]i16 = @ptrCast(&coefficient_bufs[c][block_offset]);
+                    try decodeSequentialBlock(&br, comp, coefficients);
                 }
             }
         }
@@ -680,6 +1020,7 @@ fn decode(input: []const u8) JpegError!usize {
     while (tail + 2 < input.len and input[tail] == 0xFF and input[tail + 1] == 0xFF) tail += 1;
     if (tail + 2 != input.len) return error.InvalidJpeg;
     if (input[tail] != 0xFF or input[tail + 1] != 0xD9) return error.InvalidJpeg;
+    }
 
     if (OUTPUT_KTX2) {
         _ = ktx2.writeHeader(&output_buf, width, height) orelse return error.InvalidJpeg;
@@ -700,24 +1041,41 @@ fn decode(input: []const u8) JpegError!usize {
         std.mem.writeInt(u32, output_buf[42..46], 2835, .little);
     }
 
-    var y: usize = 0;
-    while (y < height) : (y += 1) {
-        const dst_y = if (OUTPUT_KTX2) y else height - 1 - y;
-        const dst_row = OUTPUT_HEADER_SIZE + dst_y * out_stride;
-        var x: usize = 0;
-        while (x < width) : (x += 1) {
-            const dst = output_buf[dst_row + x * 4 ..][0..4];
-            const luma = upsampledSample(&components[0], &plane_bufs[0], x, y);
-            if (ncomp == 1) {
-                dst[0] = luma;
-                dst[1] = luma;
-                dst[2] = luma;
-                dst[3] = 255;
-            } else {
-                const cb = upsampledSample(&components[1], &plane_bufs[1], x, y);
-                const cr = upsampledSample(&components[2], &plane_bufs[2], x, y);
-                yccToBgra(luma, cb, cr, dst);
-                if (OUTPUT_KTX2) std.mem.swap(u8, &dst[0], &dst[2]);
+    var output_mcu_y: usize = 0;
+    while (output_mcu_y < mcus_y) : (output_mcu_y += 1) {
+        var stripe_bases: [MAX_COMPONENTS]usize = undefined;
+        c = 0;
+        while (c < ncomp) : (c += 1) {
+            stripe_bases[c] = try materializeStripe(c, output_mcu_y, mcus_x * components[c].h, mcus_y * components[c].v);
+        }
+        const first_y = output_mcu_y * v_max * 8;
+        const last_y = @min(first_y + v_max * 8, height);
+        var y = first_y;
+        while (y < last_y) : (y += 1) {
+            const dst_y = if (OUTPUT_KTX2) y else height - 1 - y;
+            const dst_row = OUTPUT_HEADER_SIZE + dst_y * out_stride;
+            var x: usize = 0;
+            while (x < width) : (x += 1) {
+                const dst = output_buf[dst_row + x * 4 ..][0..4];
+                const first = upsampledSample(&components[0], &stripe_bufs[0], stripe_bases[0], x, y);
+                if (ncomp == 1) {
+                    dst[0] = first;
+                    dst[1] = first;
+                    dst[2] = first;
+                    dst[3] = 255;
+                } else {
+                    const second = upsampledSample(&components[1], &stripe_bufs[1], stripe_bases[1], x, y);
+                    const third = upsampledSample(&components[2], &stripe_bufs[2], stripe_bases[2], x, y);
+                    if (encoded_rgb) {
+                        dst[0] = if (OUTPUT_KTX2) first else third;
+                        dst[1] = second;
+                        dst[2] = if (OUTPUT_KTX2) third else first;
+                        dst[3] = 255;
+                    } else {
+                        yccToBgra(first, second, third, dst);
+                        if (OUTPUT_KTX2) std.mem.swap(u8, &dst[0], &dst[2]);
+                    }
+                }
             }
         }
     }
