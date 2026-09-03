@@ -17,6 +17,7 @@ const OUTPUT_CAP: usize = 20;
 const MAX_DEFINED_FUNCS: usize = 8192;
 const MAX_BRANCH_DEPTH: usize = 8192;
 const INPUT_CONTENT_TYPE = "application/wasm";
+const OUTPUT_CONTENT_TYPE = "text/plain";
 
 var input_buf: [INPUT_CAP]u8 = undefined;
 var output_buf: [OUTPUT_CAP]u8 = undefined;
@@ -291,6 +292,14 @@ export fn input_content_type_ptr() u32 {
 
 export fn input_content_type_size() u32 {
     return INPUT_CONTENT_TYPE.len;
+}
+
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
 }
 
 fn renderImpl(input_size: u32) u32 {

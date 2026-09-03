@@ -1257,3 +1257,9 @@ dev:
 
 defluff:
 	find . -name '.DS_Store' -type f -delete
+components/text/html/html-to-svg-inter-paths.wasm: components/text/html/html-to-svg-inter-paths.zig components/text/lib/inter_display_latin_paths.zig components/text/lib/inter_display_bold_latin_paths.zig
+	$(ZIG_ENV) zig build-exe $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) --dep inter_regular --dep inter_bold -Mroot=$< -Minter_regular=components/text/lib/inter_display_latin_paths.zig -Minter_bold=components/text/lib/inter_display_bold_latin_paths.zig -femit-bin=$@
+
+	node --test test/html-to-svg-inter-paths.mjs
+		elif [ "$$f" = "components/text/html/html-to-svg-inter-paths.zig" ]; then \\
+			$(ZIG_ENV) zig test $(ZIG_TEST_FLAGS) --dep inter_regular --dep inter_bold -Mroot="$$f" -Minter_regular=components/text/lib/inter_display_latin_paths.zig -Minter_bold=components/text/lib/inter_display_bold_latin_paths.zig || status=1; \\
