@@ -1180,9 +1180,30 @@ pub fn Make(comptime options: Options) type {
                         }
 
                         var j = line_idx + 1;
+                        var extended = false;
                         while (j < lines_count) : (j += 1) {
                             const ln = lineSlice(input, j);
                             if (isBlankLine(ln)) break;
+
+                            // Cheap termination rules keep runs of consecutive
+                            // definitions linear (re-parsing the growing tail
+                            // for every line is quadratic otherwise). They
+                            // apply only before the first extension line is
+                            // appended — after that a multi-line title may be
+                            // open and its continuation lines can start with
+                            // anything. Both are behavior-preserving:
+                            // - A parse that already consumed a title can
+                            //   never be extended: any appended content
+                            //   follows the closed title and is invalid.
+                            // - An href-only parse can only be extended by a
+                            //   title, so the next line must begin with a
+                            //   title opener.
+                            if (!extended and best != null) {
+                                if (best.?.title.len > 0) break;
+                                const t = stripAllLeadingSpacesTabs(ln);
+                                if (t.len == 0 or (t[0] != '"' and t[0] != '\'' and t[0] != '(')) break;
+                            }
+                            extended = true;
 
                             combined.writeByte('\n');
                             const li = leadingIndent(ln);
