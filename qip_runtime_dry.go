@@ -53,6 +53,7 @@ type pipelineComponentDescription struct {
 }
 
 type pipelineContentDescription struct {
+	inputless                    bool
 	inputCapBytes                uint64
 	inputEncoding                dataEncoding
 	hasOutput                    bool
@@ -66,6 +67,7 @@ type pipelineContentDescription struct {
 
 func describePipelineContent(contract runModuleContract) pipelineContentDescription {
 	return pipelineContentDescription{
+		inputless:                    contract.inputless,
 		inputCapBytes:                contract.inputCapBytes,
 		inputEncoding:                contract.inputEncoding,
 		hasOutput:                    contract.hasOutput,
@@ -80,6 +82,7 @@ func describePipelineContent(contract runModuleContract) pipelineContentDescript
 
 func (description pipelineContentDescription) runContract() runModuleContract {
 	return runModuleContract{
+		inputless:                    description.inputless,
 		inputCapBytes:                description.inputCapBytes,
 		inputEncoding:                description.inputEncoding,
 		hasOutput:                    description.hasOutput,
@@ -297,6 +300,9 @@ func planRunPipelineWithOptions(descriptions []pipelineComponentDescription, pla
 		switch description.kind {
 		case pipelineComponentContent:
 			contract := description.content.runContract()
+			if contract.inputless && stepIndex != 0 {
+				return plan, fmt.Errorf("step %d (%s): inputless generator must be the first pipeline stage", stepIndex+1, description.source)
+			}
 			if hasCurrentEncoding && !pipelineEncodingAccepted(currentEncoding, contract.inputEncoding) {
 				return plan, fmt.Errorf(
 					"step %d (%s): input encoding mismatch: expected %s, got %s",
@@ -307,7 +313,7 @@ func planRunPipelineWithOptions(descriptions []pipelineComponentDescription, pla
 				)
 			}
 			capacityWarning := ""
-			if previousWasContent && previousContentOutputCap > contract.inputCapBytes {
+			if !contract.inputless && previousWasContent && previousContentOutputCap > contract.inputCapBytes {
 				if planningOptions.capacitiesMustFit {
 					return plan, fmt.Errorf(
 						"step %d (%s): capacities must fit: step %d (%s) output capacity is %s, but step %d (%s) input capacity is %s",
@@ -330,7 +336,7 @@ func planRunPipelineWithOptions(descriptions []pipelineComponentDescription, pla
 				)
 				plan.warnings = append(plan.warnings, capacityWarning)
 			}
-			if stepIndex > 0 && contract.hasDeclaredInputContentType && currentContentType != contract.declaredInputContentType {
+			if !contract.inputless && stepIndex > 0 && contract.hasDeclaredInputContentType && currentContentType != contract.declaredInputContentType {
 				previousType := fmt.Sprintf("%q", currentContentType)
 				if currentContentType == "" {
 					previousType = "no declared content type"
@@ -363,7 +369,7 @@ func planRunPipelineWithOptions(descriptions []pipelineComponentDescription, pla
 				index:          stepIndex + 1,
 				source:         description.source,
 				kind:           "Content",
-				inputEncoding:  dryEncodingName(contract.inputEncoding),
+				inputEncoding:  dryInputEncodingName(contract),
 				inputType:      effectiveInputType,
 				outputEncoding: "scalar result",
 				outputType:     outputType,
@@ -472,6 +478,13 @@ func dryEncodingName(encoding dataEncoding) string {
 		return "UTF-8"
 	}
 	return "raw bytes"
+}
+
+func dryInputEncodingName(contract runModuleContract) string {
+	if contract.inputless {
+		return "none"
+	}
+	return dryEncodingName(contract.inputEncoding)
 }
 
 func pipelineEncodingAccepted(actual, expected dataEncoding) bool {

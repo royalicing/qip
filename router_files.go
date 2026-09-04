@@ -188,7 +188,7 @@ func loadElementAssets(elementsRoot string) (map[string]elementAsset, []string, 
 }
 
 func isValidCustomElementName(name string) bool {
-	if name == "" || !strings.Contains(name, "-") || strings.HasPrefix(strings.ToLower(name), "xml") {
+	if name == "" || name[0] < 'a' || name[0] > 'z' || !strings.Contains(name, "-") || strings.HasPrefix(strings.ToLower(name), "xml") {
 		return false
 	}
 	for _, r := range name {

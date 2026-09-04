@@ -148,6 +148,7 @@ func readOptionalModuleContentType(ctx context.Context, mod api.Module, prefix s
 }
 
 type runModuleContract struct {
+	inputless                    bool
 	inputPtr                     uint64
 	inputCapBytes                uint64
 	inputEncoding                dataEncoding
@@ -187,29 +188,36 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 		contract.failureModesPerInputOffset = uint32(failureModes)
 	}
 
-	inputPtr, ok, err := getExportedValue(ctx, mod, "input_ptr")
+	inputPtr, hasInputPtr, err := getExportedValue(ctx, mod, "input_ptr")
 	if err != nil {
 		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
 	}
-	if !ok {
-		return contract, errors.New("Wasm module must export input_ptr() -> i32")
-	}
-	contract.inputPtr = inputPtr
-
-	inputCap, ok, err := getExportedValue(ctx, mod, "input_utf8_cap")
+	inputUTF8Cap, hasInputUTF8Cap, err := getExportedValue(ctx, mod, "input_utf8_cap")
 	if err != nil {
 		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
 	}
-	if ok {
-		contract.inputEncoding = dataEncodingUTF8
-	} else if inputCap, ok, err = getExportedValue(ctx, mod, "input_bytes_cap"); err != nil {
+	inputBytesCap, hasInputBytesCap, err := getExportedValue(ctx, mod, "input_bytes_cap")
+	if err != nil {
 		return contract, wasmruntime.HumanizeExecutionError(ctx, err)
-	} else if ok {
-		contract.inputEncoding = dataEncodingRaw
+	}
+	if hasInputPtr {
+		if hasInputUTF8Cap == hasInputBytesCap {
+			return contract, errors.New("Wasm transform must export exactly one input capacity: input_utf8_cap or input_bytes_cap")
+		}
+		contract.inputPtr = inputPtr
+		if hasInputUTF8Cap {
+			contract.inputEncoding = dataEncodingUTF8
+			contract.inputCapBytes = inputUTF8Cap
+		} else {
+			contract.inputEncoding = dataEncodingRaw
+			contract.inputCapBytes = inputBytesCap
+		}
 	} else {
-		return contract, errors.New("Wasm module must export input_utf8_cap() -> i32 or input_bytes_cap() -> i32")
+		if hasInputUTF8Cap || hasInputBytesCap {
+			return contract, errors.New("inputless generator must not export an input capacity")
+		}
+		contract.inputless = true
 	}
-	contract.inputCapBytes = inputCap
 
 	hasOutputUTF8Cap := hasExportedValue(mod, "output_utf8_cap")
 	hasOutputBytesCap := hasExportedValue(mod, "output_bytes_cap")
@@ -238,6 +246,9 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 	if err != nil {
 		return contract, err
 	}
+	if contract.inputless && contract.hasDeclaredInputContentType {
+		return contract, errors.New("inputless generator must not declare an input content type")
+	}
 	contract.declaredOutputContentType, contract.hasDeclaredOutputContentType, err = readOptionalModuleContentType(ctx, mod, "output")
 	if err != nil {
 		return contract, err
@@ -246,6 +257,12 @@ func inspectRunModuleContract(ctx context.Context, mod api.Module) (runModuleCon
 }
 
 func resolveRunModuleContentType(contract runModuleContract, incomingContentType string, allowMissingInputContentType bool, checking contentTypeCheckingMode, moduleName string) (effectiveInputType string, outputType string, err error) {
+	if contract.inputless {
+		if contract.hasDeclaredOutputContentType {
+			return "", contract.declaredOutputContentType, nil
+		}
+		return "", "", nil
+	}
 	incomingContentType = normalizeIncomingContentType(incomingContentType)
 	effectiveInputType = incomingContentType
 	if effectiveInputType == "" && contract.hasDeclaredInputContentType && allowMissingInputContentType {
@@ -353,13 +370,17 @@ func executeModuleWithInput(
 	runFunc := mod.ExportedFunction("render")
 
 	var inputSize = uint64(len(inputBytes))
-	if inputSize > inputCap {
+	if contract.inputless && inputSize != 0 {
+		returnErr = fmt.Errorf("inputless generator cannot receive %d input bytes", inputSize)
+		return
+	}
+	if !contract.inputless && inputSize > inputCap {
 		returnErr = fmt.Errorf("input is too large (%d bytes > %d bytes input capacity)", inputSize, inputCap)
 		return
 	}
 
 	mem := mod.Memory()
-	if !mem.Write(uint32(inputPtr), inputBytes) {
+	if !contract.inputless && !mem.Write(uint32(inputPtr), inputBytes) {
 		returnErr = errors.New("Could not write input")
 		return
 	}

@@ -69,10 +69,7 @@ globalThis.getComputedStyle = () => ({
   },
 });
 
-vm.runInThisContext(
-  readFileSync("site/_elements/qip-play.js", "utf8"),
-  { filename: "site/_elements/qip-play.js" },
-);
+await import("../site/_elements/qip-play.js");
 
 function makePlayElement(debugStats, outputPtr = 0, outputLen = 4, imageOffset = 0) {
   const memory = new WebAssembly.Memory({ initial: 1 });

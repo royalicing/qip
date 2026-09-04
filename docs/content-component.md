@@ -1,9 +1,11 @@
 # Content Component Contract
 
-Content components perform finite transformations over text or bytes. The host
-writes input into WebAssembly memory, applies any uniforms, calls
-`render(input_size)`, and decodes the returned output pointer and size. A
-component can use the same result to reject input without trapping.
+Content components perform finite transformations over text or bytes, or
+generate output without an input. For a transform, the host writes input into
+WebAssembly memory, applies any uniforms, calls `render(input_size)`, and
+decodes the returned output pointer and size. For an inputless generator, the
+host applies uniforms and calls `render(0)`. A component can use the same
+result to reject input without trapping.
 
 Use this contract for converters, validators, formatters, document renderers,
 generators, and pipeline stages. A component can retain this Content interface
@@ -19,17 +21,32 @@ user events.
 Every Content component exports:
 
 - `memory`
-- `input_ptr() -> i32`: offset where the host writes input.
-- Either `input_utf8_cap() -> i32` or `input_bytes_cap() -> i32`: maximum input bytes.
 - `render(input_size: i32) -> i64`: transform the input and return the output
   pointer and byte count, or reject the input.
 - Either `output_utf8_cap() -> i32` or `output_bytes_cap() -> i32`: maximum output bytes.
+
+A transform additionally exports:
+
+- `input_ptr() -> i32`: offset where the host writes input.
+- Exactly one of `input_utf8_cap() -> i32` or `input_bytes_cap() -> i32`:
+  maximum input bytes.
+
+An inputless generator exports neither `input_ptr` nor an input-capacity
+getter. Its `render` parameter remains present for ABI uniformity and the host
+must call it with `0`. A component that exports only one part of the transform
+input interface is invalid: `input_ptr` and exactly one input-capacity getter
+must either all be present or all be absent.
 
 Every pointer and capacity export is a zero-argument function returning `i32`.
 An exported global is rejected. A getter function may read an immutable
 internal global when its value is module-constant.
 
 The `utf8` capacity exports declare that the corresponding bytes must be valid UTF-8. The `bytes` variants carry arbitrary binary data.
+
+Inputless generators are the natural source stages for a composition: for
+example, a solid-color component can declare `image/ktx2` output and generate
+a surface from width, height, and color uniforms. They are not transforms which
+happen to ignore copied bytes.
 
 ## Render Result
 
@@ -114,9 +131,8 @@ components.
 The QIP ABI getters are static exports. When one of these exports is present,
 it must be a small, mechanically inspectable function:
 
-- `input_ptr()`
-- `input_utf8_cap()`
-- `input_bytes_cap()`
+- `input_ptr()` when the component is a transform
+- `input_utf8_cap()` or `input_bytes_cap()` when the component is a transform
 - `output_utf8_cap()`
 - `output_bytes_cap()`
 - `failure_modes_per_input_offset()`
@@ -135,13 +151,14 @@ mutable state. This lets a host inspect buffer requirements and content-type
 metadata without executing component logic. Native translations can also publish
 these values as constants.
 
-The complete input range, from `input_ptr` through the selected input capacity,
-must be within initial memory and must not overlap any active data segment.
-Instantiation therefore never writes into bytes owned by the caller as input.
+For a transform, the complete input range, from `input_ptr` through the
+selected input capacity, must be within initial memory and must not overlap any
+active data segment. Instantiation therefore never writes into bytes owned by
+the caller as input. This requirement does not apply to an inputless generator.
 
 ## Host Call Flow
 
-For each render request using a known-valid QIP component, the host:
+For each render request using a known-valid transform, the host:
 
 1. Instantiates or reuses the component.
 2. Verifies that `input_size` does not exceed the input capacity.
@@ -151,6 +168,16 @@ For each render request using a known-valid QIP component, the host:
 6. Stops if the result reports rejection.
 7. Decodes the output pointer and size and reads exactly that output range.
 
+For an inputless generator, the host:
+
+1. Instantiates or reuses the component.
+2. Rejects any supplied input bytes; a generator cannot be appended after a
+   pipeline stage.
+3. Applies any requested [uniforms](/docs/uniforms).
+4. Calls `render(0)`.
+5. Stops if the result reports rejection.
+6. Decodes the output pointer and size and reads exactly that output range.
+
 If `render` traps, the request fails. The host must not read output; memory may
 contain stale or partial output. A trap does not undo memory or
 global changes, so the host discards that Wasm instance and creates a new one
@@ -159,8 +186,9 @@ reuse the instance for another request.
 
 A valid component guarantees that a successful `render` returns a pointer and
 byte count within memory and its declared output capacity. Application wrappers
-for a component they trust may rely on those guarantees. They still check input
-size because the caller, not the component, chooses the input.
+for a component they trust may rely on those guarantees. For transforms they
+still check input size because the caller, not the component, chooses the
+input. For generators they require that the supplied input is empty.
 
 ## Known And Untrusted Components
 
@@ -194,11 +222,13 @@ limits.
 ## Repeated Renders
 
 Hosts may run more than one request on the same component instance. Each
-request uses the bytes currently at `input_ptr`.
+transform request uses the bytes currently at `input_ptr`; each generator
+request calls `render(0)`.
 
 Component authors should make repeated renders deliberate:
 
-- Treat the input region as host-owned for the duration of each call.
+- For transforms, treat the input region as host-owned for the duration of
+  each call.
 - Return the byte length of the current output, not a cumulative length.
 - Return the current output pointer and size from every accepted render.
 - Keep caches and scratch state consistent when input bytes or uniforms change.
@@ -217,6 +247,9 @@ A component may declare an exact input or output MIME type with:
 - `output_content_type_ptr()` and `output_content_type_size()`
 
 Both exports in a pointer/size pair must be present. Omit a pair when the content type is unknown or intentionally generic.
+
+An inputless generator must omit `input_content_type_ptr()` and
+`input_content_type_size()`: it has no input for which to make a MIME promise.
 
 When present, the value must normally be one lowercase MIME media type, such
 as `text/markdown`, `text/html`, or `image/bmp`. Do not include whitespace,
@@ -329,6 +362,8 @@ The host tracks an optional content type as bytes pass through a pipeline:
 - Direct stdin or `-i` input to `qip run` has no separate content-type channel. When no initial type exists, user intent permits the first stage.
 - A declared input content type must exactly match the current pipeline type.
 - Without declared input metadata, `input_utf8_cap` accepts any UTF-8 pipeline input and `input_bytes_cap` accepts any bytes.
+- An inputless generator is valid only as the first stage and only when the
+  caller supplies no input bytes.
 - A declared output content type replaces the current pipeline type.
 - Without declared output metadata, a UTF-8-to-UTF-8 transform preserves the current type.
 - A bytes-to-UTF-8 transform produces new text with an unspecified type.
@@ -338,11 +373,14 @@ These rules let generic operations such as UTF-8 validation or byte-preserving t
 
 ## Memory And Failure Behavior
 
-- Keep input and output buffers disjoint when `render` modifies output bytes.
+- For transforms, keep input and output buffers disjoint when `render` modifies
+  output bytes.
 - If the returned output pointer is in the declared input region, `render` must
   not modify input. The output is an immutable slice of the supplied input. The
   complete slice must be within the current input size.
-- Validate `input_size` inside the component even when the host also checks it.
+- Transforms validate `input_size` inside the component even when the host also
+  checks it. A generator may treat a nonzero `input_size` as a caller contract
+  violation; a conforming host never makes that call.
 - Reserve explicit scratch space rather than assuming unused capacity belongs to the component.
 - Return a failure result when a conforming call can reject expected input.
 - Trap when the caller violates a declared precondition or an internal

@@ -265,6 +265,31 @@ func TestNormalizeRunArgs(t *testing.T) {
 	}
 }
 
+func TestNormalizeBenchArgsWithMultipartInput(t *testing.T) {
+	in := []string{
+		"components/interactive/wasm-debugger.wasm",
+		"-F",
+		"component=@components/text/hello.wasm",
+		"--form",
+		"input=hello",
+		"-r",
+		"3",
+	}
+	got := normalizeBenchArgs(in)
+	want := []string{
+		"-F",
+		"component=@components/text/hello.wasm",
+		"--form",
+		"input=hello",
+		"-r",
+		"3",
+		"components/interactive/wasm-debugger.wasm",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args=%v, want %v", got, want)
+	}
+}
+
 func TestApplyModulePolicyFlags(t *testing.T) {
 	t.Run("fixed memory by default", func(t *testing.T) {
 		var opts options
@@ -1083,6 +1108,48 @@ func TestRunModuleAcceptsAndRejects(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "component rejected input at input offset 2") {
 		t.Fatalf("unexpected rejection: %v", err)
+	}
+}
+
+func TestRunModuleAcceptsInputlessGenerator(t *testing.T) {
+	ctx := context.Background()
+	runtime := wasmruntime.New(ctx)
+	defer runtime.Close(ctx)
+
+	compiled := compileWasmModuleForTest(t, ctx, runtime, "components/image/ktx2/solid-color-oklch-to-ktx2-rgba32float-display-p3-linear.wasm")
+	defer compiled.Close(ctx)
+
+	exec, err := executeModuleWithInput(
+		ctx,
+		runtime,
+		compiled,
+		nil,
+		options{},
+		"test-oklch-solid-color-generator",
+		map[string]string{"width": "2", "height": "1", "lightness": "0.7", "chroma": "0.5", "hue_degrees": "30", "alpha": "0.25"},
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("inputless generator failed: %v", err)
+	}
+	if got, want := len(exec.output.bytes), 256; got != want {
+		t.Fatalf("output bytes=%d, want %d", got, want)
+	}
+
+	_, err = executeModuleWithInput(
+		ctx,
+		runtime,
+		compiled,
+		[]byte("x"),
+		options{},
+		"test-oklch-solid-color-generator-rejects-input",
+		nil,
+		"",
+		false,
+	)
+	if err == nil || !strings.Contains(err.Error(), "inputless generator cannot receive 1 input bytes") {
+		t.Fatalf("error=%v, want supplied input rejection", err)
 	}
 }
 

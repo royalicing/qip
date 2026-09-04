@@ -1,7 +1,7 @@
 {
   "name": "@qip.dev/qipx",
   "version": "0.3.0",
-  "description": "Dependency-free QIP Content component runner and Compliance oracle host for Node.js",
+  "description": "Dependency-free QIP Content, Interactive terminal, and Compliance host for Node.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/royalicing/qip.git",
@@ -10,7 +10,7 @@
   "type": "module",
   "types": "./qipx.d.ts",
   "bin": {
-    "qipx": "qipx.mjs"
+    "qipx": "cli.mjs"
   },
   "exports": {
     ".": {
@@ -20,13 +20,17 @@
   },
   "files": [
     "qipx.d.ts",
-    "qipx.mjs"
+    "qipx.mjs",
+    "cli.mjs",
+    "qipx-tui.mjs"
   ],
   "keywords": [
     "qip",
     "webassembly",
     "wasm",
     "cli",
+    "tui",
+    "terminal",
     "components",
     "compliance"
   ],

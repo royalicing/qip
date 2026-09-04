@@ -47,6 +47,7 @@ animation.
 
 - [Content Component Contract](/docs/content-component) defines the memory buffers, `render` lifecycle, content-type metadata, composition rules, and failure behavior for finite transforms.
 - [Interactive Component Contract](/docs/interactive-component) defines keyboard and pointer events, timed updates, declared output, and the host loop for persistent modules.
+- [Running Interactive Components In A Terminal](/docs/terminal-interactive-components) defines the repository terminal hosts, key decoding, text presentation, and terminal-output safety boundary.
 - [`qip comply`](/docs/comply) defines Compliance oracle memory ownership, oracle imports, ordered case declarations, and oracle authoring patterns.
 - [Uniforms](/docs/uniforms) defines the optional numeric configuration setters that hosts can apply to components.
 

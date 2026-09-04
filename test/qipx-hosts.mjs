@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { main } from "../npm/qipx/qipx.mjs";
+import { main } from "../npm/qipx/cli.mjs";
 
 const repository = join(dirname(fileURLToPath(import.meta.url)), "..");
 const trimWasm = await readFile(join(repository, "components/text/trim.wasm"));

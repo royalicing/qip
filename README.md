@@ -1,7 +1,6 @@
 ```
 ┏━━━┓ ━┳━ ┏━━━┓
-┗━┳━┛  ┃  ┣━━━┛
-  ╹   ━┻━ ╹
+┗━┳━┛ ━┻━ ┣━━━┛
 ```
 
 QIP Components are Quick to run/make/maintain, Isolated from network/disk/dependencies, and Portable across browser/server/native.
@@ -40,7 +39,9 @@ You can read more about the [Content component contract in our docs](./docs/cont
 
 ## CLI Usage
 
-You can pipe the results of other CLI tools to stdin or pass files in via `-i`. You can also chain multiple QIP components together.
+You can pipe the results of other CLI tools to stdin, pass one raw file with
+`-i`, or construct multipart input with repeatable `-F` or `--form` options. You can also
+chain multiple QIP components together.
 
 Put one or more HTTPS hosts before `run`, `dry run`, `bench`, or `comply` to
 load a missing component by its relative path:
@@ -57,6 +58,21 @@ Downloads use the same rules as `qipx`: HTTPS only, a 30-second timeout, a
 16 MiB limit, and at most two redirects on the same origin. Only safe relative
 paths ending in `.wasm` are eligible. `qip dry run` prints the source plan and
 does not make network requests.
+
+Go `qip` and Node.js `qipx` accept the same multipart forms and emit the same
+bytes:
+
+```bash
+qip run \
+  -F mode=step \
+  -F component=@examples/counter.wasm \
+  components/multipart/form-data/form-data-to-tar.wasm \
+  > debugger-input.tar
+```
+
+`-F name=value` adds text, `-F name=@path` adds exact file bytes, and
+`-F name=@-` reads one file field from stdin. `--form` is an exact alias for
+`-F`. Multipart form input and `-i` are mutually exclusive.
 
 ```bash
 # Normalize phone number
@@ -431,6 +447,7 @@ ls ./site
 - [Provable Loops](docs/provable-loops.md)
 - [Running In JavaScript](docs/running-in-javascript.md)
 - [qipx CLI](docs/qipx.md)
+- [Running Interactive Components In A Terminal](docs/terminal-interactive-components.md)
 - [QIP Component Compliance](docs/comply.md)
 
 ----
@@ -538,6 +555,8 @@ echo "World" | qip bench -i - --benchtime=2s --node components/text/hello.wasm
 
 ## TODO
 
+- [ ] Allow compiling TUIs into native code via `components/application/wasm/qip-component-to-c.wasm`. So you get the benefit of a sandbox but you get the fast performance of native.
+- [ ] Explore a consistent route hierarchy for interactive image tools, such as moving `/image-resize` to `/image/resize`. Consider all image tools together, preserve redirects for existing URLs, and decide how tool routes coexist with the `/image` component namespace.
 - [ ] Add `--view-source` to `npx qip-router warc`, including recipe source and view-source records.
 - [ ] Align `npx qip-router` CLI output with `./qip router`. Rendering and WARC output match byte-for-byte, and `list` has the same routes after whitespace normalization. Remaining differences: `list` uses tabs instead of Go's padded columns; `head` prints an HTTP-style block to stdout while Go logs headers to stderr; Node does not currently emit `ETag` for some static/raw `HEAD` responses that Go reports.
 - [ ] Add `github:owner/repo/subdir` content roots to `qip-router`, pinned to one repository snapshot per load.

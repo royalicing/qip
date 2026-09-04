@@ -23,7 +23,11 @@ Components, AI coding, security: you can pick all three.
 
 QIP is the portable standard of component contracts, documented in these pages.
 
-[`qipx`](/docs/qipx) is the focused Node.js command-line host for Content components and Compliance oracles. This repo also contains browser JavaScript hosts such as `<qip-edit>` and `<qip-play>`, a Go host for repository and router workflows, and native implementations such as Swift.
+[`qipx`](/docs/qipx) is the focused Node.js command-line host for Content
+components, text-rendering Interactive components, and Compliance oracles. This
+repo also contains browser JavaScript hosts such as `<qip-edit>` and
+`<qip-play>`, a Go host for repository and router workflows, and native
+implementations such as Swift.
 
 ## QIP Spec
 
@@ -98,6 +102,7 @@ See [Adopting QIP In Existing Apps](/docs/adopting-qip) for the practical checkl
 <li><span class="docs-section">Running</span>
 <ol>
 <li><a href="/docs/qipx">qipx cli</a></li>
+<li><a href="/docs/terminal-interactive-components">Terminal Interactive Components</a></li>
 <li><a href="/docs/qip-elements">Browser Elements</a></li>
 <li><a hidden href="/docs/javascript-runner">JavaScript Renderer Annotated Source</a></li>
 <li><a href="/docs/running-in-javascript">Running In JavaScript</a></li>

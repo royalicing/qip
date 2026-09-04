@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
+#include "lib/raster-output.h"
 
 #define INPUT_CAP 65536
 #define OUTPUT_CAP (8 * 1024 * 1024)
@@ -11,7 +12,7 @@
 
 static unsigned char input_buffer[INPUT_CAP];
 static unsigned char output_buffer[OUTPUT_CAP];
-static const char output_content_type[] = "image/bmp";
+static const char output_content_type[] = QIP_TEXT_RASTER_CONTENT_TYPE;
 static int32_t leading_px = 4;
 static int32_t cols = DEFAULT_COLS;
 
@@ -86,12 +87,7 @@ static void set_pixel(uint32_t width, uint32_t height, uint32_t x, uint32_t y,
     if (x >= width || y >= height) {
         return;
     }
-    uint32_t row = height - 1 - y;
-    uint32_t idx = 54 + (row * width + x) * 4;
-    output_buffer[idx] = b;
-    output_buffer[idx + 1] = g;
-    output_buffer[idx + 2] = r;
-    output_buffer[idx + 3] = a;
+    qip_text_raster_set_pixel(output_buffer, width, height, x, y, r, g, b, a);
 }
 
 /* Public domain font data from https://github.com/dhepper/font8x8 */
@@ -278,7 +274,7 @@ uint64_t render(uint32_t input_size) {
     uint32_t width = (uint32_t)cols * GLYPH_W;
     uint32_t height = rows * row_h;
     uint64_t pixel_bytes = (uint64_t)width * (uint64_t)height * 4u;
-    uint64_t total = 54u + pixel_bytes;
+    uint64_t total = QIP_TEXT_RASTER_HEADER_SIZE + pixel_bytes;
     if (total > OUTPUT_CAP) {
         return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
     }
@@ -288,23 +284,9 @@ uint64_t render(uint32_t input_size) {
         output_buffer[i] = 0xFF;
     }
 
-    // BMP header
-    output_buffer[0] = 'B';
-    output_buffer[1] = 'M';
-    write_u32_le(2, (uint32_t)total);
-    write_u32_le(6, 0);
-    write_u32_le(10, 54);
-    write_u32_le(14, 40);
-    write_u32_le(18, width);
-    write_u32_le(22, height);
-    write_u16_le(26, 1);
-    write_u16_le(28, 32);
-    write_u32_le(30, 0);
-    write_u32_le(34, (uint32_t)pixel_bytes);
-    write_u32_le(38, 2835);
-    write_u32_le(42, 2835);
-    write_u32_le(46, 0);
-    write_u32_le(50, 0);
+    if (qip_text_raster_init(output_buffer, OUTPUT_CAP, width, height) != total) {
+        return ((uint64_t)output_ptr() << 32) | (uint32_t)(0);
+    }
 
     uint32_t col = 0;
     uint32_t row = 0;

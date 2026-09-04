@@ -1,0 +1,78 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import {
+  buildMultipartFormInput,
+  canonicalFormContentType,
+} from "../npm/qipx/qipx.mjs";
+
+const boundary = "uuid-00000000-0000-0000-0000-000000000000";
+const identity = "components/bytes/identity.wasm";
+
+function run(command, args, input) {
+  return spawnSync(command, args, { input, maxBuffer: 4 * 1024 * 1024 });
+}
+
+test("Go qip and Node qipx construct byte-identical multipart input", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "qip-form-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, "component.wasm");
+  const fileBody = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0xff]);
+  await writeFile(filePath, fileBody);
+
+  const fields = ["mode=step", `component=@${filePath}`];
+  const expected = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="mode"\r\n\r\n` +
+      `step\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="component"; filename="component.wasm"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n`,
+    ),
+    fileBody,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+
+  const built = await buildMultipartFormInput(fields);
+  assert.equal(built.contentType, canonicalFormContentType);
+  assert.deepEqual(Buffer.from(built.bytes), expected);
+
+  const formArgs = ["-F", fields[0], "--form", fields[1]];
+  const go = run("./qip", ["run", identity, ...formArgs]);
+  assert.equal(go.status, 0, go.stderr.toString());
+  const node = run(process.execPath, ["npm/qipx/cli.mjs", "run", identity, ...formArgs]);
+  assert.equal(node.status, 0, node.stderr.toString());
+  assert.deepEqual(go.stdout, expected);
+  assert.deepEqual(node.stdout, expected);
+});
+
+test("@- has the same stdin and filename behavior in both CLIs", () => {
+  const stdin = Buffer.from([0x00, 0xff, 0x0a]);
+  const args = ["run", "-F", "component=@-", identity];
+  const go = run("./qip", args, stdin);
+  assert.equal(go.status, 0, go.stderr.toString());
+  const node = run(process.execPath, ["npm/qipx/cli.mjs", ...args], stdin);
+  assert.equal(node.status, 0, node.stderr.toString());
+  assert.deepEqual(node.stdout, go.stdout);
+  assert.match(go.stdout.toString("latin1"), /name="component"; filename="-"/);
+});
+
+test("both CLIs reject raw input with -F and still require a component", () => {
+  for (const [command, prefix] of [
+    ["./qip", ["run"]],
+    [process.execPath, ["npm/qipx/cli.mjs", "run"]],
+  ]) {
+    const mixed = run(command, [...prefix, "-i", "README.md", "-F", "component=@README.md", identity]);
+    assert.notEqual(mixed.status, 0);
+    assert.match(mixed.stderr.toString(), /-F and -i are mutually exclusive/);
+
+    const missingComponent = run(command, [...prefix, "-F", "mode=step"]);
+    assert.notEqual(missingComponent.status, 0);
+    assert.equal(missingComponent.stdout.length, 0);
+  }
+});

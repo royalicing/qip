@@ -359,12 +359,18 @@ fn writeHTTPHeaders(out: *Output, http: HTTPPayload, body_len: usize) void {
 
 fn isCustomElementName(name: []const u8) bool {
     if (name.len == 0 or std.mem.indexOfScalar(u8, name, '-') == null) return false;
+    if (name[0] < 'a' or name[0] > 'z') return false;
     if (name.len >= 3 and eqlIgnoreCase(name[0..3], "xml")) return false;
     for (name) |c| {
         if ((c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '.' or c == '_' or c == '-') continue;
         return false;
     }
     return true;
+}
+
+test "element entrypoint names must start with a lowercase letter" {
+    try std.testing.expect(isCustomElementName("qip-play"));
+    try std.testing.expect(!isCustomElementName("_qip-ktx2"));
 }
 
 fn elementEntryFromTargetURI(record: WARCRecord) ?ElementEntry {

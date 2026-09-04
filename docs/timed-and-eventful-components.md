@@ -18,7 +18,7 @@ Timed or Eventful behavior. `finish_update` returns it to the resting state.
 The component can then render the updated state, or remain unrendered while it
 is hidden.
 
-All 44 components in `components/interactive/` implement this revision.
+All 47 components in `components/interactive/` implement this revision.
 Calculator and Tic-Tac-Toe are event-driven applications without scheduled
 wakes. Spreadsheet and TextEdit add semantic caret deadlines. Snake, Side
 Scroller, Peon Gold, and Vertical Shooter run bounded fixed-step simulations.
@@ -186,6 +186,12 @@ scheduling can differ.
 The output does not have to contain pixels. Canonical
 `ktx2-r8g8b8a8-srgb` is the primary pixel output, but a component can render
 HTML, SVG, terminal data, or another declared Content format.
+
+`components/interactive/wasm-debugger.wasm` demonstrates text presentation.
+It accepts a target `application/wasm` module, retains its interpreted machine
+state across keyboard events, and renders a `text/plain` debugger screen. The
+[/component-debugger](/component-debugger) page provides its purpose-built text host;
+`<qip-play>` remains the pixel host for `image/ktx2` output.
 
 ## Starting Animation
 

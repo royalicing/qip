@@ -109,6 +109,16 @@ the profile named in its filename and writes the same profile. Transfer-encoded
 Display P3 is not accepted. The 25-megapixel input, output, and single-channel
 intermediate require 859.6 MiB of fixed Wasm memory.
 
+`solid-color-oklch-to-ktx2-rgba32float-display-p3-linear.wasm` is an inputless
+solid-colour generator. Set `width`, `height`, `lightness`, `chroma`,
+`hue_degrees`, and `alpha`; all colour uniforms are `f32`. Lightness and alpha
+are clamped to 0 through 1, chroma to 0 through 0.5, and hue wraps to 0
+through 360 degrees. The output is straight-alpha linear Display P3 RGBA
+`f32`. If the requested OKLCH colour is outside Display P3, the component
+retains its lightness and hue and reduces its chroma to fit. It does not
+generate HDR RGB values; use a direct linear-P3 generator when values outside
+0 through 1 are required.
+
 Each resizer also has a `-simd.wasm` variant. It processes four adjacent
 destination pixels in the vertical pass with Wasm `f32x4` operations, then
 uses the scalar path for the final one to three pixels of a row. The horizontal

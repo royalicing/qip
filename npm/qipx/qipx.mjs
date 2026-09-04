@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
 import { link, mkdir, readFile, readdir, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import { arch, cpus, platform } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -14,6 +12,7 @@ const encoder = new TextEncoder();
 function usage() {
   return `Usage: qipx [host ...] run [options] <component.wasm> [component2.wasm ...]\n` +
     `       qipx [host ...] dry run [options] <component.wasm> [component2.wasm ...]\n` +
+    `       qipx [host ...] tui [options] <interactive.wasm> [content.wasm ...]\n` +
     `       qipx [host ...] comply [options] <file-or-dir> [...]\n` +
     `       qipx [host ...] bench -i <input> [options] <component.wasm> [...]\n\n` +
     `Hosts:\n` +
@@ -21,6 +20,7 @@ function usage() {
     `  are requested over HTTPS in host order and saved at their original paths.\n\n` +
     `Options:\n` +
     `  -i, --input <path>              Read input from a file instead of stdin\n` +
+    `  -F, --form <name=value>         Add multipart text or file input (repeatable; @path or @-)\n` +
     `  -o, --output <path>             Write output to a file instead of stdout\n` +
     `  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes\n` +
     `  --capacities-must-fit           Reject stages whose max output cannot fit next input\n` +
@@ -30,13 +30,30 @@ function usage() {
     `Uniforms:\n` +
     `  qipx run component.wasm -u width=640 -u height=480\n` +
     `  i32 uniforms are treated as unsigned values; use i64 for signed integers.\n\n` +
+    `Inputless generators:\n` +
+    `  A first-stage generator omits input_ptr and its input-capacity getter. qipx calls render(0).\n` +
+    `  With neither -i nor -F, qipx does not read terminal stdin for a generator.\n\n` +
     `Documentation: https://qip.dev/docs/content-component\n`;
+}
+
+function tuiUsage() {
+  return `Usage: qipx [host ...] tui [options] <interactive.wasm> [content.wasm ...]\n\n` +
+    `Input:\n` +
+    `  -i, --input <path>              Read initial input from a file\n` +
+    `  -F, --form <name=value>         Construct multipart input (repeatable; @path)\n\n` +
+    `Execution:\n` +
+    `  -u, --uniform <name=value>      Set a uniform on the preceding component\n` +
+    `  --max-memory <bytes>            Reject modules whose declared memory exceeds bytes\n` +
+    `  --capacities-must-fit           Check capacity between Content stages\n\n` +
+    `The first component must be Interactive. Later components transform each\n` +
+    `frame as ordinary Content stages; the final output must be UTF-8 text.\n` +
+    `Terminal stdin carries key events, so -i - and -F name=@- are unavailable.\n`;
 }
 
 const downloadByteLimit = 16 * 1024 * 1024;
 const downloadTimeoutMilliseconds = 30_000;
 const redirectLimit = 2;
-const knownCommands = new Set(["run", "dry", "dry-run", "bench", "comply"]);
+const knownCommands = new Set(["run", "dry", "dry-run", "tui", "bench", "comply"]);
 
 function parseHost(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 259) {
@@ -55,7 +72,7 @@ function parseHost(value) {
 
 function parseInvocation(argv) {
   const commandIndex = argv.findIndex((arg) => knownCommands.has(arg));
-  if (commandIndex < 0) throw new Error("qipx requires a subcommand: run, dry run, bench, or comply");
+  if (commandIndex < 0) throw new Error("qipx requires a subcommand: run, dry run, tui, bench, or comply");
   const hosts = argv.slice(0, commandIndex).map(parseHost);
   const command = argv[commandIndex];
   if (command === "dry") {
@@ -783,11 +800,16 @@ function wasmMustExportComponentFunctions(data, label) {
   if (!memory) failStaticExports(`${label} does not export memory`);
   if (memory.kind !== 0x02) failStaticExports(`${label} export memory must be memory`);
   requireFunctionExport(analysis, "render", label);
-  requireStaticFunctionExport(analysis, "input_ptr", label);
+  const hasInputPointer = analysis.exportsByName.has("input_ptr");
   const hasInputUTF8 = analysis.exportsByName.has("input_utf8_cap");
   const hasInputBytes = analysis.exportsByName.has("input_bytes_cap");
-  if (hasInputUTF8 === hasInputBytes) failStaticExports(`${label} must export exactly one input capacity: input_utf8_cap or input_bytes_cap`);
-  requireStaticFunctionExport(analysis, hasInputUTF8 ? "input_utf8_cap" : "input_bytes_cap", label);
+  if (hasInputPointer) {
+    if (hasInputUTF8 === hasInputBytes) failStaticExports(`${label} transform must export exactly one input capacity: input_utf8_cap or input_bytes_cap`);
+    requireStaticFunctionExport(analysis, "input_ptr", label);
+    requireStaticFunctionExport(analysis, hasInputUTF8 ? "input_utf8_cap" : "input_bytes_cap", label);
+  } else if (hasInputUTF8 || hasInputBytes) {
+    failStaticExports(`${label} inputless generator must not export an input capacity`);
+  }
   const hasOutputUTF8 = analysis.exportsByName.has("output_utf8_cap");
   const hasOutputBytes = analysis.exportsByName.has("output_bytes_cap");
   if (hasOutputUTF8 === hasOutputBytes) failStaticExports(`${label} must export exactly one output capacity: output_utf8_cap or output_bytes_cap`);
@@ -798,6 +820,7 @@ function wasmMustExportComponentFunctions(data, label) {
     const hasSize = analysis.exportsByName.has(`${prefix}_content_type_size`);
     if (hasPtr !== hasSize) failStaticExports(`${label} has incomplete ${prefix} content-type exports`);
     if (hasPtr) {
+      if (prefix === "input" && !hasInputPointer) failStaticExports(`${label} inputless generator must not declare an input content type`);
       requireStaticFunctionExport(analysis, `${prefix}_content_type_ptr`, label);
       requireStaticFunctionExport(analysis, `${prefix}_content_type_size`, label);
     }
@@ -828,28 +851,37 @@ export function newComponent(instance, options = {}) {
   requireFunction(exports, "render", label);
   const hasInputUTF8 = typeof exports.input_utf8_cap === "function";
   const hasInputBytes = typeof exports.input_bytes_cap === "function";
+  const hasInputPointer = exports.input_ptr !== undefined;
+  const inputless = !hasInputPointer;
   const hasOutputUTF8 = typeof exports.output_utf8_cap === "function";
   const hasOutputBytes = typeof exports.output_bytes_cap === "function";
-  if (hasInputUTF8 === hasInputBytes) throw new Error(`${label} must export exactly one input capacity: input_utf8_cap or input_bytes_cap`);
+  if (!inputless && hasInputUTF8 === hasInputBytes) throw new Error(`${label} transform must export exactly one input capacity: input_utf8_cap or input_bytes_cap`);
+  if (inputless && (hasInputUTF8 || hasInputBytes)) throw new Error(`${label} inputless generator must not export an input capacity`);
   if (hasOutputUTF8 === hasOutputBytes) throw new Error(`${label} must export exactly one output capacity: output_utf8_cap or output_bytes_cap`);
-  const inputCapName = hasInputUTF8 ? "input_utf8_cap" : "input_bytes_cap";
+  const inputCapName = inputless ? undefined : (hasInputUTF8 ? "input_utf8_cap" : "input_bytes_cap");
   const outputCapName = hasOutputUTF8 ? "output_utf8_cap" : "output_bytes_cap";
-  exportedValue(exports, "input_ptr", label);
-  exportedValue(exports, inputCapName, label);
+  if (!inputless) {
+    exportedValue(exports, "input_ptr", label);
+    exportedValue(exports, inputCapName, label);
+  }
   exportedValue(exports, outputCapName, label);
+  const inputMediaType = declaredType(exports, "input", label) || undefined;
+  if (inputless && inputMediaType !== undefined) throw new Error(`${label} inputless generator must not declare an input content type`);
   const component = Object.freeze({
     label,
     instance,
     exports,
-    inputType: new ContentType(hasInputUTF8 ? "utf8" : "bytes", declaredType(exports, "input", label) || undefined),
+    inputType: inputless ? undefined : new ContentType(hasInputUTF8 ? "utf8" : "bytes", inputMediaType),
     outputType: new ContentType(hasOutputUTF8 ? "utf8" : "bytes", declaredType(exports, "output", label) || undefined),
     inputCapName,
     outputCapName,
-    clearsContentType: hasOutputUTF8 && hasInputBytes,
-    inputCapacity: exportedValue(exports, inputCapName, label),
+    inputless,
+    clearsContentType: !inputless && hasOutputUTF8 && hasInputBytes,
+    inputCapacity: inputless ? 0 : exportedValue(exports, inputCapName, label),
     outputCapacity: exportedValue(exports, outputCapName, label),
   });
-  assertComponentContract(component, "inputType", contract.inputType);
+  if (inputless && contract.inputType !== undefined) throw new Error(`${label} inputless generator does not accept an inputType contract`);
+  if (!inputless) assertComponentContract(component, "inputType", contract.inputType);
   assertComponentContract(component, "outputType", contract.outputType);
   return component;
 }
@@ -859,6 +891,7 @@ function makeStage(spec, component) {
     label: spec.label ?? spec.filePath ?? component.label,
     uniforms: spec.uniforms ?? [],
     component,
+    inputless: component.inputless,
     inputType: component.inputType,
     outputType: component.outputType,
     inputCapName: component.inputCapName,
@@ -888,13 +921,17 @@ export class ContentRejection extends Error {
 function runStage(stage, input) {
   applyUniforms(stage);
   const { exports } = stage.component;
-  const inputPointer = exportedValue(exports, "input_ptr", stage.label);
-  const inputCapacity = exportedValue(exports, stage.inputCapName, stage.label);
-  if (input.byteLength > inputCapacity || inputPointer + input.byteLength > exports.memory.buffer.byteLength) {
-    throw new RangeError(`${stage.label} input exceeds its capacity`);
+  if (stage.inputless) {
+    if (input.byteLength !== 0) throw new RangeError(`${stage.label} is an inputless generator and cannot receive input bytes`);
+  } else {
+    const inputPointer = exportedValue(exports, "input_ptr", stage.label);
+    const inputCapacity = exportedValue(exports, stage.inputCapName, stage.label);
+    if (input.byteLength > inputCapacity || inputPointer + input.byteLength > exports.memory.buffer.byteLength) {
+      throw new RangeError(`${stage.label} input exceeds its capacity`);
+    }
+    new Uint8Array(exports.memory.buffer, inputPointer, input.byteLength).set(input);
   }
-  new Uint8Array(exports.memory.buffer, inputPointer, input.byteLength).set(input);
-  const renderResult = exports.render(input.byteLength);
+  const renderResult = exports.render(stage.inputless ? 0 : input.byteLength);
   if (typeof renderResult !== "bigint") {
     throw new TypeError(`${stage.label} render export must have signature render(i32) -> i64`);
   }
@@ -924,6 +961,7 @@ function runStage(stage, input) {
 }
 
 function resolveStageInputType(stage, currentType, allowMissingInputContentType) {
+  if (stage.inputless) return "";
   let effectiveType = currentType;
   if (!effectiveType && stage.inputType.mediaType && allowMissingInputContentType) effectiveType = stage.inputType.mediaType;
   if (stage.inputType.mediaType && effectiveType !== stage.inputType.mediaType) {
@@ -957,6 +995,7 @@ function validatePipeline(stages, options = {}) {
   if (!Array.isArray(stages) || stages.length === 0) throw new Error("at least one component is required");
   let currentType = "";
   stages.forEach((stage, index) => {
+    if (stage.inputless && index !== 0) throw new Error(`${stage.label} inputless generator must be the first pipeline stage`);
     const effectiveType = resolveStageInputType(stage, currentType, index === 0);
     currentType = nextContentType(stage, effectiveType);
     if (options.capacitiesMustFit && index + 1 < stages.length) {
@@ -973,16 +1012,16 @@ function validatePipeline(stages, options = {}) {
   });
 }
 
-function runPreparedPipeline(input, pipeline) {
+function runPreparedPipeline(input, pipeline, initialContentType = "") {
   let output = bytes(input);
-  let currentType = "";
+  let currentType = initialContentType;
   for (let index = 0; index < pipeline.stages.length; index += 1) {
     const stage = pipeline.stages[index];
     const effectiveType = resolveStageInputType(stage, currentType, index === 0);
     output = runStage(stage, output);
     currentType = nextContentType(stage, effectiveType);
   }
-  return pipelineResult(output, pipeline.outputType);
+  return pipelineResult(output, new ContentType(pipeline.stages.at(-1).outputType.encoding, currentType || undefined));
 }
 
 function pipelineResult(outputBytes, outputType) {
@@ -1421,7 +1460,7 @@ function parseStageArgs(args) {
 }
 
 function parseCLI(argv) {
-  const options = { input: "-", output: "-", maxMemory: undefined, capacitiesMustFit: false };
+  const options = { input: "-", inputFromCLI: false, formValues: [], output: "-", maxMemory: undefined, capacitiesMustFit: false };
   const components = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1430,6 +1469,12 @@ function parseCLI(argv) {
       break;
     } else if (arg === "-i" || arg === "--input") {
       options.input = argv[++index];
+      options.inputFromCLI = true;
+    } else if (arg === "-F" || arg === "--form") {
+      const value = argv[++index];
+      if (value === undefined) throw new Error(`${arg} requires <name=value>`);
+      parseFormAssignment(value);
+      options.formValues.push(value);
     } else if (arg === "-o" || arg === "--output") {
       options.output = argv[++index];
     } else if (arg === "--max-memory") {
@@ -1448,6 +1493,7 @@ function parseCLI(argv) {
   }
   if (!options.input) throw new Error("--input requires a path");
   if (!options.output) throw new Error("--output requires a path");
+  if (options.inputFromCLI && options.formValues.length > 0) throw new Error("-F and -i are mutually exclusive");
   return { options, components: parseStageArgs(components) };
 }
 
@@ -1549,7 +1595,7 @@ function printDryRunPlan(plan) {
     const buffers = stage.inputCapacity + stage.outputCapacity;
     total += buffers;
     console.log(`${index + 1}. ${stage.label} — Content`);
-    console.log(`   Input:  encoding=${stage.inputType.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.inputType.mediaType || "unspecified"}, capacity=${formatBytes(stage.inputCapacity)}`);
+    console.log(`   Input:  encoding=${stage.inputless ? "none" : (stage.inputType.encoding === "utf8" ? "UTF-8" : "bytes")}, type=${stage.inputless ? "unspecified" : (stage.inputType.mediaType || "unspecified")}, capacity=${formatBytes(stage.inputCapacity)}`);
     console.log(`   Output: encoding=${stage.outputType.encoding === "utf8" ? "UTF-8" : "bytes"}, type=${stage.outputType.mediaType || "unspecified"}, capacity=${formatBytes(stage.outputCapacity)}`);
     console.log(`   Buffers: ${formatBytes(buffers)}`);
   });
@@ -1567,6 +1613,94 @@ async function readStdin() {
     offset += chunk.byteLength;
   }
   return out;
+}
+
+const canonicalFormBoundary = "uuid-00000000-0000-0000-0000-000000000000";
+export const canonicalFormContentType = `multipart/form-data;boundary=${canonicalFormBoundary}`;
+
+function validateFormQuotedValue(value, label) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code > 0x7e || value[index] === '"' || value[index] === "\\") {
+      throw new Error(`multipart ${label} ${JSON.stringify(value)} must use printable ASCII without quotes or backslashes`);
+    }
+  }
+}
+
+function parseFormAssignment(value) {
+  const equals = value.indexOf("=");
+  if (equals <= 0) throw new Error(`-F requires <name=value>, got ${JSON.stringify(value)}`);
+  const name = value.slice(0, equals);
+  const rawValue = value.slice(equals + 1);
+  validateFormQuotedValue(name, "field name");
+  if (!rawValue.startsWith("@")) return { name, value: rawValue, filePath: "" };
+  const filePath = rawValue.slice(1);
+  if (!filePath) throw new Error(`-F ${JSON.stringify(value)} has an empty file path`);
+  return { name, value: "", filePath };
+}
+
+function canonicalFormFilename(filePath) {
+  const filename = filePath.split(/[\\/]/).at(-1);
+  if (!filename) throw new Error(`multipart file path ${JSON.stringify(filePath)} has no filename`);
+  validateFormQuotedValue(filename, "filename");
+  return filename;
+}
+
+function multipartBodyContainsBoundary(body) {
+  const marker = Buffer.from(`\r\n--${canonicalFormBoundary}`);
+  const source = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+  for (let offset = 0; ;) {
+    const index = source.indexOf(marker, offset);
+    if (index < 0) return false;
+    const after = index + marker.length;
+    if (after + 2 <= source.length) {
+      const suffix = source.subarray(after, after + 2);
+      if (suffix.equals(Buffer.from("\r\n")) || suffix.equals(Buffer.from("--"))) return true;
+    }
+    offset = index + 1;
+  }
+}
+
+export async function buildMultipartFormInput(values, { stdin } = {}) {
+  const assignments = values.map(parseFormAssignment);
+  if (assignments.filter((assignment) => assignment.filePath === "-").length > 1) {
+    throw new Error("only one -F field may read from stdin with @-");
+  }
+
+  const chunks = [];
+  for (const assignment of assignments) {
+    let body;
+    let filename = "";
+    if (!assignment.filePath) {
+      body = encoder.encode(assignment.value);
+    } else if (assignment.filePath === "-") {
+      body = stdin === undefined ? await readStdin() : bytes(stdin);
+      filename = "-";
+    } else {
+      try {
+        body = bytes(await readFile(assignment.filePath));
+        filename = canonicalFormFilename(assignment.filePath);
+      } catch (error) {
+        throw new Error(`read -F ${assignment.name}=@${assignment.filePath}: ${error.message ?? error}`);
+      }
+    }
+    if (multipartBodyContainsBoundary(body)) {
+      throw new Error(`-F field ${JSON.stringify(assignment.name)} contains the multipart boundary as a delimiter line`);
+    }
+
+    let header = `--${canonicalFormBoundary}\r\nContent-Disposition: form-data; name="${assignment.name}"`;
+    if (filename) header += `; filename="${filename}"\r\nContent-Type: application/octet-stream`;
+    chunks.push(encoder.encode(`${header}\r\n\r\n`), body, encoder.encode("\r\n"));
+  }
+  chunks.push(encoder.encode(`--${canonicalFormBoundary}--\r\n`));
+  const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const output = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return Object.freeze({ bytes: output, contentType: canonicalFormContentType });
 }
 
 function parsePositiveInteger(value, label) {
@@ -1878,44 +2012,21 @@ async function benchCommand(argv, hosts) {
   printBenchmarkReport(candidates, input, options.input === "-" ? "stdin" : options.input, expected, options, collectAfterWarmup);
 }
 
-export async function main(argv = process.argv.slice(2)) {
-  if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
-    console.log(usage());
-    return;
-  }
-  const invocation = parseInvocation(argv);
-  if ((invocation.command === "run" || invocation.command === "dry-run") && (invocation.args[0] === "--help" || invocation.args[0] === "-h")) {
-    console.log(usage());
-    return;
-  }
-  if (invocation.command === "comply") {
-    await complyCommand(invocation.args, invocation.hosts);
-    return;
-  }
-  if (invocation.command === "bench") {
-    await benchCommand(invocation.args, invocation.hosts);
-    return;
-  }
-  if (invocation.command === "dry-run") {
-    await dryRunCommand(invocation.args, invocation.hosts);
-    return;
-  }
-  const { options, pipeline } = await prepareRunPipeline(invocation.args, invocation.hosts);
-  const input = options.input === "-" ? await readStdin() : await readFile(options.input);
-  const result = render(pipeline, input);
-  if (options.output === "-") {
-    process.stdout.write(result.outputBytes);
-    if (result.outputType.encoding === "utf8") process.stdout.write("\n");
-  } else {
-    await writeFile(options.output, result.outputBytes);
-  }
-}
-
-const invokedPath = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
-const modulePath = realpathSync(fileURLToPath(import.meta.url));
-if (invokedPath === modulePath) {
-  main().catch((error) => {
-    console.error(error.message ?? error);
-    process.exitCode = 1;
-  });
-}
+/** @private Shared implementation for the package's unexported CLI module. */
+export const __cliInternals = Object.freeze({
+  usage,
+  tuiUsage,
+  parseInvocation,
+  complyCommand,
+  benchCommand,
+  dryRunCommand,
+  prepareRunPipeline,
+  parseFormAssignment,
+  buildMultipartFormInput,
+  resolveStageInputType,
+  nextContentType,
+  applyUniforms,
+  runStage,
+  readStdin,
+  runPreparedPipeline,
+});

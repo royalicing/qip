@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
+#include "lib/raster-output.h"
 
 #define INPUT_CAP 65536
 #define OUTPUT_CAP (4 * 1024 * 1024)
@@ -22,14 +23,14 @@
 #define MAX_ROWS (DRAWABLE_H / ROW_H)
 #define DEFAULT_TEXT_COLOR_RGBA 0x000000FFu
 #define DEFAULT_BACKGROUND_COLOR_RGBA 0xFFFFFFFFu
-#define BMP_OUTPUT_SIZE (54u + OG_WIDTH * OG_HEIGHT * 4u)
+#define RASTER_OUTPUT_SIZE (QIP_TEXT_RASTER_HEADER_SIZE + OG_WIDTH * OG_HEIGHT * 4u)
 
 _Static_assert(MAX_COLS > 0 && MAX_ROWS > 0, "the authored canvas must fit text");
-_Static_assert(BMP_OUTPUT_SIZE <= OUTPUT_CAP, "the BMP output must fit its buffer");
+_Static_assert(RASTER_OUTPUT_SIZE <= OUTPUT_CAP, "the raster output must fit its buffer");
 
 static unsigned char input_buffer[INPUT_CAP];
 static unsigned char output_buffer[OUTPUT_CAP];
-static const char output_content_type[] = "image/bmp";
+static const char output_content_type[] = QIP_TEXT_RASTER_CONTENT_TYPE;
 static uint32_t text_color_rgba = DEFAULT_TEXT_COLOR_RGBA;             // 0xRRGGBBAA
 static uint32_t background_color_rgba = DEFAULT_BACKGROUND_COLOR_RGBA; // 0xRRGGBBAA
 
@@ -92,12 +93,7 @@ static void set_pixel(uint32_t width, uint32_t height, uint32_t x, uint32_t y,
     if (x >= width || y >= height) {
         return;
     }
-    uint32_t row = height - 1 - y;
-    uint32_t idx = 54 + (row * width + x) * 4;
-    output_buffer[idx] = b;
-    output_buffer[idx + 1] = g;
-    output_buffer[idx + 2] = r;
-    output_buffer[idx + 3] = a;
+    qip_text_raster_set_pixel(output_buffer, width, height, x, y, r, g, b, a);
 }
 
 static unsigned char rgba_r(uint32_t value) {
@@ -368,7 +364,7 @@ uint64_t render(uint32_t input_size) {
     const uint32_t max_rows = MAX_ROWS;
     uint32_t rows = count_rows(input_size, max_cols, max_rows);
     uint64_t pixel_bytes = (uint64_t)width * (uint64_t)height * 4u;
-    uint64_t total = 54u + pixel_bytes;
+    uint64_t total = RASTER_OUTPUT_SIZE;
 
     unsigned char bg_r = rgba_r(background_color_rgba);
     unsigned char bg_g = rgba_g(background_color_rgba);
@@ -379,33 +375,14 @@ uint64_t render(uint32_t input_size) {
     unsigned char fg_b = rgba_b(text_color_rgba);
     unsigned char fg_a = rgba_a(text_color_rgba);
 
-    for (uint32_t i = 0; i < 54; i++) {
+    for (uint32_t i = 0; i < QIP_TEXT_RASTER_HEADER_SIZE; i++) {
         output_buffer[i] = 0;
     }
-    for (uint64_t off = 54; off < total; off += 4) {
-        output_buffer[off] = bg_b;
-        output_buffer[off + 1] = bg_g;
-        output_buffer[off + 2] = bg_r;
-        output_buffer[off + 3] = bg_a;
-    }
+    qip_text_raster_fill(output_buffer, total, bg_r, bg_g, bg_b, bg_a);
 
-    // BMP header
-    output_buffer[0] = 'B';
-    output_buffer[1] = 'M';
-    write_u32_le(2, (uint32_t)total);
-    write_u32_le(6, 0);
-    write_u32_le(10, 54);
-    write_u32_le(14, 40);
-    write_u32_le(18, width);
-    write_u32_le(22, height);
-    write_u16_le(26, 1);
-    write_u16_le(28, 32);
-    write_u32_le(30, 0);
-    write_u32_le(34, (uint32_t)pixel_bytes);
-    write_u32_le(38, 2835);
-    write_u32_le(42, 2835);
-    write_u32_le(46, 0);
-    write_u32_le(50, 0);
+    if (qip_text_raster_init(output_buffer, OUTPUT_CAP, width, height) != total) {
+        return ((uint64_t)output_ptr() << 32);
+    }
 
     uint32_t col = 0;
     uint32_t row = 0;

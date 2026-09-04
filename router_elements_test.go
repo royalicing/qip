@@ -20,7 +20,8 @@ func TestSiteElementEntrypointsRegisterOneElementEach(t *testing.T) {
 		{path: "site/_elements/qip-edit.js", registered: `customElements.define("qip-edit"`, excluded: []string{`customElements.define("qip-view"`}},
 		{path: "site/_elements/qip-form.js", registered: `customElements.define("qip-form"`},
 		{path: "site/_elements/qip-view.js", registered: `customElements.define("qip-view"`, excluded: []string{`customElements.define("qip-edit"`}},
-		{path: "site/_elements/qip-play.js", registered: `customElements.define("qip-play"`},
+		{path: "site/_elements/qip-play.js", registered: `customElements.define("qip-play"`, excluded: []string{`customElements.define("qip-step"`}},
+		{path: "site/_elements/qip-wasm-policy.js", registered: `customElements.define("qip-wasm-policy"`},
 	}
 	for _, tt := range tests {
 		body, err := os.ReadFile(tt.path)
@@ -42,6 +43,8 @@ func TestLoadElementAssetsMapsJavaScriptAndSelectsTopLevelEntrypoints(t *testing
 	root := t.TempDir()
 	files := map[string]string{
 		"copy-code.js":       "export {};",
+		"_qip-ktx2.js":       "export {};",
+		"_qip-pipeline.js":   "export {};",
 		"plain.js":           "export {};",
 		"Upper-box.js":       "export {};",
 		"lib/shared.js":      "export {};",
@@ -61,7 +64,7 @@ func TestLoadElementAssetsMapsJavaScriptAndSelectsTopLevelEntrypoints(t *testing
 	if err != nil {
 		t.Fatalf("loadElementAssets: %v", err)
 	}
-	wantPaths := []string{"/elements/Upper-box.js", "/elements/copy-code.js", "/elements/lib/shared.js", "/elements/plain.js"}
+	wantPaths := []string{"/elements/Upper-box.js", "/elements/_qip-ktx2.js", "/elements/_qip-pipeline.js", "/elements/copy-code.js", "/elements/lib/shared.js", "/elements/plain.js"}
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatalf("paths=%v, want %v", paths, wantPaths)
 	}

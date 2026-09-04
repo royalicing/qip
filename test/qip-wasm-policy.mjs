@@ -17,12 +17,9 @@ vm.runInThisContext(
     "\nglobalThis.__qipEditValidateWasmModulePolicy = qipEditValidateWasmModulePolicy;",
   { filename: "site/_elements/qip-edit.js" },
 );
-vm.runInThisContext(
-  readFileSync("site/_elements/qip-play.js", "utf8") +
-    "\nglobalThis.__qipPlayReadModulePolicy = qipPlayReadModulePolicy;" +
-    "\nglobalThis.__qipPlayValidateWasmModulePolicy = qipPlayValidateWasmModulePolicy;",
-  { filename: "site/_elements/qip-play.js" },
-);
+const qipPlayPolicy = await import("../site/_elements/qip-wasm-policy.js");
+globalThis.__qipPlayReadModulePolicy = qipPlayPolicy.readModulePolicy;
+globalThis.__qipPlayValidateWasmModulePolicy = qipPlayPolicy.validateWasmModulePolicy;
 
 const page = 65536;
 const opcodeMemoryGrow = 0x40;

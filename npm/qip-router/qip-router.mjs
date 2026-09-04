@@ -332,6 +332,11 @@ function canonicalPath(pathname) {
   return `/${parts.join("/")}` || "/";
 }
 
+function isCustomElementName(name) {
+  if (!/^[a-z][a-z0-9._-]*$/.test(name) || !name.includes("-")) return false;
+  return !name.toLowerCase().startsWith("xml");
+}
+
 function rawMarkdownRequest(pathname, route) {
   if (route.sourceType !== "text/markdown") return false;
   return [".md", ".markdown"].includes(extname(pathname).toLowerCase());
@@ -772,8 +777,9 @@ export async function createQIPRouter(options = {}) {
       }
     }
     for (const [elementPath] of current.elements) {
-      const name = elementPath.split("/").at(-1);
-      if (!name.includes("-") || elementPath.slice("/elements/".length).includes("/")) continue;
+      const filename = elementPath.split("/").at(-1);
+      const name = filename.endsWith(".js") ? filename.slice(0, -3) : "";
+      if (!isCustomElementName(name) || elementPath.slice("/elements/".length).includes("/")) continue;
       if (seen.has(elementPath)) continue;
       const response = await baseResponse(elementPath, current);
       if (response) records.push(buildWarcRecord(`http://qip.local${elementPath}`, response));

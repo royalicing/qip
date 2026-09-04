@@ -14,6 +14,7 @@ npx @qip.dev/qipx --help
 | --- | --- |
 | `qipx [host ...] run [options] <component.wasm> [...]` | Run one Content component or a left-to-right component pipeline. Input comes from stdin by default; output goes to stdout. |
 | `qipx [host ...] dry run [options] <component.wasm> [...]` | Show the complete source plan and validate locally available pipeline stages without network requests, input reads, or rendering. |
+| `qipx [host ...] tui [options] <interactive.wasm> [content.wasm ...]` | Run one text-rendering Interactive component in a terminal, with optional Content transforms after it. |
 | `qipx [host ...] comply [options] <file-or-dir> [...]` | Check the Content ABI and strict WebAssembly subset, then run any Compliance oracles supplied with `--with`. |
 | `qipx [host ...] bench -i <input> [options] <component.wasm> [...]` | Compare warmed Content components on Node/V8 or Bun/JavaScriptCore. Every candidate must return the same type and bytes as the first component. |
 
@@ -75,4 +76,40 @@ printf '# Hello from qipx\n' \
 
 See the [Content Component Contract](/docs/content-component) for the ABI, [Compliance oracles](/docs/comply) for portable behavior checks, and [Benchmarking Components](/docs/benchmarking-components) for benchmark interpretation.
 
-`qipx` deliberately focuses on Content components and Compliance oracles. It does not serve router projects or run Tile, Form, or Interactive components. Use the repository's other hosts when you need those execution models.
+`qipx` deliberately focuses on Content components, text-rendering Interactive
+components, and Compliance oracles. It does not serve router projects or run
+Tile and Form components. See [Running Interactive Components In A
+Terminal](/docs/terminal-interactive-components) for the TUI lifecycle, input
+mapping, and terminal-output boundary.
+
+## Multipart input
+
+Use repeatable `-F` or `--form` options instead of `-i` to construct one
+`multipart/form-data` input:
+
+```sh
+qipx run \
+  -F mode=step \
+  -F component=@examples/counter.wasm \
+  components/multipart/form-data/form-data-to-tar.wasm \
+  > debugger-input.tar
+```
+
+`-F name=value` adds a UTF-8 field. `-F name=@path` adds the file's exact
+bytes and sends only its final path segment as `filename`. `-F name=@-` reads
+one file field from stdin and sends `filename="-"`. Only one field may use
+`@-`. `--form` is an exact alias for `-F`. Multipart form input and `-i` are
+mutually exclusive.
+
+Go `qip` and Node.js `qipx` produce byte-identical bodies. They preserve flag
+order, use `Content-Type: application/octet-stream` for file fields, use CRLF
+framing, and use the component contract's default boundary:
+
+```text
+multipart/form-data;boundary=uuid-00000000-0000-0000-0000-000000000000
+```
+
+Field names and emitted filenames must be printable ASCII without quotes or
+backslashes. Both CLIs reject a part body that contains the fixed boundary as
+a delimiter line. A `run` command still requires at least one component. Use
+`components/bytes/identity.wasm` when you need to inspect the complete body.

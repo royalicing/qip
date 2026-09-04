@@ -39,6 +39,21 @@ QIP hosts do not promise that instances will be reused. The execution breakdown
 helps distinguish a slow algorithm from a large module that is expensive to
 instantiate.
 
+For a component that accepts `multipart/form-data`, repeat `-F` or `--form` as
+you would with `qip run`. QIP constructs the same canonical multipart bytes for
+every sample:
+
+```sh
+./qip bench \
+  -F component=@components/text/hello.wasm \
+  -r 100 \
+  components/interactive/wasm-debugger.wasm
+```
+
+Use `-F name=value` for a text field, `-F name=@path` for file bytes, or
+`-F name=@-` for one file field read from standard input. `-F` and `-i` are
+mutually exclusive.
+
 ## Compare A Reused Instance In Node.js
 
 Pass `--node` to add an opt-in V8 measurement for Content components:

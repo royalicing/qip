@@ -1,9 +1,12 @@
 // Port of js-to-bmp.c to Zig.
 
+const output_ktx2 = @hasDecl(@import("root"), "qip_text_output_ktx2");
+const ktx = if (output_ktx2) @import("ktx2_rgba8_srgb") else struct {};
 const INPUT_CAP: usize = 65536;
 const OUTPUT_CAP: usize = 8 * 1024 * 1024;
 const INPUT_CONTENT_TYPE = "text/javascript";
-const OUTPUT_CONTENT_TYPE = "image/bmp";
+const OUTPUT_CONTENT_TYPE = if (output_ktx2) "image/ktx2" else "image/bmp";
+const OUTPUT_HEADER_SIZE: usize = if (output_ktx2) ktx.HEADER_SIZE else 54;
 const GLYPH_W: u32 = 8;
 const GLYPH_H: u32 = 8;
 const LEADING: u32 = 4;
@@ -64,11 +67,11 @@ fn writeU32LE(off: u32, value: u32) void {
 
 fn setPixel(width: u32, height: u32, x: u32, y: u32, c: Color) void {
     if (x >= width or y >= height) return;
-    const row: u32 = height - 1 - y;
-    const idx: usize = @intCast(54 + (row * width + x) * 4);
-    output_buf[idx] = c.b;
+    const row: u32 = if (output_ktx2) y else height - 1 - y;
+    const idx: usize = @intCast(OUTPUT_HEADER_SIZE + (row * width + x) * 4);
+    output_buf[idx] = if (output_ktx2) c.r else c.b;
     output_buf[idx + 1] = c.g;
-    output_buf[idx + 2] = c.r;
+    output_buf[idx + 2] = if (output_ktx2) c.b else c.r;
     output_buf[idx + 3] = c.a;
 }
 
@@ -210,39 +213,43 @@ fn renderImpl(input_size_in: u32) u32 {
     const width: u32 = COLS * GLYPH_W;
     const height: u32 = rows * ROW_H;
     const pixel_bytes: u64 = @as(u64, width) * @as(u64, height) * 4;
-    const total: u64 = 54 + pixel_bytes;
+    const total: u64 = OUTPUT_HEADER_SIZE + pixel_bytes;
     if (total > OUTPUT_CAP) return 0;
     const total_u32: u32 = @intCast(total);
 
     var i: u32 = 0;
-    while (i < 54) : (i += 1) {
+    while (i < OUTPUT_HEADER_SIZE) : (i += 1) {
         output_buf[@intCast(i)] = 0;
     }
-    i = 54;
+    i = @intCast(OUTPUT_HEADER_SIZE);
     while (i < total_u32) : (i += 4) {
         const idx: usize = @intCast(i);
-        output_buf[idx] = bg.b;
+        output_buf[idx] = if (output_ktx2) bg.r else bg.b;
         output_buf[idx + 1] = bg.g;
-        output_buf[idx + 2] = bg.r;
+        output_buf[idx + 2] = if (output_ktx2) bg.b else bg.r;
         output_buf[idx + 3] = bg.a;
     }
 
-    output_buf[0] = 'B';
-    output_buf[1] = 'M';
-    writeU32LE(2, total_u32);
-    writeU32LE(6, 0);
-    writeU32LE(10, 54);
-    writeU32LE(14, 40);
-    writeU32LE(18, width);
-    writeU32LE(22, height);
-    writeU16LE(26, 1);
-    writeU16LE(28, 32);
-    writeU32LE(30, 0);
-    writeU32LE(34, @intCast(pixel_bytes));
-    writeU32LE(38, 2835);
-    writeU32LE(42, 2835);
-    writeU32LE(46, 0);
-    writeU32LE(50, 0);
+    if (output_ktx2) {
+        _ = ktx.writeHeader(output_buf[0..], width, height) orelse return 0;
+    } else {
+        output_buf[0] = 'B';
+        output_buf[1] = 'M';
+        writeU32LE(2, total_u32);
+        writeU32LE(6, 0);
+        writeU32LE(10, 54);
+        writeU32LE(14, 40);
+        writeU32LE(18, width);
+        writeU32LE(22, height);
+        writeU16LE(26, 1);
+        writeU16LE(28, 32);
+        writeU32LE(30, 0);
+        writeU32LE(34, @intCast(pixel_bytes));
+        writeU32LE(38, 2835);
+        writeU32LE(42, 2835);
+        writeU32LE(46, 0);
+        writeU32LE(50, 0);
+    }
 
     var col: u32 = 0;
     var row: u32 = 0;

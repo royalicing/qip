@@ -39,5 +39,6 @@ Browse the complete lists of [`text/*` components](/text) and [`image/*` compone
 - [CSS expression calculator](/css-expression-calculator) resolves viewport units, safe-area insets, and keyboard insets for editable mobile scenarios.
 - [IEEE 754 floating-point inspector](/ieee-754-floats) exposes the sign, exponent, and fraction bits of editable `f32` and `f64` values.
 - [WebAssembly module inspector](/wasm-inspector) measures module structure, memory, control flow, calls, SIMD, and potentially trapping instructions.
+- [QIP component debugger](/component-debugger) interprets a scalar QIP component one WebAssembly instruction at a time and shows its call stack, operand stack, memory activity, and loop counts as plain text.
 - [Shadow rendering comparison](/shadow-rendering) compares adjustable shadows across browsers, mobile platforms, Figma, and Photoshop.
 - [SVG data URI](/svg-data-uri) percent-encodes SVG bytes for HTML or CSS.

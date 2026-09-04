@@ -79,5 +79,3 @@ export function wasmMustComplyWithComponentContract(wasm: Uint8Array | ArrayBuff
 export function newComponent(instance: WebAssembly.Instance, contract?: ContentComponentContract): ContentComponent;
 export function createRecipe(steps: RecipeStep[], options?: RecipeOptions): Recipe;
 export function render(target: ContentComponent | Recipe, input: Uint8Array | ArrayBuffer | string): RenderResult;
-
-export function main(argv?: string[]): Promise<void>;

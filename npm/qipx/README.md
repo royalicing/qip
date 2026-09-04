@@ -1,8 +1,8 @@
 # qipx
 
 `qipx` is a zero-dependency Node CLI and library for running [QIP Content
-components](https://qip.dev/docs/content-component) and [Compliance
-oracles](https://qip.dev/docs/comply).
+components](https://qip.dev/docs/content-component), text-rendering
+Interactive components, and [Compliance oracles](https://qip.dev/docs/comply).
 
 The package targets Node.js 22 or newer. Useful component and oracle
 downloads are available from [qip.dev/tools](https://qip.dev/tools) and
@@ -40,15 +40,31 @@ qipx [host ...] run [options] <component.wasm> [component2.wasm ...]
 
 Options:
   -i, --input <path>              Read input from a file instead of stdin
+  -F, --form <name=value>         Add multipart text or file input (repeatable; @path or @-)
   -o, --output <path>             Write output to a file instead of stdout
   --max-memory <bytes>            Reject modules whose declared memory exceeds bytes
   --capacities-must-fit           Reject stages whose max output cannot fit next input
   -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)
 ```
 
+Construct multipart input with text and exact file bytes:
+
+```sh
+qipx run \
+  -F mode=step \
+  -F component=@examples/counter.wasm \
+  components/multipart/form-data/form-data-to-tar.wasm \
+  > debugger-input.tar
+```
+
+Use `@-` to read one file field from stdin. `--form` is an exact alias for
+`-F`. Multipart form input and `-i` are mutually exclusive. Go `qip` and
+Node.js `qipx` use the same fixed QIP boundary and produce byte-identical
+multipart bodies for the same fields.
+
 ## Host Resolution
 
-Hosts are global execution context for `run`, `dry run`, `bench`, and `comply`.
+Hosts are global execution context for `run`, `tui`, `dry run`, `bench`, and `comply`.
 Put them before the required subcommand, in fallback order:
 
 ```sh
@@ -77,6 +93,32 @@ Connection failures, TLS failures, timeouts, HTTP 404 or 410, and HTTP 5xx
 responses advance to the next host. Other HTTP errors and invalid component
 bytes stop resolution. Downloads follow at most two redirects on the same
 HTTPS origin, time out after 30 seconds, and have a 16 MiB decoded-byte limit.
+
+## TUI
+
+Run a text-rendering Interactive component in the terminal:
+
+```sh
+qipx tui \
+  -F component=@components/text/wc.wasm \
+  -F 'input=The quick brown fox jumps over the lazy dog' \
+  components/interactive/wasm-debugger.wasm
+```
+
+The first component is retained across key events and scheduled updates.
+Additional components act as ordinary Content transforms on every frame. The
+host passes terminal size through optional `columns` and `lines` uniforms,
+unless an explicit `-u` value overrides one.
+
+TUI mode uses stdin for keys, so it rejects `-i -` and `-F name=@-`. It accepts
+printable UTF-8, line feeds, and a small ANSI SGR styling allowlist from the
+rendered output. It rejects cursor movement, OSC, DCS, clipboard commands, and
+other terminal controls before writing a frame. `Ctrl-C` exits, `Ctrl-Z`
+suspends on Unix, and `Ctrl-S`/`Ctrl-Q` remain reserved.
+
+See [Running Interactive Components In A
+Terminal](https://qip.dev/docs/terminal-interactive-components) for the exact
+keyboard and output rules.
 
 ### Uniforms
 

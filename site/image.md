@@ -80,6 +80,10 @@ Related tools: [image color palette](/image-color-palette), [favicon generator](
 
 ## KTX2 (`image/ktx2`)
 
+### Generate
+
+- [`solid-color-oklch-to-ktx2-rgba32float-display-p3-linear.wasm`](/image/ktx2/solid-color-oklch-to-ktx2-rgba32float-display-p3-linear.wasm) generates a straight-alpha linear Display P3 float32 KTX2 surface from `width`, `height`, `lightness`, `chroma`, `hue_degrees`, and `alpha` uniforms. It reduces out-of-gamut OKLCH chroma while preserving lightness and hue.
+
 ### Resize
 
 - [`ktx2-r8g8b8a8-srgb-double.wasm`](/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm) doubles canonical RGBA8 sRGB KTX2 with exact nearest-neighbor pixel replication.

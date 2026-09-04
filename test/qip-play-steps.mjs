@@ -29,9 +29,9 @@ globalThis.document = {
 };
 globalThis.getComputedStyle = () => ({ getPropertyValue() { return ""; } });
 
-vm.runInThisContext(readFileSync("site/_elements/qip-play.js", "utf8"), {
-  filename: "site/_elements/qip-play.js",
-});
+await import("../site/_elements/qip-play.js");
+const { sourceSteps: qipPlaySourceSteps, validatePostStage: qipPlayValidatePostStage } =
+  await import("../site/_elements/_qip-pipeline.js");
 
 function node(localName, attributes = {}, children = []) {
   return {

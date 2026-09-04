@@ -1,0 +1,1796 @@
+//! Instruction-step debugger for scalar, integer QIP Content components.
+//!
+//! Input is `multipart/form-data`: a required `component` file part contains the
+//! target `application/wasm` module and an optional `input` part contains exact
+//! bytes for its Content call. Its `text/plain` presentation is intentionally
+//! useful in a terminal as well as a browser.
+
+const std = @import("std");
+const debug = @import("wasm_debug");
+
+const MULTIPART_OVERHEAD_CAP: usize = 32 * 1024;
+const INPUT_CAP: usize = debug.MAX_MODULE_BYTES + debug.MAX_TARGET_MEMORY_BYTES + MULTIPART_OVERHEAD_CAP;
+const OUTPUT_CAP: usize = 64 * 1024;
+const TYPE_PREFIX = "multipart/form-data;boundary=uuid-";
+const DEFAULT_UUID = "00000000-0000-0000-0000-000000000000";
+const OUTPUT_CONTENT_TYPE = "text/plain";
+const FLAG_KEY_DOWN: i32 = 1 << 0;
+const FLAG_SHIFT: i32 = 1 << 2;
+const FLAG_CTRL: i32 = 1 << 3;
+const FLAG_ALT: i32 = 1 << 4;
+const FLAG_META: i32 = 1 << 5;
+const XK_F5: i32 = 0xffc2;
+const XK_F10: i32 = 0xffc7;
+const XK_F11: i32 = 0xffc8;
+const XK_LEFT: i32 = 0xff51;
+const XK_UP: i32 = 0xff52;
+const XK_RIGHT: i32 = 0xff53;
+const XK_DOWN: i32 = 0xff54;
+const XK_BACKSPACE: i32 = 0xff08;
+const XK_ENTER: i32 = 0xff0d;
+const XK_ESCAPE: i32 = 0xff1b;
+const DEFAULT_INSTRUCTION_BUDGET: u32 = 100_000;
+const MAX_INSTRUCTION_BUDGET: u32 = 1_000_000;
+const REPLAY_INSTRUCTION_CAP: usize = MAX_INSTRUCTION_BUDGET;
+const MEMORY_VIEW_BYTES: usize = 128;
+const INSTRUCTION_MARKER_WIDTH: usize = 3;
+const INSTRUCTION_WINDOW_SIZE: usize = 11;
+const INSTRUCTION_WINDOW_PREVIOUS: usize = 5;
+const COLUMN_BUFFER_CAP: usize = 16 * 1024;
+const LEFT_COLUMN_WIDTH: usize = 46;
+const WRITER_LINE_CAP: usize = 256;
+
+const SGR_RESET = "\x1b[0m";
+const SGR_BOLD = "\x1b[1m";
+const SGR_CONTROL_KEY = "\x1b[1;97m";
+const SGR_DIM = "\x1b[2m";
+const SGR_ERROR = "\x1b[1;91m";
+const SGR_WARNING = "\x1b[1;93m";
+const SGR_INSTRUCTION = "\x1b[93m";
+const SGR_STORAGE = "\x1b[34m";
+const SGR_READ = "\x1b[95m";
+const SGR_WRITE = "\x1b[92m";
+const SGR_WRITE_TARGET = "\x1b[1;92m";
+const SGR_VALUE = "\x1b[94m";
+const SGR_CONTROL_FLOW = "\x1b[91m";
+const SGR_LOOP_CALL = "\x1b[96m";
+const SGR_SELECTED_VALUE = "\x1b[4;94m";
+const SGR_MEMORY_DATA = "\x1b[33m";
+const SGR_MEMORY_INPUT = "\x1b[34m";
+const SGR_MEMORY_WRITTEN = SGR_WRITE;
+
+var input_buf: [INPUT_CAP]u8 = undefined;
+var input_content_type = (TYPE_PREFIX ++ DEFAULT_UUID).*;
+var output_buf: [OUTPUT_CAP]u8 = undefined;
+var left_column_buf: [COLUMN_BUFFER_CAP]u8 = undefined;
+var right_column_buf: [COLUMN_BUFFER_CAP]u8 = undefined;
+var machine: debug.Machine = undefined;
+var phase: Phase = .initializing;
+var begun_at_ms: i64 = 0;
+var committed_at_ms: i64 = 0;
+var instruction_budget: u32 = DEFAULT_INSTRUCTION_BUDGET;
+var last_command_budget: u32 = DEFAULT_INSTRUCTION_BUDGET;
+var load_error: ?LoadError = null;
+var memory_view_visible = true;
+var memory_view_offset: usize = 0;
+var memory_view_bytes: usize = MEMORY_VIEW_BYTES;
+var memory_address_entry = false;
+var memory_address_value: u32 = 0;
+var memory_address_digits: u8 = 0;
+var step_replay_available = false;
+var step_replay_count: usize = 0;
+var step_replay_target: u32 = std.math.maxInt(u32);
+var recent_local_write: ?u32 = null;
+var recent_local_write_frame_count: usize = 0;
+var recent_global_write: ?u32 = null;
+
+const Phase = enum { initializing, ready, updating };
+
+const MultipartError = error{
+    InvalidBoundary,
+    InvalidMultipart,
+    InvalidHeader,
+    MissingComponent,
+    DuplicatePart,
+    UnknownPart,
+};
+
+const LoadError = debug.Error || MultipartError;
+
+const DebugInput = struct {
+    component: []const u8,
+    target_input: []const u8 = &.{},
+};
+
+export fn input_ptr() u32 {
+    return @intCast(@intFromPtr(&input_buf));
+}
+
+export fn input_bytes_cap() u32 {
+    return INPUT_CAP;
+}
+
+export fn output_utf8_cap() u32 {
+    return OUTPUT_CAP;
+}
+
+export fn input_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(&input_content_type));
+}
+
+export fn input_content_type_size() u32 {
+    return input_content_type.len;
+}
+
+export fn output_content_type_ptr() u32 {
+    return @intCast(@intFromPtr(OUTPUT_CONTENT_TYPE.ptr));
+}
+
+export fn output_content_type_size() u32 {
+    return OUTPUT_CONTENT_TYPE.len;
+}
+
+export fn target_input_ptr() u32 {
+    return machine.inputPointer() catch @trap() orelse @trap();
+}
+
+fn readBoundary(out: *[TYPE_PREFIX.len + DEFAULT_UUID.len]u8) MultipartError![]const u8 {
+    for (&input_content_type, 0..) |*byte, index| {
+        out[index] = @as(*volatile u8, @ptrCast(byte)).*;
+    }
+    if (!std.mem.eql(u8, out[0..TYPE_PREFIX.len], TYPE_PREFIX)) return error.InvalidBoundary;
+    const uuid = out[TYPE_PREFIX.len..];
+    for (uuid, 0..) |byte, index| {
+        if (index == 8 or index == 13 or index == 18 or index == 23) {
+            if (byte != '-') return error.InvalidBoundary;
+        } else if (!std.ascii.isHex(byte) or (byte >= 'A' and byte <= 'F')) {
+            return error.InvalidBoundary;
+        }
+    }
+    return out["multipart/form-data;boundary=".len..];
+}
+
+fn trimOWS(value: []const u8) []const u8 {
+    return std.mem.trim(u8, value, " \t");
+}
+
+fn dispositionName(value: []const u8) MultipartError![]const u8 {
+    var fields = std.mem.splitScalar(u8, value, ';');
+    if (!std.ascii.eqlIgnoreCase(trimOWS(fields.next() orelse return error.InvalidHeader), "form-data")) {
+        return error.InvalidHeader;
+    }
+    var result: ?[]const u8 = null;
+    while (fields.next()) |raw_field| {
+        const field = trimOWS(raw_field);
+        const equal = std.mem.indexOfScalar(u8, field, '=') orelse return error.InvalidHeader;
+        const key = trimOWS(field[0..equal]);
+        const raw_value = trimOWS(field[equal + 1 ..]);
+        if (raw_value.len < 2 or raw_value[0] != '"' or raw_value[raw_value.len - 1] != '"') return error.InvalidHeader;
+        const quoted = raw_value[1 .. raw_value.len - 1];
+        if (std.mem.indexOfAny(u8, quoted, "\"\\\r\n") != null) return error.InvalidHeader;
+        if (std.ascii.eqlIgnoreCase(key, "name")) {
+            if (result != null) return error.InvalidHeader;
+            result = quoted;
+        }
+    }
+    return result orelse error.InvalidHeader;
+}
+
+fn parseHeaders(block: []const u8) MultipartError![]const u8 {
+    var disposition: ?[]const u8 = null;
+    var lines = std.mem.splitSequence(u8, block, "\r\n");
+    while (lines.next()) |line| {
+        if (line.len == 0 or line[0] == ' ' or line[0] == '\t') return error.InvalidHeader;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse return error.InvalidHeader;
+        const key = line[0..colon];
+        const value = trimOWS(line[colon + 1 ..]);
+        if (std.ascii.eqlIgnoreCase(key, "content-disposition")) {
+            if (disposition != null) return error.InvalidHeader;
+            disposition = try dispositionName(value);
+        } else if (std.ascii.eqlIgnoreCase(key, "content-type")) {
+            if (value.len == 0) return error.InvalidHeader;
+        } else {
+            return error.InvalidHeader;
+        }
+    }
+    return disposition orelse error.InvalidHeader;
+}
+
+fn findBoundary(input: []const u8, start: usize, marker: []const u8) ?usize {
+    var cursor = start;
+    while (std.mem.indexOfPos(u8, input, cursor, marker)) |at| {
+        const suffix = at + marker.len;
+        if (suffix + 2 <= input.len and
+            (std.mem.eql(u8, input[suffix .. suffix + 2], "\r\n") or
+                std.mem.eql(u8, input[suffix .. suffix + 2], "--"))) return at;
+        cursor = at + 1;
+    }
+    return null;
+}
+
+fn parseMultipart(input: []const u8) MultipartError!DebugInput {
+    var type_bytes: [TYPE_PREFIX.len + DEFAULT_UUID.len]u8 = undefined;
+    const boundary = try readBoundary(&type_bytes);
+    var opening: [2 + "uuid-".len + DEFAULT_UUID.len + 2]u8 = undefined;
+    opening[0] = '-';
+    opening[1] = '-';
+    @memcpy(opening[2 .. opening.len - 2], boundary);
+    opening[opening.len - 2] = '\r';
+    opening[opening.len - 1] = '\n';
+    if (!std.mem.startsWith(u8, input, &opening)) return error.InvalidMultipart;
+
+    var marker: [4 + "uuid-".len + DEFAULT_UUID.len]u8 = undefined;
+    @memcpy(marker[0..4], "\r\n--");
+    @memcpy(marker[4..], boundary);
+
+    var component: ?[]const u8 = null;
+    var target_input: ?[]const u8 = null;
+    var cursor: usize = opening.len;
+    while (true) {
+        const header_end = std.mem.indexOfPos(u8, input, cursor, "\r\n\r\n") orelse return error.InvalidMultipart;
+        if (header_end - cursor > 16 * 1024) return error.InvalidHeader;
+        const name = try parseHeaders(input[cursor..header_end]);
+        const body_start = header_end + 4;
+        const marker_at = findBoundary(input, body_start, &marker) orelse return error.InvalidMultipart;
+        const body = input[body_start..marker_at];
+        if (std.mem.eql(u8, name, "component")) {
+            if (component != null) return error.DuplicatePart;
+            component = body;
+        } else if (std.mem.eql(u8, name, "input")) {
+            if (target_input != null) return error.DuplicatePart;
+            target_input = body;
+        } else {
+            return error.UnknownPart;
+        }
+
+        cursor = marker_at + marker.len;
+        if (cursor + 2 > input.len) return error.InvalidMultipart;
+        if (std.mem.eql(u8, input[cursor .. cursor + 2], "--")) {
+            cursor += 2;
+            if (cursor + 2 <= input.len and std.mem.eql(u8, input[cursor .. cursor + 2], "\r\n")) cursor += 2;
+            if (cursor != input.len) return error.InvalidMultipart;
+            return .{
+                .component = component orelse return error.MissingComponent,
+                .target_input = target_input orelse &.{},
+            };
+        }
+        if (!std.mem.eql(u8, input[cursor .. cursor + 2], "\r\n")) return error.InvalidMultipart;
+        cursor += 2;
+    }
+}
+
+export fn begin_update_at(now_ms: i64) void {
+    if (phase != .ready or now_ms <= 0 or now_ms <= committed_at_ms) @trap();
+    begun_at_ms = now_ms;
+    phase = .updating;
+}
+
+export fn uniform_set_instruction_budget(value: u32) u32 {
+    instruction_budget = std.math.clamp(value, 1, MAX_INSTRUCTION_BUDGET);
+    return instruction_budget;
+}
+
+export fn key_event(x11_key: i32, flags: i32) i32 {
+    if (phase != .updating) @trap();
+    if ((flags & FLAG_KEY_DOWN) == 0 or load_error != null) return 0;
+    if (x11_key == '[' and (flags & FLAG_ALT) != 0 and (flags & (FLAG_SHIFT | FLAG_CTRL | FLAG_META)) == 0) {
+        stepBackward();
+        return 1;
+    }
+    if ((flags & (FLAG_CTRL | FLAG_ALT | FLAG_META)) != 0) return 0;
+    if (memory_address_entry) return handleMemoryAddressKey(x11_key);
+
+    const accesses_before = machine.counters.memory_reads + machine.counters.memory_writes;
+    var execution_command = false;
+    switch (x11_key) {
+        XK_F5, ' ', 'c', 'C' => {
+            execution_command = true;
+            continueExecution(instruction_budget);
+        },
+        XK_F10, 'n', 'N' => {
+            execution_command = true;
+            disableStepReplay();
+            const instruction_before = machine.current_instruction;
+            const frame_count_before = machine.frame_count;
+            const instructions_before = machine.counters.instructions;
+            clearRecentValueWrite();
+            last_command_budget = instruction_budget;
+            machine.stepOver(instruction_budget);
+            rememberValueWrite(instruction_before, frame_count_before, instructions_before);
+        },
+        XK_F11 => {
+            execution_command = true;
+            if ((flags & FLAG_SHIFT) != 0) {
+                finishFrame(instruction_budget);
+            } else {
+                stepInto();
+            }
+        },
+        's', 'S' => {
+            execution_command = true;
+            stepInto();
+        },
+        'f', 'F' => {
+            execution_command = true;
+            finishFrame(instruction_budget);
+        },
+        'x', 'X' => {
+            memory_address_entry = true;
+            memory_address_value = 0;
+            memory_address_digits = 0;
+        },
+        XK_LEFT => {
+            stepBackward();
+            return 1;
+        },
+        XK_RIGHT => {
+            execution_command = true;
+            stepInto();
+        },
+        XK_UP => pageMemoryBackward(),
+        XK_DOWN => pageMemoryForward(),
+        'r', 'R' => {
+            machine.restart() catch |err| {
+                load_error = err;
+                return 1;
+            };
+            resetMemoryView();
+            step_replay_available = true;
+            step_replay_count = 0;
+            step_replay_target = std.math.maxInt(u32);
+            clearRecentValueWrite();
+        },
+        else => return 0,
+    }
+    const following_output = execution_command and followCompletedOutput();
+    const following_store = !following_output and execution_command and followCurrentStoreTarget();
+    if (!following_output and !following_store and machine.counters.memory_reads + machine.counters.memory_writes != accesses_before) {
+        followLastMemoryAccess();
+    }
+    return 1;
+}
+
+fn stepInto() void {
+    const previous_instruction = machine.current_instruction;
+    const frame_count_before = machine.frame_count;
+    const instructions_before = machine.counters.instructions;
+    clearRecentValueWrite();
+    if (!machine.step()) return;
+    rememberValueWrite(previous_instruction, frame_count_before, instructions_before);
+    if (!step_replay_available or step_replay_count >= REPLAY_INSTRUCTION_CAP) {
+        disableStepReplay();
+        return;
+    }
+    step_replay_count += 1;
+    step_replay_target = previous_instruction;
+}
+
+fn continueExecution(budget: u32) void {
+    const can_replay = step_replay_available and step_replay_count == machine.counters.instructions;
+    const instructions_before = machine.counters.instructions;
+    clearRecentValueWrite();
+    last_command_budget = budget;
+    machine.continueFor(budget);
+    if (!can_replay or machine.counters.instructions == instructions_before or machine.counters.instructions > REPLAY_INSTRUCTION_CAP) {
+        disableStepReplay();
+        return;
+    }
+    step_replay_available = true;
+    step_replay_count = @intCast(machine.counters.instructions);
+    step_replay_target = machine.last_executed_instruction;
+}
+
+fn finishFrame(budget: u32) void {
+    const can_replay = step_replay_available and step_replay_count == machine.counters.instructions;
+    const instructions_before = machine.counters.instructions;
+    clearRecentValueWrite();
+    last_command_budget = budget;
+    machine.stepOut(budget);
+    if (!can_replay or machine.counters.instructions == instructions_before or machine.counters.instructions > REPLAY_INSTRUCTION_CAP) {
+        disableStepReplay();
+        return;
+    }
+    step_replay_available = true;
+    step_replay_count = @intCast(machine.counters.instructions);
+    step_replay_target = machine.last_executed_instruction;
+}
+
+fn disableStepReplay() void {
+    step_replay_available = false;
+    step_replay_count = 0;
+    step_replay_target = std.math.maxInt(u32);
+}
+
+fn clearRecentValueWrite() void {
+    recent_local_write = null;
+    recent_local_write_frame_count = 0;
+    recent_global_write = null;
+}
+
+fn rememberValueWrite(instruction_index: u32, frame_count_before: usize, instructions_before: u64) void {
+    if (machine.counters.instructions != instructions_before + 1 or
+        machine.frame_count != frame_count_before or
+        instruction_index >= machine.instruction_count) return;
+    const instruction = machine.instructions[instruction_index];
+    if (instruction.op == 0x21 or instruction.op == 0x22) {
+        recent_local_write = @intCast(instruction.immediate);
+        recent_local_write_frame_count = machine.frame_count;
+    } else if (instruction.op == 0x24) {
+        recent_global_write = @intCast(instruction.immediate);
+    }
+}
+
+fn stepBackward() void {
+    if (!step_replay_available or step_replay_count == 0) return;
+    const replay_count = step_replay_count - 1;
+    machine.restart() catch |err| {
+        load_error = err;
+        disableStepReplay();
+        return;
+    };
+    resetMemoryView();
+    clearRecentValueWrite();
+    step_replay_target = std.math.maxInt(u32);
+    var replayed: usize = 0;
+    while (replayed < replay_count and replayed < REPLAY_INSTRUCTION_CAP) : (replayed += 1) {
+        const previous_instruction = machine.current_instruction;
+        const frame_count_before = machine.frame_count;
+        const instructions_before = machine.counters.instructions;
+        clearRecentValueWrite();
+        if (!machine.step()) {
+            disableStepReplay();
+            return;
+        }
+        rememberValueWrite(previous_instruction, frame_count_before, instructions_before);
+        step_replay_target = previous_instruction;
+    }
+    step_replay_count = replay_count;
+    if (!followCurrentStoreTarget()) followLastMemoryAccess();
+}
+
+fn resetMemoryView() void {
+    memory_view_visible = true;
+    memory_view_offset = 0;
+    memory_view_bytes = MEMORY_VIEW_BYTES;
+    const input_address = machine.inputPointer() catch return;
+    if (input_address) |address| {
+        if (address < machine.memory_size) {
+            memory_view_offset = @as(usize, address) & ~@as(usize, 15);
+        }
+    }
+}
+
+fn handleMemoryAddressKey(x11_key: i32) i32 {
+    switch (x11_key) {
+        XK_ESCAPE => {
+            memory_address_entry = false;
+            return 1;
+        },
+        XK_BACKSPACE => {
+            if (memory_address_digits > 0) {
+                memory_address_value >>= 4;
+                memory_address_digits -= 1;
+            }
+            return 1;
+        },
+        XK_ENTER => {
+            if (memory_address_digits > 0 and machine.memory_size > 0) {
+                memory_view_offset = @min(@as(usize, memory_address_value), machine.memory_size - 1);
+                memory_view_bytes = MEMORY_VIEW_BYTES;
+                memory_view_visible = true;
+            }
+            memory_address_entry = false;
+            return 1;
+        },
+        'i', 'I' => {
+            const pointer = inputMemoryPointer() orelse return 0;
+            showMemoryAt(pointer);
+            return 1;
+        },
+        'o', 'O' => {
+            const pointer = outputMemoryPointer() orelse return 0;
+            showMemoryAt(pointer);
+            return 1;
+        },
+        'r', 'R' => {
+            if (!machine.last_read_access.valid) return 0;
+            showMemoryAt(machine.last_read_access.address);
+            return 1;
+        },
+        'w', 'W' => {
+            if (!machine.last_write_access.valid) return 0;
+            showMemoryAt(machine.last_write_access.address);
+            return 1;
+        },
+        else => {},
+    }
+    const digit = hexDigit(x11_key) orelse return 0;
+    if (memory_address_digits < 8) {
+        memory_address_value = (memory_address_value << 4) | digit;
+        memory_address_digits += 1;
+    }
+    return 1;
+}
+
+fn showMemoryAt(address: u32) void {
+    if (machine.memory_size == 0) return;
+    memory_view_offset = @min(@as(usize, address), machine.memory_size - 1);
+    memory_view_bytes = MEMORY_VIEW_BYTES;
+    memory_view_visible = true;
+    memory_address_entry = false;
+}
+
+fn inputMemoryPointer() ?u32 {
+    const pointer = machine.inputPointer() catch return null;
+    const address = pointer orelse return null;
+    if (address >= machine.memory_size) return null;
+    return address;
+}
+
+fn outputMemoryPointer() ?u32 {
+    if (machine.status != .halted) return null;
+    if ((machine.result >> 63) != 0) return null;
+    const size: u32 = @truncate(machine.result);
+    const pointer: u32 = @as(u32, @truncate(machine.result >> 32)) & 0x7fff_ffff;
+    if (pointer > machine.memory_size or size > machine.memory_size - pointer) return null;
+    return pointer;
+}
+
+fn followCompletedOutput() bool {
+    const pointer = outputMemoryPointer() orelse return false;
+    showMemoryAt(pointer);
+    return true;
+}
+
+fn hexDigit(key: i32) ?u32 {
+    return switch (key) {
+        '0'...'9' => @intCast(key - '0'),
+        'a'...'f' => @intCast(key - 'a' + 10),
+        'A'...'F' => @intCast(key - 'A' + 10),
+        else => null,
+    };
+}
+
+fn pageMemoryBackward() void {
+    memory_view_visible = true;
+    memory_view_bytes = MEMORY_VIEW_BYTES;
+    memory_view_offset -|= MEMORY_VIEW_BYTES;
+}
+
+fn pageMemoryForward() void {
+    memory_view_visible = true;
+    memory_view_bytes = MEMORY_VIEW_BYTES;
+    if (machine.memory_size == 0) return;
+    memory_view_offset = @min(memory_view_offset + MEMORY_VIEW_BYTES, machine.memory_size - 1);
+}
+
+fn followLastMemoryAccess() void {
+    if (!machine.last_access.valid) return;
+    memory_view_offset = @as(usize, machine.last_access.address) & ~@as(usize, 15);
+    memory_view_bytes = MEMORY_VIEW_BYTES;
+    memory_view_visible = true;
+}
+
+fn followCurrentStoreTarget() bool {
+    const target = currentStoreTarget() orelse return false;
+    memory_view_offset = @as(usize, target.address) & ~@as(usize, 15);
+    memory_view_bytes = MEMORY_VIEW_BYTES;
+    memory_view_visible = true;
+    return true;
+}
+
+export fn finish_update() i64 {
+    if (phase != .updating) @trap();
+    instruction_budget = DEFAULT_INSTRUCTION_BUDGET;
+    committed_at_ms = begun_at_ms;
+    phase = .ready;
+    return begun_at_ms;
+}
+
+export fn render(input_size: u32) packed struct(u64) {
+    output_size: u32,
+    output_ptr: u31,
+    failed: u1,
+} {
+    if (phase == .updating) @trap();
+    if (phase == .initializing) {
+        load_error = null;
+        memory_view_visible = true;
+        memory_view_offset = 0;
+        memory_view_bytes = MEMORY_VIEW_BYTES;
+        memory_address_entry = false;
+        memory_address_value = 0;
+        memory_address_digits = 0;
+        step_replay_available = false;
+        step_replay_count = 0;
+        step_replay_target = std.math.maxInt(u32);
+        instruction_budget = DEFAULT_INSTRUCTION_BUDGET;
+        last_command_budget = DEFAULT_INSTRUCTION_BUDGET;
+        clearRecentValueWrite();
+        const debug_input = parseMultipart(input_buf[0..input_size]) catch |err| {
+            load_error = err;
+            phase = .ready;
+            const size = renderText();
+            return .{
+                .output_size = @intCast(size),
+                .output_ptr = @intCast(@intFromPtr(&output_buf)),
+                .failed = 0,
+            };
+        };
+        machine.loadWithInput(debug_input.component, debug_input.target_input) catch |err| {
+            load_error = err;
+        };
+        if (load_error == null) {
+            resetMemoryView();
+            step_replay_available = true;
+        }
+        phase = .ready;
+    } else if (input_size != 0) {
+        @trap();
+    }
+
+    const size = renderText();
+    return .{
+        .output_size = @intCast(size),
+        .output_ptr = @intCast(@intFromPtr(&output_buf)),
+        .failed = 0,
+    };
+}
+
+const Writer = struct {
+    buffer: []u8,
+    offset: usize = 0,
+    line_index: usize = 0,
+    visible_line_lengths: [WRITER_LINE_CAP]usize = [_]usize{0} ** WRITER_LINE_CAP,
+
+    fn init(buffer: []u8) Writer {
+        return .{ .buffer = buffer };
+    }
+
+    fn text(self: *Writer, value: []const u8) void {
+        const amount = @min(value.len, self.buffer.len - self.offset);
+        @memcpy(self.buffer[self.offset .. self.offset + amount], value[0..amount]);
+        self.offset += amount;
+        self.countVisible(value[0..amount]);
+    }
+
+    fn raw(self: *Writer, value: []const u8) void {
+        const amount = @min(value.len, self.buffer.len - self.offset);
+        @memcpy(self.buffer[self.offset .. self.offset + amount], value[0..amount]);
+        self.offset += amount;
+    }
+
+    fn styled(self: *Writer, comptime style: []const u8, value: []const u8) void {
+        self.raw(style);
+        self.text(value);
+        self.raw(SGR_RESET);
+    }
+
+    fn print(self: *Writer, comptime format: []const u8, args: anytype) void {
+        const rendered = std.fmt.bufPrint(self.buffer[self.offset..], format, args) catch return;
+        self.offset += rendered.len;
+        self.countVisible(rendered);
+    }
+
+    fn countVisible(self: *Writer, value: []const u8) void {
+        for (value) |byte| {
+            if (byte == '\n') {
+                self.line_index += 1;
+            } else if ((byte & 0xc0) != 0x80 and self.line_index < self.visible_line_lengths.len) {
+                self.visible_line_lengths[self.line_index] += 1;
+            }
+        }
+    }
+
+    fn visibleLineLength(self: *const Writer, index: usize) usize {
+        return if (index < self.visible_line_lengths.len) self.visible_line_lengths[index] else 0;
+    }
+};
+
+fn renderCodeOffset(out: *Writer, value: u32) void {
+    out.raw(SGR_DIM);
+    out.print("0x{x:0>6}", .{value});
+    out.raw(SGR_RESET);
+}
+
+fn renderHex32(out: *Writer, value: u32) void {
+    out.raw(SGR_VALUE);
+    out.print("0x{x:0>8}", .{value});
+    out.raw(SGR_RESET);
+}
+
+fn renderBareHex32(out: *Writer, value: u32) void {
+    out.raw(SGR_VALUE);
+    out.print("{x:0>8}", .{value});
+    out.raw(SGR_RESET);
+}
+
+fn renderHex64(out: *Writer, value: u64) void {
+    out.raw(SGR_VALUE);
+    out.print("0x{x:0>16}", .{value});
+    out.raw(SGR_RESET);
+}
+
+fn instructionStyle(op: u8) []const u8 {
+    if (isWriteInstruction(op)) return SGR_WRITE;
+    if (op == 0x20 or op == 0x23 or (op >= 0x28 and op <= 0x35)) return SGR_READ;
+    if (op == 0x03 or op == 0x10) return SGR_LOOP_CALL;
+    if (op == 0x1b) return SGR_CONTROL_FLOW;
+    return switch (op) {
+        0x00...0x02, 0x04...0x0f => SGR_CONTROL_FLOW,
+        else => SGR_INSTRUCTION,
+    };
+}
+
+fn instructionStyleAt(index: u32) []const u8 {
+    if (branchTargetsLoop(index)) return SGR_LOOP_CALL;
+    return instructionStyle(machine.instructions[index].op);
+}
+
+fn renderOpcodeName(out: *Writer, instruction: debug.Instruction, style: []const u8) void {
+    switch (instruction.op) {
+        0x20...0x22 => {
+            out.raw(SGR_STORAGE);
+            out.text("local");
+            out.raw(style);
+            out.text(switch (instruction.op) {
+                0x20 => ".get",
+                0x21 => ".set",
+                0x22 => ".tee",
+                else => unreachable,
+            });
+            out.raw(SGR_RESET);
+        },
+        0x23, 0x24 => {
+            out.raw(SGR_STORAGE);
+            out.text("global");
+            out.raw(style);
+            out.text(if (instruction.op == 0x23) ".get" else ".set");
+            out.raw(SGR_RESET);
+        },
+        0x28...0x35 => {
+            const name = debug.opcodeName(instruction.op);
+            const separator = std.mem.indexOfScalar(u8, name, '.') orelse unreachable;
+            out.raw(SGR_INSTRUCTION);
+            out.text(name[0..separator]);
+            out.raw(SGR_READ);
+            out.text(name[separator..]);
+            out.raw(SGR_RESET);
+        },
+        0x36...0x3e => {
+            const name = debug.opcodeName(instruction.op);
+            const separator = std.mem.indexOfScalar(u8, name, '.') orelse unreachable;
+            out.raw(SGR_INSTRUCTION);
+            out.text(name[0..separator]);
+            out.raw(SGR_WRITE);
+            out.text(name[separator..]);
+            out.raw(SGR_RESET);
+        },
+        0xfc => {
+            const name = debug.instructionName(instruction);
+            const separator = std.mem.indexOfScalar(u8, name, '.') orelse unreachable;
+            out.raw(SGR_INSTRUCTION);
+            out.text(name[0..separator]);
+            out.raw(SGR_WRITE);
+            out.text(name[separator..]);
+            out.raw(SGR_RESET);
+        },
+        else => {
+            out.raw(style);
+            out.print("{s}{s}", .{
+                if (instruction.op == 0x03) "[LOOP] " else "",
+                debug.opcodeName(instruction.op),
+            });
+        },
+    }
+}
+
+fn branchTargetsLoop(index: u32) bool {
+    if (index >= machine.instruction_count) return false;
+    const branch = machine.instructions[index];
+    if (branch.op != 0x0c and branch.op != 0x0d) return false;
+    if (branch.immediate >= branch.depth) return false;
+    const target_depth = branch.depth - 1 - @as(u16, @intCast(branch.immediate));
+    var cursor: usize = index;
+    while (cursor > 0) {
+        cursor -= 1;
+        const candidate = machine.instructions[cursor];
+        if ((candidate.op == 0x02 or candidate.op == 0x03 or candidate.op == 0x04) and
+            candidate.depth == target_depth and candidate.match >= index)
+            return candidate.op == 0x03;
+    }
+    return false;
+}
+
+fn isWriteInstruction(op: u8) bool {
+    return op == 0x21 or op == 0x22 or op == 0x24 or (op >= 0x36 and op <= 0x3e) or op == 0xfc;
+}
+
+fn storeWidth(op: u8) ?u8 {
+    return switch (op) {
+        0x36, 0x38 => 4,
+        0x37, 0x39 => 8,
+        0x3a, 0x3c => 1,
+        0x3b, 0x3d => 2,
+        0x3e => 4,
+        else => null,
+    };
+}
+
+fn currentStoreTarget() ?debug.MemoryEvent {
+    if (machine.current_instruction >= machine.instruction_count) return null;
+    const instruction = machine.instructions[machine.current_instruction];
+    if (instruction.op == 0xfc and (instruction.immediate == 10 or instruction.immediate == 11)) {
+        if (machine.stack_count < 3) return null;
+        const address_index = machine.stack_count - 3;
+        const length_index = machine.stack_count - 1;
+        if (machine.stack_types[address_index] != .i32 or machine.stack_types[length_index] != .i32) return null;
+        const address: u32 = @truncate(machine.stack[address_index]);
+        const length: u32 = @truncate(machine.stack[length_index]);
+        if (length == 0 or @as(u64, address) + length > machine.memory_size) return null;
+        return .{ .valid = true, .address = address, .width = length };
+    }
+    if (machine.stack_count < 2) return null;
+    const width = storeWidth(instruction.op) orelse return null;
+    const address_index = machine.stack_count - 2;
+    if (machine.stack_types[address_index] != .i32) return null;
+    const address: u32 = @truncate(machine.stack[address_index]);
+    const effective = @as(u64, address) + instruction.immediate;
+    if (effective + width > machine.memory_size) return null;
+    return .{ .valid = true, .address = @intCast(effective), .width = width };
+}
+
+fn memoryWriteHighlight() debug.MemoryEvent {
+    if (currentStoreTarget()) |target| return target;
+    return .{};
+}
+
+fn renderText() usize {
+    var out = Writer.init(&output_buf);
+
+    if (load_error) |err| {
+        out.raw(SGR_ERROR);
+        out.print("INPUT  rejected  reason {s}", .{@errorName(err)});
+        out.raw(SGR_RESET);
+        out.text("\n\n");
+        out.text("Initial profile: wasm32, one fixed memory up to 8 MiB, no imports, scalar\n");
+        out.text("i32/i64, direct calls, active data segments, and memory.copy/fill.\n");
+        return out.offset;
+    }
+
+    if (memory_address_entry or memory_view_visible) {
+        out.styled(SGR_BOLD, "MEMORY");
+        out.print("  {d} B  r={d} w={d}  ", .{
+            machine.memory_size,
+            machine.counters.memory_reads,
+            machine.counters.memory_writes,
+        });
+        out.styled(SGR_CONTROL_KEY, "x");
+        out.text(" examine  ");
+        out.styled(SGR_CONTROL_KEY, "↑/↓");
+        out.text(" page\n");
+        if (machine.last_access.valid) {
+            const access_style = if (machine.last_access_kind == .write) SGR_WRITE else SGR_READ;
+            out.raw(access_style);
+            out.print("  last {s} ", .{@tagName(machine.last_access_kind)});
+            out.raw(SGR_RESET);
+            renderHex32(&out, machine.last_access.address);
+            out.raw(access_style);
+            out.print(" width={d}", .{machine.last_access.width});
+            out.raw(SGR_RESET);
+            out.text("\n");
+        }
+        renderMemory(&out);
+        out.text("\n");
+    }
+
+    renderExecutionColumns(&out);
+    if (machine.status == .halted) {
+        const result_size: u32 = @truncate(machine.result);
+        const result_pointer: u32 = @as(u32, @truncate(machine.result >> 32)) & 0x7fff_ffff;
+        out.text("\n");
+        out.styled(SGR_BOLD, "OUTPUT");
+        out.text(if ((machine.result >> 63) == 0) " succeeded" else " failed");
+        out.print(" size={d} ptr=", .{result_size});
+        renderHex32(&out, result_pointer);
+        out.text(" packed=");
+        renderHex64(&out, machine.result);
+        out.text("\n");
+    }
+
+    out.text("\n");
+    out.styled(SGR_BOLD, "COUNTERS");
+    out.print("  instructions={d}  branches={d}\n", .{
+        machine.counters.instructions,
+        machine.counters.branches,
+    });
+    renderLoops(&out);
+    return out.offset;
+}
+
+fn renderExecutionColumns(out: *Writer) void {
+    var left = Writer.init(&left_column_buf);
+    left.styled(SGR_BOLD, "INSTRUCTIONS");
+    left.print("  {s}\n", .{@tagName(machine.status)});
+    left.raw(SGR_DIM);
+    left.print("  wasm={d} B  input={d} B", .{
+        machine.module.len,
+        machine.target_input.len,
+    });
+    left.raw(SGR_RESET);
+    left.text("\n");
+    if (machine.status == .halted or machine.status == .trapped) {
+        left.text("  ");
+        left.styled(SGR_CONTROL_KEY, "r");
+        left.text(" restart\n");
+    } else {
+        left.text("  ");
+        left.styled(SGR_CONTROL_KEY, "Space");
+        if (machine.budget_exhausted)
+            left.text(" continue\n")
+        else
+            left.text(" run\n");
+        left.text("  ");
+        left.styled(SGR_CONTROL_KEY, "f/Shift-F11");
+        left.text(" finish\n");
+    }
+    if (machine.status == .trapped) {
+        left.raw(SGR_ERROR);
+        left.print("  trap {s}", .{debug.trapName(machine.trap)});
+        left.raw(SGR_RESET);
+        left.text("\n");
+    }
+    if (machine.budget_exhausted) {
+        left.raw(SGR_WARNING);
+        left.print("  paused: {d}-instruction budget", .{last_command_budget});
+        left.raw(SGR_RESET);
+        left.text("\n");
+    }
+    renderInstructions(&left);
+
+    var right = Writer.init(&right_column_buf);
+    right.styled(SGR_BOLD, "STACKS/LOCALS");
+    right.print("  calls={d} returns={d}\n", .{
+        machine.counters.calls,
+        machine.counters.returns,
+    });
+    renderGlobals(&right);
+    renderStacks(&right);
+
+    var left_offset: usize = 0;
+    var right_offset: usize = 0;
+    var left_line_index: usize = 0;
+    var right_line_index: usize = 0;
+    while (left_offset < left.offset or right_offset < right.offset) {
+        const left_end = lineEnd(left.buffer[0..left.offset], left_offset);
+        const right_end = lineEnd(right.buffer[0..right.offset], right_offset);
+        const left_line = left.buffer[left_offset..left_end];
+        const right_line = right.buffer[right_offset..right_end];
+        out.text(left_line);
+        if (right_line.len > 0) {
+            const left_visible = left.visibleLineLength(left_line_index);
+            if (left_visible < LEFT_COLUMN_WIDTH) writeSpaces(out, LEFT_COLUMN_WIDTH - left_visible);
+            out.text(" ");
+            out.text(right_line);
+        }
+        out.text("\n");
+        left_offset = nextLineOffset(left.buffer[0..left.offset], left_end);
+        right_offset = nextLineOffset(right.buffer[0..right.offset], right_end);
+        left_line_index += 1;
+        right_line_index += 1;
+    }
+}
+
+fn lineEnd(buffer: []const u8, start: usize) usize {
+    if (start >= buffer.len) return start;
+    return std.mem.indexOfScalarPos(u8, buffer, start, '\n') orelse buffer.len;
+}
+
+fn nextLineOffset(buffer: []const u8, end: usize) usize {
+    return if (end < buffer.len) end + 1 else end;
+}
+
+fn writeSpaces(out: *Writer, amount: usize) void {
+    const spaces = "                                                                                ";
+    var remaining = amount;
+    while (remaining > 0) {
+        const chunk = @min(remaining, spaces.len);
+        out.text(spaces[0..chunk]);
+        remaining -= chunk;
+    }
+}
+
+fn renderInstructions(out: *Writer) void {
+    const current = machine.current_instruction;
+    if (current >= machine.instruction_count) {
+        if (step_replay_available and step_replay_count > 0 and step_replay_target < machine.instruction_count) {
+            renderInstructionLine(out, step_replay_target, current, .{}, false);
+        } else {
+            out.text("  execution complete\n");
+        }
+        return;
+    }
+    const current_function = machine.instructions[current].function_index;
+    const current_index: usize = @intCast(current);
+    const targets = machine.stepTargets();
+    var function_first = current_index;
+    while (function_first > 0 and machine.instructions[function_first - 1].function_index == current_function) function_first -= 1;
+    var function_end = current_index + 1;
+    while (function_end < machine.instruction_count and machine.instructions[function_end].function_index == current_function) function_end += 1;
+    const window = instructionWindow(current_index, function_first, function_end);
+    var current_call_target: ?u32 = null;
+    var i: usize = window.first;
+    while (i < window.end) : (i += 1) {
+        const instruction = machine.instructions[i];
+        renderInstructionLine(out, @intCast(i), current, targets, false);
+        if (instruction.op == 0x10) {
+            const target = renderCallPreview(out, instruction, current, targets);
+            if (i == current) current_call_target = target;
+        }
+    }
+    renderTargetsOutsideFunction(out, current_function, targets, current_call_target);
+    renderTargetsOutsideWindow(out, current_function, window.first, window.end, targets, current_call_target);
+    renderReplayTargetOutsideWindow(out, window.first, window.end);
+}
+
+const InstructionWindow = struct {
+    first: usize,
+    end: usize,
+};
+
+fn instructionWindow(current: usize, function_first: usize, function_end: usize) InstructionWindow {
+    const previous = @min(current - function_first, INSTRUCTION_WINDOW_PREVIOUS);
+    var first = current - previous;
+    const end = @min(function_end, first + INSTRUCTION_WINDOW_SIZE);
+    const missing = INSTRUCTION_WINDOW_SIZE -| (end - first);
+    first -= @min(missing, first - function_first);
+    return .{ .first = first, .end = end };
+}
+
+fn renderInstructionLine(out: *Writer, index: u32, current: u32, targets: debug.StepTargets, child: bool) void {
+    const instruction = machine.instructions[index];
+    renderInstructionMarkers(out, index, current, targets);
+    if (child) out.text("  ");
+    const indent = instructionIndent(instruction);
+    writeSpaces(out, indent);
+    out.print("f{d} ", .{instruction.function_index});
+    renderCodeOffset(out, instruction.byte_offset);
+    out.text(" ");
+    renderOpcodeName(out, instruction, instructionStyleAt(index));
+    switch (instruction.op) {
+        0x10 => out.print(" f{d}", .{instruction.immediate}),
+        0x0c, 0x0d, 0x20...0x24, 0x28...0x3e, 0x41, 0x42 => out.print(" {d}", .{instruction.immediate}),
+        else => {},
+    }
+    if (instruction.op == 0x03) out.print("   iterations={d}", .{machine.loop_counts[index]});
+    out.raw(SGR_RESET);
+    out.text("\n");
+    const continuation_indent = INSTRUCTION_MARKER_WIDTH + 1 + @as(usize, @intFromBool(child)) * 2;
+    if (instruction.op == 0x10) {
+        var signature_buffer: [512]u8 = undefined;
+        var signature = Writer.init(&signature_buffer);
+        renderFunctionSignature(&signature, @intCast(instruction.immediate));
+        renderIndentedLines(out, continuation_indent, indent, signature.buffer[0..signature.offset]);
+    }
+}
+
+fn instructionIndent(instruction: debug.Instruction) usize {
+    const closes_block = instruction.op == 0x05 or instruction.op == 0x0b;
+    return instruction.depth -| @intFromBool(closes_block);
+}
+
+fn renderIndentedLines(out: *Writer, indent: usize, extra_indent: usize, value: []const u8) void {
+    var offset: usize = 0;
+    while (offset < value.len) {
+        const end = lineEnd(value, offset);
+        writeSpaces(out, indent);
+        writeSpaces(out, extra_indent);
+        out.text(value[offset..end]);
+        out.text("\n");
+        offset = nextLineOffset(value, end);
+    }
+}
+
+const StackPreview = struct {
+    value: u64,
+    value_type: debug.ValType,
+};
+
+fn currentStackPreview(instruction: debug.Instruction) ?StackPreview {
+    if (instruction.op == 0x23) {
+        if (instruction.immediate >= machine.global_count) return null;
+        const global = machine.globals[@intCast(instruction.immediate)];
+        return .{ .value = global.value, .value_type = global.value_type };
+    }
+    if (instruction.op == 0x1b) {
+        if (machine.stack_count < 3) return null;
+        const condition = machine.stack[machine.stack_count - 1];
+        const chosen = if (@as(u32, @truncate(condition)) != 0)
+            machine.stack_count - 3
+        else
+            machine.stack_count - 2;
+        return .{ .value = machine.stack[chosen], .value_type = machine.stack_types[chosen] };
+    }
+    if (instruction.op == 0x45 or instruction.op == 0x50) {
+        if (machine.stack_count < 1) return null;
+        const value = machine.stack[machine.stack_count - 1];
+        const result: u64 = switch (instruction.op) {
+            0x45 => @intFromBool(@as(u32, @truncate(value)) == 0),
+            0x50 => @intFromBool(value == 0),
+            else => unreachable,
+        };
+        return .{ .value = result, .value_type = .i32 };
+    }
+    if (machine.stack_count < 2) return null;
+    const left = machine.stack[machine.stack_count - 2];
+    const right = machine.stack[machine.stack_count - 1];
+    const result: u64 = switch (instruction.op) {
+        0x46 => @intFromBool(@as(u32, @truncate(left)) == @as(u32, @truncate(right))),
+        0x47 => @intFromBool(@as(u32, @truncate(left)) != @as(u32, @truncate(right))),
+        0x48 => @intFromBool(@as(i32, @bitCast(@as(u32, @truncate(left)))) < @as(i32, @bitCast(@as(u32, @truncate(right))))),
+        0x49 => @intFromBool(@as(u32, @truncate(left)) < @as(u32, @truncate(right))),
+        0x4a => @intFromBool(@as(i32, @bitCast(@as(u32, @truncate(left)))) > @as(i32, @bitCast(@as(u32, @truncate(right))))),
+        0x4b => @intFromBool(@as(u32, @truncate(left)) > @as(u32, @truncate(right))),
+        0x4c => @intFromBool(@as(i32, @bitCast(@as(u32, @truncate(left)))) <= @as(i32, @bitCast(@as(u32, @truncate(right))))),
+        0x4d => @intFromBool(@as(u32, @truncate(left)) <= @as(u32, @truncate(right))),
+        0x4e => @intFromBool(@as(i32, @bitCast(@as(u32, @truncate(left)))) >= @as(i32, @bitCast(@as(u32, @truncate(right))))),
+        0x4f => @intFromBool(@as(u32, @truncate(left)) >= @as(u32, @truncate(right))),
+        0x51 => @intFromBool(left == right),
+        0x52 => @intFromBool(left != right),
+        0x53 => @intFromBool(@as(i64, @bitCast(left)) < @as(i64, @bitCast(right))),
+        0x54 => @intFromBool(left < right),
+        0x55 => @intFromBool(@as(i64, @bitCast(left)) > @as(i64, @bitCast(right))),
+        0x56 => @intFromBool(left > right),
+        0x57 => @intFromBool(@as(i64, @bitCast(left)) <= @as(i64, @bitCast(right))),
+        0x58 => @intFromBool(left <= right),
+        0x59 => @intFromBool(@as(i64, @bitCast(left)) >= @as(i64, @bitCast(right))),
+        0x5a => @intFromBool(left >= right),
+        0x6a => @as(u32, @truncate(left)) +% @as(u32, @truncate(right)),
+        0x6b => @as(u32, @truncate(left)) -% @as(u32, @truncate(right)),
+        0x6c => @as(u32, @truncate(left)) *% @as(u32, @truncate(right)),
+        0x71 => @as(u32, @truncate(left)) & @as(u32, @truncate(right)),
+        0x72 => @as(u32, @truncate(left)) | @as(u32, @truncate(right)),
+        0x73 => @as(u32, @truncate(left)) ^ @as(u32, @truncate(right)),
+        0x74 => @as(u32, @truncate(left)) << @intCast(right & 31),
+        0x75 => @as(u32, @bitCast(@as(i32, @bitCast(@as(u32, @truncate(left)))) >> @intCast(right & 31))),
+        0x76 => @as(u32, @truncate(left)) >> @intCast(right & 31),
+        0x77 => std.math.rotl(u32, @truncate(left), @as(u32, @truncate(right))),
+        0x78 => std.math.rotr(u32, @truncate(left), @as(u32, @truncate(right))),
+        0x7c => left +% right,
+        0x7d => left -% right,
+        0x7e => left *% right,
+        0x83 => left & right,
+        0x84 => left | right,
+        0x85 => left ^ right,
+        0x86 => left << @intCast(right & 63),
+        0x87 => @bitCast(@as(i64, @bitCast(left)) >> @intCast(right & 63)),
+        0x88 => left >> @intCast(right & 63),
+        0x89 => std.math.rotl(u64, left, right),
+        0x8a => std.math.rotr(u64, left, right),
+        else => return null,
+    };
+    const value_type: debug.ValType = if (instruction.op <= 0x78) .i32 else .i64;
+    return .{ .value = result, .value_type = value_type };
+}
+
+fn renderCurrentStackPreview(out: *Writer) void {
+    if (machine.current_instruction >= machine.instruction_count) return;
+    const instruction = machine.instructions[machine.current_instruction];
+    if (instruction.op == 0xfc) {
+        renderCurrentBulkMemoryPreview(out, instruction);
+        return;
+    }
+    const preview = currentStackPreview(instruction) orelse return;
+    out.text("  ");
+    renderOpcodeName(out, instruction, instructionStyleAt(machine.current_instruction));
+    if (instruction.op == 0x23) out.print(" {d}", .{instruction.immediate});
+    out.raw(SGR_RESET);
+    out.text("\n");
+    out.raw(SGR_DIM);
+    out.text("    -> ");
+    out.raw(SGR_RESET);
+    renderTypedValue(out, preview.value_type, preview.value);
+    out.raw(SGR_RESET);
+    out.text("\n");
+}
+
+fn renderCurrentBulkMemoryPreview(out: *Writer, instruction: debug.Instruction) void {
+    if (machine.stack_count < 3) return;
+    const destination: u32 = @truncate(machine.stack[machine.stack_count - 3]);
+    const operand: u32 = @truncate(machine.stack[machine.stack_count - 2]);
+    const length: u32 = @truncate(machine.stack[machine.stack_count - 1]);
+    out.text("  ");
+    renderOpcodeName(out, instruction, SGR_WRITE);
+    out.text("\n");
+    out.raw(SGR_WRITE_TARGET);
+    out.text("    -> dst ");
+    renderBareHex32(out, destination);
+    out.raw(SGR_WRITE_TARGET);
+    out.print("+{d}\n", .{length});
+    if (instruction.immediate == 10) {
+        out.raw(SGR_READ);
+        out.text("       src ");
+        renderBareHex32(out, operand);
+        out.raw(SGR_RESET);
+        out.text("\n");
+    } else if (instruction.immediate == 11) {
+        out.raw(SGR_INSTRUCTION);
+        out.print("       byte {x:0>2}\n", .{@as(u8, @truncate(operand))});
+        out.raw(SGR_RESET);
+    }
+}
+
+fn renderTypedValue(out: *Writer, value_type: debug.ValType, value: u64) void {
+    switch (value_type) {
+        .i32, .f32 => {
+            out.print("{s} ", .{@tagName(value_type)});
+            renderHex32(out, @truncate(value));
+        },
+        .i64, .f64 => {
+            out.print("{s} ", .{@tagName(value_type)});
+            renderHex64(out, value);
+        },
+    }
+}
+
+fn renderFunctionSignature(out: *Writer, function_index: u32) void {
+    const signature = machine.functionSignature(function_index) orelse return;
+    if (signature.parameters.len > 1) {
+        for (signature.parameters) |parameter| out.print(";; (param {s})\n", .{@tagName(parameter)});
+        out.text(";; (result");
+        if (signature.result) |result| out.print(" {s}", .{@tagName(result)});
+        out.text(")");
+        return;
+    }
+    out.text(";; (param");
+    for (signature.parameters) |parameter| out.print(" {s}", .{@tagName(parameter)});
+    out.text(") (result");
+    if (signature.result) |result| out.print(" {s}", .{@tagName(result)});
+    out.text(")");
+}
+
+fn renderInstructionMarkers(out: *Writer, index: u32, current: u32, targets: debug.StepTargets) void {
+    var length: usize = 0;
+    if (step_replay_available and step_replay_count > 0 and index == step_replay_target) {
+        out.styled(SGR_CONTROL_KEY, "←");
+        length += 1;
+    }
+    if (index == current) {
+        out.styled(SGR_CONTROL_KEY, "@");
+        length += 1;
+    }
+    if (index == targets.into) {
+        out.styled(SGR_CONTROL_KEY, "→");
+        length += 1;
+    }
+    if (index == targets.over and targets.over != targets.into) {
+        out.styled(SGR_CONTROL_KEY, "n");
+        length += 1;
+    }
+    if (index == targets.out) {
+        out.styled(SGR_CONTROL_KEY, "f");
+        length += 1;
+    }
+    if (machine.counters.instructions >= 2 and index == restartTarget()) {
+        out.styled(SGR_CONTROL_KEY, "r");
+        length += 1;
+    }
+    writeSpaces(out, INSTRUCTION_MARKER_WIDTH -| length);
+}
+
+fn renderReplayTargetOutsideWindow(out: *Writer, first: usize, end: usize) void {
+    if (!step_replay_available or step_replay_count == 0 or step_replay_target >= machine.instruction_count) return;
+    if (step_replay_target >= first and step_replay_target < end) return;
+    const targets = machine.stepTargets();
+    if (step_replay_target == targets.into or step_replay_target == targets.over or step_replay_target == targets.out) return;
+    renderInstructionLine(out, step_replay_target, machine.current_instruction, targets, false);
+}
+
+fn restartTarget() u32 {
+    for (machine.instructions[0..machine.instruction_count], 0..) |instruction, index| {
+        if (instruction.function_index == machine.render_function) return @intCast(index);
+    }
+    return std.math.maxInt(u32);
+}
+
+fn renderCallPreview(out: *Writer, call: debug.Instruction, current: u32, targets: debug.StepTargets) ?u32 {
+    for (machine.instructions[0..machine.instruction_count], 0..) |instruction, index| {
+        if (instruction.function_index != call.immediate) continue;
+        const target: u32 = @intCast(index);
+        renderInstructionLine(out, target, current, targets, true);
+        writeSpaces(out, INSTRUCTION_MARKER_WIDTH + 1);
+        out.text("…\n");
+        return target;
+    }
+    return null;
+}
+
+fn renderTargetsOutsideFunction(out: *Writer, current_function: u32, targets: debug.StepTargets, skip: ?u32) void {
+    const target_list = [_]u32{ targets.into, targets.over, targets.out };
+    for (target_list, 0..) |target, target_index| {
+        if (target >= machine.instruction_count) continue;
+        if (skip != null and target == skip.?) continue;
+        if (machine.instructions[target].function_index == current_function) continue;
+        var duplicate = false;
+        for (target_list[0..target_index]) |earlier| {
+            if (earlier == target) duplicate = true;
+        }
+        if (!duplicate) renderInstructionLine(out, target, machine.current_instruction, targets, false);
+    }
+}
+
+fn renderTargetsOutsideWindow(out: *Writer, current_function: u32, first: usize, end: usize, targets: debug.StepTargets, skip: ?u32) void {
+    const target_list = [_]u32{ targets.into, targets.over, targets.out };
+    for (target_list, 0..) |target, target_index| {
+        if (target >= machine.instruction_count) continue;
+        if (skip != null and target == skip.?) continue;
+        if (machine.instructions[target].function_index != current_function) continue;
+        if (target >= first and target < end) continue;
+        var duplicate = false;
+        for (target_list[0..target_index]) |earlier| {
+            if (earlier == target) duplicate = true;
+        }
+        if (!duplicate) renderInstructionLine(out, target, machine.current_instruction, targets, false);
+    }
+}
+
+fn renderStacks(out: *Writer) void {
+    if (machine.frame_count == 0) {
+        out.text("  calls empty\n");
+    } else {
+        var count: usize = 0;
+        var i = machine.frame_count;
+        while (i > 0 and count < 12) : (count += 1) {
+            i -= 1;
+            const frame = machine.frames[i];
+            const relationship = if (i == machine.frame_count - 1) "frame" else "caller";
+            if (machine.functionName(frame.function_index)) |name| {
+                const shown_name = name[0..@min(name.len, 16)];
+                out.print("  {s} f{d} {s}{s}\n", .{
+                    relationship,
+                    frame.function_index,
+                    shown_name,
+                    if (shown_name.len < name.len) "…" else "",
+                });
+            } else {
+                out.print("  {s} f{d}\n", .{ relationship, frame.function_index });
+            }
+            if (i == machine.frame_count - 1) renderFrameValues(out, i);
+        }
+    }
+    if (machine.stack_count == 0) {
+        out.text("  stack empty\n");
+    } else {
+        const input_count = @min(machine.currentStackInputCount(), machine.stack_count);
+        const first_input = machine.stack_count - input_count;
+        const input_style = if (machine.current_instruction < machine.instruction_count)
+            instructionStyleAt(machine.current_instruction)
+        else
+            SGR_RESET;
+        var i = machine.stack_count - @min(machine.stack_count, 12);
+        while (i < machine.stack_count) : (i += 1) {
+            if (i >= first_input) {
+                out.raw(currentStackInputStyle(i, input_style));
+                out.print("  stack[{d}] {s} ", .{ i, @tagName(machine.stack_types[i]) });
+                switch (machine.stack_types[i]) {
+                    .i32, .f32 => out.print("0x{x:0>8}", .{@as(u32, @truncate(machine.stack[i]))}),
+                    .i64, .f64 => out.print("0x{x:0>16}", .{machine.stack[i]}),
+                }
+                out.raw(SGR_RESET);
+            } else {
+                out.print("  stack[{d}] ", .{i});
+                renderTypedValue(out, machine.stack_types[i], machine.stack[i]);
+            }
+            out.text("\n");
+        }
+    }
+    renderCurrentStackPreview(out);
+}
+
+fn currentStackInputStyle(stack_index: usize, default: []const u8) []const u8 {
+    if (machine.current_instruction >= machine.instruction_count) return default;
+    const instruction = machine.instructions[machine.current_instruction];
+    if (instruction.op == 0xfc and machine.stack_count >= 3) {
+        if (stack_index == machine.stack_count - 3) return SGR_WRITE_TARGET;
+        if (instruction.immediate == 10 and stack_index == machine.stack_count - 2) return SGR_READ;
+        return SGR_INSTRUCTION;
+    }
+    if (instruction.op != 0x1b or machine.stack_count < 3) return default;
+    const condition = machine.stack[machine.stack_count - 1];
+    const chosen = if (@as(u32, @truncate(condition)) != 0)
+        machine.stack_count - 3
+    else
+        machine.stack_count - 2;
+    return if (stack_index == chosen) SGR_SELECTED_VALUE else default;
+}
+
+fn renderGlobals(out: *Writer) void {
+    if (machine.global_count == 0) {
+        out.text("  globals none\n");
+        return;
+    }
+    const read_target = currentGlobalReadTarget();
+    const write_target = currentGlobalWriteTarget();
+    const shown = @min(machine.global_count, 12);
+    for (machine.globals[0..shown], 0..) |global, index| {
+        const highlight_style: ?[]const u8 = if (read_target != null and read_target.? == index)
+            SGR_READ
+        else if (write_target != null and write_target.? == index)
+            SGR_WRITE_TARGET
+        else
+            null;
+        if (highlight_style) |style| out.raw(style);
+        out.print("  global[{d}] ", .{index});
+        if (highlight_style != null) {
+            out.print("0x{x:0>16}", .{global.value});
+            out.raw(SGR_RESET);
+        } else {
+            renderHex64(out, global.value);
+        }
+        out.text("\n");
+    }
+    if (shown < machine.global_count) out.print("  ... {d} more globals\n", .{machine.global_count - shown});
+}
+
+fn currentGlobalReadTarget() ?usize {
+    if (machine.current_instruction >= machine.instruction_count) return null;
+    const instruction = machine.instructions[machine.current_instruction];
+    if (instruction.op != 0x23) return null;
+    return @intCast(instruction.immediate);
+}
+
+fn currentGlobalWriteTarget() ?usize {
+    if (machine.current_instruction < machine.instruction_count) {
+        const instruction = machine.instructions[machine.current_instruction];
+        if (instruction.op == 0x24) return @intCast(instruction.immediate);
+    }
+    if (recent_global_write) |target| return @intCast(target);
+    return null;
+}
+
+fn renderFrameValues(out: *Writer, frame_index: usize) void {
+    const parameters = machine.frameParameters(frame_index);
+    const locals = machine.frameDefinedLocals(frame_index);
+    if (parameters.len == 0 and locals.len == 0) {
+        out.text("    params none   locals none\n");
+        return;
+    }
+    const write_target = currentLocalWriteTarget(frame_index);
+    const parameter_target = if (write_target != null and write_target.? < parameters.len) write_target else null;
+    const local_target = if (write_target != null and write_target.? >= parameters.len)
+        write_target.? - parameters.len
+    else
+        null;
+    renderValueSlots(out, "param", parameters, parameter_target);
+    renderValueSlots(out, "local", locals, local_target);
+}
+
+fn currentLocalWriteTarget(frame_index: usize) ?usize {
+    if (frame_index + 1 != machine.frame_count) return null;
+    if (machine.current_instruction < machine.instruction_count) {
+        const instruction = machine.instructions[machine.current_instruction];
+        if (instruction.op == 0x21 or instruction.op == 0x22) return @intCast(instruction.immediate);
+    }
+    if (recent_local_write_frame_count == machine.frame_count) {
+        if (recent_local_write) |target| return @intCast(target);
+    }
+    return null;
+}
+
+fn renderValueSlots(out: *Writer, label: []const u8, values: []const u64, write_target: ?usize) void {
+    if (values.len == 0) {
+        out.print("    {s}s none\n", .{label});
+        return;
+    }
+    const shown = @min(values.len, 12);
+    for (values[0..shown], 0..) |value, index| {
+        if (write_target != null and write_target.? == index) out.raw(SGR_WRITE_TARGET);
+        out.print("    {s}[{d}] ", .{ label, index });
+        if (write_target != null and write_target.? == index) {
+            out.print("0x{x:0>16}", .{value});
+            out.raw(SGR_RESET);
+        } else {
+            renderHex64(out, value);
+        }
+        out.text("\n");
+    }
+    if (shown < values.len) out.print("    ... {d} more {s}s\n", .{ values.len - shown, label });
+}
+
+fn renderLoops(out: *Writer) void {
+    var i: usize = 0;
+    while (i < machine.instruction_count) : (i += 1) {
+        const instruction = machine.instructions[i];
+        if (instruction.op != 0x03) continue;
+        out.print("  loop f{d} ", .{instruction.function_index});
+        renderCodeOffset(out, instruction.byte_offset);
+        out.print(" iterations={d}\n", .{machine.loop_counts[i]});
+    }
+}
+
+fn renderMemory(out: *Writer) void {
+    if (memory_address_entry) {
+        out.text("  ");
+        out.styled(SGR_CONTROL_KEY, "x");
+        out.text(" address ");
+        renderHex32(out, memory_address_value);
+        out.print(" ({d}/8)", .{memory_address_digits});
+        if (inputMemoryPointer() != null) {
+            out.text("  ");
+            out.styled(SGR_CONTROL_KEY, "i");
+            out.text(" input");
+        }
+        if (outputMemoryPointer() != null) {
+            out.text("  ");
+            out.styled(SGR_CONTROL_KEY, "o");
+            out.text(" output");
+        }
+        if (machine.last_read_access.valid) {
+            out.text("  ");
+            out.styled(SGR_CONTROL_KEY, "r");
+            out.text(" last-read");
+        }
+        if (machine.last_write_access.valid) {
+            out.text("  ");
+            out.styled(SGR_CONTROL_KEY, "w");
+            out.text(" last-write");
+        }
+        out.text("\n  ");
+        out.styled(SGR_CONTROL_KEY, "0-9/a-f");
+        out.text(" hex  ");
+        out.styled(SGR_CONTROL_KEY, "Backspace");
+        out.text(" edit  ");
+        out.styled(SGR_CONTROL_KEY, "Enter");
+        out.text(" accept  ");
+        out.styled(SGR_CONTROL_KEY, "Esc");
+        out.text(" cancel\n");
+    }
+    if (!memory_view_visible or machine.memory_size == 0) {
+        out.text("  press ");
+        out.styled(SGR_CONTROL_KEY, "X");
+        out.text(", type a hexadecimal linear-memory address, then press ");
+        out.styled(SGR_CONTROL_KEY, "Enter");
+        out.text("\n");
+        return;
+    }
+
+    const end = @min(machine.memory_size, memory_view_offset + memory_view_bytes);
+    out.raw(SGR_DIM);
+    out.text("  view ");
+    out.raw(SGR_RESET);
+    renderHex32(out, @intCast(memory_view_offset));
+    out.raw(SGR_DIM);
+    out.text("..");
+    out.raw(SGR_RESET);
+    renderHex32(out, @intCast(end));
+    out.raw(SGR_RESET);
+    out.text("\n");
+    var row = memory_view_offset;
+    const write_highlight = memoryWriteHighlight();
+    const write_start: usize = write_highlight.address;
+    const write_end = write_start + @as(usize, write_highlight.width);
+    while (row < end) : (row += 16) {
+        const row_end = @min(end, row + 16);
+        out.text("  ");
+        renderBareHex32(out, @intCast(row));
+        out.text("  ");
+        var column: usize = 0;
+        var active_style: []const u8 = "";
+        while (column < 16) : (column += 1) {
+            const address = row + column;
+            const style = memoryByteStyle(address, write_highlight, write_start, write_end);
+            if (!std.mem.eql(u8, style, active_style)) {
+                if (column != 0) out.raw(SGR_RESET);
+                out.raw(style);
+                active_style = style;
+            }
+            if (address < row_end)
+                out.print("{x:0>2} ", .{machine.memory[address]})
+            else
+                out.text("   ");
+            if (column == 7) out.text(" ");
+        }
+        out.raw(SGR_RESET);
+        out.text(" |");
+        column = 0;
+        active_style = "";
+        while (column < 16) : (column += 1) {
+            const address = row + column;
+            if (address >= row_end) {
+                out.text(" ");
+                continue;
+            }
+            const style = memoryByteStyle(address, write_highlight, write_start, write_end);
+            if (!std.mem.eql(u8, style, active_style)) {
+                if (column != 0) out.raw(SGR_RESET);
+                out.raw(style);
+                active_style = style;
+            }
+            const byte = machine.memory[address];
+            out.print("{c}", .{if (byte >= 0x20 and byte <= 0x7e) byte else '.'});
+        }
+        out.raw(SGR_RESET);
+        out.text("|\n");
+        renderMemoryAccessMarker(out, row, row_end);
+    }
+}
+
+fn memoryByteStyle(address: usize, write_highlight: debug.MemoryEvent, write_start: usize, write_end: usize) []const u8 {
+    if (write_highlight.valid and address >= write_start and address < write_end) return SGR_WRITE_TARGET;
+    return memoryProvenanceStyle(machine.memoryByteProvenance(address));
+}
+
+fn memoryProvenanceStyle(provenance: debug.MemoryByteProvenance) []const u8 {
+    return switch (provenance) {
+        .untouched => SGR_DIM,
+        .data => SGR_MEMORY_DATA,
+        .input => SGR_MEMORY_INPUT,
+        .written => SGR_MEMORY_WRITTEN,
+    };
+}
+
+fn renderMemoryAccessMarker(out: *Writer, row: usize, row_end: usize) void {
+    if (!machine.last_access.valid) return;
+    const access_start: usize = machine.last_access.address;
+    const access_end = @min(machine.memory_size, access_start + @as(usize, machine.last_access.width));
+    if (access_start >= row_end or access_end <= row) return;
+
+    out.raw(if (machine.last_access_kind == .write) SGR_WRITE_TARGET else SGR_READ);
+    out.text("            ");
+    for (0..16) |column| {
+        const address = row + column;
+        out.text(if (address >= access_start and address < access_end) "^^ " else "   ");
+        if (column == 7) out.text(" ");
+    }
+    out.print(" last {s}\n", .{@tagName(machine.last_access_kind)});
+    out.raw(SGR_RESET);
+}
+
+test "parses component and input multipart parts" {
+    const body =
+        "--uuid-00000000-0000-0000-0000-000000000000\r\n" ++
+        "Content-Disposition: form-data; name=\"component\"; filename=\"counter.wasm\"\r\n" ++
+        "Content-Type: application/wasm\r\n\r\n" ++
+        "wasm bytes\r\n" ++
+        "--uuid-00000000-0000-0000-0000-000000000000\r\n" ++
+        "Content-Disposition: form-data; name=\"input\"; filename=\"input.txt\"\r\n" ++
+        "Content-Type: application/octet-stream\r\n\r\n" ++
+        "one two\n\r\n" ++
+        "--uuid-00000000-0000-0000-0000-000000000000--\r\n";
+    const parsed = try parseMultipart(body);
+    try std.testing.expectEqualStrings("wasm bytes", parsed.component);
+    try std.testing.expectEqualStrings("one two\n", parsed.target_input);
+}
+
+test "requires a component multipart part" {
+    const body =
+        "--uuid-00000000-0000-0000-0000-000000000000\r\n" ++
+        "Content-Disposition: form-data; name=\"input\"\r\n\r\n" ++
+        "hello\r\n" ++
+        "--uuid-00000000-0000-0000-0000-000000000000--\r\n";
+    try std.testing.expectError(error.MissingComponent, parseMultipart(body));
+}
+
+test "indents structured control bodies and aligns closing instructions" {
+    try std.testing.expectEqual(@as(usize, 0), instructionIndent(.{ .op = 0x02, .function_index = 0, .byte_offset = 0, .depth = 0 }));
+    try std.testing.expectEqual(@as(usize, 1), instructionIndent(.{ .op = 0x20, .function_index = 0, .byte_offset = 1, .depth = 1 }));
+    try std.testing.expectEqual(@as(usize, 0), instructionIndent(.{ .op = 0x05, .function_index = 0, .byte_offset = 2, .depth = 1 }));
+    try std.testing.expectEqual(@as(usize, 0), instructionIndent(.{ .op = 0x0b, .function_index = 0, .byte_offset = 3, .depth = 1 }));
+}
+
+test "keeps the instruction window full at function boundaries" {
+    try std.testing.expectEqual(InstructionWindow{ .first = 0, .end = 11 }, instructionWindow(0, 0, 20));
+    try std.testing.expectEqual(InstructionWindow{ .first = 0, .end = 11 }, instructionWindow(1, 0, 20));
+    try std.testing.expectEqual(InstructionWindow{ .first = 0, .end = 11 }, instructionWindow(5, 0, 20));
+    try std.testing.expectEqual(InstructionWindow{ .first = 1, .end = 12 }, instructionWindow(6, 0, 20));
+    try std.testing.expectEqual(InstructionWindow{ .first = 9, .end = 20 }, instructionWindow(19, 0, 20));
+    try std.testing.expectEqual(InstructionWindow{ .first = 7, .end = 12 }, instructionWindow(7, 7, 12));
+}
+
+test "assigns opcode colors by instruction family" {
+    try std.testing.expectEqualStrings(SGR_LOOP_CALL, instructionStyle(0x03));
+    try std.testing.expectEqualStrings(SGR_LOOP_CALL, instructionStyle(0x10));
+    try std.testing.expectEqualStrings(SGR_CONTROL_FLOW, instructionStyle(0x1b));
+    try std.testing.expectEqualStrings(SGR_READ, instructionStyle(0x20));
+    try std.testing.expectEqualStrings(SGR_WRITE, instructionStyle(0x21));
+    try std.testing.expectEqualStrings(SGR_WRITE, instructionStyle(0x22));
+    try std.testing.expectEqualStrings(SGR_READ, instructionStyle(0x23));
+    try std.testing.expectEqualStrings(SGR_WRITE, instructionStyle(0x24));
+    try std.testing.expectEqualStrings(SGR_WRITE, instructionStyle(0x36));
+    try std.testing.expectEqualStrings(SGR_WRITE, instructionStyle(0x3e));
+    try std.testing.expectEqualStrings(SGR_WRITE, instructionStyle(0xfc));
+    try std.testing.expectEqualStrings(SGR_INSTRUCTION, instructionStyle(0x41));
+    try std.testing.expectEqualStrings(SGR_INSTRUCTION, instructionStyle(0x44));
+    try std.testing.expectEqualStrings(SGR_INSTRUCTION, instructionStyle(0x1a));
+}
+
+test "steps a render function and counts a loop" {
+    // A hand-encoded module equivalent to:
+    // render(n): i=0; loop { i += 1; if i < 3 br loop }; return i as i64.
+    const wasm = [_]u8{
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x06, 0x01, 0x60, 0x01, 0x7f, 0x01, 0x7e,
+        0x03, 0x02, 0x01, 0x00, 0x05, 0x04, 0x01, 0x01,
+        0x01, 0x01, 0x07, 0x0a, 0x01, 0x06, 'r',  'e',
+        'n',  'd',  'e',  'r',  0x00, 0x00, 0x0a, 0x1c,
+        0x01, 0x1a, 0x01, 0x01, 0x7f, 0x41, 0x00, 0x21,
+        0x01, 0x03, 0x40, 0x20, 0x01, 0x41, 0x01, 0x6a,
+        0x22, 0x01, 0x41, 0x03, 0x49, 0x0d, 0x00, 0x0b,
+        0x20, 0x01, 0xad, 0x0b,
+    };
+    try machine.load(&wasm);
+    var loop_branch: ?u32 = null;
+    for (machine.instructions[0..machine.instruction_count], 0..) |instruction, index| {
+        if (instruction.op == 0x0d) loop_branch = @intCast(index);
+    }
+    try std.testing.expect(loop_branch != null);
+    try std.testing.expect(branchTargetsLoop(loop_branch.?));
+    try std.testing.expectEqualStrings(SGR_LOOP_CALL, instructionStyleAt(loop_branch.?));
+    const signature = machine.functionSignature(0).?;
+    try std.testing.expectEqualSlices(debug.ValType, &.{.i32}, signature.parameters);
+    try std.testing.expectEqual(debug.ValType.i64, signature.result.?);
+    try std.testing.expectEqualSlices(u64, &.{0}, machine.frameParameters(0));
+    try std.testing.expectEqualSlices(u64, &.{0}, machine.frameDefinedLocals(0));
+    for (0..7) |_| _ = machine.step();
+    try std.testing.expectEqualSlices(u64, &.{1}, machine.frameDefinedLocals(0));
+    _ = machine.step();
+    const comparison = currentStackPreview(machine.instructions[machine.current_instruction]).?;
+    try std.testing.expectEqual(debug.ValType.i32, comparison.value_type);
+    try std.testing.expectEqual(@as(u64, 1), comparison.value);
+    const comparison_screen = output_buf[0..renderText()];
+    try std.testing.expect(std.mem.indexOf(u8, comparison_screen, "i32.lt_u") != null);
+    try std.testing.expect(std.mem.indexOf(u8, comparison_screen, "i32 \x1b[94m0x00000001\x1b[0m") != null);
+    machine.continueFor(100);
+    try std.testing.expectEqual(debug.Status.halted, machine.status);
+    try std.testing.expectEqual(@as(u64, 3), machine.result);
+    try std.testing.expectEqual(@as(u64, 2), machine.counters.loop_iterations);
+}
+
+test "retains the most recent memory access" {
+    // render(n): memory[16] = 0x44; discard memory[16]; return 0.
+    const wasm = [_]u8{
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x06, 0x01, 0x60, 0x01, 0x7f, 0x01, 0x7e,
+        0x03, 0x02, 0x01, 0x00, 0x05, 0x04, 0x01, 0x01,
+        0x01, 0x01, 0x07, 0x0a, 0x01, 0x06, 'r',  'e',
+        'n',  'd',  'e',  'r',  0x00, 0x00, 0x0a, 0x14,
+        0x01, 0x12, 0x00, 0x41, 0x10, 0x41, 0xc4, 0x00,
+        0x3a, 0x00, 0x00, 0x41, 0x10, 0x2d, 0x00, 0x00,
+        0x1a, 0x42, 0x00, 0x0b, 0x0b, 0x07, 0x01, 0x00,
+        0x41, 0x10, 0x0b, 0x01, 0x00,
+    };
+    try machine.load(&wasm);
+    machine.stack[0] = 16;
+    machine.stack_types[0] = .i32;
+    machine.stack_count = 1;
+    var load_name_buffer: [64]u8 = undefined;
+    var load_name = Writer.init(&load_name_buffer);
+    renderOpcodeName(&load_name, .{ .op = 0x2d, .function_index = 0, .byte_offset = 0 }, instructionStyle(0x2d));
+    try std.testing.expectEqualStrings("\x1b[93mi32\x1b[95m.load8_u\x1b[0m", load_name.buffer[0..load_name.offset]);
+    try machine.restart();
+    memory_view_visible = true;
+    memory_view_offset = 0;
+    const initial_memory = output_buf[0..renderText()];
+    try std.testing.expectEqual(debug.MemoryByteProvenance.data, machine.memoryByteProvenance(16));
+    try std.testing.expect(std.mem.indexOf(u8, initial_memory, "\x1b[33m00 ") != null);
+    _ = machine.step();
+    _ = machine.step();
+    const before_store = output_buf[0..renderText()];
+    try std.testing.expect(std.mem.indexOf(u8, before_store, "\x1b[93mi32\x1b[92m.store8\x1b[0m 0\x1b[0m") != null);
+    try std.testing.expect(std.mem.indexOf(u8, before_store, "\x1b[1;92m00 \x1b[0m") != null);
+    _ = machine.step();
+    const after_store = output_buf[0..renderText()];
+    try std.testing.expect(std.mem.indexOf(u8, after_store, "\x1b[92m44 \x1b[0m") != null);
+    machine.continueFor(100);
+    try std.testing.expectEqual(debug.Status.halted, machine.status);
+    try std.testing.expectEqual(debug.MemoryAccessKind.read, machine.last_access_kind);
+    try std.testing.expectEqual(@as(u32, 16), machine.last_access.address);
+    try std.testing.expectEqual(@as(u32, 1), machine.last_access.width);
+    try std.testing.expectEqual(@as(u32, 16), machine.last_read_access.address);
+    try std.testing.expectEqual(@as(u32, 16), machine.last_write_access.address);
+
+    const screen = output_buf[0..renderText()];
+    try std.testing.expect(std.mem.indexOf(u8, screen, "last read \x1b[0m\x1b[94m0x00000010\x1b[0m\x1b[95m width=1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, screen, "\x1b[92m44 \x1b[0m") != null);
+    try std.testing.expect(std.mem.indexOf(u8, screen, "^^") != null);
+}

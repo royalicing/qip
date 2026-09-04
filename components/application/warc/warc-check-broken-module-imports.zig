@@ -588,14 +588,25 @@ fn parseExportFromNames(statement_after_export: []const u8) NameList {
     return names;
 }
 
-fn resolveAbsoluteSpecifier(specifier_raw: []const u8, canonical_buf: []u8) ?[]const u8 {
+fn resolveModuleSpecifier(importer_path: []const u8, specifier_raw: []const u8, canonical_buf: []u8) ?[]const u8 {
     const specifier = trimASCIIWhitespace(specifier_raw);
-    if (specifier.len == 0 or specifier[0] != '/') return null;
+    if (specifier.len == 0) return null;
     const path_part = cutPathPart(specifier);
-    return canonicalizePath(path_part, canonical_buf);
+    if (path_part.len == 0) return null;
+    if (path_part[0] == '/') return canonicalizePath(path_part, canonical_buf);
+    if (!std.mem.startsWith(u8, path_part, "./") and !std.mem.startsWith(u8, path_part, "../")) return null;
+    if (importer_path.len == 0 or importer_path[0] != '/') return null;
+
+    const slash = std.mem.lastIndexOfScalar(u8, importer_path, '/') orelse return null;
+    var joined_buf: [4096]u8 = undefined;
+    const base = importer_path[0 .. slash + 1];
+    if (base.len + path_part.len > joined_buf.len) return null;
+    @memcpy(joined_buf[0..base.len], base);
+    @memcpy(joined_buf[base.len .. base.len + path_part.len], path_part);
+    return canonicalizePath(joined_buf[0 .. base.len + path_part.len], canonical_buf);
 }
 
-fn checkModuleTarget(specifier: []const u8, names: NameList, checked_imports: *usize, broken_imports: *usize) void {
+fn checkModuleTarget(importer_path: []const u8, specifier: []const u8, names: NameList, checked_imports: *usize, broken_imports: *usize) void {
     checked_imports.* += 1;
     if (names.overflow) {
         broken_imports.* += 1;
@@ -603,7 +614,7 @@ fn checkModuleTarget(specifier: []const u8, names: NameList, checked_imports: *u
     }
 
     var canonical_buf: [4096]u8 = undefined;
-    const target_path = resolveAbsoluteSpecifier(specifier, canonical_buf[0..]) orelse {
+    const target_path = resolveModuleSpecifier(importer_path, specifier, canonical_buf[0..]) orelse {
         broken_imports.* += 1;
         return;
     };
@@ -624,7 +635,7 @@ fn checkModuleTarget(specifier: []const u8, names: NameList, checked_imports: *u
     }
 }
 
-fn scanStaticModuleImports(js: []const u8, checked_imports: *usize, broken_imports: *usize) void {
+fn scanStaticModuleImports(js: []const u8, importer_path: []const u8, checked_imports: *usize, broken_imports: *usize) void {
     var i: usize = 0;
     while (true) {
         i = skipJSWhitespaceAndComments(js, i);
@@ -641,7 +652,7 @@ fn scanStaticModuleImports(js: []const u8, checked_imports: *usize, broken_impor
                 return;
             };
             const names = parseImportNames(statement);
-            checkModuleTarget(specifier, names, checked_imports, broken_imports);
+            checkModuleTarget(importer_path, specifier, names, checked_imports, broken_imports);
             i = end;
             continue;
         }
@@ -653,7 +664,7 @@ fn scanStaticModuleImports(js: []const u8, checked_imports: *usize, broken_impor
             const statement = js[after..end];
             if (exportFromSpecifier(statement)) |specifier| {
                 const names = parseExportFromNames(statement);
-                checkModuleTarget(specifier, names, checked_imports, broken_imports);
+                checkModuleTarget(importer_path, specifier, names, checked_imports, broken_imports);
                 i = end;
                 continue;
             }
@@ -780,7 +791,7 @@ fn indexOfCloseTagIgnoreCase(body: []const u8, start: usize, tag_name: []const u
     return null;
 }
 
-fn parseHTMLModuleScripts(html: []const u8, module_scripts: *usize, checked_imports: *usize, broken_imports: *usize) void {
+fn parseHTMLModuleScripts(html: []const u8, document_path: []const u8, module_scripts: *usize, checked_imports: *usize, broken_imports: *usize) void {
     var i: usize = 0;
     while (i < html.len) {
         if (html[i] != '<') {
@@ -892,9 +903,9 @@ fn parseHTMLModuleScripts(html: []const u8, module_scripts: *usize, checked_impo
         if (is_module) {
             module_scripts.* += 1;
             if (src.len != 0) {
-                checkModuleTarget(src, .{}, checked_imports, broken_imports);
+                checkModuleTarget(document_path, src, .{}, checked_imports, broken_imports);
             } else {
-                scanStaticModuleImports(script_body, checked_imports, broken_imports);
+                scanStaticModuleImports(script_body, document_path, checked_imports, broken_imports);
             }
         }
         i = close_end;
@@ -911,7 +922,7 @@ fn validateModuleImports(input: []const u8) ValidationSummary {
 
     for (&module_table) |*entry| {
         if (!entry.used or !entry.is_js) continue;
-        scanStaticModuleImports(entry.body, &checked_imports, &broken_imports);
+        scanStaticModuleImports(entry.body, entry.path, &checked_imports, &broken_imports);
     }
 
     var cursor: usize = 0;
@@ -926,7 +937,7 @@ fn validateModuleImports(input: []const u8) ValidationSummary {
         if (http.status != 200 or !isHTMLContentType(http.content_type)) continue;
 
         page_count += 1;
-        parseHTMLModuleScripts(http.body, &module_scripts, &checked_imports, &broken_imports);
+        parseHTMLModuleScripts(http.body, pathFromTargetURI(rec.target_uri), &module_scripts, &checked_imports, &broken_imports);
     }
 
     return .{
@@ -995,6 +1006,52 @@ test "validates inline module named imports" {
     try std.testing.expectEqual(@as(usize, 1), summary.page_count);
     try std.testing.expectEqual(@as(usize, 1), summary.module_scripts);
     try std.testing.expectEqual(@as(usize, 1), summary.checked_imports);
+    try std.testing.expectEqual(@as(usize, 0), summary.broken_imports);
+}
+
+test "resolves relative imports against module and document paths" {
+    var build_buf: [16384]u8 = undefined;
+    var n: usize = 0;
+
+    try appendWARCRecord(
+        build_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/guide/page",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<script type=\"module\">import { inlineValue } from \"./inline.js\";</script><script type=\"module\" src=\"../scripts/entry.js\"></script>",
+    );
+    try appendWARCRecord(
+        build_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/guide/inline.js",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport const inlineValue = 1;",
+    );
+    try appendWARCRecord(
+        build_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/scripts/entry.js",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nimport { sharedValue } from \"./shared/value.js?cache=1#value\";\nimport { rootValue } from \"../root.js\";\nexport { sharedValue, rootValue };",
+    );
+    try appendWARCRecord(
+        build_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/scripts/shared/value.js",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport const sharedValue = 2;",
+    );
+    try appendWARCRecord(
+        build_buf[0..],
+        &n,
+        "response",
+        "http://qip.local/root.js",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nexport const rootValue = 3;",
+    );
+
+    const summary = validateModuleImports(build_buf[0..n]);
+    try std.testing.expectEqual(@as(usize, 2), summary.module_scripts);
+    try std.testing.expectEqual(@as(usize, 4), summary.checked_imports);
     try std.testing.expectEqual(@as(usize, 0), summary.broken_imports);
 }
 
