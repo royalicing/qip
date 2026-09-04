@@ -61,3 +61,8 @@ dry. Use ASD-STE100 Simplified Technical English.
   Otherwise, you are making incorrect output faster." Avoid phrases such as
   "the wrong question", "what matters", or "the result" when the sentence does
   not identify them.
+
+## Inspiration when writing components
+
+- https://matklad.github.io/2026/09/02/static-allocation-constant-work.html
+- https://easylang.online/blog/branchless
