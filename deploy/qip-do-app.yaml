@@ -1,0 +1,64 @@
+# DigitalOcean App Platform specification for https://qip.dev.
+#
+# Deploy with:
+#   doctl apps create --spec deploy/qip-do-app.yaml --wait
+#
+# The qip.dev DNS record is deliberately not declared with a DigitalOcean
+# "zone": its DNS provider remains the authority for the cutover.
+name: qip-dev
+region: nyc
+
+domains:
+  - domain: qip.dev
+    type: PRIMARY
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /mcp
+      component:
+        name: qip-mcp
+        preserve_path_prefix: true
+    - match:
+        path:
+          prefix: /
+      component:
+        name: qip-site
+
+services:
+  - name: qip-mcp
+    environment_slug: node-js
+    dockerfile_path: deploy/qip-mcp.Dockerfile
+    github:
+      repo: royalicing/qip
+      branch: main
+      deploy_on_push: true
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    http_port: 8080
+    run_command: node qip-mcp.mjs --http --host 0.0.0.0 --port 8080 --origin https://qip.dev
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 5
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 3
+
+static_sites:
+  - name: qip-site
+    environment_slug: go
+    github:
+      repo: royalicing/qip
+      branch: main
+      deploy_on_push: true
+    build_command: make -j site-static
+    output_dir: site-static
+    envs:
+      - key: GO_INSTALL_PACKAGE_SPEC
+        value: .
+        scope: BUILD_TIME

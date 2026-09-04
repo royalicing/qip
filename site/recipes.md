@@ -1,4 +1,5 @@
 <title>Find a component recipe</title>
+<link rel="modulepreload" href="/elements/lib/recipe-finder.js">
 
 # Find a component recipe
 
@@ -13,7 +14,7 @@ Choose the type of content you have and the content type you want made.
 
 @media (min-width: 700px) {
   .pipeline-form {
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: 1fr auto 1fr 1fr;
     align-items: end;
   }
 }
@@ -98,12 +99,23 @@ Choose the type of content you have and the content type you want made.
     <strong>Output content type</strong>
     <select id="pipeline-output" name="to" aria-describedby="pipeline-status"></select>
   </label>
+  <label>
+    <strong>Prefer</strong>
+    <select id="pipeline-preference" name="preference" aria-describedby="pipeline-status">
+      <option value="balanced" selected>Balanced results</option>
+      <option value="quality">Lossless and high fidelity</option>
+      <option value="smallest">Smallest likely output</option>
+      <option value="fastest">Fewest and fastest stages</option>
+    </select>
+  </label>
 </form>
 
 <p id="pipeline-status" role="status">Loading the component catalog…</p>
 <ol id="pipeline-results" class="pipeline-results"></ol>
 
 <script type="module">
+import { findRankedRecipes, outputRole, PREFERENCES, reachableOutputMimes } from "/elements/lib/recipe-finder.js";
+
 const CATALOG_URL = "/data/component-catalog.csv";
 const GENERATOR_URL = "/text/csv/content-recipe-to-browser-javascript.wasm";
 const CATALOG_HEADER = "path,input_encoding,input_mime,input_capacity_bytes,output_encoding,output_mime,output_capacity_bytes";
@@ -125,7 +137,7 @@ const MIME_LABELS = {
   "image/bmp": "BMP image",
   "image/jp2": "JPEG 2000 image",
   "image/jpeg": "JPEG image",
-  "image/ktx2": "KTX2 image",
+  "image/ktx2": "KTX2 working image",
   "image/png": "PNG image",
   "image/svg+xml": "SVG image",
   "image/webp": "WebP image",
@@ -173,6 +185,7 @@ const FILE_EXTENSIONS = {
 const form = document.getElementById("pipeline-form");
 const inputSelect = document.getElementById("pipeline-input");
 const outputSelect = document.getElementById("pipeline-output");
+const preferenceSelect = document.getElementById("pipeline-preference");
 const status = document.getElementById("pipeline-status");
 const resultsElement = document.getElementById("pipeline-results");
 
@@ -245,67 +258,6 @@ function parseCatalog(csv) {
   });
 }
 
-function encodingAccepted(actual, expected) {
-  return actual === expected || (actual === "utf8" && expected === "bytes");
-}
-
-function indexCatalog(catalog) {
-  const byInput = new Map();
-  for (const component of catalog) {
-    const candidates = byInput.get(component.inputMime) ?? [];
-    candidates.push(component);
-    byInput.set(component.inputMime, candidates);
-  }
-  for (const candidates of byInput.values()) {
-    candidates.sort((left, right) => left.path.localeCompare(right.path));
-  }
-  return byInput;
-}
-
-function findRecipes(byInput, inputMime, outputMime) {
-  if (inputMime === outputMime) return [[]];
-
-  const recipes = [];
-  function visit(currentMime, currentEncoding, steps, usedPaths) {
-    for (const component of byInput.get(currentMime) ?? []) {
-      if (usedPaths.has(component.path)) continue;
-      if (currentEncoding !== null && !encodingAccepted(currentEncoding, component.inputEncoding)) continue;
-      const nextSteps = [...steps, component];
-      if (component.outputMime === outputMime) {
-        recipes.push(nextSteps);
-        continue;
-      }
-      const nextUsedPaths = new Set(usedPaths);
-      nextUsedPaths.add(component.path);
-      visit(component.outputMime, component.outputEncoding, nextSteps, nextUsedPaths);
-    }
-  }
-  visit(inputMime, null, [], new Set());
-
-  return recipes.sort((left, right) =>
-    left.length - right.length ||
-    left.map((step) => step.path).join("\n").localeCompare(right.map((step) => step.path).join("\n"))
-  );
-}
-
-function reachableMimes(byInput, inputMime) {
-  const reachable = new Set([inputMime]);
-  const visited = new Set();
-  const pending = [{ mime: inputMime, encoding: null }];
-  while (pending.length > 0) {
-    const current = pending.pop();
-    for (const component of byInput.get(current.mime) ?? []) {
-      if (current.encoding !== null && !encodingAccepted(current.encoding, component.inputEncoding)) continue;
-      reachable.add(component.outputMime);
-      const key = `${component.outputMime}\0${component.outputEncoding}`;
-      if (visited.has(key)) continue;
-      visited.add(key);
-      pending.push({ mime: component.outputMime, encoding: component.outputEncoding });
-    }
-  }
-  return reachable;
-}
-
 function commandFor(recipe, inputMime, outputMime) {
   const inputExtension = FILE_EXTENSIONS[inputMime] ?? "input";
   const outputExtension = FILE_EXTENSIONS[outputMime] ?? "output";
@@ -372,32 +324,39 @@ function addMimeOptions(catalog, selectedInput, selectedOutput) {
   for (const mime of mimes) {
     const text = `${labelFor(mime)} — ${mime}`;
     inputSelect.add(new Option(text, mime, false, mime === selectedInput));
-    outputSelect.add(new Option(text, mime, false, mime === selectedOutput));
+  }
+  for (const role of ["deliverable", "working"]) {
+    const roleMimes = mimes.filter((mime) => outputRole(mime) === role);
+    if (roleMimes.length === 0) continue;
+    const group = document.createElement("optgroup");
+    group.label = role === "working" ? "Intermediate and advanced formats" : "Output formats";
+    for (const mime of roleMimes) {
+      const suffix = role === "working" ? " — for QIP pipelines" : "";
+      group.append(new Option(`${labelFor(mime)} — ${mime}${suffix}`, mime, false, mime === selectedOutput));
+    }
+    outputSelect.append(group);
   }
 }
 
-function updateOutputOptions(byInput, inputMime, selectFallback) {
-  const reachable = reachableMimes(byInput, inputMime);
+function updateOutputOptions(inputMime, selectFallback) {
+  const reachable = reachableOutputMimes(catalog, inputMime);
   for (const option of outputSelect.options) option.disabled = !reachable.has(option.value);
 
   if (!selectFallback || reachable.has(outputSelect.value)) return;
 
-  const directOutputs = new Set(
-    (byInput.get(inputMime) ?? []).map((component) => component.outputMime)
-  );
   const options = [...outputSelect.options];
-  const fallback = options.find((option) => directOutputs.has(option.value))
-    ?? options.find((option) => !option.disabled && option.value !== inputMime)
+  const fallback = options.find((option) => !option.disabled && outputRole(option.value) === "deliverable" && option.value !== inputMime)
+    ?? options.find((option) => !option.disabled && outputRole(option.value) === "deliverable")
     ?? options.find((option) => !option.disabled);
   if (fallback) outputSelect.value = fallback.value;
 }
 
-function renderRecipe(recipe, inputMime, outputMime) {
+function renderRecipe(recipe, inputMime, outputMime, rank) {
   const item = document.createElement("li");
   item.className = "pipeline-result";
 
   const title = document.createElement("h2");
-  title.textContent = `${recipe.length} component${recipe.length === 1 ? "" : "s"}`;
+  title.textContent = `${rank === 0 ? "Recommended: " : ""}${recipe.length} component${recipe.length === 1 ? "" : "s"}`;
   item.append(title);
 
   const steps = document.createElement("div");
@@ -451,12 +410,20 @@ function renderRecipe(recipe, inputMime, outputMime) {
 }
 
 let catalog = [];
-let catalogByInput = new Map();
+
+function recipeForAgent(recipe, inputMime, outputMime) {
+  return {
+    components: recipe.map((component) => component.path),
+    command: commandFor(recipe, inputMime, outputMime),
+  };
+}
+
 function render() {
   const inputMime = inputSelect.value;
   const outputMime = outputSelect.value;
-  const recipes = findRecipes(catalogByInput, inputMime, outputMime);
-  const params = new URLSearchParams({ from: inputMime, to: outputMime });
+  const preference = preferenceSelect.value;
+  const recipes = findRankedRecipes(catalog, inputMime, outputMime, preference);
+  const params = new URLSearchParams({ from: inputMime, to: outputMime, preference });
   history.replaceState(null, "", `${location.pathname}?${params}`);
   resultsElement.replaceChildren();
 
@@ -469,40 +436,162 @@ function render() {
     return;
   }
 
-  status.textContent = `${recipes.length} valid ${recipes.length === 1 ? "recipe" : "recipes"}, shortest first.`;
+  const ktx2Note = outputMime === "image/ktx2"
+    ? " KTX2 is a QIP working format for downstream components."
+    : "";
+  status.textContent = `${recipes.length} valid ${recipes.length === 1 ? "recipe" : "recipes"}, ranked for ${preference}.${ktx2Note}`;
   const fragment = document.createDocumentFragment();
-  for (const recipe of recipes) fragment.append(renderRecipe(recipe, inputMime, outputMime));
+  for (const [rank, recipe] of recipes.entries()) {
+    fragment.append(renderRecipe(recipe, inputMime, outputMime, rank));
+  }
   resultsElement.append(fragment);
+}
+
+function chooseRecipe(inputMime, outputMime, preference, recipeIndex) {
+  if (!PREFERENCES.has(preference)) throw new RangeError(`Unsupported preference: ${preference}`);
+  const recipes = findRankedRecipes(catalog, inputMime, outputMime, preference);
+  if (!Number.isInteger(recipeIndex) || recipeIndex < 0 || recipeIndex >= recipes.length) {
+    throw new RangeError(`Recipe index ${recipeIndex} is unavailable for this conversion.`);
+  }
+  return recipes[recipeIndex];
+}
+
+async function registerWebMCPTools(knownMimes) {
+  if (!document.modelContext?.registerTool) return;
+  const mimeSchema = {
+    type: "string",
+    enum: [...knownMimes].sort(),
+  };
+  const preferenceSchema = {
+    type: "string",
+    enum: [...PREFERENCES],
+    default: "balanced",
+  };
+  const commonProperties = {
+    from: { ...mimeSchema, description: "Input MIME type." },
+    to: { ...mimeSchema, description: "Desired output MIME type." },
+    preference: { ...preferenceSchema, description: "Rank valid recipes by this tradeoff." },
+  };
+
+  const tools = [
+    {
+      name: "list_content_types",
+      title: "List QIP content types",
+      description: "List MIME types in the QIP component catalog, marking working formats that are mainly for component pipelines.",
+      inputSchema: { type: "object", additionalProperties: false },
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      execute: async () => JSON.stringify([...knownMimes].sort().map((mime) => ({
+        mime,
+        label: labelFor(mime),
+        role: outputRole(mime),
+      }))),
+    },
+    {
+      name: "find_component_recipes",
+      title: "Find QIP component recipes",
+      description: "Find compatible, ranked QIP component pipelines between two MIME types. The finder updates visibly for the user and returns the five best recipes.",
+      inputSchema: {
+        type: "object",
+        properties: commonProperties,
+        required: ["from", "to"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      execute: async ({ from, to, preference = "balanced" }, { signal }) => {
+        signal.throwIfAborted();
+        if (!knownMimes.has(from) || !knownMimes.has(to)) throw new RangeError("Unknown MIME type.");
+        if (!PREFERENCES.has(preference)) throw new RangeError("Unsupported preference.");
+        inputSelect.value = from;
+        updateOutputOptions(from, false);
+        outputSelect.value = to;
+        preferenceSelect.value = preference;
+        render();
+        const recipes = findRankedRecipes(catalog, from, to, preference);
+        return JSON.stringify({
+          from,
+          to,
+          preference,
+          output_role: outputRole(to),
+          recipe_count: recipes.length,
+          recipes: recipes.slice(0, 5).map((recipe) => recipeForAgent(recipe, from, to)),
+        });
+      },
+    },
+    {
+      name: "get_recipe_code",
+      title: "Get QIP recipe code",
+      description: "Return CLI or browser JavaScript for one ranked QIP component recipe. Use a recipe index returned by find_component_recipes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...commonProperties,
+          recipe_index: { type: "integer", minimum: 0, description: "Zero-based index in the ranked recipe list." },
+          format: { type: "string", enum: ["cli", "javascript"], description: "Requested code format." },
+        },
+        required: ["from", "to", "recipe_index", "format"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      execute: async ({ from, to, preference = "balanced", recipe_index: recipeIndex, format }, { signal }) => {
+        signal.throwIfAborted();
+        if (!knownMimes.has(from) || !knownMimes.has(to)) throw new RangeError("Unknown MIME type.");
+        if (format !== "cli" && format !== "javascript") throw new RangeError("Unsupported code format.");
+        const recipe = chooseRecipe(from, to, preference, recipeIndex);
+        inputSelect.value = from;
+        updateOutputOptions(from, false);
+        outputSelect.value = to;
+        preferenceSelect.value = preference;
+        render();
+        const code = format === "cli"
+          ? commandFor(recipe, from, to)
+          : await browserJavaScriptFor(recipe);
+        return JSON.stringify({ format, recipe: recipeForAgent(recipe, from, to), code });
+      },
+    },
+  ];
+
+  await Promise.all(tools.map((tool) => document.modelContext.registerTool(tool)));
 }
 
 try {
   const response = await fetch(CATALOG_URL);
   if (!response.ok) throw new Error(`The component catalog returned HTTP ${response.status}.`);
   catalog = parseCatalog(await response.text());
-  catalogByInput = indexCatalog(catalog);
   const params = new URLSearchParams(location.search);
   const knownMimes = new Set(catalog.flatMap((component) => [component.inputMime, component.outputMime]));
   const requestedInput = params.get("from");
   const requestedOutput = params.get("to");
+  const requestedPreference = params.get("preference");
   const selectedInput = knownMimes.has(requestedInput) ? requestedInput : "image/svg+xml";
   const selectedOutput = knownMimes.has(requestedOutput) ? requestedOutput : "image/webp";
   addMimeOptions(catalog, selectedInput, selectedOutput);
-  updateOutputOptions(catalogByInput, inputSelect.value, false);
+  preferenceSelect.value = PREFERENCES.has(requestedPreference) ? requestedPreference : "balanced";
+  updateOutputOptions(inputSelect.value, false);
   form.addEventListener("submit", (event) => event.preventDefault());
   inputSelect.addEventListener("change", () => {
-    updateOutputOptions(catalogByInput, inputSelect.value, true);
+    updateOutputOptions(inputSelect.value, true);
     render();
   });
   outputSelect.addEventListener("change", render);
+  preferenceSelect.addEventListener("change", render);
   render();
+  try {
+    await registerWebMCPTools(knownMimes);
+  } catch (error) {
+    console.warn("WebMCP tools were not registered:", error);
+  }
 } catch (error) {
   status.textContent = error instanceof Error ? error.message : String(error);
 }
 </script>
 
-<p><small>This finder lists every non-repeating pipeline through QIP's catalog of typed converters, with the shortest recipes first.</small></p>
+<p><small>This finder lists non-repeating, profile-compatible pipelines through QIP's typed component catalog. It ranks them for the selected tradeoff. KTX2 is shown as an advanced output because QIP uses it mainly as a working image format between components, not as a general delivery format.</small></p>
 <p><small>The catalog includes components with different, explicitly declared input and
 output MIME types. It deliberately leaves out generic components and
 same-content-type transforms such as validators, formatters, and image
-adjustments. The finder checks MIME connections; run `qip dry run` when you
+adjustments. The finder checks MIME, encoding, and KTX2 pixel-profile connections; run `qip dry run` when you
 need capacity and encoding diagnostics for a selected pipeline.</small></p>
+<p><small>A selected KTX2 input is treated as QIP's canonical RGBA8 sRGB profile. The
+catalog cannot infer another KTX2 pixel profile from the MIME type alone; use a
+component path that names the required profile when you need linear float or
+Display P3 data.</small></p>
