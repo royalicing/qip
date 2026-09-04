@@ -125,7 +125,7 @@ qip-search input[type="search"] {
     padding: 0.0lh 0.5em;
     color: var(--text);
     background: var(--bg);
-    border: 1px solid currentColor;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
     border-radius: 0;
 
     &:focus {
