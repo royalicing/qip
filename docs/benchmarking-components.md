@@ -109,6 +109,11 @@ input throughput, runtime and CPU identification, and relative time. Use
 `--warmup <n>` to change warmup work. Use `-r <n>` when you need an exact render
 count instead of the default three-second measured target.
 
+`qipx bench` also accepts repeatable `-F` or `--form` fields instead of `-i`.
+It constructs the same canonical multipart bytes as `qipx run` and Go
+`qip bench`, including support for one `-F name=@-` field read from standard
+input. Multipart form input and `-i` are mutually exclusive.
+
 Input throughput is external input bytes divided by mean end-to-end render time.
 It includes uniform setters and input and output copies; it is not Wasm memory
 bandwidth. Empty input is reported as `Input empty` because no meaningful byte

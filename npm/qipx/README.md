@@ -209,6 +209,20 @@ each component once, then warms and measures each component in input order.
 Every warmup and measured render must have the same type and bytes as the
 baseline.
 
+Use repeatable `-F` or `--form` fields to benchmark a component that accepts
+`multipart/form-data`:
+
+```sh
+qipx bench \
+  -F component=@components/text/hello.wasm \
+  --runs 100 \
+  components/interactive/wasm-debugger.wasm
+```
+
+Benchmark forms use the same canonical bytes as `qipx run` and Go `qip bench`.
+`-F name=@-` reads one file field from standard input. `-F` and `-i` are
+mutually exclusive.
+
 The `NODE_OPTIONS` and `BUN_OPTIONS` prefixes opt into one collection after
 each component's warmup and before its measured runs. `bunx --bun` overrides
 the package's Node shebang.
@@ -220,6 +234,7 @@ WebKit's JavaScript and WebAssembly engine used by Safari.
 ```text
 Options:
   -i, --input <path>              Read benchmark input from a file ('-' for stdin)
+  -F, --form <name=value>         Add multipart text or file input (repeatable; @path or @-)
   -r, --runs <n>                  Measure exactly n runs per component
   --benchtime <duration>          Target measured time per component (default: 3s)
   --warmup <n>                    Warmup runs per component (default: 10)

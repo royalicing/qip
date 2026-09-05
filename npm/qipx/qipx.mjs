@@ -14,7 +14,7 @@ function usage() {
     `       qipx [host ...] dry run [options] <component.wasm> [component2.wasm ...]\n` +
     `       qipx [host ...] tui [options] <interactive.wasm> [content.wasm ...]\n` +
     `       qipx [host ...] comply [options] <file-or-dir> [...]\n` +
-    `       qipx [host ...] bench -i <input> [options] <component.wasm> [...]\n\n` +
+    `       qipx [host ...] bench (-i <input> | -F <name=value>) [options] <component.wasm> [...]\n\n` +
     `Hosts:\n` +
     `  Hosts are dotted DNS names with optional ports. Missing relative .wasm files\n` +
     `  are requested over HTTPS in host order and saved at their original paths.\n\n` +
@@ -240,9 +240,10 @@ async function resolveSource(plan, validate) {
 }
 
 function benchUsage() {
-  return `Usage: qipx [host ...] bench -i <input> [options] <component.wasm> [...]\n\n` +
+  return `Usage: qipx [host ...] bench (-i <input> | -F, --form <name=value>) [options] <component.wasm> [...]\n\n` +
     `Options:\n` +
     `  -i, --input <path>              Read benchmark input from a file ('-' for stdin)\n` +
+    `  -F, --form <name=value>         Add multipart text or file input (repeatable; @path or @-)\n` +
     `  -r, --runs <n>                  Measure exactly n runs per component\n` +
     `  --benchtime <duration>          Target measured time per component (default: 3s)\n` +
     `  --warmup <n>                    Warmup runs per component (default: 10)\n` +
@@ -1729,6 +1730,8 @@ function parseBenchDuration(value) {
 function parseBenchCLI(argv) {
   const options = {
     input: "",
+    inputFromCLI: false,
+    formValues: [],
     runs: undefined,
     benchtime: 3e9,
     benchtimeLabel: "3s",
@@ -1746,7 +1749,15 @@ function parseBenchCLI(argv) {
     }
     if (arg === "-h" || arg === "--help") return { help: true };
     if (arg === "-i" || arg === "--input") {
-      options.input = argv[++index];
+      const value = argv[++index];
+      if (value === undefined) throw new Error(`${arg} requires a path`);
+      options.input = value;
+      options.inputFromCLI = true;
+    } else if (arg === "-F" || arg === "--form") {
+      const value = argv[++index];
+      if (value === undefined) throw new Error(`${arg} requires <name=value>`);
+      parseFormAssignment(value);
+      options.formValues.push(value);
     } else if (arg === "-r" || arg === "--runs") {
       options.runs = parsePositiveInteger(argv[++index], arg);
       runsSet = true;
@@ -1773,7 +1784,9 @@ function parseBenchCLI(argv) {
     }
   }
   if (runsSet && benchtimeSet) throw new Error("use either --runs or --benchtime, not both");
-  if (!options.input) throw new Error("qipx bench requires -i <input>");
+  if (options.inputFromCLI && options.formValues.length > 0) throw new Error("-F and -i are mutually exclusive");
+  if (!options.inputFromCLI && options.formValues.length === 0) throw new Error("qipx bench requires -i <input> or -F <name=value>");
+  if (options.inputFromCLI && !options.input) throw new Error("--input requires a path");
   const specs = parseStageArgs(components);
   if (specs.length === 0) throw new Error("qipx bench requires at least one component");
   return { help: false, options, specs };
@@ -1979,7 +1992,16 @@ async function benchCommand(argv, hosts) {
   }
   const { options, specs } = parsed;
   const collectAfterWarmup = typeof globalThis.gc === "function";
-  const input = options.input === "-" ? await readStdin() : await readFile(options.input);
+  let input;
+  let inputLabel;
+  if (options.formValues.length > 0) {
+    const form = await buildMultipartFormInput(options.formValues);
+    input = form.bytes;
+    inputLabel = `multipart form (${options.formValues.length} field${options.formValues.length === 1 ? "" : "s"})`;
+  } else {
+    input = options.input === "-" ? await readStdin() : await readFile(options.input);
+    inputLabel = options.input === "-" ? "stdin" : options.input;
+  }
   const candidates = [];
   for (const spec of specs) candidates.push(await loadBenchmarkCandidate(spec, options, hosts));
 
@@ -2009,7 +2031,7 @@ async function benchCommand(argv, hosts) {
     }
   }
 
-  printBenchmarkReport(candidates, input, options.input === "-" ? "stdin" : options.input, expected, options, collectAfterWarmup);
+  printBenchmarkReport(candidates, input, inputLabel, expected, options, collectAfterWarmup);
 }
 
 /** @private Shared implementation for the package's unexported CLI module. */

@@ -76,3 +76,45 @@ test("both CLIs reject raw input with -F and still require a component", () => {
     assert.equal(missingComponent.stdout.length, 0);
   }
 });
+
+test("qipx bench accepts the same multipart input as Go qip bench", () => {
+  const fields = ["mode=step", "component=@components/text/hello.wasm"];
+  const multipartComponent = "components/multipart/form-data/form-data-to-tar.wasm";
+  const go = run("./qip", [
+    "bench",
+    "-F", fields[0],
+    "--form", fields[1],
+    "-r", "1",
+    multipartComponent,
+  ]);
+  assert.equal(go.status, 0, go.stderr.toString());
+
+  const node = run(process.execPath, [
+    "npm/qipx/cli.mjs",
+    "bench",
+    "-F", fields[0],
+    "--form", fields[1],
+    "--runs", "1",
+    "--warmup", "0",
+    multipartComponent,
+  ]);
+  assert.equal(node.status, 0, node.stderr.toString());
+  assert.match(node.stdout.toString(), /Input: multipart form \(2 fields\)/);
+
+  const goHash = /sha256:\s+([0-9a-f]{64})/.exec(go.stdout.toString())?.[1];
+  assert.ok(goHash, "Go benchmark did not report an output SHA-256");
+  assert.match(node.stdout.toString(), new RegExp(`Output SHA-256: ${goHash}`));
+});
+
+test("qipx bench rejects raw and multipart input together", () => {
+  const result = run(process.execPath, [
+    "npm/qipx/cli.mjs",
+    "bench",
+    "-i", "README.md",
+    "-F", "component=@components/text/hello.wasm",
+    "--runs", "1",
+    "components/multipart/form-data/form-data-to-tar.wasm",
+  ]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /-F and -i are mutually exclusive/);
+});
