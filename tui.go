@@ -111,7 +111,9 @@ func tuiCmd(args []string) {
 	var input []byte
 	inputType := ""
 	if len(config.formValues) > 0 {
-		input, inputType, err = buildMultipartFormInput(config.formValues, nil)
+		input, inputType, err = buildMultipartFormInputWithFileLoader(config.formValues, nil, func(path string) ([]byte, error) {
+			return resolveMultipartFormFile(path, config.opts.hosts)
+		})
 	} else if config.inputPath != "" {
 		input, err = os.ReadFile(config.inputPath)
 	}

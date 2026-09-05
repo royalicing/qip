@@ -16,8 +16,8 @@ function usage() {
     `       qipx [host ...] comply [options] <file-or-dir> [...]\n` +
     `       qipx [host ...] bench (-i <input> | -F <name=value>) [options] <component.wasm> [...]\n\n` +
     `Hosts:\n` +
-    `  Hosts are dotted DNS names with optional ports. Missing relative .wasm files\n` +
-    `  are requested over HTTPS in host order and saved at their original paths.\n\n` +
+    `  Hosts are dotted DNS names with optional ports. Missing relative .wasm files,\n` +
+    `  including @path form fields, are requested over HTTPS in host order and saved.\n\n` +
     `Options:\n` +
     `  -i, --input <path>              Read input from a file instead of stdin\n` +
     `  -F, --form <name=value>         Add multipart text or file input (repeatable; @path or @-)\n` +
@@ -47,6 +47,7 @@ function tuiUsage() {
     `  --capacities-must-fit           Check capacity between Content stages\n\n` +
     `The first component must be Interactive. Later components transform each\n` +
     `frame as ordinary Content stages; the final output must be UTF-8 text.\n` +
+    `With hosts, missing safe relative .wasm files used by -F are downloaded.\n` +
     `Terminal stdin carries key events, so -i - and -F name=@- are unavailable.\n`;
 }
 
@@ -239,6 +240,25 @@ async function resolveSource(plan, validate) {
   throw new Error(`${plan.filePath} is unavailable from every source${detail}`);
 }
 
+const canonicalWasmHeader = Uint8Array.of(0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00);
+
+function wasmHeaderMustBeValid(candidate, label) {
+  const data = bytes(candidate);
+  if (data.byteLength < canonicalWasmHeader.byteLength) throw new Error(`${label} does not have a WebAssembly 1.0 header`);
+  for (let index = 0; index < canonicalWasmHeader.byteLength; index += 1) {
+    if (data[index] !== canonicalWasmHeader[index]) throw new Error(`${label} does not have a WebAssembly 1.0 header`);
+  }
+}
+
+async function loadMultipartFile(filePath, hosts) {
+  try {
+    return await readFile(filePath);
+  } catch (error) {
+    if (!missingFileError(error) || hosts.length === 0 || !remotelyEligiblePath(filePath)) throw error;
+  }
+  return resolveSource(sourcePlan(filePath, hosts), wasmHeaderMustBeValid);
+}
+
 function benchUsage() {
   return `Usage: qipx [host ...] bench (-i <input> | -F, --form <name=value>) [options] <component.wasm> [...]\n\n` +
     `Options:\n` +
@@ -251,6 +271,7 @@ function benchUsage() {
     `  -u, --uniform <name=value>      Set a uniform on the preceding component (repeatable)\n` +
     `  -h, --help                      Show this help\n\n` +
     `Components are measured one at a time on reused runtime instances.\n` +
+    `With hosts, missing safe relative .wasm files used by -F are downloaded.\n` +
     `With --expose-gc, qipx collects after each component's warmup.\n` +
     `Every output must match the first component byte for byte.\n`;
 }
@@ -1662,7 +1683,7 @@ function multipartBodyContainsBoundary(body) {
   }
 }
 
-export async function buildMultipartFormInput(values, { stdin } = {}) {
+export async function buildMultipartFormInput(values, { stdin, loadFile = readFile } = {}) {
   const assignments = values.map(parseFormAssignment);
   if (assignments.filter((assignment) => assignment.filePath === "-").length > 1) {
     throw new Error("only one -F field may read from stdin with @-");
@@ -1679,7 +1700,7 @@ export async function buildMultipartFormInput(values, { stdin } = {}) {
       filename = "-";
     } else {
       try {
-        body = bytes(await readFile(assignment.filePath));
+        body = bytes(await loadFile(assignment.filePath));
         filename = canonicalFormFilename(assignment.filePath);
       } catch (error) {
         throw new Error(`read -F ${assignment.name}=@${assignment.filePath}: ${error.message ?? error}`);
@@ -1995,7 +2016,9 @@ async function benchCommand(argv, hosts) {
   let input;
   let inputLabel;
   if (options.formValues.length > 0) {
-    const form = await buildMultipartFormInput(options.formValues);
+    const form = await buildMultipartFormInput(options.formValues, {
+      loadFile: (filePath) => loadMultipartFile(filePath, hosts),
+    });
     input = form.bytes;
     inputLabel = `multipart form (${options.formValues.length} field${options.formValues.length === 1 ? "" : "s"})`;
   } else {
@@ -2045,6 +2068,7 @@ export const __cliInternals = Object.freeze({
   prepareRunPipeline,
   parseFormAssignment,
   buildMultipartFormInput,
+  loadMultipartFile,
   resolveStageInputType,
   nextContentType,
   applyUniforms,

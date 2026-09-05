@@ -9,6 +9,8 @@ import { main } from "../npm/qipx/cli.mjs";
 
 const repository = join(dirname(fileURLToPath(import.meta.url)), "..");
 const trimWasm = await readFile(join(repository, "components/text/trim.wasm"));
+const identityWasm = await readFile(join(repository, "components/bytes/identity.wasm"));
+const debuggerWasm = await readFile(join(repository, "components/interactive/wasm-debugger.wasm"));
 const validUTF8Wasm = await readFile(join(repository, "components/text/utf8-must-be-valid.wasm"));
 const rejectInvalidUTF8Wasm = await readFile(join(repository, "compliance/reject-invalid-utf8.wasm"));
 
@@ -109,6 +111,110 @@ test("qipx falls back, vendors atomically, and then stays local", async () => {
       "text/trim.wasm",
     ]));
     assert.equal(await readFile("second-output.txt", "utf8"), "hello");
+  });
+});
+
+test("qipx resolves missing multipart Wasm files through hosts", async () => {
+  await inTemporaryDirectory(async () => {
+    await writeFile("identity.wasm", identityWasm);
+    const requests = [];
+    await withFetch(async (url) => {
+      requests.push(url);
+      return new Response(trimWasm, { status: 200 });
+    }, () => main([
+      "qip.dev",
+      "run",
+      "-F", "component=@text/trim.wasm",
+      "-o", "form.bin",
+      "identity.wasm",
+    ]));
+
+    assert.deepEqual(requests, ["https://qip.dev/text/trim.wasm"]);
+    assert.deepEqual(await readFile("text/trim.wasm"), trimWasm);
+    const form = await readFile("form.bin");
+    assert.match(form.toString("latin1"), /name="component"; filename="trim\.wasm"/);
+    assert.ok(form.includes(trimWasm));
+
+    await withFetch(async () => {
+      throw new Error("existing multipart file requested the network");
+    }, () => main([
+      "qip.dev",
+      "run",
+      "-F", "component=@text/trim.wasm",
+      "-o", "second-form.bin",
+      "identity.wasm",
+    ]));
+    assert.deepEqual(await readFile("second-form.bin"), form);
+  });
+});
+
+test("qipx lightly validates remote multipart Wasm without validating local fields", async () => {
+  await inTemporaryDirectory(async () => {
+    await writeFile("identity.wasm", identityWasm);
+    await writeFile("local-invalid.wasm", "intentionally malformed");
+    await withFetch(async () => {
+      throw new Error("local multipart file requested the network");
+    }, () => main([
+      "qip.dev",
+      "run",
+      "-F", "component=@local-invalid.wasm",
+      "-o", "local-form.bin",
+      "identity.wasm",
+    ]));
+    assert.match((await readFile("local-form.bin")).toString(), /intentionally malformed/);
+
+    const invalidRequests = [];
+    await assert.rejects(withFetch(
+      async (url) => {
+        invalidRequests.push(url);
+        return new Response("not Wasm", { status: 200 });
+      },
+      () => main([
+        "qip.dev",
+        "mirror.example",
+        "run",
+        "-F", "component=@remote-invalid.wasm",
+        "identity.wasm",
+      ]),
+    ), /does not have a WebAssembly 1\.0 header/);
+    assert.deepEqual(invalidRequests, ["https://qip.dev/remote-invalid.wasm"]);
+    await assert.rejects(readFile("remote-invalid.wasm"), { code: "ENOENT" });
+
+    let requests = 0;
+    await assert.rejects(withFetch(
+      async () => {
+        requests += 1;
+        return new Response(trimWasm, { status: 200 });
+      },
+      () => main([
+        "qip.dev",
+        "run",
+        "-F", "component=@../unsafe.wasm",
+        "identity.wasm",
+      ]),
+    ), /read -F component=@\.\.\/unsafe\.wasm/);
+    assert.equal(requests, 0);
+  });
+});
+
+test("qipx tui resolves a missing multipart component before opening the terminal", async () => {
+  await inTemporaryDirectory(async () => {
+    await writeFile("debugger.wasm", debuggerWasm);
+    const requests = [];
+    await assert.rejects(withFetch(
+      async (url) => {
+        requests.push(url);
+        return new Response(trimWasm, { status: 200 });
+      },
+      () => main([
+        "qip.dev",
+        "tui",
+        "-F", "component=@text/trim.wasm",
+        "debugger.wasm",
+      ]),
+    ), /requires terminal stdin and stdout/);
+    assert.deepEqual(requests, ["https://qip.dev/text/trim.wasm"]);
+    assert.deepEqual(await readFile("text/trim.wasm"), trimWasm);
   });
 });
 

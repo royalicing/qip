@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	qinternal "github.com/royalicing/qip/internal"
 )
 
 func TestBuildMultipartFormInput(t *testing.T) {
@@ -54,6 +56,54 @@ func TestBuildMultipartFormInputFromStdin(t *testing.T) {
 	expected = append(expected, []byte("\r\n--"+canonicalFormBoundary+"--\r\n")...)
 	if !bytes.Equal(actual, expected) {
 		t.Fatalf("multipart stdin bytes differ\nactual:   %q\nexpected: %q", actual, expected)
+	}
+}
+
+func TestBuildMultipartFormInputUsesFileLoader(t *testing.T) {
+	body := append(append([]byte{}, canonicalWasmHeader...), 0x01, 0x02)
+	loadedPath := ""
+	actual, _, err := buildMultipartFormInputWithFileLoader(
+		[]string{"component=@text/example.wasm"},
+		strings.NewReader("unused"),
+		func(path string) ([]byte, error) {
+			loadedPath = path
+			return body, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedPath != "text/example.wasm" {
+		t.Fatalf("loaded path=%q", loadedPath)
+	}
+	if !bytes.Contains(actual, body) || !bytes.Contains(actual, []byte(`filename="example.wasm"`)) {
+		t.Fatalf("multipart form does not contain loaded file: %q", actual)
+	}
+}
+
+func TestMultipartWasmHeaderValidationIsLightweight(t *testing.T) {
+	if err := validateMultipartWasmHeader(append(append([]byte{}, canonicalWasmHeader...), 0xff), "example.wasm"); err != nil {
+		t.Fatalf("header-only validation rejected body: %v", err)
+	}
+	for _, body := range [][]byte{nil, []byte("not Wasm"), {0x00, 0x61, 0x73, 0x6d, 0x02, 0x00, 0x00, 0x00}} {
+		if err := validateMultipartWasmHeader(body, "example.wasm"); err == nil || !strings.Contains(err.Error(), "WebAssembly 1.0 header") {
+			t.Fatalf("body=%x error=%v", body, err)
+		}
+	}
+}
+
+func TestResolveMultipartFormFileKeepsExistingLocalBytesOpaque(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "malformed.wasm")
+	want := []byte("intentionally malformed")
+	if err := os.WriteFile(path, want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body, err := resolveMultipartFormFile(path, []qinternal.ComponentHost{{Origin: "https://unused.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, want) {
+		t.Fatalf("body=%q, want %q", body, want)
 	}
 }
 

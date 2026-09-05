@@ -350,6 +350,7 @@ func runHelp() string {
 	text := strings.NewReplacer(
 		"Usage: qip run [-v] [-i <input> | -F <name=value>]", "Usage: qip run [-v] [-i <input> | -F, --form <name=value>]",
 		"repeat -F to construct", "repeat -F/--form to construct",
+		"  - -F name=value adds a UTF-8 field. -F name=@path adds exact file bytes.\n", "  - -F name=value adds a UTF-8 field. -F name=@path adds exact file bytes.\n  - With hosts, a missing safe relative .wasm file used by -F is downloaded and cached.\n",
 		"-F and -i are mutually exclusive", "-F/--form and -i/--input are mutually exclusive",
 	).Replace(helpRun)
 	text = strings.Replace(
@@ -401,7 +402,9 @@ func runCmd(args []string) {
 	var input []byte
 	inputContentType := ""
 	if len(config.formValues) > 0 {
-		input, inputContentType, err = buildMultipartFormInput(config.formValues, os.Stdin)
+		input, inputContentType, err = buildMultipartFormInputWithFileLoader(config.formValues, os.Stdin, func(path string) ([]byte, error) {
+			return resolveMultipartFormFile(path, opts.hosts)
+		})
 		if err != nil {
 			gameOver("Error constructing multipart input: %v", err)
 		}
@@ -664,7 +667,9 @@ func benchCmd(args []string) {
 	var inputBytes []byte
 	var err error
 	if len(formValues) > 0 {
-		inputBytes, _, err = buildMultipartFormInput(formValues, os.Stdin)
+		inputBytes, _, err = buildMultipartFormInputWithFileLoader(formValues, os.Stdin, func(path string) ([]byte, error) {
+			return resolveMultipartFormFile(path, opts.hosts)
+		})
 		if err != nil {
 			gameOver("Error constructing multipart input: %v", err)
 		}

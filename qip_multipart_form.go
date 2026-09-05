@@ -20,6 +20,8 @@ type formAssignment struct {
 
 type formAssignmentList []string
 
+type multipartFileLoader func(string) ([]byte, error)
+
 func (values *formAssignmentList) String() string {
 	return strings.Join(*values, ",")
 }
@@ -85,6 +87,10 @@ func multipartBodyContainsBoundary(body []byte) bool {
 }
 
 func buildMultipartFormInput(values []string, stdin io.Reader) ([]byte, string, error) {
+	return buildMultipartFormInputWithFileLoader(values, stdin, os.ReadFile)
+}
+
+func buildMultipartFormInputWithFileLoader(values []string, stdin io.Reader, loadFile multipartFileLoader) ([]byte, string, error) {
 	assignments := make([]formAssignment, len(values))
 	stdinParts := 0
 	for index, value := range values {
@@ -113,7 +119,7 @@ func buildMultipartFormInput(values []string, stdin io.Reader) ([]byte, string, 
 				body, err = io.ReadAll(stdin)
 				filename = "-"
 			} else {
-				body, err = os.ReadFile(assignment.filePath)
+				body, err = loadFile(assignment.filePath)
 				if err == nil {
 					filename, err = canonicalFormFilename(assignment.filePath)
 				}

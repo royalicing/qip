@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +39,26 @@ func resolveModuleSourceWithUniforms(path string, opts options, uniforms map[str
 	return qinternal.ResolveComponentSource(context.Background(), path, opts.hosts, func(body []byte, label string) error {
 		return validateRunnableModuleCandidate(body, label, opts, uniforms)
 	})
+}
+
+var canonicalWasmHeader = []byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00}
+
+func validateMultipartWasmHeader(body []byte, label string) error {
+	if len(body) < len(canonicalWasmHeader) || !bytes.Equal(body[:len(canonicalWasmHeader)], canonicalWasmHeader) {
+		return fmt.Errorf("%s does not have a WebAssembly 1.0 header", label)
+	}
+	return nil
+}
+
+func resolveMultipartFormFile(path string, hosts []qinternal.ComponentHost) ([]byte, error) {
+	body, err := os.ReadFile(path)
+	if err == nil {
+		return body, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) || len(hosts) == 0 || !qinternal.RemotelyEligibleComponentPath(path) {
+		return nil, err
+	}
+	return qinternal.ResolveComponentSource(context.Background(), path, hosts, validateMultipartWasmHeader)
 }
 
 func validateRunnableModuleCandidate(body []byte, label string, opts options, uniforms map[string]string) error {

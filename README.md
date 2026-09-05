@@ -98,6 +98,9 @@ You can pipe the results of other CLI tools to stdin, pass one raw file with
 `-i`, or construct multipart input with repeatable `-F` options. You can also
 chain multiple QIP components together.
 
+With hosts, `-F name=@path.wasm` downloads and saves a missing safe relative
+Wasm file using the same local-first rules as pipeline components.
+
 Put one or more HTTPS hosts before `run`, `dry run`, `bench`, or `comply` to
 load a missing component by its relative path:
 

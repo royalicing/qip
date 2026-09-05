@@ -93,9 +93,16 @@ Use `@-` to read one file field from stdin. `--form` is an exact alias for
 Node.js `qipx` use the same fixed QIP boundary and produce byte-identical
 multipart bodies for the same fields.
 
+When hosts are present, a missing safe relative `.wasm` file referenced by
+`-F name=@path.wasm` follows the same local-first download and caching rules as
+a pipeline component. Other file paths remain local-only. Remote multipart
+files receive only a WebAssembly 1.0 header check; the receiving component owns
+profile and ABI validation.
+
 ## Host Resolution
 
 Hosts are global execution context for `run`, `tui`, `dry run`, `bench`, and `comply`.
+They also resolve eligible missing `.wasm` files referenced by `-F`.
 Put them before the required subcommand, in fallback order:
 
 ```sh
