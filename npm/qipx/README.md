@@ -13,37 +13,39 @@ downloads are available from [qip.dev/tools](https://qip.dev/tools) and
 
 ## Try It
 
-Use the same `luhn.wasm` component to render, benchmark, test, and debug.
+Use the same `rgb-to-hex.wasm` component to render, benchmark, test, and debug.
 Start by running it. qipx downloads the component from qip.dev and saves it at
-`text/luhn.wasm`:
+`text/rgb-to-hex.wasm`:
 
 ```sh
-printf '79927398713' \
-  | npx @qip.dev/qipx qip.dev run text/luhn.wasm
+printf 'rgb(101, 79, 240)' \
+  | npx @qip.dev/qipx qip.dev run text/rgb-to-hex.wasm
 ```
+
+It prints `#654ff0`.
 
 Benchmark that saved component on the same input:
 
 ```sh
-printf '79927398713' \
+printf 'rgb(101, 79, 240)' \
   | npx @qip.dev/qipx qip.dev bench \
-      -i - --runs 100 text/luhn.wasm
+      -i - --runs 100 text/rgb-to-hex.wasm
 ```
 
 Test its declared behavior with a reusable Compliance oracle:
 
 ```sh
 npx @qip.dev/qipx qip.dev comply \
-  text/luhn.wasm \
-  --with oracles/luhn.comply.wasm
+  text/rgb-to-hex.wasm \
+  --with oracles/rgb-to-hex.comply.wasm
 ```
 
 Then open the same component in the interactive debugger:
 
 ```sh
 npx @qip.dev/qipx qip.dev tui \
-  -F component=@text/luhn.wasm \
-  -F input=79927398713 \
+  -F component=@text/rgb-to-hex.wasm \
+  -F 'input=rgb(101, 79, 240)' \
   interactive/wasm-debugger.wasm
 ```
 
@@ -79,11 +81,11 @@ Options:
 Construct multipart input with text and exact file bytes:
 
 ```sh
-qipx run \
-  -F mode=step \
-  -F component=@examples/counter.wasm \
-  components/multipart/form-data/form-data-to-tar.wasm \
-  > debugger-input.tar
+qipx qip.dev run \
+  -F 'input=rgb(101, 79, 240)' \
+  -F component=@text/rgb-to-hex.wasm \
+  multipart/form-data/form-data-to-tar.wasm \
+  > component-input.tar
 ```
 
 Use `@-` to read one file field from stdin. `--form` is an exact alias for

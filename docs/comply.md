@@ -70,6 +70,9 @@ qip comply components/text/utf8-must-be-valid.wasm --with compliance/reject-inva
 # Expects that components/text/luhn.wasm accepts normalized Luhn-valid input and rejects invalid input.
 qip comply components/text/luhn.wasm --with compliance/luhn.comply.wasm
 
+# Expects decimal RGB and rgb(...) forms to render as lowercase hexadecimal colors.
+qip comply components/text/rgb-to-hex.wasm --with compliance/rgb-to-hex.comply.wasm
+
 # Expects canonical RFC 4648 output for valid quartets and rejection for malformed Base64.
 qip comply components/text/base64-decode.wasm --with compliance/base64-decode.comply.wasm
 ```

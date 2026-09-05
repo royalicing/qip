@@ -97,6 +97,9 @@ compliance/svg-to-data-uri.comply.wasm: compliance/svg-to-data-uri.comply.zig
 compliance/data-uri-to-css-url.comply.wasm: compliance/data-uri-to-css-url.comply.zig
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
+compliance/rgb-to-hex.comply.wasm: compliance/rgb-to-hex.comply.zig
+	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
+
 compliance/mermaid-to-unicode-html.comply.wasm: compliance/mermaid-to-unicode-html.comply.zig compliance/mermaid-to-unicode-html.fixtures.txt
 	$(ZIG_ENV) zig build-exe $< $(ZIG_WASM_FLAGS) --max-memory=$(ZIG_WASM_MAX_MEMORY) -femit-bin=$@
 
@@ -141,6 +144,7 @@ compliance: compliance/currency-format-zh-cn.comply.wasm
 compliance: compliance/iso-4217-alpha-to-numeric.comply.wasm
 compliance: compliance/svg-to-data-uri.comply.wasm
 compliance: compliance/data-uri-to-css-url.comply.wasm
+compliance: compliance/rgb-to-hex.comply.wasm
 compliance: compliance/mermaid-to-unicode-html.comply.wasm
 compliance: compliance/warc-connect-search-params.comply.wasm
 compliance: compliance/jpeg-to-bmp-b8g8r8a8-srgb.comply.wasm
@@ -1049,6 +1053,7 @@ test-comply: qip components compliance
 	$(QIP_BIN) comply components/text/markdown/commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
 	$(QIP_BIN) comply components/text/markdown/gfm-commonmark.0.31.2.wasm --with compliance/html5-entities.comply.wasm --with compliance/unicode-17-casefold-labels.comply.wasm --with compliance/commonmark-differential-corpus.comply.wasm
 	$(QIP_BIN) comply components/text/luhn.wasm --with compliance/luhn.comply.wasm
+	$(QIP_BIN) comply components/text/rgb-to-hex.wasm --with compliance/rgb-to-hex.comply.wasm
 	$(QIP_BIN) comply components/text/base64-decode.wasm --with compliance/base64-decode.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/css/css-class-validator.wasm --with compliance/css-class-validator.comply.wasm --straight-line-oracles
 	$(QIP_BIN) comply components/text/html/html-id-validator.wasm --with compliance/html-id-validator.comply.wasm --straight-line-oracles

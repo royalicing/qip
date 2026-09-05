@@ -22,7 +22,60 @@ Components, AI coding, security: you can pick all three.
 ## Install CLI
 
 ```bash
-go install github.com/royalicing/qip@latest
+npm install --global @qip.dev/qipx
+```
+
+`qipx` requires Node.js 22 or newer.
+
+## Try It
+
+Use the same `rgb-to-hex.wasm` component to render, benchmark, test, and debug.
+Start by running it. qipx downloads the component from qip.dev and saves it at
+`text/rgb-to-hex.wasm`:
+
+```sh
+printf 'rgb(101, 79, 240)' \
+  | npx @qip.dev/qipx qip.dev run text/rgb-to-hex.wasm
+```
+
+It prints `#654ff0`.
+
+Benchmark that saved component on the same input:
+
+```sh
+printf 'rgb(101, 79, 240)' \
+  | npx @qip.dev/qipx qip.dev bench \
+      -i - --runs 100 text/rgb-to-hex.wasm
+```
+
+Test its declared behavior with a reusable Compliance oracle:
+
+```sh
+npx @qip.dev/qipx qip.dev comply \
+  text/rgb-to-hex.wasm \
+  --with oracles/rgb-to-hex.comply.wasm
+```
+
+Then open the same component in the interactive debugger:
+
+```sh
+npx @qip.dev/qipx qip.dev tui \
+  -F component=@text/rgb-to-hex.wasm \
+  -F 'input=rgb(101, 79, 240)' \
+  interactive/wasm-debugger.wasm
+```
+
+Press `s` or → to step into the next instruction, Space to continue, and
+`Ctrl-C` to leave the debugger.
+
+Multiple components run left to right. Hosts apply to every missing component
+in the pipeline:
+
+```sh
+printf 'qip + wasm\n' \
+  | npx @qip.dev/qipx qip.dev run \
+      bytes/zlib-compress.wasm \
+      bytes/base64-encode.wasm
 ```
 
 ## Module contract
@@ -30,17 +83,19 @@ go install github.com/royalicing/qip@latest
 QIP does not use WASI or WIT, standards that have ballooned in complexity from scope creep. We want to get stuff done in today’s browsers so we pick a much smaller contract between hosts and modules:
 
 - `input_ptr()` / `input_bytes_cap()`: where the host writes input.
+- `input_content_type_ptr()` / `input_content_type_size()`: MIME type of the input
 - `output_bytes_cap()`: the maximum output size.
+- `output_content_type_ptr()` / `output_content_type_size()`: MIME type of the output
 - `render(input_size) -> i64`: transform input and return its output pointer and
   size, or reject the input.
-- Optional `uniform_set_<key>(value)`: primitive integer or float parameters applied explicitly before rendering.
+- Optional `uniform_set_<key>(value)`: primitive integer or float parameters applied before rendering.
 
 You can read more about the [Content component contract in our docs](./docs/content-component.md).
 
 ## CLI Usage
 
 You can pipe the results of other CLI tools to stdin, pass one raw file with
-`-i`, or construct multipart input with repeatable `-F` or `--form` options. You can also
+`-i`, or construct multipart input with repeatable `-F` options. You can also
 chain multiple QIP components together.
 
 Put one or more HTTPS hosts before `run`, `dry run`, `bench`, or `comply` to
@@ -48,65 +103,51 @@ load a missing component by its relative path:
 
 ```bash
 printf '# Hello\n' \
-  | qip qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm
+  | qipx qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm
 ```
 
-The CLI checks the local path first. If it is missing, the CLI tries each host
-in order, validates the response, and saves it at the original path. Hosts must
-be dotted DNS names with optional ports. Do not include a scheme or path.
-Downloads use the same rules as `qipx`: HTTPS only, a 30-second timeout, a
-16 MiB limit, and at most two redirects on the same origin. Only safe relative
-paths ending in `.wasm` are eligible. `qip dry run` prints the source plan and
-does not make network requests.
-
-Go `qip` and Node.js `qipx` accept the same multipart forms and emit the same
-bytes:
+`qipx` uses local components when available. Otherwise, it downloads them over HTTPS and saves them at the same local file path for later runs.
 
 ```bash
-qip run \
-  -F mode=step \
-  -F component=@examples/counter.wasm \
-  components/multipart/form-data/form-data-to-tar.wasm \
-  > debugger-input.tar
-```
-
-`-F name=value` adds text, `-F name=@path` adds exact file bytes, and
-`-F name=@-` reads one file field from stdin. `--form` is an exact alias for
-`-F`. Multipart form input and `-i` are mutually exclusive.
-
-```bash
-# Normalize phone number
-echo "+1 (212) 555-0100" | qip run components/text/e164.wasm
-# +12125550100
+npm install --global @qip.dev/qipx
 
 # Convert purple from rgb to hex
-echo "rgb(101, 79, 240)" | qip run components/text/rgb-to-hex.wasm
+echo "rgb(101, 79, 240)" | qipx run components/text/rgb-to-hex.wasm
 # #654ff0
 
+# Normalize phone number
+echo "+1 (212) 555-0100" | qipx run components/text/e164.wasm
+# +12125550100
+
 # Expand emoji shortcodes
-echo "Run :rocket: WebAssembly components identically on any computer :sparkles:" | qip run components/text/shortcode-to-emoji.wasm
+echo "Run :rocket: WebAssembly components identically on any computer :sparkles:" | qipx run components/text/shortcode-to-emoji.wasm
 # Run 🚀 WebAssembly components identically on any computer ✨
 
 # Create zlib bytes (dynamic Huffman, shown as base64)
-echo "qip + wasm" | qip run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/base64-encode.wasm
+echo "qip + wasm" | qipx run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/base64-encode.wasm
 # eAEFwKENAAAMArBX8LtqcmIJBMH7VEcMsv4CEnkDbg==
 
 # Round-trip zlib back to original text
-echo "qip + wasm" | qip run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-decompress.wasm
+echo "qip + wasm" | qipx run components/bytes/zlib-compress-dynamic-huffman.wasm components/bytes/zlib-decompress.wasm
 # qip + wasm
 
-#  Load Hacker News, extractor all links with text
-curl -s https://news.ycombinator.com | qip run components/text/html/html-link-extractor.wasm | grep "^https:"
+# Load Hacker News, extract all links
+curl -s https://news.ycombinator.com | qipx run components/text/html/html-link-extractor.wasm
 
 # Render QIP logo to ICO
-qip run -i qip-logo.svg components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-double.wasm components/image/bmp/bmp-to-ico.wasm > qip-logo.ico
+qipx run -i qip-logo.svg \
+  components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm \
+  components/image/ktx2/ktx2-r8g8b8a8-srgb-double.wasm \
+  components/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.wasm \
+  > qip-logo.ico
 
 # Render Switzerland flag SVG to ICO
-echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' | qip run components/image/svg+xml/svg-rasterize-to-bmp-b8g8r8a8-srgb.wasm components/image/bmp/bmp-to-ico.wasm > switzerland-flag.ico
+echo '<svg width="32" height="32"><rect width="32" height="32" fill="#d52b1e" /><rect x="13" y="6" width="6" height="20" fill="#ffffff" /><rect x="6" y="13" width="20" height="6" fill="#ffffff" /></svg>' \
+  | qipx run \
+      components/image/svg+xml/svg-rasterize-to-ktx2-r8g8b8a8-srgb.wasm \
+      components/image/ktx2/ktx2-r8g8b8a8-srgb-to-favicon.wasm \
+  > switzerland-flag.ico
 
-# Rendering cannot loop forever
-echo "x" | qip run components/text/infinite-loop.wasm
-# Error: Wasm module exceeded the execution time limit (100ms)
 ```
 
 ## Guide to making QIP components
@@ -200,13 +241,13 @@ zig build-exe e164.zig \
   -femit-bin=e164.wasm
 ```
 
-#### 3. Run it with `qip`
+#### 3. Run it with `qipx`
 
 ```bash
-echo "+1 (212) 555-0100" | qip run e164.wasm
+echo "+1 (212) 555-0100" | qipx run e164.wasm
 # +12125550100
 
-echo "  1212-555-0100  " | qip run e164.wasm
+echo "  1212-555-0100  " | qipx run e164.wasm
 # +12125550100
 ```
 
@@ -328,16 +369,14 @@ zig cc trim.c \
   -o trim.wasm
 ```
 
-#### 3. Run it with `qip`
+#### 3. Run it with `qipx`
 
 ```bash
-echo "   hello world   " | qip run trim.wasm
+echo "   hello world   " | qipx run trim.wasm
 # hello world
 
-printf "\t  line one  \n" | qip run trim.wasm
+printf "\t  line one  \n" | qipx run trim.wasm
 # line one
-
-# TODO: show how to run with Node.js
 ```
 
 ### Raw WebAssembly
@@ -382,12 +421,12 @@ You can also write raw WebAssembly text format which compiles directly to `.wasm
 
 ## Router
 
-The `qip` cli comes with a file router for making static websites:
+The Node.js `qip-router` CLI makes static websites from files and QIP recipes:
 
 1. Put website source content in a directory (Markdown, HTML, images, CSS, etc.).
 2. Add recipe QIP components to transform source files by MIME type. For example you could create a `_recipes/text/markdown/10-markdown-to-html.wasm` to render Markdown to HTML.
-3. Preview locally with `qip router dev`.
-4. Export as static files with `qip router warc`.
+3. Preview locally with `npx qip-router dev`.
+4. Export as static files with `npx qip-router warc`.
 
 Example content:
 
@@ -404,7 +443,7 @@ docs/_recipes/
 Preview in dev mode:
 
 ```bash
-qip router dev ./docs -p 4000
+npx qip-router dev ./docs -p 4000
 open http://localhost:4000
 ```
 
@@ -412,18 +451,18 @@ Resolve a single path through the same router pipeline:
 
 ```bash
 # GET /about
-qip router get ./docs /about
+npx qip-router get ./docs /about
 # HEAD /about
-qip router head ./docs /about
+npx qip-router head ./docs /about
 # List all routes
-qip router list ./docs
+npx qip-router list ./docs
 ```
 
 Build static tar from the site:
 
 ```bash
-qip router warc ./docs \
-  | qip run components/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
+npx qip-router warc ./docs \
+  | qipx run components/application/warc/warc-to-static-tar-no-trailing-slash.wasm \
   > site.tar
 
 tar -tf site.tar
@@ -519,42 +558,30 @@ components/
   rgba/
 ```
 
-## Notes: Compare Compression Ratios
-
-Use the comparison harness to measure ratio and speed across `qip`, Python, Go, Bun, and available PATH tools.
-
-```bash
-# Compare on existing files
-./tools/compare-deflate.py --runs 5 --warmup 1 README.md main.go
-
-# Compare on synthetic data
-head -c 262144 /dev/zero > /tmp/qip-bench-zeros-256k.bin
-head -c 262144 /dev/urandom > /tmp/qip-bench-random-256k.bin
-./tools/compare-deflate.py --runs 5 --warmup 1 /tmp/qip-bench-zeros-256k.bin /tmp/qip-bench-random-256k.bin
-```
+## Benchmark
 
 Benchmark the performance of one or more QIP components. If you compare multiple components then it’ll check each output is exactly the same. This is useful for porting from C to Zig, or asking your AI agent to implement optimizations and verifying that the result still behaves the same.
 
 ```bash
 # Benchmark one component for two seconds
-echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm
-# bench: outputs match
+echo "World" | qipx bench -i - --benchtime=2s components/text/hello.wasm
+# Benchmark: outputs match
 
 # Benchmark two components against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm components/text/hello-c.wasm
-# bench: outputs match
+echo "World" | qipx bench -i - --benchtime=2s components/text/hello.wasm components/text/hello-c.wasm
+# Benchmark: outputs match
 
 # Benchmark three components against each other and verify identical output
-echo "World" | qip bench -i - --benchtime=2s components/text/hello.wasm components/text/hello-c.wasm components/text/hello-zig.wasm
-# bench: outputs match
+echo "World" | qipx bench -i - --benchtime=2s components/text/hello.wasm components/text/hello-c.wasm components/text/hello-zig.wasm
+# Benchmark: outputs match
 
-# Also measure warmed, reused instances in an installed Node.js/V8
-echo "World" | qip bench -i - --benchtime=2s --node components/text/hello.wasm
-# bench: outputs match across wazero and Node.js/V8
+# Ask Node.js to collect garbage between component measurements
+echo "World" | NODE_OPTIONS=--expose-gc qipx bench -i - --benchtime=2s components/text/hello.wasm
 ```
 
 ## TODO
 
+- [ ] Add WebAssembly table support to the component debugger. Decide whether to show table entries alongside locals and globals.
 - [ ] Allow compiling TUIs into native code via `components/application/wasm/qip-component-to-c.wasm`. So you get the benefit of a sandbox but you get the fast performance of native.
 - [ ] Explore a consistent route hierarchy for interactive image tools, such as moving `/image-resize` to `/image/resize`. Consider all image tools together, preserve redirects for existing URLs, and decide how tool routes coexist with the `/image` component namespace.
 - [ ] Add `--view-source` to `npx qip-router warc`, including recipe source and view-source records.

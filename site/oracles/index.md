@@ -34,9 +34,9 @@ not need to be Wasm. It only needs an adapter that accepts input bytes and eithe
 returns output bytes or reports a trap-like failure.
 
 ```bash
-curl -O https://qip.dev/oracles/luhn.comply.wasm
-qip comply components/text/luhn.wasm --with luhn.comply.wasm
-npx qipx comply components/text/luhn.wasm --with luhn.comply.wasm
+curl -O https://qip.dev/oracles/rgb-to-hex.comply.wasm
+qip comply components/text/rgb-to-hex.wasm --with rgb-to-hex.comply.wasm
+npx @qip.dev/qipx comply components/text/rgb-to-hex.wasm --with rgb-to-hex.comply.wasm
 ```
 
 For the bridge ABI and authoring rules, see [`qip comply`](/docs/comply).
@@ -59,6 +59,7 @@ For the bridge ABI and authoring rules, see [`qip comply`](/docs/comply).
 | --- | --- | --- | --- |
 | Luhn | Normalized Luhn-valid values pass; invalid values reject. | [wasm](/oracles/luhn.comply.wasm) | [wat](/oracles/luhn.comply.wat) |
 | E.164 phone numbers | Phone numbers normalize to E.164 form. | [wasm](/oracles/e164.comply.wasm) | [wat](/oracles/e164.comply.wat) |
+| RGB to hexadecimal color | Decimal RGB and `rgb(...)` forms render as lowercase hexadecimal colors; malformed and out-of-range forms render empty. | [wasm](/oracles/rgb-to-hex.comply.wasm) | [zig](/oracles/rgb-to-hex.comply.zig) |
 | ISO 4217 alpha to numeric | Currency alphabetic codes map to numeric codes. | [wasm](/oracles/iso-4217-alpha-to-numeric.comply.wasm) | [zig](/oracles/iso-4217-alpha-to-numeric.comply.zig) |
 | en-US currency | Locale-specific currency formatting. | [wasm](/oracles/currency-format-en-us.comply.wasm) | [zig](/oracles/currency-format-en-us.comply.zig) |
 | en-IN currency | Locale-specific currency formatting. | [wasm](/oracles/currency-format-en-in.comply.wasm) | [zig](/oracles/currency-format-en-in.comply.zig) |
