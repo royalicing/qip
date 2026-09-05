@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,6 +22,10 @@ func TestHostedDryRunPlansMissingSourcesWithoutNetworkOrWrites(t *testing.T) {
 			{Authority: "mirror.example:8443", Origin: "https://mirror.example:8443"},
 		}},
 		timeoutMS: 5000,
+		formValues: formAssignmentList{
+			"component=@testdata/host-dry-run-missing/target.wasm",
+			"input=hello",
+		},
 		componentInvocations: []ComponentInvocation{{
 			Source: missing,
 		}},
@@ -33,6 +38,10 @@ func TestHostedDryRunPlansMissingSourcesWithoutNetworkOrWrites(t *testing.T) {
 	for _, want := range []string{
 		"https://qip.dev/testdata/host-dry-run-missing/component.wasm",
 		"https://mirror.example:8443/testdata/host-dry-run-missing/component.wasm",
+		"Multipart files:",
+		`Field "component": testdata/host-dry-run-missing/target.wasm`,
+		"https://qip.dev/testdata/host-dry-run-missing/target.wasm  unexamined",
+		"testdata/host-dry-run-missing/target.wasm  missing",
 		"0  missing",
 		"1  unexamined",
 		"deferred (local file missing)",
@@ -43,6 +52,31 @@ func TestHostedDryRunPlansMissingSourcesWithoutNetworkOrWrites(t *testing.T) {
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Fatalf("dry run wrote component: %v", err)
+	}
+	if _, err := os.Stat("testdata/host-dry-run-missing/target.wasm"); !os.IsNotExist(err) {
+		t.Fatalf("dry run wrote multipart file: %v", err)
+	}
+}
+
+func TestHostedDryRunObservesMultipartPathWithoutReadingContents(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "target.wasm")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := runCommandConfig{
+		opts:       options{hosts: []qinternal.ComponentHost{{Authority: "qip.dev", Origin: "https://qip.dev"}}},
+		timeoutMS:  5000,
+		formValues: formAssignmentList{"component=@" + target},
+		componentInvocations: []ComponentInvocation{{
+			Source: "components/text/trim.wasm",
+		}},
+	}
+	var output bytes.Buffer
+	if err := executeDryRun(context.Background(), config, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), target+"  present (contents not read)") {
+		t.Fatalf("unexpected dry-run report:\n%s", output.String())
 	}
 }
 

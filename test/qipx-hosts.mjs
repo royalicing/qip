@@ -59,16 +59,41 @@ test("qipx plans hosts without network access during dry run", async () => {
       "mirror.example:8443",
       "dry",
       "run",
+      "-F", "component=@targets/debug-me.wasm",
+      "-F", "input=hello",
       "text/markdown/to-html.wasm",
     ])));
 
     assert.equal(requests, 0);
     assert.match(output, /https:\/\/qip\.dev\/text\/markdown\/to-html\.wasm/);
     assert.match(output, /https:\/\/mirror\.example:8443\/text\/markdown\/to-html\.wasm/);
+    assert.match(output, /Multipart files:/);
+    assert.match(output, /Field "component": targets\/debug-me\.wasm/);
+    assert.match(output, /https:\/\/qip\.dev\/targets\/debug-me\.wasm  unexamined/);
+    assert.match(output, /targets\/debug-me\.wasm  missing/);
     assert.match(output, /0  missing/);
     assert.match(output, /1  unexamined/);
     assert.match(output, /Validation:[\s\S]*deferred \(local file missing\)/);
     await assert.rejects(readFile("text/markdown/to-html.wasm"), { code: "ENOENT" });
+    await assert.rejects(readFile("targets/debug-me.wasm"), { code: "ENOENT" });
+  });
+});
+
+test("qipx dry run observes multipart paths without reading their contents", async () => {
+  await inTemporaryDirectory(async () => {
+    await writeFile("trim.wasm", trimWasm);
+    await mkdir("target.wasm");
+    const output = await withFetch(async () => {
+      throw new Error("dry run requested the network");
+    }, () => withConsoleLog(() => main([
+      "qip.dev",
+      "dry",
+      "run",
+      "-F", "component=@target.wasm",
+      "trim.wasm",
+    ])));
+    assert.match(output, /target\.wasm  present \(contents not read\)/);
+    assert.match(output, /trim\.wasm: valid/);
   });
 });
 

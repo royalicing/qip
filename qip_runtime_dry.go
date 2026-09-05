@@ -100,6 +100,57 @@ type preparedRunPipeline struct {
 	plan     runPipelinePlan
 }
 
+type multipartFileSourceObservation struct {
+	assignment formAssignment
+	plan       qinternal.ComponentSourcePlan
+	state      string
+}
+
+func observeMultipartFileSources(values []string, hosts []qinternal.ComponentHost) ([]multipartFileSourceObservation, error) {
+	observations := make([]multipartFileSourceObservation, 0, len(values))
+	for _, value := range values {
+		assignment, err := parseFormAssignment(value)
+		if err != nil {
+			return nil, err
+		}
+		if assignment.filePath == "" || assignment.filePath == "-" {
+			continue
+		}
+		state := "present (contents not read)"
+		if _, err := os.Stat(assignment.filePath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+			state = "missing"
+		}
+		observations = append(observations, multipartFileSourceObservation{
+			assignment: assignment,
+			plan:       qinternal.PlanComponentSources(assignment.filePath, hosts),
+			state:      state,
+		})
+	}
+	return observations, nil
+}
+
+func writeMultipartFileSourceReport(out io.Writer, observations []multipartFileSourceObservation) {
+	if len(observations) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "\nMultipart files:")
+	for _, observation := range observations {
+		fmt.Fprintf(out, "  Field %q: %s\n", observation.assignment.name, observation.plan.FilePath)
+		for sourceIndex, source := range observation.plan.Sources {
+			label := source.Path
+			state := observation.state
+			if source.Kind == "https" {
+				label = source.URL
+				state = "unexamined"
+			}
+			fmt.Fprintf(out, "    %d  %-5s  %s  %s\n", sourceIndex, source.Kind, label, state)
+		}
+	}
+}
+
 func dryRunCmd(args []string) {
 	config, err := parseRunCommandArgs(args, "dry run")
 	if err != nil {
@@ -114,6 +165,10 @@ func executeDryRun(baseCtx context.Context, config runCommandConfig, out io.Writ
 	if len(config.opts.hosts) > 0 {
 		return executeHostedDryRun(baseCtx, config, out)
 	}
+	multipartFiles, err := observeMultipartFileSources(config.formValues, config.opts.hosts)
+	if err != nil {
+		return err
+	}
 	execCtx, cancel := wasmruntime.WithExecutionTimeout(baseCtx, time.Duration(config.timeoutMS)*time.Millisecond)
 	defer cancel()
 
@@ -122,6 +177,7 @@ func executeDryRun(baseCtx context.Context, config runCommandConfig, out io.Writ
 		return err
 	}
 	defer prepared.pipeline.Close(context.Background())
+	writeMultipartFileSourceReport(out, multipartFiles)
 	writeDryRunReport(out, prepared.plan)
 	return nil
 }
@@ -170,6 +226,11 @@ func executeHostedDryRun(baseCtx context.Context, config runCommandConfig, out i
 			fmt.Fprintf(out, "%s%d  unexamined\n", indent, sourceIndex)
 		}
 	}
+	multipartFiles, err := observeMultipartFileSources(config.formValues, config.opts.hosts)
+	if err != nil {
+		return err
+	}
+	writeMultipartFileSourceReport(out, multipartFiles)
 
 	fmt.Fprintln(out, "\nValidation:")
 	missing := 0

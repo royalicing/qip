@@ -296,6 +296,9 @@ or HTTPS requests. It validates every component that is already local. Missing
 components and pipeline connections that depend on them are deferred. It does
 not create directories, read stdin, call `render`, or write output.
 
+For multipart `@path.wasm` fields, it reports whether the local path is present
+and lists eligible host candidates. It does not read or download the field.
+
 ## JavaScript API
 
 Use Node's standard library to load files and the built-in `WebAssembly` APIs to

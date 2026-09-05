@@ -135,6 +135,9 @@ raw or multipart input, calling render, or writing output. A compatible plan exi
 component contracts, encoding or MIME composition, uniforms, or module policy
 exit non-zero.
 
+For -F name=@path.wasm, dry run reports local presence and eligible host
+candidates without reading or downloading the multipart file.
+
 Memory:
   --max-memory is checked independently against every component's declared
   Wasm memory minimum and maximum. It is not a cap on the pipeline total.

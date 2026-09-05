@@ -1561,6 +1561,37 @@ function printSourceObservations(observations) {
   });
 }
 
+async function observeMultipartFileSources(values, hosts) {
+  const observations = [];
+  for (const value of values) {
+    const assignment = parseFormAssignment(value);
+    if (!assignment.filePath || assignment.filePath === "-") continue;
+    const plan = sourcePlan(assignment.filePath, hosts);
+    let state;
+    try {
+      await stat(assignment.filePath);
+      state = "present (contents not read)";
+    } catch (error) {
+      if (!missingFileError(error)) throw error;
+      state = "missing";
+    }
+    observations.push({ assignment, plan, state });
+  }
+  return observations;
+}
+
+function printMultipartFileObservations(observations) {
+  if (observations.length === 0) return;
+  console.log("\nMultipart files:");
+  for (const { assignment, plan, state } of observations) {
+    console.log(`  Field ${JSON.stringify(assignment.name)}: ${plan.filePath}`);
+    plan.sources.forEach((source, index) => {
+      const label = source.kind === "local" ? source.path : source.url;
+      console.log(`    ${index}  ${source.kind.padEnd(5)}  ${label}  ${index === 0 ? state : "unexamined"}`);
+    });
+  }
+}
+
 async function dryRunCommand(argv, hosts) {
   const { options, components } = parseCLI(argv);
   if (components.length === 0) throw new Error("at least one component is required");
@@ -1570,6 +1601,7 @@ async function dryRunCommand(argv, hosts) {
     observations.push({ spec, plan, local: await observeLocalSource(plan) });
   }
   printSourceObservations(observations);
+  printMultipartFileObservations(await observeMultipartFileSources(options.formValues, hosts));
   console.log("\nValidation:");
   const stages = [];
   let missing = 0;
