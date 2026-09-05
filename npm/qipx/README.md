@@ -13,28 +13,37 @@ downloads are available from [qip.dev/tools](https://qip.dev/tools) and
 
 ## Try It
 
-Load a Markdown renderer from qip.dev and run it with `npx`:
+Use the same `luhn.wasm` component to render, benchmark, test, and debug.
+Start by running it. qipx downloads the component from qip.dev and saves it at
+`text/luhn.wasm`:
 
 ```sh
-printf '# Hello from qipx\n' \
-  | npx @qip.dev/qipx qip.dev run text/markdown/gfm-commonmark.0.31.2.wasm
+printf '79927398713' \
+  | npx @qip.dev/qipx qip.dev run text/luhn.wasm
 ```
 
-The first command saves the component at
-`text/markdown/gfm-commonmark.0.31.2.wasm`. Later commands use that local file
-without making a request.
-
-Debug a component interactively in your terminal. The first command runs and
-saves `wc.wasm`; the second command downloads the debugger and opens it with
-the same input:
+Benchmark that saved component on the same input:
 
 ```sh
-printf 'The quick brown fox jumps over the lazy dog\n' \
-  | npx @qip.dev/qipx qip.dev run text/wc.wasm
+printf '79927398713' \
+  | npx @qip.dev/qipx qip.dev bench \
+      -i - --runs 100 text/luhn.wasm
+```
 
+Test its declared behavior with a reusable Compliance oracle:
+
+```sh
+npx @qip.dev/qipx qip.dev comply \
+  text/luhn.wasm \
+  --with oracles/luhn.comply.wasm
+```
+
+Then open the same component in the interactive debugger:
+
+```sh
 npx @qip.dev/qipx qip.dev tui \
-  -F component=@text/wc.wasm \
-  -F 'input=The quick brown fox jumps over the lazy dog' \
+  -F component=@text/luhn.wasm \
+  -F input=79927398713 \
   interactive/wasm-debugger.wasm
 ```
 
