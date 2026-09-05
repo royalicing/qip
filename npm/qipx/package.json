@@ -1,7 +1,7 @@
 {
   "name": "@qip.dev/qipx",
   "version": "0.4.0",
-  "description": "Dependency-free QIP Content, Interactive terminal, and Compliance host for Node.js",
+  "description": "Render, benchmark & test QIP components",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/royalicing/qip.git",

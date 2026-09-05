@@ -1,7 +1,10 @@
 # qipx
 
-`qipx` is a zero-dependency Node CLI and library for running [QIP Content
-components](https://qip.dev/docs/content-component), text-rendering
+`qipx` renders, benchmarks, and tests QIP components in Node.js. Use its
+zero-dependency CLI and library to compose pipelines and host text-rendering
+terminal apps.
+
+It supports [QIP Content components](https://qip.dev/docs/content-component),
 Interactive components, and [Compliance oracles](https://qip.dev/docs/comply).
 
 The package targets Node.js 22 or newer. Useful component and oracle
