@@ -135,7 +135,11 @@ type sourceUnavailableError struct{ reason string }
 func (e *sourceUnavailableError) Error() string { return e.reason }
 
 func ResolveComponentSource(ctx context.Context, filePath string, hosts []ComponentHost, validate func([]byte, string) error) ([]byte, error) {
-	plan := PlanComponentSources(filePath, hosts)
+	return ResolveComponentSourcePlan(ctx, PlanComponentSources(filePath, hosts), validate)
+}
+
+func ResolveComponentSourcePlan(ctx context.Context, plan ComponentSourcePlan, validate func([]byte, string) error) ([]byte, error) {
+	filePath := plan.FilePath
 	state, body, err := ObserveLocalComponentSource(plan)
 	if err != nil {
 		return nil, err
@@ -147,7 +151,7 @@ func ResolveComponentSource(ctx context.Context, filePath string, hosts []Compon
 		return body, nil
 	}
 
-	unavailable := make([]string, 0, len(hosts))
+	unavailable := make([]string, 0, len(plan.Sources))
 	for _, source := range plan.Sources[1:] {
 		body, finalURL, err := fetchComponentSource(ctx, source.URL)
 		var unavailableErr *sourceUnavailableError

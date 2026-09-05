@@ -405,9 +405,11 @@ func runCmd(args []string) {
 	var input []byte
 	inputContentType := ""
 	if len(config.formValues) > 0 {
-		input, inputContentType, err = buildMultipartFormInputWithFileLoader(config.formValues, os.Stdin, func(path string) ([]byte, error) {
-			return resolveMultipartFormFile(path, opts.hosts)
-		})
+		formPlan, planErr := planMultipartFormInput(config.formValues, opts.hosts)
+		if planErr != nil {
+			gameOver("Error constructing multipart input: %v", planErr)
+		}
+		input, inputContentType, err = buildMultipartFormInputFromPlan(formPlan, os.Stdin)
 		if err != nil {
 			gameOver("Error constructing multipart input: %v", err)
 		}
@@ -670,9 +672,11 @@ func benchCmd(args []string) {
 	var inputBytes []byte
 	var err error
 	if len(formValues) > 0 {
-		inputBytes, _, err = buildMultipartFormInputWithFileLoader(formValues, os.Stdin, func(path string) ([]byte, error) {
-			return resolveMultipartFormFile(path, opts.hosts)
-		})
+		formPlan, planErr := planMultipartFormInput(formValues, opts.hosts)
+		if planErr != nil {
+			gameOver("Error constructing multipart input: %v", planErr)
+		}
+		inputBytes, _, err = buildMultipartFormInputFromPlan(formPlan, os.Stdin)
 		if err != nil {
 			gameOver("Error constructing multipart input: %v", err)
 		}

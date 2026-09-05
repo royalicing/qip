@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
+
+	qinternal "github.com/royalicing/qip/internal"
 )
 
 const canonicalFormBoundary = "uuid-00000000-0000-0000-0000-000000000000"
@@ -20,7 +21,14 @@ type formAssignment struct {
 
 type formAssignmentList []string
 
-type multipartFileLoader func(string) ([]byte, error)
+type multipartFormFieldPlan struct {
+	assignment formAssignment
+	sourcePlan qinternal.ComponentSourcePlan
+}
+
+type multipartFormPlan struct {
+	fields []multipartFormFieldPlan
+}
 
 func (values *formAssignmentList) String() string {
 	return strings.Join(*values, ",")
@@ -86,29 +94,41 @@ func multipartBodyContainsBoundary(body []byte) bool {
 	}
 }
 
-func buildMultipartFormInput(values []string, stdin io.Reader) ([]byte, string, error) {
-	return buildMultipartFormInputWithFileLoader(values, stdin, os.ReadFile)
-}
-
-func buildMultipartFormInputWithFileLoader(values []string, stdin io.Reader, loadFile multipartFileLoader) ([]byte, string, error) {
-	assignments := make([]formAssignment, len(values))
+func planMultipartFormInput(values []string, hosts []qinternal.ComponentHost) (multipartFormPlan, error) {
+	fields := make([]multipartFormFieldPlan, len(values))
 	stdinParts := 0
 	for index, value := range values {
 		assignment, err := parseFormAssignment(value)
 		if err != nil {
-			return nil, "", err
+			return multipartFormPlan{}, err
 		}
 		if assignment.filePath == "-" {
 			stdinParts++
 		}
-		assignments[index] = assignment
+		field := multipartFormFieldPlan{assignment: assignment}
+		if assignment.filePath != "" && assignment.filePath != "-" {
+			field.sourcePlan = qinternal.PlanComponentSources(assignment.filePath, hosts)
+		}
+		fields[index] = field
 	}
 	if stdinParts > 1 {
-		return nil, "", errors.New("only one -F field may read from stdin with @-")
+		return multipartFormPlan{}, errors.New("only one -F field may read from stdin with @-")
 	}
+	return multipartFormPlan{fields: fields}, nil
+}
 
+func buildMultipartFormInput(values []string, stdin io.Reader) ([]byte, string, error) {
+	plan, err := planMultipartFormInput(values, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	return buildMultipartFormInputFromPlan(plan, stdin)
+}
+
+func buildMultipartFormInputFromPlan(plan multipartFormPlan, stdin io.Reader) ([]byte, string, error) {
 	var output bytes.Buffer
-	for _, assignment := range assignments {
+	for _, field := range plan.fields {
+		assignment := field.assignment
 		var body []byte
 		filename := ""
 		if assignment.filePath == "" {
@@ -119,7 +139,7 @@ func buildMultipartFormInputWithFileLoader(values []string, stdin io.Reader, loa
 				body, err = io.ReadAll(stdin)
 				filename = "-"
 			} else {
-				body, err = loadFile(assignment.filePath)
+				body, err = resolveMultipartFormFile(assignment.filePath, field.sourcePlan)
 				if err == nil {
 					filename, err = canonicalFormFilename(assignment.filePath)
 				}

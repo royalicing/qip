@@ -30,9 +30,7 @@ async function tuiCommand(argv, hosts) {
   let input = new Uint8Array();
   let inputContentType = "";
   if (options.formValues.length > 0) {
-    const form = await qipx.buildMultipartFormInput(options.formValues, {
-      loadFile: (filePath) => qipx.loadMultipartFile(filePath, hosts),
-    });
+    const form = await qipx.buildMultipartFormInput(options.formValues, { hosts });
     input = form.bytes;
     inputContentType = form.contentType;
   } else if (options.inputFromCLI) {
@@ -95,9 +93,7 @@ export async function main(argv = process.argv.slice(2)) {
   let input;
   let inputContentType = "";
   if (options.formValues.length > 0) {
-    const form = await qipx.buildMultipartFormInput(options.formValues, {
-      loadFile: (filePath) => qipx.loadMultipartFile(filePath, invocation.hosts),
-    });
+    const form = await qipx.buildMultipartFormInput(options.formValues, { hosts: invocation.hosts });
     input = form.bytes;
     inputContentType = form.contentType;
   } else {

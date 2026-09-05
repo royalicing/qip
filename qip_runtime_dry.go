@@ -106,13 +106,10 @@ type multipartFileSourceObservation struct {
 	state      string
 }
 
-func observeMultipartFileSources(values []string, hosts []qinternal.ComponentHost) ([]multipartFileSourceObservation, error) {
-	observations := make([]multipartFileSourceObservation, 0, len(values))
-	for _, value := range values {
-		assignment, err := parseFormAssignment(value)
-		if err != nil {
-			return nil, err
-		}
+func observeMultipartFileSources(plan multipartFormPlan) ([]multipartFileSourceObservation, error) {
+	observations := make([]multipartFileSourceObservation, 0, len(plan.fields))
+	for _, field := range plan.fields {
+		assignment := field.assignment
 		if assignment.filePath == "" || assignment.filePath == "-" {
 			continue
 		}
@@ -125,7 +122,7 @@ func observeMultipartFileSources(values []string, hosts []qinternal.ComponentHos
 		}
 		observations = append(observations, multipartFileSourceObservation{
 			assignment: assignment,
-			plan:       qinternal.PlanComponentSources(assignment.filePath, hosts),
+			plan:       field.sourcePlan,
 			state:      state,
 		})
 	}
@@ -162,10 +159,14 @@ func dryRunCmd(args []string) {
 }
 
 func executeDryRun(baseCtx context.Context, config runCommandConfig, out io.Writer) error {
-	if len(config.opts.hosts) > 0 {
-		return executeHostedDryRun(baseCtx, config, out)
+	formPlan, err := planMultipartFormInput(config.formValues, config.opts.hosts)
+	if err != nil {
+		return err
 	}
-	multipartFiles, err := observeMultipartFileSources(config.formValues, config.opts.hosts)
+	if len(config.opts.hosts) > 0 {
+		return executeHostedDryRun(baseCtx, config, out, formPlan)
+	}
+	multipartFiles, err := observeMultipartFileSources(formPlan)
 	if err != nil {
 		return err
 	}
@@ -182,7 +183,7 @@ func executeDryRun(baseCtx context.Context, config runCommandConfig, out io.Writ
 	return nil
 }
 
-func executeHostedDryRun(baseCtx context.Context, config runCommandConfig, out io.Writer) error {
+func executeHostedDryRun(baseCtx context.Context, config runCommandConfig, out io.Writer, formPlan multipartFormPlan) error {
 	type observation struct {
 		invocation ComponentInvocation
 		plan       qinternal.ComponentSourcePlan
@@ -226,7 +227,7 @@ func executeHostedDryRun(baseCtx context.Context, config runCommandConfig, out i
 			fmt.Fprintf(out, "%s%d  unexamined\n", indent, sourceIndex)
 		}
 	}
-	multipartFiles, err := observeMultipartFileSources(config.formValues, config.opts.hosts)
+	multipartFiles, err := observeMultipartFileSources(formPlan)
 	if err != nil {
 		return err
 	}

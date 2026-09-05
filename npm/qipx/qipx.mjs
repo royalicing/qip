@@ -250,13 +250,13 @@ function wasmHeaderMustBeValid(candidate, label) {
   }
 }
 
-async function loadMultipartFile(filePath, hosts) {
+async function loadMultipartFile(filePath, plan) {
   try {
     return await readFile(filePath);
   } catch (error) {
-    if (!missingFileError(error) || hosts.length === 0 || !remotelyEligiblePath(filePath)) throw error;
+    if (!missingFileError(error) || plan.sources.length === 1) throw error;
   }
-  return resolveSource(sourcePlan(filePath, hosts), wasmHeaderMustBeValid);
+  return resolveSource(plan, wasmHeaderMustBeValid);
 }
 
 function benchUsage() {
@@ -1561,12 +1561,11 @@ function printSourceObservations(observations) {
   });
 }
 
-async function observeMultipartFileSources(values, hosts) {
+async function observeMultipartFileSources(formPlan) {
   const observations = [];
-  for (const value of values) {
-    const assignment = parseFormAssignment(value);
+  for (const field of formPlan.fields) {
+    const { assignment, sourcePlan: plan } = field;
     if (!assignment.filePath || assignment.filePath === "-") continue;
-    const plan = sourcePlan(assignment.filePath, hosts);
     let state;
     try {
       await stat(assignment.filePath);
@@ -1601,7 +1600,8 @@ async function dryRunCommand(argv, hosts) {
     observations.push({ spec, plan, local: await observeLocalSource(plan) });
   }
   printSourceObservations(observations);
-  printMultipartFileObservations(await observeMultipartFileSources(options.formValues, hosts));
+  const formPlan = planMultipartFormInput(options.formValues, hosts);
+  printMultipartFileObservations(await observeMultipartFileSources(formPlan));
   console.log("\nValidation:");
   const stages = [];
   let missing = 0;
@@ -1693,6 +1693,20 @@ function parseFormAssignment(value) {
   return { name, value: "", filePath };
 }
 
+function planMultipartFormInput(values, hosts = []) {
+  const fields = values.map((value) => {
+    const assignment = parseFormAssignment(value);
+    const fileSourcePlan = assignment.filePath && assignment.filePath !== "-"
+      ? sourcePlan(assignment.filePath, hosts)
+      : undefined;
+    return Object.freeze({ assignment: Object.freeze(assignment), sourcePlan: fileSourcePlan });
+  });
+  if (fields.filter(({ assignment }) => assignment.filePath === "-").length > 1) {
+    throw new Error("only one -F field may read from stdin with @-");
+  }
+  return Object.freeze({ fields: Object.freeze(fields) });
+}
+
 function canonicalFormFilename(filePath) {
   const filename = filePath.split(/[\\/]/).at(-1);
   if (!filename) throw new Error(`multipart file path ${JSON.stringify(filePath)} has no filename`);
@@ -1715,14 +1729,14 @@ function multipartBodyContainsBoundary(body) {
   }
 }
 
-export async function buildMultipartFormInput(values, { stdin, loadFile = readFile } = {}) {
-  const assignments = values.map(parseFormAssignment);
-  if (assignments.filter((assignment) => assignment.filePath === "-").length > 1) {
-    throw new Error("only one -F field may read from stdin with @-");
-  }
+export async function buildMultipartFormInput(values, { stdin, hosts = [], loadFile } = {}) {
+  const formPlan = planMultipartFormInput(values, hosts);
+  return buildMultipartFormInputFromPlan(formPlan, { stdin, loadFile });
+}
 
+async function buildMultipartFormInputFromPlan(formPlan, { stdin, loadFile } = {}) {
   const chunks = [];
-  for (const assignment of assignments) {
+  for (const { assignment, sourcePlan: fileSourcePlan } of formPlan.fields) {
     let body;
     let filename = "";
     if (!assignment.filePath) {
@@ -1732,7 +1746,9 @@ export async function buildMultipartFormInput(values, { stdin, loadFile = readFi
       filename = "-";
     } else {
       try {
-        body = bytes(await loadFile(assignment.filePath));
+        body = bytes(await (loadFile
+          ? loadFile(assignment.filePath, fileSourcePlan)
+          : loadMultipartFile(assignment.filePath, fileSourcePlan)));
         filename = canonicalFormFilename(assignment.filePath);
       } catch (error) {
         throw new Error(`read -F ${assignment.name}=@${assignment.filePath}: ${error.message ?? error}`);
@@ -2048,9 +2064,7 @@ async function benchCommand(argv, hosts) {
   let input;
   let inputLabel;
   if (options.formValues.length > 0) {
-    const form = await buildMultipartFormInput(options.formValues, {
-      loadFile: (filePath) => loadMultipartFile(filePath, hosts),
-    });
+    const form = await buildMultipartFormInput(options.formValues, { hosts });
     input = form.bytes;
     inputLabel = `multipart form (${options.formValues.length} field${options.formValues.length === 1 ? "" : "s"})`;
   } else {
@@ -2099,7 +2113,9 @@ export const __cliInternals = Object.freeze({
   dryRunCommand,
   prepareRunPipeline,
   parseFormAssignment,
+  planMultipartFormInput,
   buildMultipartFormInput,
+  buildMultipartFormInputFromPlan,
   loadMultipartFile,
   resolveStageInputType,
   nextContentType,

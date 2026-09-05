@@ -50,15 +50,15 @@ func validateMultipartWasmHeader(body []byte, label string) error {
 	return nil
 }
 
-func resolveMultipartFormFile(path string, hosts []qinternal.ComponentHost) ([]byte, error) {
+func resolveMultipartFormFile(path string, plan qinternal.ComponentSourcePlan) ([]byte, error) {
 	body, err := os.ReadFile(path)
 	if err == nil {
 		return body, nil
 	}
-	if !errors.Is(err, os.ErrNotExist) || len(hosts) == 0 || !qinternal.RemotelyEligibleComponentPath(path) {
+	if !errors.Is(err, os.ErrNotExist) || len(plan.Sources) == 1 {
 		return nil, err
 	}
-	return qinternal.ResolveComponentSource(context.Background(), path, hosts, validateMultipartWasmHeader)
+	return qinternal.ResolveComponentSourcePlan(context.Background(), plan, validateMultipartWasmHeader)
 }
 
 func validateRunnableModuleCandidate(body []byte, label string, opts options, uniforms map[string]string) error {

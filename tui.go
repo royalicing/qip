@@ -111,9 +111,11 @@ func tuiCmd(args []string) {
 	var input []byte
 	inputType := ""
 	if len(config.formValues) > 0 {
-		input, inputType, err = buildMultipartFormInputWithFileLoader(config.formValues, nil, func(path string) ([]byte, error) {
-			return resolveMultipartFormFile(path, config.opts.hosts)
-		})
+		formPlan, planErr := planMultipartFormInput(config.formValues, config.opts.hosts)
+		if planErr != nil {
+			gameOver("Error reading TUI input: %v", planErr)
+		}
+		input, inputType, err = buildMultipartFormInputFromPlan(formPlan, nil)
 	} else if config.inputPath != "" {
 		input, err = os.ReadFile(config.inputPath)
 	}

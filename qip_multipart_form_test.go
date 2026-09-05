@@ -59,25 +59,26 @@ func TestBuildMultipartFormInputFromStdin(t *testing.T) {
 	}
 }
 
-func TestBuildMultipartFormInputUsesFileLoader(t *testing.T) {
-	body := append(append([]byte{}, canonicalWasmHeader...), 0x01, 0x02)
-	loadedPath := ""
-	actual, _, err := buildMultipartFormInputWithFileLoader(
-		[]string{"component=@text/example.wasm"},
-		strings.NewReader("unused"),
-		func(path string) ([]byte, error) {
-			loadedPath = path
-			return body, nil
-		},
+func TestPlanMultipartFormInputIncludesFileSources(t *testing.T) {
+	plan, err := planMultipartFormInput(
+		[]string{"mode=step", "component=@text/example.wasm"},
+		[]qinternal.ComponentHost{{Origin: "https://components.example"}},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loadedPath != "text/example.wasm" {
-		t.Fatalf("loaded path=%q", loadedPath)
+	if len(plan.fields) != 2 || plan.fields[0].sourcePlan.FilePath != "" {
+		t.Fatalf("unexpected fields: %#v", plan.fields)
 	}
-	if !bytes.Contains(actual, body) || !bytes.Contains(actual, []byte(`filename="example.wasm"`)) {
-		t.Fatalf("multipart form does not contain loaded file: %q", actual)
+	want := qinternal.ComponentSourcePlan{
+		FilePath: "text/example.wasm",
+		Sources: []qinternal.ComponentSource{
+			{Kind: "local", Path: "text/example.wasm"},
+			{Kind: "https", URL: "https://components.example/text/example.wasm"},
+		},
+	}
+	if !reflect.DeepEqual(plan.fields[1].sourcePlan, want) {
+		t.Fatalf("source plan=%#v, want %#v", plan.fields[1].sourcePlan, want)
 	}
 }
 
@@ -98,7 +99,8 @@ func TestResolveMultipartFormFileKeepsExistingLocalBytesOpaque(t *testing.T) {
 	if err := os.WriteFile(path, want, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	body, err := resolveMultipartFormFile(path, []qinternal.ComponentHost{{Origin: "https://unused.example"}})
+	plan := qinternal.PlanComponentSources(path, []qinternal.ComponentHost{{Origin: "https://unused.example"}})
+	body, err := resolveMultipartFormFile(path, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

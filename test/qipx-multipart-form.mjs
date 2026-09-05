@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  __cliInternals,
   buildMultipartFormInput,
   canonicalFormContentType,
 } from "../npm/qipx/qipx.mjs";
@@ -60,6 +61,21 @@ test("@- has the same stdin and filename behavior in both CLIs", () => {
   assert.equal(node.status, 0, node.stderr.toString());
   assert.deepEqual(node.stdout, go.stdout);
   assert.match(go.stdout.toString("latin1"), /name="component"; filename="-"/);
+});
+
+test("multipart execution consumes its precomputed source plan", async () => {
+  let observedPlan;
+  await buildMultipartFormInput(["component=@text/example.wasm"], {
+    hosts: [{ origin: "https://components.example" }],
+    loadFile: (_path, plan) => {
+      observedPlan = plan;
+      return Buffer.from([0x00, 0x61, 0x73, 0x6d]);
+    },
+  });
+  assert.deepEqual(observedPlan, __cliInternals.planMultipartFormInput(
+    ["component=@text/example.wasm"],
+    [{ origin: "https://components.example" }],
+  ).fields[0].sourcePlan);
 });
 
 test("both CLIs reject raw input with -F and still require a component", () => {
