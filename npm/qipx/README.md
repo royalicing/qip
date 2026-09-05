@@ -1,7 +1,7 @@
 # qipx
 
 `qipx` renders, benchmarks, and tests QIP components in Node.js. Use its
-zero-dependency CLI and library to compose pipelines and host text-rendering
+zero-dependency CLI and library to compose pipelines and run interactive
 terminal apps.
 
 It supports [QIP Content components](https://qip.dev/docs/content-component),
