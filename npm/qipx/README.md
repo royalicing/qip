@@ -24,6 +24,23 @@ The first command saves the component at
 `text/markdown/gfm-commonmark.0.31.2.wasm`. Later commands use that local file
 without making a request.
 
+Debug a component interactively in your terminal. The first command runs and
+saves `wc.wasm`; the second command downloads the debugger and opens it with
+the same input:
+
+```sh
+printf 'The quick brown fox jumps over the lazy dog\n' \
+  | npx @qip.dev/qipx qip.dev run text/wc.wasm
+
+npx @qip.dev/qipx qip.dev tui \
+  -F component=@text/wc.wasm \
+  -F 'input=The quick brown fox jumps over the lazy dog' \
+  interactive/wasm-debugger.wasm
+```
+
+Press `s` or → to step into the next instruction, Space to continue, and
+`Ctrl-C` to leave the debugger.
+
 Multiple components run left to right. Hosts apply to every missing component
 in the pipeline:
 
