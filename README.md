@@ -65,7 +65,7 @@ npx @qip.dev/qipx qip.dev tui \
   interactive/wasm-debugger.wasm
 ```
 
-Press `s` or → to step into the next instruction, Space to continue, and
+Press `s` or ↓ to step into the next instruction, Space to continue, and
 `Ctrl-C` to leave the debugger.
 
 Multiple components run left to right. Hosts apply to every missing component

@@ -116,20 +116,21 @@ Everything runs locally in your browser.
   <div class="debugger-controls" aria-label="Debugger controls and keyboard shortcuts">
     <button type="button" data-debug-key="32">Continue <kbd>Space</kbd></button>
     <button type="button" data-debug-key="110">Step over <kbd>N</kbd> <kbd>F10</kbd></button>
-    <button type="button" data-debug-key="65361">Step back <kbd>←</kbd></button>
-    <button type="button" data-debug-key="65363">Step into <kbd>→</kbd></button>
+    <button type="button" data-debug-key="65362">Step back <kbd>↑</kbd></button>
+    <button type="button" data-debug-key="65364">Step into <kbd>↓</kbd></button>
     <button type="button" data-debug-key="102">Step out <kbd>F</kbd> <kbd>Shift-F11</kbd></button>
     <button type="button" data-debug-key="114">Restart <kbd>R</kbd></button>
     <button type="button" data-debug-key="120">Examine memory <kbd>X</kbd></button>
-    <button type="button" data-debug-key="65362">Previous memory page <kbd>↑</kbd></button>
-    <button type="button" data-debug-key="65364">Next memory page <kbd>↓</kbd></button>
+    <button type="button" data-debug-prefix="120" data-debug-key="65362">Previous memory page <kbd>X</kbd> <kbd>↑</kbd></button>
+    <button type="button" data-debug-prefix="120" data-debug-key="65364">Next memory page <kbd>X</kbd> <kbd>↓</kbd></button>
   </div>
 </div>
 
 Choose a published component or a local `.wasm` file. For text components,
 type in the text box or paste while the debugger screen has focus. Use `X I`
 for input memory, `X O` for output memory, `X R` for the last read, and `X W`
-for the last write. Up and Down Arrow page through memory.
+for the last write. While examine mode is active, Up and Down Arrow page
+through memory.
 
 <script type="module">
 import { parseCSV } from "/elements/qip-search.js";
@@ -359,9 +360,7 @@ function keyboardCommand(event) {
   if (event.key === "F5") return [0xffc2, false];
   if (event.key === "F10") return [0xffc7, false];
   if (event.key === "F11") return [0xffc8, event.shiftKey];
-  if (event.key === "ArrowLeft") return [0xff51, false];
   if (event.key === "ArrowUp") return [0xff52, false];
-  if (event.key === "ArrowRight") return [0xff53, false];
   if (event.key === "ArrowDown") return [0xff54, false];
   if (event.key === " ") return [0x20, false];
   if (event.key === "Enter") return [0xff0d, false];
@@ -382,6 +381,7 @@ screen.addEventListener("keydown", (event) => {
 
 for (const button of document.querySelectorAll("[data-debug-key]")) {
   button.addEventListener("click", () => {
+    if (button.dataset.debugPrefix) dispatch(Number(button.dataset.debugPrefix));
     dispatch(
       Number(button.dataset.debugKey),
       button.hasAttribute("data-debug-shift"),

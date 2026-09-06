@@ -22,9 +22,7 @@ const FLAG_META: i32 = 1 << 5;
 const XK_F5: i32 = 0xffc2;
 const XK_F10: i32 = 0xffc7;
 const XK_F11: i32 = 0xffc8;
-const XK_LEFT: i32 = 0xff51;
 const XK_UP: i32 = 0xff52;
-const XK_RIGHT: i32 = 0xff53;
 const XK_DOWN: i32 = 0xff54;
 const XK_BACKSPACE: i32 = 0xff08;
 const XK_ENTER: i32 = 0xff0d;
@@ -83,6 +81,11 @@ var step_replay_target: u32 = std.math.maxInt(u32);
 var recent_local_write: ?u32 = null;
 var recent_local_write_frame_count: usize = 0;
 var recent_global_write: ?u32 = null;
+var viewport_columns: u32 = std.math.maxInt(u32);
+var viewport_lines: u32 = std.math.maxInt(u32);
+var output_digest: [32]u8 = undefined;
+var output_digest_valid = false;
+var render_stack_pointer: ?StackPointerPattern = null;
 
 const Phase = enum { initializing, ready, updating };
 
@@ -100,6 +103,15 @@ const LoadError = debug.Error || MultipartError;
 const DebugInput = struct {
     component: []const u8,
     target_input: []const u8 = &.{},
+};
+
+const StackPointerPattern = struct {
+    global_index: u32,
+    local_index: u32,
+    frame_size: u32,
+    entry_read: u32,
+    allocation_write: u32,
+    restoration_write: u32,
 };
 
 export fn input_ptr() u32 {
@@ -270,6 +282,16 @@ export fn uniform_set_instruction_budget(value: u32) u32 {
     return instruction_budget;
 }
 
+export fn uniform_set_columns(value: u32) u32 {
+    viewport_columns = @max(value, 1);
+    return viewport_columns;
+}
+
+export fn uniform_set_lines(value: u32) u32 {
+    viewport_lines = @max(value, 1);
+    return viewport_lines;
+}
+
 export fn key_event(x11_key: i32, flags: i32) i32 {
     if (phase != .updating) @trap();
     if ((flags & FLAG_KEY_DOWN) == 0 or load_error != null) return 0;
@@ -319,16 +341,14 @@ export fn key_event(x11_key: i32, flags: i32) i32 {
             memory_address_value = 0;
             memory_address_digits = 0;
         },
-        XK_LEFT => {
+        XK_UP => {
             stepBackward();
             return 1;
         },
-        XK_RIGHT => {
+        XK_DOWN => {
             execution_command = true;
             stepInto();
         },
-        XK_UP => pageMemoryBackward(),
-        XK_DOWN => pageMemoryForward(),
         'r', 'R' => {
             machine.restart() catch |err| {
                 load_error = err;
@@ -339,9 +359,11 @@ export fn key_event(x11_key: i32, flags: i32) i32 {
             step_replay_count = 0;
             step_replay_target = std.math.maxInt(u32);
             clearRecentValueWrite();
+            output_digest_valid = false;
         },
         else => return 0,
     }
+    if (execution_command) output_digest_valid = false;
     const following_output = execution_command and followCompletedOutput();
     const following_store = !following_output and execution_command and followCurrentStoreTarget();
     if (!following_output and !following_store and machine.counters.memory_reads + machine.counters.memory_writes != accesses_before) {
@@ -422,6 +444,7 @@ fn rememberValueWrite(instruction_index: u32, frame_count_before: usize, instruc
 
 fn stepBackward() void {
     if (!step_replay_available or step_replay_count == 0) return;
+    output_digest_valid = false;
     const replay_count = step_replay_count - 1;
     machine.restart() catch |err| {
         load_error = err;
@@ -482,6 +505,14 @@ fn handleMemoryAddressKey(x11_key: i32) i32 {
             memory_address_entry = false;
             return 1;
         },
+        XK_UP => {
+            pageMemoryBackward();
+            return 1;
+        },
+        XK_DOWN => {
+            pageMemoryForward();
+            return 1;
+        },
         'i', 'I' => {
             const pointer = inputMemoryPointer() orelse return 0;
             showMemoryAt(pointer);
@@ -534,6 +565,18 @@ fn outputMemoryPointer() ?u32 {
     const pointer: u32 = @as(u32, @truncate(machine.result >> 32)) & 0x7fff_ffff;
     if (pointer > machine.memory_size or size > machine.memory_size - pointer) return null;
     return pointer;
+}
+
+fn finalOutputDigest() ?*const [32]u8 {
+    const pointer = outputMemoryPointer() orelse return null;
+    const size: u32 = @truncate(machine.result);
+    const start: usize = pointer;
+    const end = start + @as(usize, size);
+    if (!output_digest_valid) {
+        std.crypto.hash.sha2.Sha256.hash(machine.memory[start..end], &output_digest, .{});
+        output_digest_valid = true;
+    }
+    return &output_digest;
 }
 
 fn followCompletedOutput() bool {
@@ -606,11 +649,13 @@ export fn render(input_size: u32) packed struct(u64) {
         step_replay_target = std.math.maxInt(u32);
         instruction_budget = DEFAULT_INSTRUCTION_BUDGET;
         last_command_budget = DEFAULT_INSTRUCTION_BUDGET;
+        output_digest_valid = false;
+        render_stack_pointer = null;
         clearRecentValueWrite();
         const debug_input = parseMultipart(input_buf[0..input_size]) catch |err| {
             load_error = err;
             phase = .ready;
-            const size = renderText();
+            const size = fitOutputToViewport(renderText());
             return .{
                 .output_size = @intCast(size),
                 .output_ptr = @intCast(@intFromPtr(&output_buf)),
@@ -621,6 +666,7 @@ export fn render(input_size: u32) packed struct(u64) {
             load_error = err;
         };
         if (load_error == null) {
+            render_stack_pointer = inferRenderStackPointer();
             resetMemoryView();
             step_replay_available = true;
         }
@@ -629,7 +675,7 @@ export fn render(input_size: u32) packed struct(u64) {
         @trap();
     }
 
-    const size = renderText();
+    const size = fitOutputToViewport(renderText());
     return .{
         .output_size = @intCast(size),
         .output_ptr = @intCast(@intFromPtr(&output_buf)),
@@ -686,6 +732,66 @@ const Writer = struct {
         return if (index < self.visible_line_lengths.len) self.visible_line_lengths[index] else 0;
     }
 };
+
+fn fitOutputToViewport(size: usize) usize {
+    if (viewport_columns == std.math.maxInt(u32) and viewport_lines == std.math.maxInt(u32)) return size;
+
+    const max_columns: usize = viewport_columns;
+    const max_lines: usize = viewport_lines;
+    var read_offset: usize = 0;
+    var write_offset: usize = 0;
+    var line: usize = 0;
+    var column: usize = 0;
+    var clipped = false;
+
+    while (read_offset < size) {
+        const byte = output_buf[read_offset];
+        if (byte == 0x1b) {
+            const end = std.mem.indexOfScalarPos(u8, output_buf[0..size], read_offset + 1, 'm') orelse break;
+            const sequence_end = end + 1;
+            std.mem.copyForwards(u8, output_buf[write_offset..][0 .. sequence_end - read_offset], output_buf[read_offset..sequence_end]);
+            write_offset += sequence_end - read_offset;
+            read_offset = sequence_end;
+            continue;
+        }
+        if (byte == '\n') {
+            if (line + 1 >= max_lines) {
+                clipped = true;
+                break;
+            }
+            output_buf[write_offset] = byte;
+            write_offset += 1;
+            read_offset += 1;
+            line += 1;
+            column = 0;
+            continue;
+        }
+
+        const sequence_length: usize = if (byte < 0x80)
+            1
+        else if (byte < 0xe0)
+            2
+        else if (byte < 0xf0)
+            3
+        else
+            4;
+        if (column < max_columns) {
+            std.mem.copyForwards(u8, output_buf[write_offset..][0..sequence_length], output_buf[read_offset..][0..sequence_length]);
+            write_offset += sequence_length;
+        } else {
+            clipped = true;
+        }
+        read_offset += sequence_length;
+        column += 1;
+    }
+
+    if (read_offset < size) clipped = true;
+    if (clipped and write_offset + SGR_RESET.len <= output_buf.len) {
+        @memcpy(output_buf[write_offset..][0..SGR_RESET.len], SGR_RESET);
+        write_offset += SGR_RESET.len;
+    }
+    return write_offset;
+}
 
 fn renderCodeOffset(out: *Writer, value: u32) void {
     out.raw(SGR_DIM);
@@ -860,26 +966,13 @@ fn renderText() usize {
 
     if (memory_address_entry or memory_view_visible) {
         out.styled(SGR_BOLD, "MEMORY");
-        out.print("  {d} B  r={d} w={d}  ", .{
+        out.print("  {d} B  reads={d} writes={d}  ", .{
             machine.memory_size,
             machine.counters.memory_reads,
             machine.counters.memory_writes,
         });
         out.styled(SGR_CONTROL_KEY, "x");
-        out.text(" examine  ");
-        out.styled(SGR_CONTROL_KEY, "↑/↓");
-        out.text(" page\n");
-        if (machine.last_access.valid) {
-            const access_style = if (machine.last_access_kind == .write) SGR_WRITE else SGR_READ;
-            out.raw(access_style);
-            out.print("  last {s} ", .{@tagName(machine.last_access_kind)});
-            out.raw(SGR_RESET);
-            renderHex32(&out, machine.last_access.address);
-            out.raw(access_style);
-            out.print(" width={d}", .{machine.last_access.width});
-            out.raw(SGR_RESET);
-            out.text("\n");
-        }
+        out.text(" examine\n");
         renderMemory(&out);
         out.text("\n");
     }
@@ -896,13 +989,22 @@ fn renderText() usize {
         out.text(" packed=");
         renderHex64(&out, machine.result);
         out.text("\n");
+        if (finalOutputDigest()) |digest| {
+            out.text("  sha256=");
+            out.raw(SGR_VALUE);
+            for (digest) |byte| out.print("{x:0>2}", .{byte});
+            out.raw(SGR_RESET);
+            out.text("\n");
+        }
     }
 
     out.text("\n");
     out.styled(SGR_BOLD, "COUNTERS");
-    out.print("  instructions={d}  branches={d}\n", .{
+    out.print("  instructions={d}  branches={d}  calls={d}  returns={d}\n", .{
         machine.counters.instructions,
         machine.counters.branches,
+        machine.counters.calls,
+        machine.counters.returns,
     });
     renderLoops(&out);
     return out.offset;
@@ -949,11 +1051,7 @@ fn renderExecutionColumns(out: *Writer) void {
     renderInstructions(&left);
 
     var right = Writer.init(&right_column_buf);
-    right.styled(SGR_BOLD, "STACKS/LOCALS");
-    right.print("  calls={d} returns={d}\n", .{
-        machine.counters.calls,
-        machine.counters.returns,
-    });
+    right.styled(SGR_BOLD, "STACKS/LOCALS\n");
     renderGlobals(&right);
     renderStacks(&right);
 
@@ -1064,6 +1162,8 @@ fn renderInstructionLine(out: *Writer, index: u32, current: u32, targets: debug.
     }
     if (instruction.op == 0x03) out.print("   iterations={d}", .{machine.loop_counts[index]});
     out.raw(SGR_RESET);
+    renderStackPointerAnnotation(out, index);
+    out.raw(SGR_RESET);
     out.text("\n");
     const continuation_indent = INSTRUCTION_MARKER_WIDTH + 1 + @as(usize, @intFromBool(child)) * 2;
     if (instruction.op == 0x10) {
@@ -1072,6 +1172,98 @@ fn renderInstructionLine(out: *Writer, index: u32, current: u32, targets: debug.
         renderFunctionSignature(&signature, @intCast(instruction.immediate));
         renderIndentedLines(out, continuation_indent, indent, signature.buffer[0..signature.offset]);
     }
+}
+
+fn renderStackPointerAnnotation(out: *Writer, index: u32) void {
+    const pattern = render_stack_pointer orelse return;
+    if (index != pattern.entry_read and index != pattern.allocation_write and index != pattern.restoration_write) return;
+    out.raw(SGR_STORAGE);
+    if (index == pattern.entry_read) {
+        out.text("  stack pointer");
+    } else if (index == pattern.allocation_write) {
+        out.print("  allocate {d} B", .{pattern.frame_size});
+    } else if (index == pattern.restoration_write) {
+        out.print("  restore {d} B", .{pattern.frame_size});
+    }
+    out.raw(SGR_RESET);
+}
+
+fn inferRenderStackPointer() ?StackPointerPattern {
+    var first: usize = 0;
+    while (first < machine.instruction_count and machine.instructions[first].function_index != machine.render_function) : (first += 1) {}
+    if (first + 5 > machine.instruction_count) return null;
+
+    const entry_read = machine.instructions[first];
+    const frame_size_instruction = machine.instructions[first + 1];
+    const subtract = machine.instructions[first + 2];
+    const save_base = machine.instructions[first + 3];
+    const allocation_write = machine.instructions[first + 4];
+    if (entry_read.function_index != machine.render_function or
+        frame_size_instruction.function_index != machine.render_function or
+        subtract.function_index != machine.render_function or
+        save_base.function_index != machine.render_function or
+        allocation_write.function_index != machine.render_function or
+        entry_read.depth != 0 or
+        entry_read.op != 0x23 or
+        frame_size_instruction.op != 0x41 or
+        subtract.op != 0x6b or
+        save_base.op != 0x22 or
+        allocation_write.op != 0x24 or
+        allocation_write.immediate != entry_read.immediate)
+        return null;
+
+    const global_index: u32 = @intCast(entry_read.immediate);
+    const frame_size: u32 = @truncate(frame_size_instruction.immediate);
+    if (global_index >= machine.global_count or
+        machine.globals[global_index].value_type != .i32 or
+        !machine.globals[global_index].mutable or
+        frame_size == 0 or
+        frame_size > machine.memory_size)
+        return null;
+
+    var restoration_write: ?u32 = null;
+    var global_write_count: usize = 0;
+    var i = first;
+    while (i < machine.instruction_count and machine.instructions[i].function_index == machine.render_function) : (i += 1) {
+        const instruction = machine.instructions[i];
+        if (i != first + 3 and (instruction.op == 0x21 or instruction.op == 0x22) and
+            instruction.immediate == save_base.immediate)
+            return null;
+        if (instruction.op == 0x24 and instruction.immediate == global_index) {
+            global_write_count += 1;
+            if (i >= first + 8 and instruction.depth == 0) {
+                const restore_base = machine.instructions[i - 3];
+                const restore_size = machine.instructions[i - 2];
+                const add = machine.instructions[i - 1];
+                if (restore_base.op == 0x20 and restore_base.immediate == save_base.immediate and
+                    restore_size.op == 0x41 and @as(u32, @truncate(restore_size.immediate)) == frame_size and
+                    add.op == 0x6a)
+                {
+                    if (restoration_write != null) return null;
+                    restoration_write = @intCast(i);
+                }
+            }
+        }
+    }
+    const restoration = restoration_write orelse return null;
+    if (global_write_count != 2) return null;
+
+    i = first + 5;
+    while (i < restoration) : (i += 1) {
+        const instruction = machine.instructions[i];
+        if (instruction.op == 0x0f or
+            ((instruction.op == 0x0c or instruction.op == 0x0d) and instruction.immediate >= instruction.depth))
+            return null;
+    }
+
+    return .{
+        .global_index = global_index,
+        .local_index = @intCast(save_base.immediate),
+        .frame_size = frame_size,
+        .entry_read = @intCast(first),
+        .allocation_write = @intCast(first + 4),
+        .restoration_write = restoration,
+    };
 }
 
 fn instructionIndent(instruction: debug.Instruction) usize {
@@ -1252,7 +1444,7 @@ fn renderFunctionSignature(out: *Writer, function_index: u32) void {
 fn renderInstructionMarkers(out: *Writer, index: u32, current: u32, targets: debug.StepTargets) void {
     var length: usize = 0;
     if (step_replay_available and step_replay_count > 0 and index == step_replay_target) {
-        out.styled(SGR_CONTROL_KEY, "←");
+        out.styled(SGR_CONTROL_KEY, "↑");
         length += 1;
     }
     if (index == current) {
@@ -1260,7 +1452,7 @@ fn renderInstructionMarkers(out: *Writer, index: u32, current: u32, targets: deb
         length += 1;
     }
     if (index == targets.into) {
-        out.styled(SGR_CONTROL_KEY, "→");
+        out.styled(SGR_CONTROL_KEY, "↓");
         length += 1;
     }
     if (index == targets.over and targets.over != targets.into) {
@@ -1428,6 +1620,13 @@ fn renderGlobals(out: *Writer) void {
             renderHex64(out, global.value);
         }
         out.text("\n");
+        if (render_stack_pointer) |pattern| {
+            if (pattern.global_index == index) {
+                out.text("    ");
+                out.styled(SGR_STORAGE, "stack pointer (inferred)");
+                out.text("\n");
+            }
+        }
     }
     if (shown < machine.global_count) out.print("  ... {d} more globals\n", .{machine.global_count - shown});
 }
@@ -1536,6 +1735,8 @@ fn renderMemory(out: *Writer) void {
             out.text(" last-write");
         }
         out.text("\n  ");
+        out.styled(SGR_CONTROL_KEY, "↑/↓");
+        out.text(" page  ");
         out.styled(SGR_CONTROL_KEY, "0-9/a-f");
         out.text(" hex  ");
         out.styled(SGR_CONTROL_KEY, "Backspace");
@@ -1704,6 +1905,19 @@ test "assigns opcode colors by instruction family" {
     try std.testing.expectEqualStrings(SGR_INSTRUCTION, instructionStyle(0x1a));
 }
 
+test "viewport uniforms clip complete bottom rows and visible columns" {
+    const source = "\x1b[1mABCDE\x1b[0m\n12345\nlast";
+    @memcpy(output_buf[0..source.len], source);
+    try std.testing.expectEqual(@as(u32, 3), uniform_set_columns(3));
+    try std.testing.expectEqual(@as(u32, 2), uniform_set_lines(2));
+    const size = fitOutputToViewport(source.len);
+    try std.testing.expectEqualStrings("\x1b[1mABC\x1b[0m\n123\x1b[0m", output_buf[0..size]);
+    try std.testing.expectEqual(@as(u32, 1), uniform_set_columns(0));
+    try std.testing.expectEqual(@as(u32, 1), uniform_set_lines(0));
+    viewport_columns = std.math.maxInt(u32);
+    viewport_lines = std.math.maxInt(u32);
+}
+
 test "steps a render function and counts a loop" {
     // A hand-encoded module equivalent to:
     // render(n): i=0; loop { i += 1; if i < 3 br loop }; return i as i64.
@@ -1790,7 +2004,7 @@ test "retains the most recent memory access" {
     try std.testing.expectEqual(@as(u32, 16), machine.last_write_access.address);
 
     const screen = output_buf[0..renderText()];
-    try std.testing.expect(std.mem.indexOf(u8, screen, "last read \x1b[0m\x1b[94m0x00000010\x1b[0m\x1b[95m width=1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, screen, "last read \x1b[0m\x1b[94m0x00000010") == null);
     try std.testing.expect(std.mem.indexOf(u8, screen, "\x1b[92m44 \x1b[0m") != null);
     try std.testing.expect(std.mem.indexOf(u8, screen, "^^") != null);
 }
